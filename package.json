@@ -1,0 +1,51 @@
+{
+  "name": "haori",
+  "version": "1.0.0",
+  "description": "A lightweight HTML-first UI engine powered by declarative data bindings and expressions.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meibinlab/haori-js.git"
+  },
+  "keywords": [
+    "html",
+    "template",
+    "binding",
+    "ui-engine",
+    "no-javascript",
+    "dom",
+    "declarative",
+    "frontend"
+  ],
+  "author": "meibinlab",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/haori.js"
+    }
+  },
+  "main": "index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "bugs": {
+    "url": "https://github.com/meibinlab/haori-js/issues"
+  },
+  "homepage": "https://github.com/meibinlab/haori-js#readme",
+  "devDependencies": {
+    "eslint": "^9.31.0",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.4",
+    "vitest": "^3.2.4"
+  }
+}
