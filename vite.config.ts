@@ -5,8 +5,8 @@ export default defineConfig({
   build: {
     lib: {
       entry: path.resolve(__dirname, "src/index.ts"),
-      name: "Haori-JS",
-      fileName: (format) => `haori.${format}.js`,
+      name: "Haori",
+      fileName: (format) => format === "es" ? "haori.js" : `haori.${format}.js`,
       formats: ["es", "iife"]
     },
     rollupOptions: {
@@ -16,7 +16,9 @@ export default defineConfig({
       }
     },
     outDir: "dist",
-    emptyOutDir: true
+    emptyOutDir: true,
+    minify: true,
+    sourcemap: true
   },
   test: {
     environment: "jsdom"
