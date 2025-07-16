@@ -3,3 +3,5 @@
 
 export * from './core/env';
 export * from './core/dev';
+export * from './core/expression';
+export * from './core/log';
