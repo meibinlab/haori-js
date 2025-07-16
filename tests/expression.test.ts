@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { evaluateExpressionSafe, clearExpressionCache, getExpressionCacheSize } from '../../src/expression';
-import { setDevMode } from '../../src/dev';
+import { evaluateExpressionSafe, clearExpressionCache, getExpressionCacheSize } from '../src/expression';
+import { setDevMode } from '../src/dev';
 
 describe('式評価エンジン', () => {
   beforeEach(() => {

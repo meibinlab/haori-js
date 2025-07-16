@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { logWarning, logError, logInfo } from '../../src/log';
+import { logWarning, logError, logInfo } from '../src/log';
 
 // devモジュールをモック
-vi.mock('../../src/dev', () => ({
+vi.mock('../src/dev', () => ({
   isDevMode: vi.fn(() => true)
 }));
 

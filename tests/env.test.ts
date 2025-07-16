@@ -1,5 +1,5 @@
-import { isDevMode, setDevMode } from '../../src/dev';
-import { detectDevModeFromEnv } from '../../src/env';
+import { isDevMode, setDevMode } from '../src/dev';
+import { detectDevModeFromEnv } from '../src/env';
 
 describe('環境から開発モードを検出します', () => {
   beforeEach(() => {

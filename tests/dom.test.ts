@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Dom, DomOperationType } from '../../src/dom';
+import { Dom, DomOperationType } from '../src/dom';
 
 // Domのモック
 const mockElement = {
