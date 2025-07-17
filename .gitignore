@@ -39,3 +39,11 @@ test-results/
 # Env
 .env
 .env.*
+
+# Debug files
+debug-*.js
+debug-*.ts
+debug-*.mjs
+test-*.js
+test-*.ts
+test-*.mjs
