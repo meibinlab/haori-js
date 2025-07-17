@@ -5,3 +5,4 @@ export * from './env';
 export * from './dev';
 export * from './expression';
 export * from './log';
+export * from './scope';
