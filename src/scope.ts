@@ -77,7 +77,7 @@ function parseDataBind(attr: string): Record<string, any> {
   try {
     return JSON.parse(attr);
   } catch (err) {
-    logWarning('[Haori: data-bind構文エラー]', attr, err);
+    logWarning('[Haori: data-bind syntax error]', attr, err);
     return {};
   }
 }
@@ -127,7 +127,7 @@ export function bindScope(
     el: Element, parentScope?: BindingScope): BindingScope {
   // 既存のスコープがある場合は警告して返す
   if (scopeMap.has(el)) {
-    logWarning('[Haori: Scope]', 'スコープが既に存在します', el);
+    logWarning('[Haori: Scope]', 'Scope already exists', el);
     return scopeMap.get(el)!;
   }
 
@@ -165,7 +165,7 @@ export function updateBindingData(
     el: Element, newData: Record<string, any>): void {
   const scope = scopeMap.get(el);
   if (!scope) {
-    logWarning('[Haori: Scope]', 'スコープが見つかりません', el);
+    logWarning('[Haori: Scope]', 'Scope not found', el);
     return;
   }
 
@@ -195,7 +195,7 @@ export function rebindScope(scope: BindingScope): void {
     try {
       evalTextNode.evaluator();
     } catch (err) {
-      logWarning('[Haori: Scope]', 'テキストノード再評価エラー', err);
+      logWarning('[Haori: Scope]', 'Text node re-evaluation error', err);
     }
   }
 
@@ -204,7 +204,7 @@ export function rebindScope(scope: BindingScope): void {
     try {
       evaluator();
     } catch (err) {
-      logWarning('[Haori: Scope]', '構造制御再評価エラー', err);
+      logWarning('[Haori: Scope]', 'Structure control re-evaluation error', err);
     }
   }
 
@@ -214,7 +214,7 @@ export function rebindScope(scope: BindingScope): void {
       evalAttr.evaluator();
     } catch (err) {
       logWarning(
-          '[Haori: Scope]', '属性再評価エラー', attrName, evalAttr.attr, err);
+          '[Haori: Scope]', 'Attribute re-evaluation error', attrName, evalAttr.attr, err);
     }
   }
 
@@ -298,7 +298,7 @@ export function addEvaluatedTextNode(
   const scope = scopeMap.get(el);
   if (!scope) {
     logWarning(
-        '[Haori: Scope]', 'テキストノード評価追加: スコープが見つかりません', el);
+        '[Haori: Scope]', 'Text node evaluation addition: Scope not found', el);
     return;
   }
 
@@ -343,7 +343,7 @@ export function addStructuralEvaluator(
   const scope = scopeMap.get(el);
   if (!scope) {
     logWarning(
-        '[Haori: Scope]', '構造制御評価追加: スコープが見つかりません', el,
+        '[Haori: Scope]', 'Structure control evaluation addition: Scope not found', el,
         attr.name);
     return;
   }
@@ -380,7 +380,7 @@ export function addEvaluatedAttribute(
   const scope = scopeMap.get(el);
   if (!scope) {
     logWarning(
-        '[Haori: Scope]', '属性評価追加: スコープが見つかりません', el, attrName);
+        '[Haori: Scope]', 'Attribute evaluation addition: Scope not found', el, attrName);
     return;
   }
 
