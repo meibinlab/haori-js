@@ -1,4 +1,4 @@
-import { isDevMode, setDevMode } from '../src/dev';
+import {isDevMode, setDevMode} from '../src/dev';
 
 describe('devMode（開発モード）', () => {
   it('デフォルトはfalseであること', () => {

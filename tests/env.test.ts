@@ -1,5 +1,5 @@
-import { isDevMode, setDevMode } from '../src/dev';
-import { detectDevModeFromEnv } from '../src/env';
+import {isDevMode, setDevMode} from '../src/dev';
+import {detectDevModeFromEnv} from '../src/env';
 
 describe('環境から開発モードを検出します', () => {
   beforeEach(() => {
@@ -7,7 +7,7 @@ describe('環境から開発モードを検出します', () => {
     document.querySelectorAll('script').forEach(script => script.remove());
     Object.defineProperty(window, 'location', {
       value: new URL('http://test.com'),
-      writable: true
+      writable: true,
     });
   });
 
@@ -33,9 +33,9 @@ describe('環境から開発モードを検出します', () => {
     Object.defineProperty(window, 'location', {
       value: {
         hostname: hostname,
-        href: `http://${hostname}`
+        href: `http://${hostname}`,
       },
-      writable: true
+      writable: true,
     });
   }
 
