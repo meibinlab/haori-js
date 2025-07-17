@@ -58,23 +58,25 @@ export function evaluateExpressionSafe(
       return null;
     }
 
+    // スコープキーを取得してソート（一意のキャッシュキーを生成するため）
+    const scopeKeys = Object.keys(scope).sort();
+    const cacheKey = `${expression}:${scopeKeys.join(',')}`;
+
     // キャッシュから評価関数を取得または生成
-    let evaluator = expressionCache.get(expression);
+    let evaluator = expressionCache.get(cacheKey);
 
     if (!evaluator) {
-      const scopeKeys = Object.keys(scope);
       const allKeys = [...forbiddenNames, ...scopeKeys];
       const body = `"use strict"; return (${expression});`;
       evaluator = new Function(...allKeys, body);
-      expressionCache.set(expression, evaluator);
+      expressionCache.set(cacheKey, evaluator);
     }
 
     // 禁止識別子を undefined に設定
     const context: Scope = Object.fromEntries(forbiddenNames.map(k => [k, undefined]));
     const finalScope: Scope = { ...context, ...scope };
 
-    // 引数を準備
-    const scopeKeys = Object.keys(scope);
+    // 引数を準備（スコープキーはソートされた順序で）
     const allKeys = [...forbiddenNames, ...scopeKeys];
     const argValues = allKeys.map(key => finalScope[key]);
 
