@@ -3,14 +3,14 @@
  * ドキュメント仕様に基づいた実装
  */
 
-import {logWarning} from './log';
+import { logWarning } from "./log";
 
 export type Scope = Record<string, any>;
 
 /** 式 → 評価関数のグローバルキャッシュ */
 const expressionCache = new Map<string, Function>();
 
-/** Haoriで禁止すべき識別子一覧（strict mode で有効な識別子のみ） */
+/** Haoriで禁止すべき識別子一覧（基本的な禁止識別子） */
 const forbiddenNames = [
   // グローバルオブジェクト
   'window', 'self', 'globalThis', 'frames', 'parent', 'top',
@@ -24,7 +24,7 @@ const forbiddenNames = [
   'IndexedDB', 'history'
 ];
 
-/** strict modeで引数名として使用できない特別な識別子 */
+/** 特別な処理が必要な禁止識別子（eval, arguments） */
 const specialForbiddenNames = ['eval', 'arguments'];
 
 /**
@@ -41,7 +41,7 @@ function containsDangerousPatterns(expression: string): boolean {
     /\barguments\s*\[/,  // arguments[...]
     /\barguments\s*\./,  // arguments.xxx
   ];
-  
+
   return dangerousPatterns.some(pattern => pattern.test(expression));
 }
 
@@ -77,48 +77,55 @@ export function evaluateExpressionSafe(
 
     if (!evaluator) {
       // 禁止識別子と重複しないスコープキーのみを引数に使用
-      const safeScopeKeys = scopeKeys.filter(key => 
+      const safeScopeKeys = scopeKeys.filter(key =>
         !forbiddenNames.includes(key) && !specialForbiddenNames.includes(key)
       );
-      
+
       // 関数の引数として使用する名前（禁止識別子 + 安全なスコープキー）
       const argNames = [...forbiddenNames, ...safeScopeKeys];
-      
-      // with文の代わりに、contextオブジェクトを作成してスコープを管理
-      const contextProps = [
-        ...forbiddenNames.map((name, i) => `${name}: arguments[${i}]`),
-        ...safeScopeKeys.map((name, i) => `${name}: arguments[${forbiddenNames.length + i}]`)
-      ];
-      
+
+      // strict modeを避けて、動的にスコープを構築
+      const assignments = [];
+
+      // 禁止識別子の代入
+      forbiddenNames.forEach((name, i) => {
+        assignments.push(`${name} = arguments[${i}]`);
+      });
+
+      // 安全なスコープキーの代入
+      safeScopeKeys.forEach((name, i) => {
+        assignments.push(`${name} = arguments[${forbiddenNames.length + i}]`);
+      });
+
       // eval と arguments を特別に処理
-      const specialProps: string[] = [];
       if (scopeKeys.includes('eval')) {
-        specialProps.push(`eval: arguments[${argNames.length}]`);
+        assignments.push(`eval = arguments[${argNames.length}]`);
+        argNames.push('_eval_override');
       } else {
-        specialProps.push(`eval: undefined`);
+        // スコープで上書きされていない場合はundefinedに設定
+        assignments.push(`eval = undefined`);
       }
+
       if (scopeKeys.includes('arguments')) {
-        specialProps.push(`arguments: arguments[${argNames.length + 1}]`);
+        assignments.push(`arguments = arguments[${argNames.length}]`);
+        argNames.push('_arguments_override');
       } else {
-        specialProps.push(`arguments: undefined`);
+        // スコープで上書きされていない場合はundefinedに設定
+        assignments.push(`arguments = undefined`);
       }
-      
-      const allProps = [...contextProps, ...specialProps];
-      
+
       const body = `
-        var context = { ${allProps.join(', ')} };
-        with (context) {
-          return (${expression});
-        }
-      `;
-      
+  ${assignments.join(';\n  ')};
+  return (${expression});
+`;
+
       evaluator = new Function(...argNames, body);
       expressionCache.set(cacheKey, evaluator);
     }
 
     // 引数を準備
     const argValues: any[] = [];
-    
+
     // 禁止識別子の値を追加（スコープで上書き可能）
     forbiddenNames.forEach(name => {
       if (scope.hasOwnProperty(name)) {
@@ -127,23 +134,34 @@ export function evaluateExpressionSafe(
         argValues.push(undefined);  // デフォルトは undefined
       }
     });
-    
+
     // 安全なスコープキーの値を追加
-    const safeScopeKeys = Object.keys(scope).filter(key => 
+    const safeScopeKeys = Object.keys(scope).filter(key =>
       !forbiddenNames.includes(key) && !specialForbiddenNames.includes(key)
     ).sort();
-    
+
     safeScopeKeys.forEach(key => {
       argValues.push(scope[key]);
     });
-    
-    // eval と arguments の上書き値を追加
-    argValues.push(scope['eval']);  // eval上書き値
-    argValues.push(scope['arguments']);  // arguments上書き値
+
+    // eval と arguments の上書き値を追加（スコープに含まれている場合のみ）
+    if (Object.keys(scope).includes('eval')) {
+      argValues.push(scope['eval']);
+    }
+    if (Object.keys(scope).includes('arguments')) {
+      argValues.push(scope['arguments']);
+    }
 
     return evaluator(...argValues);
   } catch (err) {
     logWarning('[Haori: Expression Error]', expression, err);
+
+    // ReferenceError（未定義変数）はundefinedを返す
+    if (err instanceof ReferenceError) {
+      return undefined;
+    }
+
+    // その他のエラー（構文エラーなど）はnullを返す
     return null;
   }
 }

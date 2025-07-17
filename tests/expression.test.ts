@@ -53,10 +53,23 @@ describe('式評価エンジン (evaluateExpressionSafe)', () => {
       expect(evaluateExpressionSafe('a / b', scope)).toBe(2);
     });
 
+    it('演算子の優先順位が正しく動作すること', () => {
+      const scope = {a: 1, b: 3};
+      expect(evaluateExpressionSafe('a + b * 2', scope)).toBe(7);
+    });
+
+    it('比較演算ができること', () => {
+      const scope = {age: 20, score: 75};
+      expect(evaluateExpressionSafe('age >= 18', scope)).toBe(true);
+      expect(evaluateExpressionSafe('score >= 60', scope)).toBe(true);
+    });
+
     it('三項演算子が使えること', () => {
-      const scope = {isAdmin: true, name: '管理者'};
+      const scope = {isAdmin: true, name: '管理者', score: 75};
       expect(evaluateExpressionSafe('isAdmin ? name + "（管理）" : name', scope))
           .toBe('管理者（管理）');
+      expect(evaluateExpressionSafe('score >= 60 ? "pass" : "fail"', scope))
+          .toBe('pass');
     });
 
     it('論理演算ができること', () => {
@@ -134,10 +147,15 @@ describe('式評価エンジン (evaluateExpressionSafe)', () => {
     it('構文エラーの場合nullを返すこと', () => {
       expect(evaluateExpressionSafe('unclosed"')).toBe(null);
       expect(evaluateExpressionSafe('{')).toBe(null);
+      expect(evaluateExpressionSafe('name +')).toBe(null);
     });
 
-    it('存在しない変数参照の場合nullを返すこと', () => {
-      expect(evaluateExpressionSafe('nonExistentVar')).toBe(null);
+    it('存在しない変数参照の場合undefinedを返すこと', () => {
+      // 仕様書13.1：未定義変数はundefinedとして扱われる
+      // 空文字列への変換は表示層で行われる
+      expect(evaluateExpressionSafe('nonExistentVar')).toBe(undefined);
+      expect(evaluateExpressionSafe('undefinedVar')).toBe(undefined);
+      expect(evaluateExpressionSafe('user.age')).toBe(undefined);
     });
 
     it('開発モード時にエラーログを出力すること', () => {
@@ -171,6 +189,13 @@ describe('式評価エンジン (evaluateExpressionSafe)', () => {
 
       // 異なる式は新しいキャッシュが作られる
       evaluateExpressionSafe('age', {age: 25});
+      expect(getExpressionCacheSize()).toBe(2);
+    });
+
+    it('異なる式は別々にキャッシュされること', () => {
+      evaluateExpressionSafe('a + b', {a: 1, b: 2});
+      evaluateExpressionSafe('c + d', {c: 3, d: 4});
+      
       expect(getExpressionCacheSize()).toBe(2);
     });
 
