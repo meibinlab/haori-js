@@ -53,7 +53,6 @@ const SPECIAL_FORBIDDEN_NAMES = ['eval', 'arguments'];
 
 /**
  * 式にevalや危険な構文が含まれているかチェックします。
- * 
  * ただし、単純な識別子参照は許可する（スコープで上書き可能にするため）。
  * 
  * @param expression チェック対象の式文字列
