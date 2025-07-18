@@ -1,8 +1,11 @@
 /**
  * @fileoverview Haori-JS - A lightweight HTML-first UI engine
- * Export core functionality
+ * 
+ * HTML要素に対してデータバインディングやリアクティブな更新を提供する
+ * 軽量なUIエンジンのコア機能をエクスポートします。
  */
 
-export * from './env';
 export * from './dev';
+export * from './dom';
+export * from './env';
 export * from './expression';

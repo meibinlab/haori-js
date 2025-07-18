@@ -1,43 +1,68 @@
 /**
- * Haori式評価エンジン - セキュリティ対策付き
- * ドキュメント仕様に基づいた実装
+ * @fileoverview Haori式評価エンジン - セキュリティ対策付き
+ * 
+ * ドキュメント仕様に基づいた安全な式評価システムです。
+ * XSS攻撃やコードインジェクションを防ぐためのセキュリティ機能と、
+ * パフォーマンス向上のためのキャッシュ機能を提供します。
  */
 
-import { logWarning } from "./log";
+import {logWarning} from './log';
 
-export type Scope = Record<string, any>;
+/** スコープオブジェクトの型定義 */
+export type Scope = Record<string, unknown>;
 
 /** 式 → 評価関数のグローバルキャッシュ */
 const expressionCache = new Map<string, Function>();
 
 /** Haoriで禁止すべき識別子一覧（基本的な禁止識別子） */
-const forbiddenNames = [
+const FORBIDDEN_NAMES = [
   // グローバルオブジェクト
-  'window', 'self', 'globalThis', 'frames', 'parent', 'top',
+  'window',
+  'self',
+  'globalThis',
+  'frames',
+  'parent',
+  'top',
   // 危険な関数/オブジェクト
-  'Function', 'setTimeout', 'setInterval', 'requestAnimationFrame',
-  'alert', 'confirm', 'prompt', 'fetch', 'XMLHttpRequest',
+  'Function',
+  'setTimeout',
+  'setInterval',
+  'requestAnimationFrame',
+  'alert',
+  'confirm',
+  'prompt',
+  'fetch',
+  'XMLHttpRequest',
   // 脱出経路・プロトタイプ
-  'constructor', '__proto__', 'prototype', 'Object',
+  'constructor',
+  '__proto__',
+  'prototype',
+  'Object',
   // その他
-  'document', 'location', 'navigator', 'localStorage', 'sessionStorage',
-  'IndexedDB', 'history'
+  'document',
+  'location',
+  'navigator',
+  'localStorage',
+  'sessionStorage',
+  'IndexedDB',
+  'history',
 ];
 
 /** 特別な処理が必要な禁止識別子（eval, arguments） */
-const specialForbiddenNames = ['eval', 'arguments'];
+const SPECIAL_FORBIDDEN_NAMES = ['eval', 'arguments'];
 
 /**
- * 式にevalや危険な構文が含まれているかチェック
- * ただし、単純な識別子参照は許可する（スコープで上書き可能にするため）
- *
+ * 式にevalや危険な構文が含まれているかチェックします。
+ * 
+ * ただし、単純な識別子参照は許可する（スコープで上書き可能にするため）。
+ * 
  * @param expression チェック対象の式文字列
- * @returns 危険なパターンが含まれている場合はtrue
+ * @return 危険なパターンが含まれている場合はtrue
  */
 function containsDangerousPatterns(expression: string): boolean {
   // eval("code") や arguments[0] のような複雑なパターンのみをブロック
   const dangerousPatterns = [
-    /\beval\s*\(/,  // eval(...)
+    /\beval\s*\(/,       // eval(...)
     /\barguments\s*\[/,  // arguments[...]
     /\barguments\s*\./,  // arguments.xxx
   ];
@@ -46,25 +71,26 @@ function containsDangerousPatterns(expression: string): boolean {
 }
 
 /**
- * Haori 式評価関数（安全・高速・キャッシュ対応）
- *
+ * Haori 式評価関数（安全・高速・キャッシュ対応）です。
+ * 
  * @param expression 評価対象の式文字列（例: "name + 'さん'"）
  * @param scope 評価スコープ（data-bindなどから渡される値）
- * @returns 評価結果、またはエラー時は null
+ * @return 評価結果、またはエラー時は null
  */
 export function evaluateExpressionSafe(
-  expression: string,
-  scope: Scope = {}
-): any | null {
+    expression: string, scope: Scope = {}): unknown {
   try {
     if (typeof expression !== 'string' || expression.trim() === '') {
-      logWarning('[Haori: Expression Error]', expression, 'Expression is empty');
+      logWarning(
+          '[Haori: Expression Error]', expression, 'Expression is empty');
       return null;
     }
 
     // 危険なパターンをチェック
     if (containsDangerousPatterns(expression)) {
-      logWarning('[Haori: Expression Error]', expression, 'Contains dangerous patterns');
+      logWarning(
+          '[Haori: Expression Error]', expression,
+          'Contains dangerous patterns');
       return null;
     }
 
@@ -77,24 +103,25 @@ export function evaluateExpressionSafe(
 
     if (!evaluator) {
       // 禁止識別子と重複しないスコープキーのみを引数に使用
-      const safeScopeKeys = scopeKeys.filter(key =>
-        !forbiddenNames.includes(key) && !specialForbiddenNames.includes(key)
-      );
+      const safeScopeKeys = scopeKeys.filter(
+          key => !FORBIDDEN_NAMES.includes(key) &&
+              !SPECIAL_FORBIDDEN_NAMES.includes(key));
 
       // 関数の引数として使用する名前（禁止識別子 + 安全なスコープキー）
-      const argNames = [...forbiddenNames, ...safeScopeKeys];
+      const argNames = [...FORBIDDEN_NAMES, ...safeScopeKeys];
 
       // strict modeを避けて、動的にスコープを構築
-      const assignments = [];
+      const assignments: string[] = [];
 
       // 禁止識別子の代入
-      forbiddenNames.forEach((name, i) => {
+      FORBIDDEN_NAMES.forEach((name: string, i: number) => {
         assignments.push(`${name} = arguments[${i}]`);
       });
 
       // 安全なスコープキーの代入
-      safeScopeKeys.forEach((name, i) => {
-        assignments.push(`${name} = arguments[${forbiddenNames.length + i}]`);
+      safeScopeKeys.forEach((name: string, i: number) => {
+        assignments.push(
+            `${name} = arguments[${FORBIDDEN_NAMES.length + i}]`);
       });
 
       // eval と arguments を特別に処理
@@ -124,10 +151,10 @@ export function evaluateExpressionSafe(
     }
 
     // 引数を準備
-    const argValues: any[] = [];
+    const argValues: unknown[] = [];
 
     // 禁止識別子の値を追加（スコープで上書き可能）
-    forbiddenNames.forEach(name => {
+    FORBIDDEN_NAMES.forEach((name: string) => {
       if (scope.hasOwnProperty(name)) {
         argValues.push(scope[name]);  // スコープで上書き
       } else {
@@ -136,9 +163,11 @@ export function evaluateExpressionSafe(
     });
 
     // 安全なスコープキーの値を追加
-    const safeScopeKeys = Object.keys(scope).filter(key =>
-      !forbiddenNames.includes(key) && !specialForbiddenNames.includes(key)
-    ).sort();
+    const safeScopeKeys = Object.keys(scope)
+                              .filter(
+                                  key => !FORBIDDEN_NAMES.includes(key) &&
+                                      !SPECIAL_FORBIDDEN_NAMES.includes(key))
+                              .sort();
 
     safeScopeKeys.forEach(key => {
       argValues.push(scope[key]);
@@ -167,16 +196,16 @@ export function evaluateExpressionSafe(
 }
 
 /**
- * 式評価キャッシュをクリア（テスト用）
+ * 式評価キャッシュをクリアします（テスト用）。
  */
 export function clearExpressionCache(): void {
   expressionCache.clear();
 }
 
 /**
- * 現在のキャッシュサイズを取得（デバッグ用）
- *
- * @returns 現在のキャッシュサイズ
+ * 現在のキャッシュサイズを取得します（デバッグ用）。
+ * 
+ * @return 現在のキャッシュサイズ
  */
 export function getExpressionCacheSize(): number {
   return expressionCache.size;
