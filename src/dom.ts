@@ -1,9 +1,9 @@
 /**
  * @fileoverview Haori DOM操作システム - キューベース実装
- * 
+ *
  * DOM操作を非同期でキューイングし、バッチ処理することで
  * パフォーマンスを最適化するシステムです。
- * 
+ *
  * 主な機能:
  * - 操作の優先度付きキューイング
  * - 動的バッチサイズ調整
@@ -68,7 +68,7 @@ export interface DomOperation {
 
 /**
  * DOM操作キュー管理クラス
- * 
+ *
  * DOM操作を非同期でバッチ処理することで、パフォーマンスを最適化します。
  * 動的バッチサイズ調整により、実行時間を目標値内に収めます。
  */
@@ -103,20 +103,20 @@ class DomOperationQueue {
 
   /** 実行時間履歴 */
   private readonly executionTimeHistory: number[] = [];
-  
+
   /** 履歴保持サイズ */
   private readonly HISTORY_SIZE = 5;
 
   /**
    * 操作をキューに追加します。
-   * 
+   *
    * @param operation 追加する操作
    * @return 操作ID
    */
   enqueue(operation: Omit<DomOperation, 'id'|'timestamp'>): string {
     if (this.queue.length >= this.maxQueueSize) {
       logWarning(
-          '[Haori: DOM Queue]', 'Queue is full, dropping oldest operations');
+        '[Haori: DOM Queue]', 'Queue is full, dropping oldest operations');
       this.queue.shift();
     }
 
@@ -140,7 +140,7 @@ class DomOperationQueue {
 
   /**
    * 特定の操作をキューから削除します。
-   * 
+   *
    * @param id 削除する操作のID
    * @return 削除に成功した場合true
    */
@@ -174,17 +174,17 @@ class DomOperationQueue {
 
   /**
    * 操作IDを生成します。
-   * 
+   *
    * @return 一意な操作ID
    */
   private generateOperationId(): string {
     return `dom_op_${Date.now()}_${
-        Math.random().toString(36).substring(2, 11)}`;
+      Math.random().toString(36).substring(2, 11)}`;
   }
 
   /**
    * 優先度に基づく挿入位置を見つけます。
-   * 
+   *
    * @param operation 挿入する操作
    * @return 挿入位置のインデックス
    */
@@ -199,7 +199,7 @@ class DomOperationQueue {
 
   /**
    * 実行時間を記録します。
-   * 
+   *
    * @param executionTime 実行時間（ミリ秒）
    */
   private recordExecutionTime(executionTime: number): void {
@@ -211,7 +211,7 @@ class DomOperationQueue {
 
   /**
    * 実行時間履歴の平均を計算します。
-   * 
+   *
    * @return 平均実行時間（ミリ秒）
    */
   private getAverageExecutionTime(): number {
@@ -232,19 +232,19 @@ class DomOperationQueue {
     if (avgExecutionTime > this.TARGET_EXECUTION_TIME) {
       // 実行時間が目標より長い場合、バッチサイズを減らす
       this.batchSize = Math.max(
-          this.MIN_BATCH_SIZE,
-          Math.floor(this.batchSize / this.ADJUSTMENT_FACTOR));
+        this.MIN_BATCH_SIZE,
+        Math.floor(this.batchSize / this.ADJUSTMENT_FACTOR));
     } else if (avgExecutionTime < this.TARGET_EXECUTION_TIME * 0.5) {
       // 実行時間が目標の半分以下の場合、バッチサイズを増やす
       this.batchSize = Math.min(
-          this.MAX_BATCH_SIZE,
-          Math.ceil(this.batchSize * this.ADJUSTMENT_FACTOR));
+        this.MAX_BATCH_SIZE,
+        Math.ceil(this.batchSize * this.ADJUSTMENT_FACTOR));
     }
   }
 
   /**
    * 現在のバッチサイズを取得します。
-   * 
+   *
    * @return 現在のバッチサイズ
    */
   getBatchSize(): number {
@@ -253,7 +253,7 @@ class DomOperationQueue {
 
   /**
    * 最後の実行時間を取得します。
-   * 
+   *
    * @return 最後の実行時間（ミリ秒）
    */
   getLastExecutionTime(): number {
@@ -262,7 +262,7 @@ class DomOperationQueue {
 
   /**
    * 実行時間の統計を取得します。
-   * 
+   *
    * @return 実行統計情報
    */
   getExecutionStats(): {
@@ -295,7 +295,7 @@ class DomOperationQueue {
 
   /**
    * 高精度時間を取得します（fallback付き）。
-   * 
+   *
    * @return 現在時刻（ミリ秒）
    */
   private getHighResTime(): number {
@@ -343,18 +343,19 @@ class DomOperationQueue {
 
   /**
    * 単一の操作を実行します。
-   * 
+   *
    * @param operation 実行する操作
    */
   private async executeOperation(operation: DomOperation): Promise<void> {
     try {
-      // 要素を取得（キャッシュされていない場合）
-      const element =
-          operation.element || document.querySelector(operation.selector);
+      // 要素を取得（エレメントが直接提供されている場合はそれを使用、
+      // そうでなければセレクタで検索）
+      const element = operation.element ||
+        (operation.selector ? document.querySelector(operation.selector) : null);
 
       if (!element) {
-        logWarning(
-            '[Haori: DOM]', `Element not found: ${operation.selector}`);
+        const identifier = operation.element ? 'direct element' : operation.selector;
+        logWarning('[Haori: DOM]', `Element not found: ${identifier}`);
         return;
       }
 
@@ -397,13 +398,11 @@ class DomOperationQueue {
           element.insertBefore(operation.target!, operation.reference!);
           break;
         default:
-          logWarning(
-              '[Haori: DOM]', `Unknown operation type: ${operation.type}`);
+          logWarning('[Haori: DOM]', `Unknown operation type: ${operation.type}`);
       }
     } catch (error) {
       logError(
-          '[Haori: DOM]', `Error executing operation ${operation.id}:`,
-          error);
+        '[Haori: DOM]', `Error executing operation ${operation.id}:`, error);
     }
   }
 
@@ -411,7 +410,7 @@ class DomOperationQueue {
 
   /**
    * テキストコンテンツを設定します。
-   * 
+   *
    * @param element 対象要素
    * @param content テキストコンテンツ
    */
@@ -421,7 +420,7 @@ class DomOperationQueue {
 
   /**
    * HTMLコンテンツを設定します。
-   * 
+   *
    * @param element 対象要素
    * @param content HTMLコンテンツ
    */
@@ -433,7 +432,7 @@ class DomOperationQueue {
 
   /**
    * スタイルを設定します。
-   * 
+   *
    * @param element 対象要素
    * @param property CSSプロパティ名
    * @param value CSSプロパティ値
@@ -444,7 +443,7 @@ class DomOperationQueue {
 
   /**
    * スタイルを削除します。
-   * 
+   *
    * @param element 対象要素
    * @param property CSSプロパティ名
    */
@@ -454,7 +453,7 @@ class DomOperationQueue {
 
   /**
    * テキストのサニタイゼーションを行います。
-   * 
+   *
    * @param text サニタイズするテキスト
    * @return サニタイズされたテキスト
    */
@@ -464,25 +463,66 @@ class DomOperationQueue {
 
   /**
    * HTMLの基本的なサニタイゼーションを行います。
-   * 
+   *
    * @param html サニタイズするHTML
    * @return サニタイズされたHTML
    */
   private sanitizeHTML(html: string): string {
     // 危険なタグとスクリプトを除去
     return html
-        .replace(
-            /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-        .replace(
-            /<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-        .replace(/on\w+\s*=\s*"[^"]*"/gi, '')
-        .replace(/on\w+\s*=\s*'[^']*'/gi, '')
-        .replace(/javascript:/gi, '');
+      .replace(
+        /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(
+        /<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+      .replace(/on\w+\s*=\s*"[^"]*"/gi, '')
+      .replace(/on\w+\s*=\s*'[^']*'/gi, '')
+      .replace(/javascript:/gi, '');
   }
 }
 
 //@ グローバルキューインスタンス
 const domQueue = new DomOperationQueue();
+
+/**
+ * DOM操作のためのヘルパー関数
+ * セレクタまたはエレメントから適切な操作オブジェクトを作成します
+ */
+function createOperation(
+  type: DomOperationType,
+  selectorOrElement: string | Element,
+  options: {
+    key?: string;
+    value?: unknown;
+    target?: Element | Node;
+    reference?: Element | Node;
+    priority?: number;
+  } = {}
+): Omit<DomOperation, 'id' | 'timestamp'> {
+  const { key, value, target, reference, priority = 0 } = options;
+  
+  if (typeof selectorOrElement === 'string') {
+    return {
+      type,
+      selector: selectorOrElement,
+      key,
+      value,
+      target,
+      reference,
+      priority,
+    };
+  } else {
+    return {
+      type,
+      selector: '',
+      element: selectorOrElement,
+      key,
+      value,
+      target,
+      reference,
+      priority,
+    };
+  }
+}
 
 /**
  * DOM操作をキューに追加するヘルパー関数群
@@ -491,144 +531,136 @@ export const Dom = {
   /**
    * 属性を設定します。
    * 
-   * @param selector CSSセレクタ
+   * @param selectorOrElement CSSセレクタまたはエレメント
    * @param key 属性名
    * @param value 属性値
    * @param priority 優先度（デフォルト: 0）
    * @return 操作ID
    */
-  setAttribute(selector: string, key: string, value: unknown, priority = 0):
-      string {
-    return domQueue.enqueue({
-      type: DomOperationType.SET_ATTRIBUTE,
-      selector,
-      key,
-      value,
-      priority,
-    });
+  setAttribute(selectorOrElement: string | Element, key: string, value: unknown, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.SET_ATTRIBUTE, selectorOrElement, { key, value, priority }));
   },
 
   /**
    * 属性を削除します。
    * 
-   * @param selector CSSセレクタ
+   * @param selectorOrElement CSSセレクタまたはエレメント
    * @param key 属性名
    * @param priority 優先度（デフォルト: 0）
    * @return 操作ID
    */
-  removeAttribute(selector: string, key: string, priority = 0): string {
-    return domQueue.enqueue({
-      type: DomOperationType.REMOVE_ATTRIBUTE,
-      selector,
-      key,
-      priority,
-    });
+  removeAttribute(selectorOrElement: string | Element, key: string, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.REMOVE_ATTRIBUTE, selectorOrElement, { key, priority }));
   },
 
   /**
    * テキストコンテンツを設定します。
    * 
-   * @param selector CSSセレクタ
+   * @param selectorOrElement CSSセレクタまたはエレメント
    * @param content テキストコンテンツ
    * @param priority 優先度（デフォルト: 0）
    * @return 操作ID
    */
-  setTextContent(selector: string, content: string, priority = 0): string {
-    return domQueue.enqueue({
-      type: DomOperationType.SET_TEXT_CONTENT,
-      selector,
-      value: content,
-      priority,
-    });
+  setTextContent(selectorOrElement: string | Element, content: string, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.SET_TEXT_CONTENT, selectorOrElement, { value: content, priority }));
   },
 
   /**
    * HTMLコンテンツを設定します。
    * 
-   * @param selector CSSセレクタ
+   * @param selectorOrElement CSSセレクタまたはエレメント
    * @param content HTMLコンテンツ
    * @param priority 優先度（デフォルト: 0）
    * @return 操作ID
    */
-  setHTMLContent(selector: string, content: string, priority = 0): string {
-    return domQueue.enqueue({
-      type: DomOperationType.SET_HTML_CONTENT,
-      selector,
-      value: content,
-      priority,
-    });
+  setHTMLContent(selectorOrElement: string | Element, content: string, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.SET_HTML_CONTENT, selectorOrElement, { value: content, priority }));
   },
 
   /**
    * クラスを追加します。
    * 
-   * @param selector CSSセレクタ
+   * @param selectorOrElement CSSセレクタまたはエレメント
    * @param className クラス名
    * @param priority 優先度（デフォルト: 0）
    * @return 操作ID
    */
-  addClass(selector: string, className: string, priority = 0): string {
-    return domQueue.enqueue({
-      type: DomOperationType.ADD_CLASS,
-      selector,
-      value: className,
-      priority,
-    });
+  addClass(selectorOrElement: string | Element, className: string, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.ADD_CLASS, selectorOrElement, { value: className, priority }));
   },
 
   /**
    * クラスを削除します。
    * 
-   * @param selector CSSセレクタ
+   * @param selectorOrElement CSSセレクタまたはエレメント
    * @param className クラス名
    * @param priority 優先度（デフォルト: 0）
    * @return 操作ID
    */
-  removeClass(selector: string, className: string, priority = 0): string {
-    return domQueue.enqueue({
-      type: DomOperationType.REMOVE_CLASS,
-      selector,
-      value: className,
-      priority,
-    });
+  removeClass(selectorOrElement: string | Element, className: string, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.REMOVE_CLASS, selectorOrElement, { value: className, priority }));
   },
 
   /**
    * クラスをトグルします。
    * 
-   * @param selector CSSセレクタ
+   * @param selectorOrElement CSSセレクタまたはエレメント
    * @param className クラス名
    * @param priority 優先度（デフォルト: 0）
    * @return 操作ID
    */
-  toggleClass(selector: string, className: string, priority = 0): string {
-    return domQueue.enqueue({
-      type: DomOperationType.TOGGLE_CLASS,
-      selector,
-      value: className,
-      priority,
-    });
+  toggleClass(selectorOrElement: string | Element, className: string, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.TOGGLE_CLASS, selectorOrElement, { value: className, priority }));
   },
 
   /**
    * スタイルを設定します。
    * 
-   * @param selector CSSセレクタ
+   * @param selectorOrElement CSSセレクタまたはエレメント
    * @param property CSSプロパティ名
    * @param value CSSプロパティ値
    * @param priority 優先度（デフォルト: 0）
    * @return 操作ID
    */
-  setStyle(
-      selector: string, property: string, value: string, priority = 0):
-      string {
-    return domQueue.enqueue({
-      type: DomOperationType.SET_STYLE,
-      selector,
-      key: property,
-      value,
-      priority,
-    });
+  setStyle(selectorOrElement: string | Element, property: string, value: string, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.SET_STYLE, selectorOrElement, { key: property, value, priority }));
+  },
+
+  /**
+   * 子要素を追加します。
+   * 
+   * @param parentElement 親エレメント
+   * @param childElement 追加する子エレメント
+   * @param priority 優先度（デフォルト: 0）
+   * @return 操作ID
+   */
+  appendChild(parentElement: Element, childElement: Element, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.APPEND_CHILD, parentElement, { target: childElement, priority }));
+  },
+
+  /**
+   * 子要素を削除します。
+   * 
+   * @param parentElement 親エレメント
+   * @param childElement 削除する子エレメント
+   * @param priority 優先度（デフォルト: 0）
+   * @return 操作ID
+   */
+  removeChild(parentElement: Element, childElement: Element, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.REMOVE_CHILD, parentElement, { target: childElement, priority }));
+  },
+
+  /**
+   * 要素を指定位置に挿入します。
+   * 
+   * @param parentElement 親エレメント
+   * @param newElement 挿入する新しいエレメント
+   * @param referenceElement 挿入位置の参照エレメント
+   * @param priority 優先度（デフォルト: 0）
+   * @return 操作ID
+   */
+  insertBefore(parentElement: Element, newElement: Element, referenceElement: Element, priority = 0): string {
+    return domQueue.enqueue(createOperation(DomOperationType.INSERT_BEFORE, parentElement, { target: newElement, reference: referenceElement, priority }));
   },
 
   /**

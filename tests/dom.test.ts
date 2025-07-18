@@ -220,4 +220,84 @@ describe('Dom操作システム', () => {
       expect(document.querySelector).toHaveBeenCalledWith('#test');
     });
   });
+
+  describe('エレメント直接指定版メソッド', () => {
+    it('属性を設定できる (エレメント直接指定)', async () => {
+      const element = mockElement as any;
+      const operationId = Dom.setAttribute(element, 'data-value', 'test-value');
+      
+      expect(operationId).toBeTruthy();
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(element.setAttribute).toHaveBeenCalledWith('data-value', 'test-value');
+    });
+
+    it('属性を削除できる (エレメント直接指定)', async () => {
+      const element = mockElement as any;
+      Dom.removeAttribute(element, 'data-value');
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(element.removeAttribute).toHaveBeenCalledWith('data-value');
+    });
+
+    it('クラスを追加できる (エレメント直接指定)', async () => {
+      const element = mockElement as any;
+      Dom.addClass(element, 'test-class');
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(element.classList.add).toHaveBeenCalledWith('test-class');
+    });
+
+    it('クラスを削除できる (エレメント直接指定)', async () => {
+      const element = mockElement as any;
+      Dom.removeClass(element, 'test-class');
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(element.classList.remove).toHaveBeenCalledWith('test-class');
+    });
+
+    it('スタイルを設定できる (エレメント直接指定)', async () => {
+      const element = mockElement as any;
+      Dom.setStyle(element, 'color', 'red');
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(element.style.setProperty).toHaveBeenCalledWith('color', 'red');
+    });
+
+    it('子要素を追加できる (エレメント直接指定)', async () => {
+      const parentElement = mockElement as any;
+      const childElement = { tagName: 'DIV' } as any;
+      Dom.appendChild(parentElement, childElement);
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(parentElement.appendChild).toHaveBeenCalledWith(childElement);
+    });
+
+    it('子要素を削除できる (エレメント直接指定)', async () => {
+      const parentElement = mockElement as any;
+      const childElement = { tagName: 'DIV' } as any;
+      Dom.removeChild(parentElement, childElement);
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(parentElement.removeChild).toHaveBeenCalledWith(childElement);
+    });
+
+    it('要素を挿入できる (エレメント直接指定)', async () => {
+      const parentElement = mockElement as any;
+      const newElement = { tagName: 'DIV' } as any;
+      const referenceElement = { tagName: 'SPAN' } as any;
+      Dom.insertBefore(parentElement, newElement, referenceElement);
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(parentElement.insertBefore).toHaveBeenCalledWith(newElement, referenceElement);
+    });
+  });
 });
