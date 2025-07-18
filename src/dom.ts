@@ -27,7 +27,9 @@ export enum DomOperationType {
   SET_STYLE = 'setStyle',
   REMOVE_STYLE = 'removeStyle',
   APPEND_CHILD = 'appendChild',
+  APPEND_NODE = 'appendNode',
   REMOVE_CHILD = 'removeChild',
+  REMOVE_NODE = 'removeNode',
   INSERT_BEFORE = 'insertBefore',
 }
 
@@ -377,6 +379,15 @@ class DomOperationQueue {
    */
   private async executeOperation(operation: DomOperation): Promise<void> {
     try {
+      // REMOVE_NODE操作の場合は要素の検索が不要
+      if (operation.type === DomOperationType.REMOVE_NODE) {
+        if (operation.target && operation.target.parentNode) {
+          operation.target.parentNode.removeChild(operation.target);
+        }
+        operation.resolve();
+        return;
+      }
+
       // 要素を取得（エレメントが直接提供されている場合はそれを使用、
       // そうでなければセレクタで検索）
       const element = operation.element ||
@@ -420,6 +431,9 @@ class DomOperationQueue {
           this.removeStyle(element, operation.key!);
           break;
         case DomOperationType.APPEND_CHILD:
+          element.appendChild(operation.target!);
+          break;
+        case DomOperationType.APPEND_NODE:
           element.appendChild(operation.target!);
           break;
         case DomOperationType.REMOVE_CHILD:
@@ -665,6 +679,18 @@ export const Dom = {
   },
 
   /**
+   * スタイルを削除します。
+   *
+   * @param selectorOrElement CSSセレクタまたはエレメント
+   * @param property CSSプロパティ名
+   * @param priority 優先度（デフォルト: 0）
+   * @return 操作完了Promise
+   */
+  removeStyle(selectorOrElement: string | Element, property: string, priority = 0): Promise<void> {
+    return domQueue.enqueue(createOperation(DomOperationType.REMOVE_STYLE, selectorOrElement, { key: property, priority }));
+  },
+
+  /**
    * 子要素を追加します。
    *
    * @param parentElement 親エレメント
@@ -677,6 +703,18 @@ export const Dom = {
   },
 
   /**
+   * ノードを追加します。
+   *
+   * @param parentElement 親エレメント
+   * @param node 追加するノード
+   * @param priority 優先度（デフォルト: 0）
+   * @return 操作完了Promise
+   */
+  appendNode(parentElement: Element, node: Node, priority = 0): Promise<void> {
+    return domQueue.enqueue(createOperation(DomOperationType.APPEND_NODE, parentElement, { target: node, priority }));
+  },
+
+  /**
    * 子要素を削除します。
    *
    * @param parentElement 親エレメント
@@ -686,6 +724,17 @@ export const Dom = {
    */
   removeChild(parentElement: Element, childElement: Element, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.REMOVE_CHILD, parentElement, { target: childElement, priority }));
+  },
+
+  /**
+   * ノードを削除します（親ノードから自動的に削除）。
+   *
+   * @param node 削除するノード
+   * @param priority 優先度（デフォルト: 0）
+   * @return 操作完了Promise
+   */
+  removeNode(node: Node, priority = 0): Promise<void> {
+    return domQueue.enqueue(createOperation(DomOperationType.REMOVE_NODE, '', { target: node, priority }));
   },
 
   /**
