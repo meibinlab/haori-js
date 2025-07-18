@@ -9,3 +9,4 @@ export * from './dev';
 export * from './dom';
 export * from './env';
 export * from './expression';
+export * from './scope';
