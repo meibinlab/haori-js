@@ -64,6 +64,15 @@ export interface DomOperation {
 
   /** 操作が作成された時刻（Unix timestamp） */
   timestamp: number;
+
+  /** 操作完了時に解決されるPromise */
+  promise: Promise<void>;
+
+  /** Promise解決用の関数 */
+  resolve: () => void;
+
+  /** Promise拒否用の関数 */
+  reject: (error: Error) => void;
 }
 
 /**
@@ -111,21 +120,35 @@ class DomOperationQueue {
    * 操作をキューに追加します。
    *
    * @param operation 追加する操作
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  enqueue(operation: Omit<DomOperation, 'id'|'timestamp'>): string {
+  enqueue(operation: Omit<DomOperation, 'id'|'timestamp'|'promise'|'resolve'|'reject'>): Promise<void> {
     if (this.queue.length >= this.maxQueueSize) {
       logWarning(
         '[Haori: DOM Queue]', 'Queue is full, dropping oldest operations');
-      this.queue.shift();
+      const dropped = this.queue.shift();
+      if (dropped) {
+        dropped.reject(new Error('Operation dropped due to queue overflow'));
+      }
     }
 
     const id = this.generateOperationId();
+    let resolve: () => void;
+    let reject: (error: Error) => void;
+    
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+
     const domOperation: DomOperation = {
       ...operation,
       id,
       timestamp: Date.now(),
       priority: operation.priority || 0,
+      promise,
+      resolve: resolve!,
+      reject: reject!,
     };
 
     // 優先度順で挿入
@@ -135,7 +158,7 @@ class DomOperationQueue {
     // 非同期で処理開始
     this.scheduleProcessing();
 
-    return id;
+    return promise;
   }
 
   /**
@@ -147,7 +170,9 @@ class DomOperationQueue {
   dequeue(id: string): boolean {
     const index = this.queue.findIndex(op => op.id === id);
     if (index !== -1) {
+      const operation = this.queue[index];
       this.queue.splice(index, 1);
+      operation.reject(new Error('Operation cancelled'));
       return true;
     }
     return false;
@@ -157,6 +182,10 @@ class DomOperationQueue {
    * キューをクリアします。
    */
   clear(): void {
+    // すべての未実行操作のPromiseを拒否
+    this.queue.forEach(operation => {
+      operation.reject(new Error('Queue cleared'));
+    });
     this.queue = [];
   }
 
@@ -355,7 +384,9 @@ class DomOperationQueue {
 
       if (!element) {
         const identifier = operation.element ? 'direct element' : operation.selector;
-        logWarning('[Haori: DOM]', `Element not found: ${identifier}`);
+        const error = new Error(`Element not found: ${identifier}`);
+        logWarning('[Haori: DOM]', error.message);
+        operation.reject(error);
         return;
       }
 
@@ -398,11 +429,18 @@ class DomOperationQueue {
           element.insertBefore(operation.target!, operation.reference!);
           break;
         default:
-          logWarning('[Haori: DOM]', `Unknown operation type: ${operation.type}`);
+          const error = new Error(`Unknown operation type: ${operation.type}`);
+          logWarning('[Haori: DOM]', error.message);
+          operation.reject(error);
+          return;
       }
+
+      // 操作が成功したらPromiseを解決
+      operation.resolve();
     } catch (error) {
-      logError(
-        '[Haori: DOM]', `Error executing operation ${operation.id}:`, error);
+      const errorMessage = `Error executing operation ${operation.id}:`;
+      logError('[Haori: DOM]', errorMessage, error);
+      operation.reject(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -497,7 +535,7 @@ function createOperation(
     reference?: Element | Node;
     priority?: number;
   } = {}
-): Omit<DomOperation, 'id' | 'timestamp'> {
+): Omit<DomOperation, 'id' | 'timestamp' | 'promise' | 'resolve' | 'reject'> {
   const { key, value, target, reference, priority = 0 } = options;
   
   if (typeof selectorOrElement === 'string') {
@@ -530,142 +568,142 @@ function createOperation(
 export const Dom = {
   /**
    * 属性を設定します。
-   * 
+   *
    * @param selectorOrElement CSSセレクタまたはエレメント
    * @param key 属性名
    * @param value 属性値
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  setAttribute(selectorOrElement: string | Element, key: string, value: unknown, priority = 0): string {
+  setAttribute(selectorOrElement: string | Element, key: string, value: unknown, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.SET_ATTRIBUTE, selectorOrElement, { key, value, priority }));
   },
 
   /**
    * 属性を削除します。
-   * 
+   *
    * @param selectorOrElement CSSセレクタまたはエレメント
    * @param key 属性名
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  removeAttribute(selectorOrElement: string | Element, key: string, priority = 0): string {
+  removeAttribute(selectorOrElement: string | Element, key: string, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.REMOVE_ATTRIBUTE, selectorOrElement, { key, priority }));
   },
 
   /**
    * テキストコンテンツを設定します。
-   * 
+   *
    * @param selectorOrElement CSSセレクタまたはエレメント
    * @param content テキストコンテンツ
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  setTextContent(selectorOrElement: string | Element, content: string, priority = 0): string {
+  setTextContent(selectorOrElement: string | Element, content: string, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.SET_TEXT_CONTENT, selectorOrElement, { value: content, priority }));
   },
 
   /**
    * HTMLコンテンツを設定します。
-   * 
+   *
    * @param selectorOrElement CSSセレクタまたはエレメント
    * @param content HTMLコンテンツ
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  setHTMLContent(selectorOrElement: string | Element, content: string, priority = 0): string {
+  setHTMLContent(selectorOrElement: string | Element, content: string, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.SET_HTML_CONTENT, selectorOrElement, { value: content, priority }));
   },
 
   /**
    * クラスを追加します。
-   * 
+   *
    * @param selectorOrElement CSSセレクタまたはエレメント
    * @param className クラス名
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  addClass(selectorOrElement: string | Element, className: string, priority = 0): string {
+  addClass(selectorOrElement: string | Element, className: string, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.ADD_CLASS, selectorOrElement, { value: className, priority }));
   },
 
   /**
    * クラスを削除します。
-   * 
+   *
    * @param selectorOrElement CSSセレクタまたはエレメント
    * @param className クラス名
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  removeClass(selectorOrElement: string | Element, className: string, priority = 0): string {
+  removeClass(selectorOrElement: string | Element, className: string, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.REMOVE_CLASS, selectorOrElement, { value: className, priority }));
   },
 
   /**
    * クラスをトグルします。
-   * 
+   *
    * @param selectorOrElement CSSセレクタまたはエレメント
    * @param className クラス名
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  toggleClass(selectorOrElement: string | Element, className: string, priority = 0): string {
+  toggleClass(selectorOrElement: string | Element, className: string, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.TOGGLE_CLASS, selectorOrElement, { value: className, priority }));
   },
 
   /**
    * スタイルを設定します。
-   * 
+   *
    * @param selectorOrElement CSSセレクタまたはエレメント
    * @param property CSSプロパティ名
    * @param value CSSプロパティ値
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  setStyle(selectorOrElement: string | Element, property: string, value: string, priority = 0): string {
+  setStyle(selectorOrElement: string | Element, property: string, value: string, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.SET_STYLE, selectorOrElement, { key: property, value, priority }));
   },
 
   /**
    * 子要素を追加します。
-   * 
+   *
    * @param parentElement 親エレメント
    * @param childElement 追加する子エレメント
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  appendChild(parentElement: Element, childElement: Element, priority = 0): string {
+  appendChild(parentElement: Element, childElement: Element, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.APPEND_CHILD, parentElement, { target: childElement, priority }));
   },
 
   /**
    * 子要素を削除します。
-   * 
+   *
    * @param parentElement 親エレメント
    * @param childElement 削除する子エレメント
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  removeChild(parentElement: Element, childElement: Element, priority = 0): string {
+  removeChild(parentElement: Element, childElement: Element, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.REMOVE_CHILD, parentElement, { target: childElement, priority }));
   },
 
   /**
    * 要素を指定位置に挿入します。
-   * 
+   *
    * @param parentElement 親エレメント
    * @param newElement 挿入する新しいエレメント
    * @param referenceElement 挿入位置の参照エレメント
    * @param priority 優先度（デフォルト: 0）
-   * @return 操作ID
+   * @return 操作完了Promise
    */
-  insertBefore(parentElement: Element, newElement: Element, referenceElement: Element, priority = 0): string {
+  insertBefore(parentElement: Element, newElement: Element, referenceElement: Element, priority = 0): Promise<void> {
     return domQueue.enqueue(createOperation(DomOperationType.INSERT_BEFORE, parentElement, { target: newElement, reference: referenceElement, priority }));
   },
 
   /**
    * 操作をキャンセルします。
-   * 
+   *
    * @param operationId 操作ID
    * @return キャンセルに成功した場合true
    */
@@ -682,7 +720,7 @@ export const Dom = {
 
   /**
    * キューの状態を取得します。
-   * 
+   *
    * @return キューの状態
    */
   getStatus(): {size: number; processing: boolean} {
@@ -691,7 +729,7 @@ export const Dom = {
 
   /**
    * 実行統計を取得します。
-   * 
+   *
    * @return 実行統計情報
    */
   getExecutionStats(): {
@@ -705,7 +743,7 @@ export const Dom = {
 
   /**
    * 現在のバッチサイズを取得します。
-   * 
+   *
    * @return 現在のバッチサイズ
    */
   getBatchSize(): number {

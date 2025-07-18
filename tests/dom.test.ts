@@ -47,12 +47,13 @@ describe('Dom操作システム', () => {
 
   describe('基本的な操作', () => {
     it('属性を設定できる', async () => {
-      const operationId = Dom.setAttribute('#test', 'data-value', 'test-value');
+      const promise = Dom.setAttribute('#test', 'data-value', 'test-value');
       
-      expect(operationId).toMatch(/^dom_op_/);
+      expect(promise).toBeInstanceOf(Promise);
       expect(Dom.getStatus().size).toBe(1);
       
       // 少し待って処理を確認
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(document.querySelector).toHaveBeenCalledWith('#test');
@@ -60,16 +61,18 @@ describe('Dom操作システム', () => {
     });
 
     it('属性を削除できる', async () => {
-      Dom.removeAttribute('#test', 'data-value');
+      const promise = Dom.removeAttribute('#test', 'data-value');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(mockElement.removeAttribute).toHaveBeenCalledWith('data-value');
     });
 
     it('テキストコンテンツを設定できる', async () => {
-      Dom.setTextContent('#test', 'Hello World');
+      const promise = Dom.setTextContent('#test', 'Hello World');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(document.querySelector).toHaveBeenCalledWith('#test');
@@ -77,24 +80,27 @@ describe('Dom操作システム', () => {
     });
 
     it('HTMLコンテンツを設定できる', async () => {
-      Dom.setHTMLContent('#test', '<span>Hello</span>');
+      const promise = Dom.setHTMLContent('#test', '<span>Hello</span>');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(document.querySelector).toHaveBeenCalledWith('#test');
     });
 
     it('クラスを追加できる', async () => {
-      Dom.addClass('#test', 'active');
+      const promise = Dom.addClass('#test', 'active');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(mockElement.classList.add).toHaveBeenCalledWith('active');
     });
 
     it('クラスを削除できる', async () => {
-      Dom.removeClass('#test', 'active');
+      const promise = Dom.removeClass('#test', 'active');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(mockElement.classList.remove).toHaveBeenCalledWith('active');
@@ -140,14 +146,19 @@ describe('Dom操作システム', () => {
       expect(Dom.getStatus().size).toBe(0);
     });
 
-    it('操作をキャンセルできる', () => {
-      const operationId = Dom.setAttribute('#test', 'data-value', 'test-value');
+    it('操作をキャンセルした場合Promiseが拒否される', async () => {
+      const promise1 = Dom.setAttribute('#test1', 'data-value', 'value1');
+      const promise2 = Dom.setAttribute('#test2', 'data-value', 'value2');
       
-      expect(Dom.getStatus().size).toBe(1);
+      expect(Dom.getStatus().size).toBe(2);
       
-      const cancelled = Dom.cancel(operationId);
-      expect(cancelled).toBe(true);
+      // キューをクリアすることで操作をキャンセル
+      Dom.clear();
       expect(Dom.getStatus().size).toBe(0);
+      
+      // Promiseが拒否されることを確認
+      await expect(promise1).rejects.toThrow('Queue cleared');
+      await expect(promise2).rejects.toThrow('Queue cleared');
     });
 
     it('キューをクリアできる', () => {
@@ -160,16 +171,14 @@ describe('Dom操作システム', () => {
       expect(Dom.getStatus().size).toBe(0);
     });
 
-    it('存在しない要素に対する操作は無視される', async () => {
+    it('存在しない要素に対する操作はPromiseが拒否される', async () => {
       // querySelectorがnullを返すように設定
       (document.querySelector as any).mockReturnValueOnce(null);
       
-      Dom.setAttribute('#nonexistent', 'data-value', 'test-value');
+      const promise = Dom.setAttribute('#nonexistent', 'data-value', 'test-value');
       
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // エラーが発生せず、正常に処理される
-      expect(Dom.getStatus().size).toBe(0);
+      // Promiseが拒否されることを確認
+      await expect(promise).rejects.toThrow('Element not found: #nonexistent');
     });
   });
 
@@ -189,13 +198,14 @@ describe('Dom操作システム', () => {
     });
 
     it('複数の操作を処理した後に統計が更新される', async () => {
-      // 複数の操作を追加
+      // 複数の操作を追加してPromiseを保存
+      const promises = [];
       for (let i = 0; i < 20; i++) {
-        Dom.setAttribute(`#test${i}`, 'data-value', `value${i}`);
+        promises.push(Dom.setAttribute(`#test${i}`, 'data-value', `value${i}`));
       }
 
-      // 処理を待つ
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // すべての操作の完了を待つ
+      await Promise.all(promises);
 
       const stats = Dom.getExecutionStats();
       expect(stats.lastExecutionTime).toBeGreaterThanOrEqual(0);
@@ -204,8 +214,9 @@ describe('Dom操作システム', () => {
 
   describe('セキュリティ', () => {
     it('HTMLコンテンツからスクリプトタグを除去する', async () => {
-      Dom.setHTMLContent('#test', '<div>Safe content</div><script>alert("xss")</script>');
+      const promise = Dom.setHTMLContent('#test', '<div>Safe content</div><script>alert("xss")</script>');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       // スクリプトタグが除去されることを確認（実装詳細による）
@@ -224,10 +235,11 @@ describe('Dom操作システム', () => {
   describe('エレメント直接指定版メソッド', () => {
     it('属性を設定できる (エレメント直接指定)', async () => {
       const element = mockElement as any;
-      const operationId = Dom.setAttribute(element, 'data-value', 'test-value');
+      const promise = Dom.setAttribute(element, 'data-value', 'test-value');
       
-      expect(operationId).toBeTruthy();
+      expect(promise).toBeInstanceOf(Promise);
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(element.setAttribute).toHaveBeenCalledWith('data-value', 'test-value');
@@ -235,8 +247,9 @@ describe('Dom操作システム', () => {
 
     it('属性を削除できる (エレメント直接指定)', async () => {
       const element = mockElement as any;
-      Dom.removeAttribute(element, 'data-value');
+      const promise = Dom.removeAttribute(element, 'data-value');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(element.removeAttribute).toHaveBeenCalledWith('data-value');
@@ -244,8 +257,9 @@ describe('Dom操作システム', () => {
 
     it('クラスを追加できる (エレメント直接指定)', async () => {
       const element = mockElement as any;
-      Dom.addClass(element, 'test-class');
+      const promise = Dom.addClass(element, 'test-class');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(element.classList.add).toHaveBeenCalledWith('test-class');
@@ -253,8 +267,9 @@ describe('Dom操作システム', () => {
 
     it('クラスを削除できる (エレメント直接指定)', async () => {
       const element = mockElement as any;
-      Dom.removeClass(element, 'test-class');
+      const promise = Dom.removeClass(element, 'test-class');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(element.classList.remove).toHaveBeenCalledWith('test-class');
@@ -262,8 +277,9 @@ describe('Dom操作システム', () => {
 
     it('スタイルを設定できる (エレメント直接指定)', async () => {
       const element = mockElement as any;
-      Dom.setStyle(element, 'color', 'red');
+      const promise = Dom.setStyle(element, 'color', 'red');
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(element.style.setProperty).toHaveBeenCalledWith('color', 'red');
@@ -272,8 +288,9 @@ describe('Dom操作システム', () => {
     it('子要素を追加できる (エレメント直接指定)', async () => {
       const parentElement = mockElement as any;
       const childElement = { tagName: 'DIV' } as any;
-      Dom.appendChild(parentElement, childElement);
+      const promise = Dom.appendChild(parentElement, childElement);
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(parentElement.appendChild).toHaveBeenCalledWith(childElement);
@@ -282,8 +299,9 @@ describe('Dom操作システム', () => {
     it('子要素を削除できる (エレメント直接指定)', async () => {
       const parentElement = mockElement as any;
       const childElement = { tagName: 'DIV' } as any;
-      Dom.removeChild(parentElement, childElement);
+      const promise = Dom.removeChild(parentElement, childElement);
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(parentElement.removeChild).toHaveBeenCalledWith(childElement);
@@ -293,8 +311,9 @@ describe('Dom操作システム', () => {
       const parentElement = mockElement as any;
       const newElement = { tagName: 'DIV' } as any;
       const referenceElement = { tagName: 'SPAN' } as any;
-      Dom.insertBefore(parentElement, newElement, referenceElement);
+      const promise = Dom.insertBefore(parentElement, newElement, referenceElement);
       
+      await promise;
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(parentElement.insertBefore).toHaveBeenCalledWith(newElement, referenceElement);
