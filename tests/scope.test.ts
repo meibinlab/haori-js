@@ -57,6 +57,7 @@ import {
   getScopeMapSize,
   createTextEvaluator,
   processTextPlaceholders,
+  processAttributePlaceholders,
   removeElement,
   cloneElementTo,
   type EvaluatedAttribute,
@@ -1314,6 +1315,141 @@ describe('テキストプレースホルダ処理', () => {
       
       scope.updateData({ name: '山田' });
       expect(element.textContent).toBe('こんにちは、山田さん');
+    });
+
+    test('トリプルブレースプレースホルダが正しく評価される', () => {
+      const element = document.createElement('div');
+      element.innerHTML = 'コンテンツ: {{{html}}}';
+      
+      const scope = new BindingScope(element, { html: '<strong>太字</strong>' });
+      
+      processTextPlaceholders(element, scope);
+      expect(element.textContent).toBe('コンテンツ: <strong>太字</strong>');
+    });
+
+    test('ダブルブレースプレースホルダでHTMLエスケープされる', () => {
+      const element = document.createElement('div');
+      element.innerHTML = 'コンテンツ: {{html}}';
+      
+      const scope = new BindingScope(element, { html: '<strong>太字</strong>' });
+      
+      processTextPlaceholders(element, scope);
+      expect(element.textContent).toBe('コンテンツ: &lt;strong&gt;太字&lt;/strong&gt;');
+    });
+
+    test('ダブルブレースとトリプルブレースが混在する場合', () => {
+      const element = document.createElement('div');
+      element.innerHTML = 'エスケープ: {{escaped}} 生HTML: {{{raw}}}';
+      
+      const scope = new BindingScope(element, { 
+        escaped: '<div>テスト</div>', 
+        raw: '<span>生テキスト</span>' 
+      });
+      
+      processTextPlaceholders(element, scope);
+      expect(element.textContent).toBe('エスケープ: &lt;div&gt;テスト&lt;/div&gt; 生HTML: <span>生テキスト</span>');
+    });
+
+    test('トリプルブレースで存在しないキーの場合は空文字列になる', () => {
+      const element = document.createElement('div');
+      element.innerHTML = 'コンテンツ: {{{missing}}}';
+      
+      const scope = new BindingScope(element, {});
+      
+      processTextPlaceholders(element, scope);
+      expect(element.textContent).toBe('コンテンツ: ');
+    });
+
+    test('トリプルブレースの評価エラー時は空文字列になる', () => {
+      const element = document.createElement('div');
+      element.innerHTML = 'エラー: {{{invalid.expression}}}';
+      
+      const scope = new BindingScope(element, {});
+      
+      processTextPlaceholders(element, scope);
+      expect(element.textContent).toBe('エラー: ');
+    });
+  });
+
+  describe('属性プレースホルダ処理', () => {
+    test('ダブルブレース属性プレースホルダが正しく評価される', () => {
+      const element = document.createElement('div');
+      element.setAttribute('class', 'btn-{{type}}');
+      element.setAttribute('data-value', '{{value}}');
+      
+      const scope = new BindingScope(element, { type: 'primary', value: 'test' });
+      
+      processAttributePlaceholders(scope);
+      
+      expect(element.getAttribute('class')).toBe('btn-primary');
+      expect(element.getAttribute('data-value')).toBe('test');
+      expect(scope.evaluatedAttrs.length).toBe(2);
+    });
+
+    test('トリプルブレース属性プレースホルダが正しく評価される', () => {
+      const element = document.createElement('div');
+      element.setAttribute('title', '{{{htmlTitle}}}');
+      
+      const scope = new BindingScope(element, { htmlTitle: '<strong>タイトル</strong>' });
+      
+      processAttributePlaceholders(scope);
+      
+      expect(element.getAttribute('title')).toBe('<strong>タイトル</strong>');
+      expect(scope.evaluatedAttrs.length).toBe(1);
+    });
+
+    test('ダブルブレース属性でHTMLエスケープされる', () => {
+      const element = document.createElement('div');
+      element.setAttribute('title', '{{htmlTitle}}');
+      
+      const scope = new BindingScope(element, { htmlTitle: '<strong>タイトル</strong>' });
+      
+      processAttributePlaceholders(scope);
+      
+      expect(element.getAttribute('title')).toBe('&lt;strong&gt;タイトル&lt;/strong&gt;');
+      expect(scope.evaluatedAttrs.length).toBe(1);
+    });
+
+    test('属性内でダブルブレースとトリプルブレースが混在する場合', () => {
+      const element = document.createElement('div');
+      element.setAttribute('data-info', 'escaped:{{escaped}} raw:{{{raw}}}');
+      
+      const scope = new BindingScope(element, { 
+        escaped: '<div>test</div>', 
+        raw: '<span>raw</span>' 
+      });
+      
+      processAttributePlaceholders(scope);
+      
+      expect(element.getAttribute('data-info')).toBe('escaped:&lt;div&gt;test&lt;/div&gt; raw:<span>raw</span>');
+      expect(scope.evaluatedAttrs.length).toBe(1);
+    });
+
+    test('属性プレースホルダがない場合は処理されない', () => {
+      const element = document.createElement('div');
+      element.setAttribute('class', 'normal-class');
+      element.setAttribute('id', 'test-id');
+      
+      const scope = new BindingScope(element, {});
+      
+      processAttributePlaceholders(scope);
+      
+      expect(scope.evaluatedAttrs.length).toBe(0);
+      expect(element.getAttribute('class')).toBe('normal-class');
+      expect(element.getAttribute('id')).toBe('test-id');
+    });
+
+    test('属性プレースホルダのスコープ更新時に再評価される', () => {
+      const element = document.createElement('div');
+      element.setAttribute('class', 'btn-{{type}}');
+      
+      const scope = new BindingScope(element, { type: 'primary' });
+      
+      processAttributePlaceholders(scope);
+      expect(element.getAttribute('class')).toBe('btn-primary');
+      
+      scope.updateData({ type: 'secondary' });
+      expect(element.getAttribute('class')).toBe('btn-secondary');
     });
   });
 });

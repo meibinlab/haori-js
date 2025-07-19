@@ -7,6 +7,22 @@
 
 import { evaluateExpressionSafe, type Scope } from './expression';
 import { Dom } from './dom';
+import { logError } from './log';
+
+/**
+ * HTMLエスケープを行います。
+ * 
+ * @param unsafe エスケープ対象の文字列
+ * @returns エスケープ済み文字列
+ */
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
 /**
  * テキスト内のプレースホルダを解析し、評価済みテキストを生成する関数を作成します。
@@ -19,32 +35,55 @@ export function createTextEvaluator(
   template: string,
   scope: BindingScope
 ): () => string {
-  // プレースホルダパターン: {{expression}}
-  const placeholderPattern = /\{\{([^}]+)\}\}/g;
+  // プレースホルダパターン: {{expression}} と {{{expression}}} に対応
+  const doubleBracePattern = /\{\{([^}]+)\}\}/g;
+  const tripleBracePattern = /\{\{\{([^}]+)\}\}\}/g;
 
   return () => {
-    return template.replace(placeholderPattern, (match, expression) => {
+    let result = template;
+    
+    // トリプルブレース（HTML未エスケープ）を先に処理
+    result = result.replace(tripleBracePattern, (match, expression) => {
       try {
-        const result = scope.evaluateExpression(expression.trim());
-        return result != null ? String(result) : '';
+        const value = scope.evaluateExpression(expression.trim());
+        // HTMLエスケープを行わずに値をそのまま返す
+        return value != null ? String(value) : '';
       } catch (error) {
-        console.warn('[Haori: Text Evaluation Error]', expression, error);
+        console.warn('[Haori: Triple Brace Evaluation Error]', expression, error);
         return '';
       }
     });
+    
+    // ダブルブレース（HTMLエスケープ済み）を処理
+    result = result.replace(doubleBracePattern, (match, expression) => {
+      try {
+        const value = scope.evaluateExpression(expression.trim());
+        const stringValue = value != null ? String(value) : '';
+        // HTMLエスケープを実行
+        return escapeHtml(stringValue);
+      } catch (error) {
+        console.warn('[Haori: Double Brace Evaluation Error]', expression, error);
+        return '';
+      }
+    });
+    
+    return result;
   };
 }
 
 /** 属性評価に関する情報 */
 export interface EvaluatedAttribute {
-  /** 対象の属性ノード */
-  attr: Attr;
+  /** 対象要素 */
+  element: Element;
+
+  /** 属性名 */
+  attrName: string;
 
   /** プレースホルダ付きの元の文字列 */
   originalValue: string;
 
   /** 再評価関数 */
-  evaluator: () => any;
+  evaluator: (scope: BindingScope) => string;
 }
 
 /** テキストコンテンツ評価に関する情報 */
@@ -175,7 +214,8 @@ export class BindingScope {
     // 属性評価を実行
     for (const attrEval of this.evaluatedAttrs) {
       try {
-        attrEval.evaluator();
+        const newValue = attrEval.evaluator(this);
+        attrEval.element.setAttribute(attrEval.attrName, newValue);
       } catch (error) {
         console.warn('[Haori: Attribute Rebind Error]', error);
       }
@@ -826,13 +866,13 @@ export function processTextPlaceholders(
   scope: BindingScope
 ): void {
   const walker = document.createTreeWalker(
-    element,
+    element as Node,
     NodeFilter.SHOW_TEXT,
     {
       acceptNode: (node) => {
         const textContent = node.textContent || '';
-        // プレースホルダが含まれているかチェック
-        return /\{\{[^}]+\}\}/.test(textContent)
+        // ダブルブレースまたはトリプルブレースのプレースホルダが含まれているかチェック
+        return /\{\{\{[^}]+\}\}\}|\{\{[^}]+\}\}/.test(textContent)
           ? NodeFilter.FILTER_ACCEPT
           : NodeFilter.FILTER_REJECT;
       }
@@ -907,6 +947,114 @@ async function removeChildScopes(element: Element, permanently: boolean): Promis
   });
 
   await Promise.all(removePromises);
+}
+
+/**
+ * エレメント内の属性プレースホルダを処理し、評価可能な属性プレースホルダを設定します。
+ * 
+ * @param scope 対象のBindingScope
+ */
+export function processAttributePlaceholders(scope: BindingScope): void {
+  const element = scope.node;
+  
+  // すべての属性をチェック
+  for (let i = 0; i < element.attributes.length; i++) {
+    const attr = element.attributes[i];
+    const attrName = attr.name;
+    const attrValue = attr.value;
+    
+    // {{...}} と {{{...}}} パターンの属性プレースホルダを検出
+    const doubleBracePlaceholders = Array.from(attrValue.matchAll(/\{\{([^}]+)\}\}/g));
+    const tripleBracePlaceholders = Array.from(attrValue.matchAll(/\{\{\{([^}]+)\}\}\}/g));
+    const allPlaceholders = [...doubleBracePlaceholders, ...tripleBracePlaceholders];
+    
+    if (allPlaceholders.length > 0) {
+      // 元の属性値をバックアップ
+      const originalValue = attrValue;
+      
+      // 属性プレースホルダ評価器を作成
+      const evaluator = createAttributeEvaluator(originalValue, doubleBracePlaceholders, tripleBracePlaceholders);
+      
+      // 評価済み属性として登録
+      scope.evaluatedAttrs.push({
+        element,
+        attrName,
+        originalValue,
+        evaluator
+      });
+      
+      // 初回評価
+      try {
+        const evaluatedValue = evaluator(scope);
+        element.setAttribute(attrName, evaluatedValue);
+      } catch (error) {
+        logError('[AttributePlaceholder]', `Failed to evaluate attribute ${attrName}:`, error);
+      }
+    }
+  }
+}
+
+/**
+ * 属性プレースホルダの評価器を作成します。
+ * 
+ * @param originalValue 元の属性値
+ * @param doubleBraceMatches ダブルブレースプレースホルダのマッチ結果
+ * @param tripleBraceMatches トリプルブレースプレースホルダのマッチ結果
+ * @returns 属性プレースホルダ評価器
+ */
+function createAttributeEvaluator(
+  originalValue: string,
+  doubleBraceMatches: RegExpMatchArray[],
+  tripleBraceMatches: RegExpMatchArray[]
+): (scope: BindingScope) => string {
+  return function(scope: BindingScope): string {
+    let result = originalValue;
+    
+    // トリプルブレース（HTML未エスケープ）を先に処理
+    for (const match of tripleBraceMatches) {
+      const fullMatch = match[0]; // {{{expression}}}
+      const expression = match[1].trim(); // expression
+      
+      try {
+        // 式を評価
+        const value = scope.evaluateExpression(expression);
+        
+        // 値を文字列に変換（エスケープなし）
+        const stringValue = value === null || value === undefined ? '' : String(value);
+        
+        // プレースホルダを評価結果で置換
+        result = result.replace(fullMatch, stringValue);
+      } catch (error) {
+        logError('[AttributePlaceholder]', `Failed to evaluate triple brace expression "${expression}":`, error);
+        // エラー時は空文字列で置換
+        result = result.replace(fullMatch, '');
+      }
+    }
+    
+    // ダブルブレース（HTMLエスケープ済み）を処理
+    for (const match of doubleBraceMatches) {
+      const fullMatch = match[0]; // {{expression}}
+      const expression = match[1].trim(); // expression
+      
+      try {
+        // 式を評価
+        const value = scope.evaluateExpression(expression);
+        
+        // 値を文字列に変換（HTMLエスケープ）
+        const stringValue = value === null || value === undefined ? '' : String(value);
+        const escapedValue = escapeHtml(stringValue);
+        
+        // プレースホルダを評価結果で置換
+        result = result.replace(fullMatch, escapedValue);
+      } catch (error) {
+        logError('[AttributePlaceholder]', `Failed to evaluate double brace expression "${expression}":`, error);
+        // エラー時は空文字列で置換
+        result = result.replace(fullMatch, '');
+      }
+    }
+    
+    return result;
+  };
 }
 
 /**

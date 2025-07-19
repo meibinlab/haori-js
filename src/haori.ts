@@ -5,7 +5,7 @@
  * 自動的な再描画処理を担当するコアモジュールです。
  */
 
-import {BindingScope} from './scope';
+import {BindingScope, processTextPlaceholders, processAttributePlaceholders} from './scope';
 import {logInfo, logError, logWarning} from './log';
 
 /**
@@ -234,6 +234,16 @@ export class Haori {
     // ルートスコープ設定
     if (!this.rootScope && !parent) {
       this.rootScope = scope;
+    }
+
+    // プレースホルダ処理（element が Node として使用可能な場合のみ）
+    try {
+      processTextPlaceholders(element, scope);
+      processAttributePlaceholders(scope);
+    } catch (error) {
+      if (this.options.debug) {
+        logWarning('[Haori]', 'Placeholder processing skipped:', error);
+      }
     }
     
     // 初期評価
