@@ -16,33 +16,44 @@ const mockElement = {
   },
   appendChild: vi.fn(),
   removeChild: vi.fn(),
-  insertBefore: vi.fn()
+  insertBefore: vi.fn(),
+  textContent: '',
+  innerHTML: ''
 };
 
 // querySelectorのモック
-global.document = {
-  querySelector: vi.fn(() => mockElement)
-} as any;
+Object.defineProperty(document, 'querySelector', {
+  value: vi.fn(() => mockElement),
+  writable: true
+});
 
 // requestAnimationFrameのモック
-global.requestAnimationFrame = vi.fn((callback) => {
-  setTimeout(callback, 0);
-  return 1;
+Object.defineProperty(window, 'requestAnimationFrame', {
+  value: vi.fn((callback) => {
+    setTimeout(callback, 0);
+    return 1;
+  }),
+  writable: true
 });
 
 // performance.nowのモック
-global.performance = {
-  now: vi.fn(() => Date.now())
-} as any;
+Object.defineProperty(window, 'performance', {
+  value: {
+    now: vi.fn(() => Date.now())
+  },
+  writable: true
+});
 
 describe('Dom操作システム', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    Dom.clear();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.clearAllTimers();
+    
+    // テスト終了後にキューを静かにクリア（Unhandled Rejectionを避ける）
+    (Dom as any).clearQuiet();
   });
 
   describe('基本的な操作', () => {
@@ -210,14 +221,18 @@ describe('Dom操作システム', () => {
       expect(Dom.getStatus().size).toBe(0);
     });
 
-    it('キューをクリアできる', () => {
-      Dom.setAttribute('#test1', 'data-value', 'value1');
-      Dom.setAttribute('#test2', 'data-value', 'value2');
+    it('キューをクリアできる', async () => {
+      const promise1 = Dom.setAttribute('#test1', 'data-value', 'value1');
+      const promise2 = Dom.setAttribute('#test2', 'data-value', 'value2');
       
       expect(Dom.getStatus().size).toBe(2);
       
       Dom.clear();
       expect(Dom.getStatus().size).toBe(0);
+      
+      // 拒否されたPromiseをキャッチ
+      await expect(promise1).rejects.toThrow('Queue cleared');
+      await expect(promise2).rejects.toThrow('Queue cleared');
     });
   });
 

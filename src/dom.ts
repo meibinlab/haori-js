@@ -192,6 +192,14 @@ class DomOperationQueue {
   }
 
   /**
+   * キューを静かにクリアします（テスト環境用）。
+   * Promiseを拒否せずに単純にキューをクリアします。
+   */
+  clearQuiet(): void {
+    this.queue = [];
+  }
+
+  /**
    * キューの状態を取得します。
    * 
    * @return キューの状態
@@ -764,7 +772,14 @@ export const Dom = {
    * キューをクリアします。
    */
   clear(): void {
-    domQueue.clear();
+    return domQueue.clear();
+  },
+
+  /**
+   * キューを静かにクリアします（テスト環境用）。
+   */
+  clearQuiet(): void {
+    return domQueue.clearQuiet();
   },
 
   /**
