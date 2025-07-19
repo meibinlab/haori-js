@@ -239,6 +239,9 @@ export class Haori {
     // 初期評価
     scope.updateData(scope.data);
     
+    // data-if属性の初期評価
+    await this.processDataIfAttribute(scope);
+    
     if (this.options.debug) {
       logInfo('[Haori]', `Created scope for element:`, element);
     }
@@ -377,6 +380,37 @@ export class Haori {
       } catch (error) {
         logError('[Haori]', 'Scope refresh error:', error);
       }
+    }
+  }
+
+  /**
+   * data-if属性を処理します。
+   */
+  private async processDataIfAttribute(scope: BindingScope): Promise<void> {
+    const element = scope.node;
+    const dataIfValue = element.getAttribute('data-if') || element.getAttribute('hor-if');
+    
+    if (!dataIfValue) {
+      return; // data-if属性がない場合は何もしない
+    }
+    
+    try {
+      // data-if式を評価
+      const result = scope.evaluateExpression(dataIfValue);
+      
+      // JavaScriptの偽値判定（false, 0, "", null, undefined, NaN）
+      const isVisible = Boolean(result) && !Number.isNaN(result);
+      
+      // 表示状態を設定
+      await scope.setVisible(isVisible);
+      
+      if (this.options.debug) {
+        logInfo('[Haori]', `data-if="${dataIfValue}" evaluated to ${result} (visible: ${isVisible})`, element);
+      }
+    } catch (error) {
+      logError('[Haori]', `Failed to evaluate data-if="${dataIfValue}":`, error);
+      // エラー時はデフォルトで表示状態にする
+      await scope.setVisible(true);
     }
   }
 }
