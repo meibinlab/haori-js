@@ -1,9 +1,9 @@
-import {isDevMode, setDevMode} from '../src/dev';
-import {detectDevMode} from '../src/env';
+import {Dev} from '../src/dev';
+import {Env} from '../src/env';
 
 describe('環境から開発モードを検出します', () => {
   beforeEach(() => {
-    setDevMode(false);
+    Dev.set(false);
     document.querySelectorAll('script').forEach(script => script.remove());
     Object.defineProperty(window, 'location', {
       value: new URL('http://test.com'),
@@ -31,65 +31,62 @@ describe('環境から開発モードを検出します', () => {
    */
   function mockHostname(hostname: string): void {
     Object.defineProperty(window, 'location', {
-      value: {
-        hostname: hostname,
-        href: `http://${hostname}`,
-      },
+      value: {hostname: hostname, href: `http://${hostname}`},
       writable: true,
     });
   }
 
   it('data-dev属性がある場合', () => {
     mockScriptWithAttribute('data-dev', 'haori.js');
-    detectDevMode();
-    expect(isDevMode()).toBe(true);
+    Env.detectDevMode();
+    expect(Dev.isEnabled()).toBe(true);
   });
 
   it('hor-dev属性がある場合', () => {
     mockScriptWithAttribute('hor-dev', 'haori.js');
-    detectDevMode();
-    expect(isDevMode()).toBe(true);
+    Env.detectDevMode();
+    expect(Dev.isEnabled()).toBe(true);
   });
 
   it('localhostの場合', () => {
     mockHostname('localhost');
-    detectDevMode();
-    expect(isDevMode()).toBe(true);
+    Env.detectDevMode();
+    expect(Dev.isEnabled()).toBe(true);
   });
 
   it('127.0.0.1の場合', () => {
     mockHostname('127.0.0.1');
-    detectDevMode();
-    expect(isDevMode()).toBe(true);
+    Env.detectDevMode();
+    expect(Dev.isEnabled()).toBe(true);
   });
 
   it('::1の場合', () => {
     mockHostname('::1');
-    detectDevMode();
-    expect(isDevMode()).toBe(true);
+    Env.detectDevMode();
+    expect(Dev.isEnabled()).toBe(true);
   });
 
   it('*.localの場合', () => {
     mockHostname('test.local');
-    detectDevMode();
-    expect(isDevMode()).toBe(true);
+    Env.detectDevMode();
+    expect(Dev.isEnabled()).toBe(true);
   });
 
   it('*.localhostの場合', () => {
     mockHostname('test.localhost');
-    detectDevMode();
-    expect(isDevMode()).toBe(true);
+    Env.detectDevMode();
+    expect(Dev.isEnabled()).toBe(true);
   });
 
   it('ローカルでないホスト名の場合', () => {
     mockHostname('test.app');
-    detectDevMode();
-    expect(isDevMode()).toBe(false);
+    Env.detectDevMode();
+    expect(Dev.isEnabled()).toBe(false);
   });
 
   it('無関係なスクリプトの場合', () => {
     mockScriptWithAttribute('data-dev', 'other.js');
-    detectDevMode();
-    expect(isDevMode()).toBe(false);
+    Env.detectDevMode();
+    expect(Dev.isEnabled()).toBe(false);
   });
 });
