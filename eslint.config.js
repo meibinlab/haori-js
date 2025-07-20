@@ -20,7 +20,7 @@ export default tseslint.config(
       "indent": ["error", 2],
       "quotes": ["error", "single"],
       "semi": ["error", "always"],
-      "comma-dangle": ["error", "always-multiline"],
+      "comma-dangle": ["error", "only-multiline"],
       "object-curly-spacing": ["error", "never"],
       "array-bracket-spacing": ["error", "never"],
       "space-before-function-paren": ["error", "never"],
