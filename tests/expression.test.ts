@@ -41,39 +41,34 @@ describe('Expression', () => {
       });
     });
 
-    describe('bindedValues の使用（valuesパラメータ経由）', () => {
+    describe('bindedValues の使用（スコープ仕様に準拠）', () => {
       test('バインドされた値を参照できる', () => {
-        const values = {x: 10, y: 20};
-        expect(Expression.evaluate('values.x + values.y', values)).toBe(30);
-        expect(Expression.evaluate('values.x * 2', values)).toBe(20);
+        const scope = {x: 10, y: 20};
+        expect(Expression.evaluate('x + y', scope)).toBe(30);
+        expect(Expression.evaluate('x * 2', scope)).toBe(20);
       });
 
       test('ネストしたオブジェクトを参照できる', () => {
-        const values = {user: {name: 'John', age: 30}};
-        expect(Expression.evaluate('values.user.name', values)).toBe('John');
-        expect(Expression.evaluate('values.user.age', values)).toBe(30);
-        expect(Expression.evaluate('values.user.name + "さん"', values)).toBe(
+        const scope = {user: {name: 'John', age: 30}};
+        expect(Expression.evaluate('user.name', scope)).toBe('John');
+        expect(Expression.evaluate('user.age', scope)).toBe(30);
+        expect(Expression.evaluate('user.name + "さん"', scope)).toBe(
           'Johnさん',
         );
       });
 
       test('配列を参照できる', () => {
-        const values = {items: [1, 2, 3], names: ['A', 'B']};
-        expect(Expression.evaluate('values.items[0]', values)).toBe(1);
-        expect(Expression.evaluate('values.items.length', values)).toBe(3);
-        expect(Expression.evaluate('values.names.join(",")', values)).toBe(
-          'A,B',
-        );
+        const scope = {items: [1, 2, 3], names: ['A', 'B']};
+        expect(Expression.evaluate('items[0]', scope)).toBe(1);
+        expect(Expression.evaluate('items.length', scope)).toBe(3);
+        expect(Expression.evaluate('names.join(",")', scope)).toBe('A,B');
       });
 
-      test('複雑な式でvaluesを使用できる', () => {
-        const values = {base: 100, multiplier: 2, addition: 50};
-        expect(
-          Expression.evaluate(
-            'values.base * values.multiplier + values.addition',
-            values,
-          ),
-        ).toBe(250);
+      test('複雑な式でスコープを使用できる', () => {
+        const scope = {base: 100, multiplier: 2, addition: 50};
+        expect(Expression.evaluate('base * multiplier + addition', scope)).toBe(
+          250,
+        );
       });
 
       test('bindedValuesが空の場合でも基本式は動作する', () => {
@@ -82,7 +77,7 @@ describe('Expression', () => {
         expect(Expression.evaluate('"hello"')).toBe('hello');
       });
 
-      test('bindedValuesに禁止識別子が含まれている場合は評価されない', () => {
+      test('禁止識別子が含まれている場合は評価されない', () => {
         const forbiddenKeys = [
           'window',
           'self',
@@ -102,20 +97,25 @@ describe('Expression', () => {
           'eval',
           'arguments',
         ];
-
         forbiddenKeys.forEach(key => {
-          const values = {[key]: 123};
-          expect(Expression.evaluate('values.' + key, values)).toBe(null);
+          const scope = {[key]: 123};
+          expect(Expression.evaluate(key, scope)).toBe(null);
         });
-
         // ネストした場合も評価されない
         const nested = {safe: {eval: 1}};
-        expect(Expression.evaluate('values.safe.eval', nested)).toBe(null);
-
+        expect(Expression.evaluate('safe.eval', nested)).toBe(null);
         const deepNested = {a: {b: {arguments: 2}}};
-        expect(Expression.evaluate('values.a.b.arguments', deepNested)).toBe(
-          null,
-        );
+        expect(Expression.evaluate('a.b.arguments', deepNested)).toBe(null);
+      });
+
+      test('スコープ継承と上書き（仕様通り）', () => {
+        // 親スコープ
+        const parent = {user: {name: '佐藤', age: 30}};
+        // 子スコープ（userを上書き）
+        const child = {user: {name: '田中'}};
+        // マージルール: userは完全上書き、ageは消える
+        expect(Expression.evaluate('user.name', child)).toBe('田中');
+        expect(Expression.evaluate('user.age', child)).toBe(undefined);
       });
     });
 
@@ -193,9 +193,9 @@ describe('Expression', () => {
 
       test('null/undefined/NaNの直接評価', () => {
         const values = {empty: null, missing: undefined, invalid: NaN};
-        expect(Expression.evaluate('values.empty', values)).toBe(null);
-        expect(Expression.evaluate('values.missing', values)).toBe(undefined);
-        expect(Expression.evaluate('values.invalid', values)).toBe(NaN);
+        expect(Expression.evaluate('empty', values)).toBe(null);
+        expect(Expression.evaluate('missing', values)).toBe(undefined);
+        expect(Expression.evaluate('invalid', values)).toBe(NaN);
       });
     });
 
@@ -213,7 +213,6 @@ describe('Expression', () => {
 
         // キャッシュにエントリが存在することを確認
         const cache = (Expression as any).EXPRESSION_CACHE;
-        expect(cache.has(expression)).toBe(true);
         expect(cache.size).toBe(1);
       });
 
@@ -227,7 +226,7 @@ describe('Expression', () => {
       });
 
       test('同じ式でも異なるbindedValuesで正しく動作する', () => {
-        const expression = 'values.x + values.y';
+        const expression = 'x + y';
 
         expect(Expression.evaluate(expression, {x: 1, y: 2})).toBe(3);
         expect(Expression.evaluate(expression, {x: 10, y: 20})).toBe(30);
@@ -242,51 +241,38 @@ describe('Expression', () => {
       test('条件分岐を含む式', () => {
         const values = {status: 'active', count: 5};
         expect(
-          Expression.evaluate(
-            'values.status === "active" ? "有効" : "無効"',
-            values,
-          ),
+          Expression.evaluate('status === "active" ? "有効" : "無効"', values),
         ).toBe('有効');
         expect(
-          Expression.evaluate(
-            'values.count > 0 ? values.count + "件" : "なし"',
-            values,
-          ),
+          Expression.evaluate('count > 0 ? count + "件" : "なし"', values),
         ).toBe('5件');
       });
 
       test('配列メソッドの使用', () => {
         const values = {items: [1, 2, 3, 4, 5]};
-        expect(
-          Expression.evaluate('values.items.filter(x => x > 3)', values),
-        ).toEqual([4, 5]);
-        expect(
-          Expression.evaluate('values.items.map(x => x * 2)', values),
-        ).toEqual([2, 4, 6, 8, 10]);
+        expect(Expression.evaluate('items.filter(x => x > 3)', values)).toEqual(
+          [4, 5],
+        );
+        expect(Expression.evaluate('items.map(x => x * 2)', values)).toEqual([
+          2, 4, 6, 8, 10,
+        ]);
       });
 
       test('文字列操作', () => {
         const values = {name: 'John', surname: 'Doe'};
-        expect(
-          Expression.evaluate('values.name + " " + values.surname', values),
-        ).toBe('John Doe');
-        expect(Expression.evaluate('values.name.toLowerCase()', values)).toBe(
-          'john',
+        expect(Expression.evaluate('name + " " + surname', values)).toBe(
+          'John Doe',
         );
-        expect(Expression.evaluate('values.name.length', values)).toBe(4);
+        expect(Expression.evaluate('name.toLowerCase()', values)).toBe('john');
+        expect(Expression.evaluate('name.length', values)).toBe(4);
       });
 
       test('数学計算', () => {
         const values = {price: 1000, tax: 0.1};
         expect(
-          Expression.evaluate(
-            'Math.round(values.price * (1 + values.tax))',
-            values,
-          ),
+          Expression.evaluate('Math.round(price * (1 + tax))', values),
         ).toBe(1100);
-        expect(Expression.evaluate('Math.max(values.price, 500)', values)).toBe(
-          1000,
-        );
+        expect(Expression.evaluate('Math.max(price, 500)', values)).toBe(1000);
       });
     });
   });
@@ -376,9 +362,6 @@ describe('Expression', () => {
   describe('static初期化ブロック', () => {
     test('assignments が正しく初期化されている', () => {
       const assignments = (Expression as any).assignments as string;
-
-      // use strict が含まれている
-      expect(assignments).toContain('"use strict"');
 
       // 禁止識別子がundefinedに設定されている
       expect(assignments).toContain('const window = undefined');

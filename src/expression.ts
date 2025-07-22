@@ -50,12 +50,11 @@ export class Expression {
   private static readonly EXPRESSION_CACHE = new Map<string, Function>();
 
   /** 評価関数の前に実行されるコード */
-  private static assignments: String;
+  private static assignments: string;
 
   static {
     // static初期化ブロック
-    let lines: String[] = [];
-    lines.push('"use strict"');
+    let lines: string[] = [];
     this.FORBIDDEN_NAMES.forEach((name: string, i: number) => {
       lines.push(`const ${name} = undefined`);
     });
@@ -85,14 +84,21 @@ export class Expression {
       return null;
     }
 
-    let evaluator = this.EXPRESSION_CACHE.get(expression);
+    const bindKeys = Object.keys(bindedValues)
+      .filter(
+        key =>
+          !this.FORBIDDEN_NAMES.includes(key) &&
+          !this.STRICT_FORBIDDEN_NAMES.includes(key),
+      )
+      .sort();
+    const cacheKey = `${expression}:${bindKeys.join(',')}`;
+
+    let evaluator = this.EXPRESSION_CACHE.get(cacheKey);
     if (!evaluator) {
       try {
-        evaluator = new Function(
-          'values',
-          `${this.assignments};\nreturn (${expression});`,
-        );
-        this.EXPRESSION_CACHE.set(expression, evaluator);
+        const body = `"use strict";\n${this.assignments};\nreturn (${expression});`;
+        evaluator = new Function(...bindKeys, body);
+        this.EXPRESSION_CACHE.set(cacheKey, evaluator);
       } catch (error) {
         Log.error(
           '[Haori]',
@@ -104,7 +110,11 @@ export class Expression {
       }
     }
     try {
-      return evaluator(bindedValues);
+      const argValues: unknown[] = [];
+      bindKeys.forEach((key: string) => {
+        argValues.push(bindedValues[key]);
+      });
+      return evaluator(...argValues);
     } catch (error) {
       Log.error('[Haori]', 'Expression evaluation error:', expression, error);
       if (error instanceof ReferenceError) {
