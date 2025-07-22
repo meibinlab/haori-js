@@ -11,18 +11,18 @@ import {Log} from './log';
 /**
  * キューアイテムの基本構造。
  */
-interface QueueItem<T> {
+interface QueueItem {
   /** 実行する処理 */
-  task: () => Promise<T>;
+  task: () => Promise<void>;
 
   /** 作成時刻 */
   timestamp: number;
 
   /** 完了Promise */
-  promise: Promise<T>;
+  promise: Promise<void>;
 
   /** Promise解決用の関数 */
-  resolve: (value: T | PromiseLike<T>) => void;
+  resolve: (value: void | PromiseLike<void>) => void;
 
   /** Promise拒否用の関数 */
   reject: (reason?: unknown) => void;
@@ -32,15 +32,12 @@ interface QueueItem<T> {
  * 非同期キュークラス。
  * キュー内の処理を管理し、順次実行します。
  */
-class AsyncQueue<T> {
+class AsyncQueue {
   /** キュー内の処理 */
-  private readonly queue: QueueItem<T>[] = [];
+  private readonly queue: QueueItem[] = [];
 
   /** 処理中フラグ */
   private processing = false;
-
-  /** キューのバッチサイズ */
-  private batchSize: number = 10;
 
   /**
    * 処理をキューに追加します
@@ -48,14 +45,14 @@ class AsyncQueue<T> {
    * @param task 実行する処理
    * @returns 処理完了Promise
    */
-  public enqueue(task: () => Promise<T>): Promise<T> {
-    let resolve: (value: T | PromiseLike<T>) => void;
+  public enqueue(task: () => Promise<void>): Promise<void> {
+    let resolve: (value: void | PromiseLike<void>) => void;
     let reject: (reason?: unknown) => void;
-    const promise = new Promise<T>((res, rej) => {
+    const promise = new Promise<void>((res, rej) => {
       resolve = res;
       reject = rej;
     });
-    const item: QueueItem<T> = {
+    const item: QueueItem = {
       task,
       timestamp: Date.now(),
       promise,
@@ -69,19 +66,6 @@ class AsyncQueue<T> {
   }
 
   /**
-   * キューのバッチサイズを設定します。
-   *
-   * @param size 新しいバッチサイズ
-   */
-  setBatchSize(size: number): void {
-    if (size <= 0) {
-      Log.error('[Haori]', 'Batch size must be greater than 0');
-      return;
-    }
-    this.batchSize = size;
-  }
-
-  /**
    * キューを処理します。
    *
    * @returns 処理完了Promise
@@ -92,22 +76,8 @@ class AsyncQueue<T> {
     }
     this.processing = true;
     try {
-      const batch = this.queue.splice(0, this.batchSize);
-      const results = await Promise.allSettled(
-        batch.map(item => this.executeTask(item))
-      );
-
-      // 失敗したタスクをログ出力
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          Log.error(
-            '[Haori]',
-            `Batch processing error for task ${batch[index].timestamp}:`,
-            result.reason
-          );
-        }
-      });
-
+      const item = this.queue.shift();
+      await this.executeTask(item!);
       if (this.queue.length > 0) {
         this.scheduleProcessing();
       }
@@ -138,7 +108,7 @@ class AsyncQueue<T> {
    * @param item 実行するキューアイテム
    * @returns 処理完了Promise
    */
-  private async executeTask(item: QueueItem<T>): Promise<void> {
+  private async executeTask(item: QueueItem): Promise<void> {
     try {
       const result = await item.task();
       item.resolve(result);
@@ -156,7 +126,7 @@ class AsyncQueue<T> {
  */
 export class Queue {
   /** 非同期キューインスタンス */
-  private static asyncQueue = new AsyncQueue<unknown>();
+  private static asyncQueue = new AsyncQueue();
 
   /**
    * タスクをキューに追加します。
@@ -164,18 +134,7 @@ export class Queue {
    * @param task 実行する処理
    * @returns 処理完了Promise
    */
-  public static enqueue<T>(task: () => Promise<T>): Promise<T> {
-    return this.asyncQueue.enqueue(
-      task as () => Promise<unknown>
-    ) as Promise<T>;
-  }
-
-  /**
-   * キューのバッチサイズを設定します。
-   *
-   * @param size 新しいバッチサイズ
-   */
-  public static setBatchSize(size: number): void {
-    this.asyncQueue.setBatchSize(size);
+  public static enqueue(task: () => Promise<void>): Promise<void> {
+    return this.asyncQueue.enqueue(task) as Promise<void>;
   }
 }

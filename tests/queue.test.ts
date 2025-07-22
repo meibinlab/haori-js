@@ -74,54 +74,6 @@ describe('Queue', () => {
       await expect(failPromise).rejects.toThrow('fail');
       await expect(successPromise).resolves.toBe('success');
     });
-
-    it('型安全性が保たれる', async () => {
-      const stringTask = (): Promise<string> => Promise.resolve('string');
-      const numberTask = (): Promise<number> => Promise.resolve(42);
-
-      const stringResult = await Queue.enqueue(stringTask);
-      const numberResult = await Queue.enqueue(numberTask);
-
-      expect(typeof stringResult).toBe('string');
-      expect(typeof numberResult).toBe('number');
-      expect(stringResult).toBe('string');
-      expect(numberResult).toBe(42);
-    });
-  });
-
-  describe('setBatchSize', () => {
-    it('正の値でバッチサイズが設定される', () => {
-      Queue.setBatchSize(5);
-
-      expect(Log.error).not.toHaveBeenCalled();
-    });
-
-    it('0以下の値でエラーログが出力される', () => {
-      Queue.setBatchSize(0);
-      Queue.setBatchSize(-1);
-
-      expect(Log.error).toHaveBeenCalledTimes(2);
-      expect(Log.error).toHaveBeenCalledWith(
-        '[Haori]',
-        'Batch size must be greater than 0',
-      );
-    });
-
-    it('バッチサイズに従ってタスクが処理される', async () => {
-      Queue.setBatchSize(2);
-
-      const tasks = Array.from({length: 5}, (_, i) =>
-        vi.fn().mockResolvedValue(`result${i}`),
-      );
-
-      const promises = tasks.map(task => Queue.enqueue(task));
-      await Promise.all(promises);
-
-      // すべてのタスクが実行されることを確認
-      tasks.forEach(task => {
-        expect(task).toHaveBeenCalledOnce();
-      });
-    });
   });
 
   describe('requestAnimationFrame fallback', () => {
