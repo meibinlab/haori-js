@@ -73,7 +73,8 @@ class TextContents {
           '[Haori]',
           'Raw expressions are not allowed in multi-content expressions.',
         );
-        this.contents[i].type = ExpressionType.EXPRESSION; // RAW_EXPRESSIONをEXPRESSIONに変換
+        // RAW_EXPRESSIONをEXPRESSIONに変換
+        this.contents[i].type = ExpressionType.EXPRESSION;
       }
     }
   }
@@ -84,7 +85,7 @@ class TextContents {
    * @param bindingValues バインディングされた値のオブジェクト
    * @returns 評価結果の文字列またはboolean
    */
-  public evaluate(bindingValues: Record<string, any>): string | boolean {
+  public evaluate(bindingValues: Record<string, unknown>): string | boolean {
     return this.contents
       .map(c => {
         if (
@@ -147,7 +148,8 @@ class AttributeContents extends TextContents {
           '[Haori]',
           'Raw expressions are not allowed in attribute values.',
         );
-        this.contents[i].type = ExpressionType.EXPRESSION; // RAW_EXPRESSIONをEXPRESSIONに変換
+        // RAW_EXPRESSIONをEXPRESSIONに変換
+        this.contents[i].type = ExpressionType.EXPRESSION;
       }
     }
   }
@@ -168,10 +170,10 @@ class AttributeContents extends TextContents {
    * @param bindingValues バインディングされた値のオブジェクト
    * @returns 評価結果の文字列またはboolean
    */
-  public evaluate(bindingValues: Record<string, any>): string | boolean {
+  public evaluate(bindingValues: Record<string, unknown>): string | boolean {
     if (this.contents.length === 1) {
-      let content = this.contents[0];
-      let result =
+      const content = this.contents[0];
+      const result =
         this.forceEvaluation ||
         content.type === ExpressionType.RAW_EXPRESSION ||
         content.type === ExpressionType.EXPRESSION
@@ -360,14 +362,14 @@ export class Binding {
       return;
     }
     if (eachValue) {
-      let list = eachValue as Record<string, any>[];
+      const list = eachValue as Record<string, unknown>[];
       const element = binding.target as HTMLElement;
       if (!binding.template) {
         binding.template = [];
         for (let i = 0; i < element.childNodes.length; i++) {
-          let childNode = element.childNodes[i];
-          let clonedNode = await Binding.cloneNode(childNode);
-          let clonedBinding = await Binding.bind(clonedNode);
+          const childNode = element.childNodes[i];
+          const clonedNode = await Binding.cloneNode(childNode);
+          const clonedBinding = await Binding.bind(clonedNode);
           binding.template.push(clonedBinding);
         }
       }
@@ -381,7 +383,7 @@ export class Binding {
           return;
         }
         Queue.enqueue(async () => {
-          let before = await template.clone();
+          const before = await template.clone();
           await binding.insertChild(before);
         });
       });
@@ -394,7 +396,7 @@ export class Binding {
         }
         list.forEach(async (item, index) => {
           Queue.enqueue(async () => {
-            let target = await template.clone();
+            const target = await template.clone();
             if (target.isElement) {
               const element = target.target as HTMLElement;
               // data-each-keyが指定されていればdata-row属性に値をセット
@@ -414,7 +416,8 @@ export class Binding {
                   ) {
                     bindValue[argName] = {};
                   }
-                  bindValue[argName][indexName] = index;
+                  (bindValue[argName] as Record<string, unknown>)[indexName] =
+                    index;
                 } else {
                   bindValue[indexName] = index;
                 }
@@ -430,7 +433,7 @@ export class Binding {
           return;
         }
         Queue.enqueue(async () => {
-          let after = await template.clone();
+          const after = await template.clone();
           await binding.insertChild(after);
         });
       });
@@ -472,7 +475,7 @@ export class Binding {
       if (child.isElement) {
         return;
       }
-      let text = child.getEvaluatedContents();
+      const text = child.getEvaluatedContents();
       if (text.isRaw) {
         if (binding.children!.length > 1) {
           Log.error(
@@ -590,10 +593,10 @@ export class Binding {
   private children: Binding[] | null = null;
 
   /** data-bind のデータ */
-  private bindingData: Record<string, any> | null = null;
+  private bindingData: Record<string, unknown> | null = null;
 
   /** data のキャッシュ */
-  private bindingDataCache: Record<string, any> | null = null;
+  private bindingDataCache: Record<string, unknown> | null = null;
 
   /** 表示状態（data-if 用） */
   private visible: boolean = true;
@@ -613,7 +616,7 @@ export class Binding {
     this.target = target;
     this.isElement = target.nodeType === Node.ELEMENT_NODE;
     if (this.isElement) {
-      let element = target as HTMLElement;
+      const element = target as HTMLElement;
       this.contents = null;
       this.attributes = new Map();
       for (let i = 0; i < element.attributes.length; i++) {
@@ -623,7 +626,7 @@ export class Binding {
           new AttributeContents(attr.name, attr.value),
         );
       }
-      let data = Binding.getAttribute(element, 'bind');
+      const data = Binding.getAttribute(element, 'bind');
       if (data) {
         try {
           this.bindingData = JSON.parse(data as string);
@@ -639,11 +642,34 @@ export class Binding {
   }
 
   /**
+   * 属性を更新します。
+   *
+   * @param name 属性名
+   * @param value 属性値
+   */
+  public updateAttribute(name: string, value: string): void {
+    if (!this.isElement || !this.attributes) {
+      Log.error('[Haori]', 'Cannot update attribute on non-element binding.');
+      return;
+    }
+    this.attributes.set(name, new AttributeContents(name, value));
+    if (name == 'data-bind' || name == 'hor-bind') {
+      try {
+        this.bindingData = JSON.parse(value);
+        this.bindingDataCache = null;
+      } catch (error) {
+        Log.error('[Haori]', 'Invalid data-bind attribute:', error);
+        this.bindingData = null;
+      }
+    }
+  }
+
+  /**
    * 継承を考慮したバインディングデータを取得します。
    *
    * @returns バインディングデータのオブジェクト
    */
-  private getBindingData(): Record<string, any> {
+  private getBindingData(): Record<string, unknown> {
     if (this.bindingDataCache) {
       return this.bindingDataCache;
     }

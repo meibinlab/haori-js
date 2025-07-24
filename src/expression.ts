@@ -47,15 +47,18 @@ export class Expression {
   private static readonly STRICT_FORBIDDEN_NAMES = ['eval', 'arguments'];
 
   /** 式 → 評価関数のグローバルキャッシュ */
-  private static readonly EXPRESSION_CACHE = new Map<string, Function>();
+  private static readonly EXPRESSION_CACHE = new Map<
+    string,
+    (...args: unknown[]) => unknown
+  >();
 
   /** 評価関数の前に実行されるコード */
   private static assignments: string;
 
   static {
     // static初期化ブロック
-    let lines: string[] = [];
-    this.FORBIDDEN_NAMES.forEach((name: string, i: number) => {
+    const lines: string[] = [];
+    this.FORBIDDEN_NAMES.forEach((name: string) => {
       lines.push(`const ${name} = undefined`);
     });
     this.assignments = lines.join(';\n');
@@ -96,8 +99,11 @@ export class Expression {
     let evaluator = this.EXPRESSION_CACHE.get(cacheKey);
     if (!evaluator) {
       try {
-        const body = `"use strict";\n${this.assignments};\nreturn (${expression});`;
-        evaluator = new Function(...bindKeys, body);
+        const body =
+          '"use strict";\n' + `${this.assignments};\nreturn (${expression});`;
+        evaluator = new Function(...bindKeys, body) as (
+          ...args: unknown[]
+        ) => unknown;
         this.EXPRESSION_CACHE.set(cacheKey, evaluator);
       } catch (error) {
         Log.error(
@@ -142,6 +148,7 @@ export class Expression {
 
   /**
    * valuesオブジェクトに禁止識別子が含まれていないか再帰的にチェックします。
+   *
    * @param obj チェック対象のオブジェクト
    * @return 禁止識別子が含まれていればtrue
    */
@@ -155,7 +162,7 @@ export class Expression {
           return true;
         }
         // 再帰的にネストしたオブジェクトもチェック
-        if (this.containsForbiddenKeys((obj as any)[key])) {
+        if (this.containsForbiddenKeys((obj as Record<string, unknown>)[key])) {
           return true;
         }
       }

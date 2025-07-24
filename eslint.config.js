@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import path from 'node:path';
 
 export default tseslint.config(
   js.configs.recommended,
@@ -7,6 +8,10 @@ export default tseslint.config(
   {
     files: ['**/*.ts'],
     languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.json'],
+        tsconfigRootDir: path.resolve(),
+      },
       globals: {
         document: 'readonly',
         window: 'readonly',
@@ -47,5 +52,5 @@ export default tseslint.config(
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/prefer-readonly': 'error',
     },
-  }
+  },
 );

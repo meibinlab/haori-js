@@ -134,7 +134,7 @@ class AsyncQueue {
  */
 export class Queue {
   /** 非同期キューインスタンス */
-  private static asyncQueue = new AsyncQueue();
+  private static readonly ASYNC_QUEUE = new AsyncQueue();
 
   /**
    * タスクをキューに追加します。
@@ -143,6 +143,6 @@ export class Queue {
    * @returns 処理完了Promise
    */
   public static enqueue(task: () => void): Promise<void> {
-    return this.asyncQueue.enqueue(task);
+    return this.ASYNC_QUEUE.enqueue(task);
   }
 }
