@@ -50,7 +50,9 @@ describe('Binding クラスのテスト', () => {
     // Haori仕様: オブジェクトの場合は親の値を完全に上書きする（マージしない）
     expect(data.user).toEqual({name: '田中'});
     // ageは残らない
-    expect('age' in data.user).toBe(false);
+    expect('age' in (data.user as Record<string, string | boolean>)).toBe(
+      false,
+    );
   });
 
   it('data-bind が不正なJSONの場合は bindingData が null になる', async () => {
