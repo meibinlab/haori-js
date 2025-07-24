@@ -96,9 +96,17 @@ class AsyncQueue {
       return;
     }
     if (typeof requestAnimationFrame !== 'undefined') {
-      requestAnimationFrame(() => this.processQueue());
+      requestAnimationFrame(() => {
+        this.processQueue().catch(error => {
+          Log.error('[Haori]', 'Error scheduling processing:', error);
+        });
+      });
     } else {
-      setTimeout(() => this.processQueue(), 16); // 60fps
+      setTimeout(() => {
+        this.processQueue().catch(error => {
+          Log.error('[Haori]', 'Error scheduling processing:', error);
+        });
+      }, 16); // 60fps
     }
   }
 
