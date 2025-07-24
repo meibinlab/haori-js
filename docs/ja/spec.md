@@ -13,16 +13,16 @@ JavaScript を記述することなく、`data-bind` 属性や `{{.}}` プレー
 
 Haori-JS は次のような特徴を持っています：
 
-* **HTML だけで UI が完結**
+- **HTML だけで UI が完結**
   JavaScript の記述は不要で、HTML 属性と簡単な構文だけで動的な UI が作れます。
 
-* **軽量・最小構成で導入可能**
+- **軽量・最小構成で導入可能**
   ライブラリ自体が非常に軽く、1 行の `<script>` 追加で導入できます。
 
-* **宣言的でわかりやすい**
+- **宣言的でわかりやすい**
   `{{message}}` のように、書いた通りに表示される直感的な構文です。
 
-* **既存 HTML に組み込みやすい**
+- **既存 HTML に組み込みやすい**
   完全な置き換えではなく、「必要なところだけに追加」することができます。
 
 ---
@@ -31,10 +31,10 @@ Haori-JS は次のような特徴を持っています：
 
 この仕様書は、次のような方を対象にしています：
 
-* HTML はわかるが、JavaScript やフレームワークにはまだ抵抗がある方
-* テンプレートエンジンや React/Vue などの学習コストが高いと感じている方
-* UI フレームワークに依存せず、シンプルに動く仕組みを求めている方
-* ノーコード／ローコード開発を補助する HTML ベースの仕組みを探している方
+- HTML はわかるが、JavaScript やフレームワークにはまだ抵抗がある方
+- テンプレートエンジンや React/Vue などの学習コストが高いと感じている方
+- UI フレームワークに依存せず、シンプルに動く仕組みを求めている方
+- ノーコード／ローコード開発を補助する HTML ベースの仕組みを探している方
 
 ---
 
@@ -42,14 +42,14 @@ Haori-JS は次のような特徴を持っています：
 
 Haori-JS を使えば、次のような UI を HTML だけで構築できます：
 
-* データの表示とリアルタイムな更新
-* 条件に応じた要素の表示・非表示
-* 配列データの繰り返し展開
-* フォームとの双方向バインディング（入力と出力の同期）
-* ボタンを押して非同期にデータを取得・表示
-* スクロールに応じた追加データの読み込み
-* 外部 HTML の読み込みとコンポーネント化
-* ダイアログやメッセージの表示制御
+- データの表示とリアルタイムな更新
+- 条件に応じた要素の表示・非表示
+- 配列データの繰り返し展開
+- フォームとの双方向バインディング（入力と出力の同期）
+- ボタンを押して非同期にデータを取得・表示
+- スクロールに応じた追加データの読み込み
+- 外部 HTML の読み込みとコンポーネント化
+- ダイアログやメッセージの表示制御
 
 これらは、JavaScript の記述を一切せずに実現できます。
 
@@ -79,9 +79,9 @@ Haori-JS を使えば、次のような UI を HTML だけで構築できます�
 
 ### 表示結果
 
-* 入力欄に「こんにちは」と表示されている
-* 下の `<p>` にも「こんにちは」と表示
-* 入力欄の文字を変更すると、下の表示もリアルタイムに更新される
+- 入力欄に「こんにちは」と表示されている
+- 下の `<p>` にも「こんにちは」と表示
+- 入力欄の文字を変更すると、下の表示もリアルタイムに更新される
 
 > これが、Haori-JS による「データと UI の自動同期」です。
 
@@ -94,10 +94,10 @@ Haori-JS を HTML に組み込む方法と、最小構成での記述例から�
 
 本書のすべてのサンプルには以下を併記しています：
 
-* **HTML記述例**
-* **最終的なHTML構造**
-* **表示結果**
-* （通信がある場合は）**送信データ・受信データ**
+- **HTML記述例**
+- **最終的なHTML構造**
+- **表示結果**
+- （通信がある場合は）**送信データ・受信データ**
 
 ---
 
@@ -160,9 +160,9 @@ Haori-JS は JavaScript ライブラリとして提供されており、HTML に
 
 ### 表示結果：
 
-* 「こんにちは」と書かれた入力欄
-* その下に「こんにちは」と表示
-* 入力欄に文字を打ち変えると、下の表示もリアルタイムで更新される
+- 「こんにちは」と書かれた入力欄
+- その下に「こんにちは」と表示
+- 入力欄に文字を打ち変えると、下の表示もリアルタイムで更新される
 
 ---
 
@@ -170,11 +170,11 @@ Haori-JS は JavaScript ライブラリとして提供されており、HTML に
 
 Haori-JS は、次のような方針に従って HTML に属性を書くことで動作します。
 
-| 条件               | 内容                                      |
-| ---------------- | --------------------------------------- |
-| 1. スクリプトの読み込み    | `<script src="...haori.min.js">` を含めること |
-| 2. HTML 構文の正しさ   | `<html>` ～ `</html>` までの正しい構成が必要        |
-| 3. JavaScript 不要 | ユーザーが JavaScript を書く必要はない（属性だけで動作）      |
+| 条件                    | 内容                                                     |
+| ----------------------- | -------------------------------------------------------- |
+| 1. スクリプトの読み込み | `<script src="...haori.min.js">` を含めること            |
+| 2. HTML 構文の正しさ    | `<html>` ～ `</html>` までの正しい構成が必要             |
+| 3. JavaScript 不要      | ユーザーが JavaScript を書く必要はない（属性だけで動作） |
 
 ---
 
@@ -182,9 +182,9 @@ Haori-JS は、次のような方針に従って HTML に属性を書くこと�
 
 この仕様書では、以降のすべてのサンプルにおいて以下の形式で内容を提示します：
 
-* **HTML 記述例**：実際に書く HTML コード
-* **最終的な HTML 構造**：Haori が処理した後の DOM 構造
-* **表示結果**：画面上でどのように見えるか、何が起こるか
+- **HTML 記述例**：実際に書く HTML コード
+- **最終的な HTML 構造**：Haori が処理した後の DOM 構造
+- **表示結果**：画面上でどのように見えるか、何が起こるか
 
 この構成によって、どのようなマークアップがどのように変化するかを視覚的に理解しやすくしています。
 
@@ -224,8 +224,8 @@ Haori-JS は、次のような方針に従って HTML に属性を書くこと�
 
 ### 表示結果：
 
-* 入力欄には初期値「山田」「[test@example.com](mailto:test@example.com)」が表示される
-* 入力を変更すると下の表示内容も連動して変化する
+- 入力欄には初期値「山田」「[test@example.com](mailto:test@example.com)」が表示される
+- 入力を変更すると下の表示内容も連動して変化する
 
 ---
 
@@ -374,8 +374,8 @@ HTML の中にデータを埋め込む方法、ネストや式の評価、属性
 
 このような場合、`type = "primary"` であれば `class="btn btn-primary"` に展開されます。
 
-* `null` や `undefined`、`NaN` を評価した場合は空文字 `""` に置き換えられます。
-* 複数のプレースホルダを含む属性値も、それぞれの評価結果を結合して展開されます。
+- `null` や `undefined`、`NaN` を評価した場合は空文字 `""` に置き換えられます。
+- 複数のプレースホルダを含む属性値も、それぞれの評価結果を結合して展開されます。
 
 属性の値が単一のプレースホルダのみで構成され、そのプレースホルダの評価値が false、 undefined、 null、 Nan のいずれかの場合は属性名ごと除去されます。
 
@@ -403,9 +403,9 @@ HTML の中にデータを埋め込む方法、ネストや式の評価、属性
 
 以下のいずれかの条件で再評価が行われます：
 
-* 自身または親の `data-bind` の値が変更されたとき
-* `data-if` によって非表示→表示に変化したとき
-* `data-each` によって DOM が再生成されたとき
+- 自身または親の `data-bind` の値が変更されたとき
+- `data-if` によって非表示→表示に変化したとき
+- `data-each` によって DOM が再生成されたとき
 
 > プレースホルダの依存トラッキング（特定のキーの変化だけで再評価）などは行われず、**スコープ単位で一括再評価**されます。
 
@@ -416,16 +416,16 @@ HTML の中にデータを埋め込む方法、ネストや式の評価、属性
 `data-bind` の値が不正な JSON の場合（例：`{name: '山田'}` など）、Haori は自動的に空のオブジェクト `{}` を代替として使用します。
 このとき：
 
-* スコープは正常に生成されます（ただし評価対象は空）
-* 開発者モードでは `console.warn` にエラーメッセージが表示されます
-* `{{name}}` などの評価式は `null` となり、空文字として表示されます
+- スコープは正常に生成されます（ただし評価対象は空）
+- 開発者モードでは `console.warn` にエラーメッセージが表示されます
+- `{{name}}` などの評価式は `null` となり、空文字として表示されます
 
 ---
 
 ## 3.8 禁止事項と注意点
 
-* `{{}}`（空のプレースホルダ）は使用禁止
-* `data-each` に文字列配列を直接バインドし、`{{}}` で表示する構文も禁止（非オブジェクト形式）
+- `{{}}`（空のプレースホルダ）は使用禁止
+- `data-each` に文字列配列を直接バインドし、`{{}}` で表示する構文も禁止（非オブジェクト形式）
 
 ---
 
@@ -462,12 +462,12 @@ Haori-JS では、`data-if` や `data-each` といった属性を使って、表
 
 `data-if` の式が次のいずれかの値と評価された場合、その要素は非表示となります：
 
-* `false`
-* `0`
-* `""`（空文字）
-* `null`
-* `undefined`
-* `NaN`
+- `false`
+- `0`
+- `""`（空文字）
+- `null`
+- `undefined`
+- `NaN`
 
 これらの値はすべて JavaScript において「false とみなされる値」です。
 
@@ -509,8 +509,8 @@ Haori-JS では、`data-if` や `data-each` といった属性を使って、表
 
 式が false に評価された要素には、次の属性が自動で付与されます：
 
-* `data-if-false`（値なし）
-* `style="display: none;"`（元の表示状態を保持）
+- `data-if-false`（値なし）
+- `style="display: none;"`（元の表示状態を保持）
 
 これにより、要素が非表示であることが明示され、条件が変化したときに再表示される仕組みが構成されています。
 
@@ -520,16 +520,16 @@ Haori-JS では、`data-if` や `data-each` といった属性を使って、表
 
 以下のような操作により `data-if` の式が再評価され、表示状態が更新されます：
 
-* 自身または親要素の `data-bind` の値が変更されたとき
-* 通信（`data-fetch` など）によってデータが更新されたとき
+- 自身または親要素の `data-bind` の値が変更されたとき
+- 通信（`data-fetch` など）によってデータが更新されたとき
 
 ---
 
 ### 注意点
 
-* `data-if` が false のとき、要素の内部（子ノード）は削除されますが、要素本体は残り、画面には表示されません。
-* 非表示状態の要素では、プレースホルダや属性の評価、イベント処理などは実行されません。
-* `data-if` と `data-each` を同時に指定した場合、`data-if` の評価が false であれば `data-each` の繰り返し処理は行われません。
+- `data-if` が false のとき、要素の内部（子ノード）は削除されますが、要素本体は残り、画面には表示されません。
+- 非表示状態の要素では、プレースホルダや属性の評価、イベント処理などは実行されません。
+- `data-if` と `data-each` を同時に指定した場合、`data-if` の評価が false であれば `data-each` の繰り返し処理は行われません。
 
 ---
 
@@ -793,8 +793,8 @@ Haori では、`data-each` によって繰り返し表示された行に対し�
 ```json
 {
   "items": [
-    { "id": 101, "name": "りんご" },
-    { "id": 102, "name": "ばなな" }
+    {"id": 101, "name": "りんご"},
+    {"id": 102, "name": "ばなな"}
   ]
 }
 ```
@@ -839,8 +839,8 @@ Haori では、HTML フォームとデータオブジェクトを双方向に結
 
 Haori では、`form` 要素に `data-bind` を設定し、内部の `input` / `select` / `textarea` などに `name` 属性を指定することで、**データとフォームの内容が自動的に同期**されます。
 
-* 入力欄の値を変更すると `data-bind` の値が更新されます。
-* `data-bind` の値が更新されると、フォームの表示内容も即座に再設定されます。
+- 入力欄の値を変更すると `data-bind` の値が更新されます。
+- `data-bind` の値が更新されると、フォームの表示内容も即座に再設定されます。
 
 このように、Haori ではフォームとデータが双方向に連動して動作します。
 
@@ -870,8 +870,8 @@ Haori では、`form` 要素に `data-bind` を設定し、内部の `input` / `
 
 ### 表示結果
 
-* 入力欄に「こんにちは」と表示される。
-* 入力内容を変更すると、下の `<p>` の表示も更新される。
+- 入力欄に「こんにちは」と表示される。
+- 入力内容を変更すると、下の `<p>` の表示も更新される。
 
 > **補足**：`value="こんにちは"` は実際には **DOM プロパティ（`element.value`）** によって設定されています。HTML 上では `value` 属性が存在しなくても、ブラウザの表示では正しく反映されます。
 
@@ -882,13 +882,13 @@ Haori では、`form` 要素に `data-bind` を設定し、内部の `input` / `
 Haori-JS では、フォーム要素の値の設定・取得はすべて **DOMのプロパティ**（`value`, `checked`, `selectedIndex` など）を通じて行われます。
 HTML 属性（例：`value="..."`, `checked`）は初期化のために使用されますが、Haori の処理中には再利用されません。
 
-| 要素タイプ                     | 使用する DOM プロパティ              |
-| ------------------------- | --------------------------- |
-| `<input type="text">`     | `.value`                    |
+| 要素タイプ                | 使用する DOM プロパティ          |
+| ------------------------- | -------------------------------- |
+| `<input type="text">`     | `.value`                         |
 | `<textarea>`              | `.value`（※内容＝`textContent`） |
-| `<input type="checkbox">` | `.checked`                  |
-| `<input type="radio">`    | `.checked`                  |
-| `<select>`                | `.value`, `.selectedIndex`  |
+| `<input type="checkbox">` | `.checked`                       |
+| `<input type="radio">`    | `.checked`                       |
+| `<select>`                | `.value`, `.selectedIndex`       |
 
 > 特に `<textarea>` は `value` 属性を使用できず、初期値はタグの中身（`textContent`）で決まります。Haori は `.value` を使用して値の同期を行います。
 
@@ -904,7 +904,8 @@ HTML 属性（例：`value="..."`, `checked`）は初期化のために使用さ
 ```html
 <form data-form-arg="user">
   <input name="email" />
-  <p>{{email}}</p> <!-- 評価されない -->
+  <p>{{email}}</p>
+  <!-- 評価されない -->
 </form>
 ```
 
@@ -926,9 +927,9 @@ HTML 属性（例：`value="..."`, `checked`）は初期化のために使用さ
 Haori では、`form` 要素の中にさらに `data-bind` が存在する場合、**親スコープが継承されます**。
 ただし、同じキーが子スコープにも存在する場合は、常に子の値が優先されます。
 
-| 条件       | スコープの扱い       |
-| -------- | ------------- |
-| 同名キーがある  | 子スコープが上書きする   |
+| 条件             | スコープの扱い             |
+| ---------------- | -------------------------- |
+| 同名キーがある   | 子スコープが上書きする     |
 | オブジェクトでも | 親とはマージせず完全上書き |
 
 > この仕様は `data-each` などのスコープでも共通です。
@@ -977,6 +978,7 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
 
 > ※ 送信時は `{"user":{"name":"...","email":"..."}}` の形式になります。
 > ※ `data-form-object` の対象となるすべての入力要素の `.value` が空文字列である場合、そのオブジェクトは送信時に除外されます。
+
 ---
 
 ## 5.3 `data-row` による行バインディング
@@ -985,9 +987,9 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
 
 ### 特徴
 
-* `data-each` の対象が配列である場合、その配列の各要素ごとに `data-row` を持つノードが複製されます。
-* 行内に含まれる `input` や `select` などのフォーム要素は、`name` 属性に基づいてオブジェクト形式でバインディングされます。
-* 各行の `data-bind` は、その行に対応する配列要素の内容（オブジェクト）になります。
+- `data-each` の対象が配列である場合、その配列の各要素ごとに `data-row` を持つノードが複製されます。
+- 行内に含まれる `input` や `select` などのフォーム要素は、`name` 属性に基づいてオブジェクト形式でバインディングされます。
+- 各行の `data-bind` は、その行に対応する配列要素の内容（オブジェクト）になります。
 
 ---
 
@@ -1012,12 +1014,12 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
 <form data-bind='{"list":[{"id":1,"name":"山田"},{"id":2,"name":"佐藤"}]}'>
   <div data-each="list">
     <div data-row data-bind='{"id":1,"name":"山田"}'>
-      <input name="id" value="1">
-      <input name="name" value="山田">
+      <input name="id" value="1" />
+      <input name="name" value="山田" />
     </div>
     <div data-row data-bind='{"id":2,"name":"佐藤"}'>
-      <input name="id" value="2">
-      <input name="name" value="佐藤">
+      <input name="id" value="2" />
+      <input name="name" value="佐藤" />
     </div>
   </div>
 </form>
@@ -1036,16 +1038,16 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
 
 ### 備考
 
-* `data-row` は明示的に記述する必要はありません。`data-each` によって複製された行に自動で付与されます。
-* `data-each-key` を指定している場合は、`data-row="keyの値"` のようにキー値が属性値として付与されます。
-* `data-row` のある要素は、`data-row-remove` などの行操作にも使用されます。
+- `data-row` は明示的に記述する必要はありません。`data-each` によって複製された行に自動で付与されます。
+- `data-each-key` を指定している場合は、`data-row="keyの値"` のようにキー値が属性値として付与されます。
+- `data-row` のある要素は、`data-row-remove` などの行操作にも使用されます。
 
 ---
 
 ### 空の `data-form-object` や `data-row` も除外される
 
-* `data-form-object` 配下にあるすべての入力項目が空である場合、そのオブジェクトは `data-bind` の結果に含まれません。
-* `data-row` により繰り返される各行についても、行内のすべての入力項目が空であれば、その行は配列から削除されます。
+- `data-form-object` 配下にあるすべての入力項目が空である場合、そのオブジェクトは `data-bind` の結果に含まれません。
+- `data-row` により繰り返される各行についても、行内のすべての入力項目が空であれば、その行は配列から削除されます。
 
 #### 例：
 
@@ -1083,12 +1085,12 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
 
 ### 属性一覧
 
-| 属性名                  | 機能概要                           |
-| -------------------- | ------------------------------ |
-| `data-row-add`       | 行を1件追加します。通常は直前の行の内容をコピーします。   |
+| 属性名               | 機能概要                                                    |
+| -------------------- | ----------------------------------------------------------- |
+| `data-row-add`       | 行を1件追加します。通常は直前の行の内容をコピーします。     |
 | `data-row-remove`    | 該当の行を削除します。行が1件のみの場合はリセットされます。 |
-| `data-row-move-up`   | 該当の行を1つ上に移動します。                |
-| `data-row-move-down` | 該当の行を1つ下に移動します。                |
+| `data-row-move-up`   | 該当の行を1つ上に移動します。                               |
+| `data-row-move-down` | 該当の行を1つ下に移動します。                               |
 
 ### 使用例（`data-row-add`）
 
@@ -1111,7 +1113,7 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
     <input name="name" value="りんご" />
     <button data-row-add>追加</button>
   </div>
-  <div data-row data-bind='{}'>
+  <div data-row data-bind="{}">
     <input name="name" value="" />
     <button data-row-add>追加</button>
   </div>
@@ -1152,10 +1154,10 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
 
 ### 注意点
 
-* いずれの属性も、**フォーム要素内かつ `data-row` 配下で使用する必要があります**。
-* `data-row-add` により追加された行は、直前の行の構造をもとにテンプレートが生成されます。
-* `data-row-remove` の動作詳細については、次節（5.5）を参照してください。
-* `data-row` は、これらの属性が正しく動作するための目印として必要です。
+- いずれの属性も、**フォーム要素内かつ `data-row` 配下で使用する必要があります**。
+- `data-row-add` により追加された行は、直前の行の構造をもとにテンプレートが生成されます。
+- `data-row-remove` の動作詳細については、次節（5.5）を参照してください。
+- `data-row` は、これらの属性が正しく動作するための目印として必要です。
 
 ---
 
@@ -1317,8 +1319,8 @@ Haori で `data-each` を使って配列を扱う場合、繰り返し要素は 
 ```json
 {
   "items": [
-    { "key1": "a", "key2": "b" },
-    { "key1": "x", "key2": "y" }
+    {"key1": "a", "key2": "b"},
+    {"key1": "x", "key2": "y"}
   ]
 }
 ```
@@ -1514,14 +1516,14 @@ ichiro@example.com
 
 #### 挙動
 
-* 通常、要素が `data-if` によって非表示（`data-if-false` 付き）になっている場合、その要素ではフェッチ処理（`data-fetch`、`data-click-fetch` など）は実行されません。
-* しかし、`data-fetch-force` が付与されている場合は、**表示状態に関係なくフェッチが実行されます**。
-* フェッチ結果は、対象要素の `data-bind` に反映され、`data-if` が再評価されることもあります。
+- 通常、要素が `data-if` によって非表示（`data-if-false` 付き）になっている場合、その要素ではフェッチ処理（`data-fetch`、`data-click-fetch` など）は実行されません。
+- しかし、`data-fetch-force` が付与されている場合は、**表示状態に関係なくフェッチが実行されます**。
+- フェッチ結果は、対象要素の `data-bind` に反映され、`data-if` が再評価されることもあります。
 
 #### 注意点
 
-* DOM に非表示のままでもフェッチが走るため、画面に直接表示されない場合があります。
-* 通信後に `data-if` の条件が true に変わると、要素が再挿入され、フェッチ結果が反映された状態で表示されます。
+- DOM に非表示のままでもフェッチが走るため、画面に直接表示されない場合があります。
+- 通信後に `data-if` の条件が true に変わると、要素が再挿入され、フェッチ結果が反映された状態で表示されます。
 
 ---
 
@@ -1587,7 +1589,7 @@ ichiro@example.com
 
 ```json
 {
-  "items": [{ "name": "りんご" }, { "name": "みかん" }, { "name": "ぶどう" }]
+  "items": [{"name": "りんご"}, {"name": "みかん"}, {"name": "ぶどう"}]
 }
 ```
 
@@ -1635,7 +1637,7 @@ ichiro@example.com
 ### レスポンスの JSON
 
 ```json
-{ "name": "加藤" }
+{"name": "加藤"}
 ```
 
 ### 最終的な HTML 構造
@@ -1662,36 +1664,34 @@ ichiro@example.com
 
 ```html
 <!-- 通信結果全体を items に代入する -->
-<div id="target" data-bind='{"items": []}'>
-  ...
-</div>
+<div id="target" data-bind='{"items": []}'>...</div>
 
 <!-- ボタン押下時に通信し、target の items に結果を反映 -->
 <button
   data-click-fetch="/api/items"
   data-fetch-bind="#target"
   data-fetch-bind-arg="items"
-  data-click-form>
+  data-click-form
+>
   データ取得
 </button>
 ```
 
 #### 挙動
 
-* `data-fetch-bind` が指定された場合、通信結果（JSON）は、その対象要素の `data-bind` に反映されます。
-* `data-fetch-bind-arg` が指定されている場合は、通信結果がそのキーにのみ代入されます。
-
-  * 例：通信結果が `[{"id":1},{"id":2}]`、`data-fetch-bind-arg="items"` の場合は：
+- `data-fetch-bind` が指定された場合、通信結果（JSON）は、その対象要素の `data-bind` に反映されます。
+- `data-fetch-bind-arg` が指定されている場合は、通信結果がそのキーにのみ代入されます。
+  - 例：通信結果が `[{"id":1},{"id":2}]`、`data-fetch-bind-arg="items"` の場合は：
 
     ```js
-    target.dataBind.items = [{"id":1},{"id":2}];
+    target.dataBind.items = [{id: 1}, {id: 2}];
     ```
 
 #### 注意点
 
-* `data-fetch-bind-arg` を指定しない場合、通信結果全体が `data-bind` に置き換わります。
-* `data-fetch-bind` に複数の要素が一致する場合、最初の1つだけが対象になります。
-* `data-fetch-bind-arg` に指定する値は、JavaScript のオブジェクトキーとして解釈されます（ドット記法や配列添字などはサポートしません）。
+- `data-fetch-bind-arg` を指定しない場合、通信結果全体が `data-bind` に置き換わります。
+- `data-fetch-bind` に複数の要素が一致する場合、最初の1つだけが対象になります。
+- `data-fetch-bind-arg` に指定する値は、JavaScript のオブジェクトキーとして解釈されます（ドット記法や配列添字などはサポートしません）。
 
 ---
 
@@ -1825,7 +1825,7 @@ ichiro@example.com
 
 ```json
 {
-  "items": [{ "name": "マンゴー" }, { "name": "パイナップル" }]
+  "items": [{"name": "マンゴー"}, {"name": "パイナップル"}]
 }
 ```
 
@@ -1857,7 +1857,6 @@ ichiro@example.com
 
 - `data-fetch-content-type` / `data-click-content-type` を指定すると、送信形式を変更できます。
   その場合、リクエストパラメータは Content-Type に応じたデータ形式になります。
-
   - 例：`application/x-www-form-urlencoded`
 
 ---
@@ -1906,7 +1905,6 @@ ichiro@example.com
 
 ---
 
-
 ## 6.12 バリデーションチェック：`data-fetch-validate`
 
 `data-fetch-validate` を使用すると、フェッチ通信を実行する前に、**HTML 標準の入力バリデーション**を実行させることができます。
@@ -1916,8 +1914,8 @@ ichiro@example.com
 
 ### 属性の役割
 
-| 属性名                   | 型       | 説明                                                 |
-| --------------------- | ------- | -------------------------------------------------- |
+| 属性名                | 型             | 説明                                                                                                 |
+| --------------------- | -------------- | ---------------------------------------------------------------------------------------------------- |
 | `data-fetch-validate` | なしまたは任意 | この属性が指定されている場合、フェッチ送信前にバリデーションを実行します。失敗時は通信を行いません。 |
 
 > この属性は `data-fetch`、`data-click-fetch`、`data-change-fetch` のいずれにも適用できます。
@@ -1971,18 +1969,18 @@ ichiro@example.com
 
 ### 表示結果・動作結果
 
-* 入力が空欄や不正な形式である場合：通信はキャンセルされ、ブラウザの標準エラーメッセージが表示されます。
-* 入力が正しい形式であれば、通常どおりフェッチ通信が実行されます。
+- 入力が空欄や不正な形式である場合：通信はキャンセルされ、ブラウザの標準エラーメッセージが表示されます。
+- 入力が正しい形式であれば、通常どおりフェッチ通信が実行されます。
 
 ---
 
 ### 対応するHTMLバリデーション（例）
 
-* `required`
-* `type=email`, `type=number`, `type=url`
-* `min`, `max`
-* `pattern`
-* `maxlength`, `minlength`
+- `required`
+- `type=email`, `type=number`, `type=url`
+- `min`, `max`
+- `pattern`
+- `maxlength`, `minlength`
 
 > これらはブラウザの `form.checkValidity()` および `form.reportValidity()` を使用して評価されます。
 
@@ -1990,8 +1988,8 @@ ichiro@example.com
 
 ### 注意点
 
-* バリデーションに失敗すると、Haoriは**通信イベントを一切発生させません**。
-* JavaScriptによる追加バリデーションや独自のエラー表示は、Haoriの外側で制御する必要があります。
+- バリデーションに失敗すると、Haoriは**通信イベントを一切発生させません**。
+- JavaScriptによる追加バリデーションや独自のエラー表示は、Haoriの外側で制御する必要があります。
 
 ---
 
@@ -2110,8 +2108,8 @@ JavaScript の記述なしで、ボタンのクリックや入力値の変更に
 
 #### 対象
 
-* `data-click-fetch` を使用し、かつ同じボタンに `data-click-form` が付いている場合
-* または `data-fetch-form` によってフォームが指定されている場合
+- `data-click-fetch` を使用し、かつ同じボタンに `data-click-form` が付いている場合
+- または `data-fetch-form` によってフォームが指定されている場合
 
 #### 動作仕様
 
@@ -2142,8 +2140,8 @@ Haori-JS は次のように処理を行います。
 
 ```html
 <form>
-  <input name="email">
-  <input name="password">
+  <input name="email" />
+  <input name="password" />
 </form>
 ```
 
@@ -2151,22 +2149,22 @@ Haori-JS は次のように処理を行います。
 
 ```html
 <form>
-  <input name="email" data-message="メールアドレスは必須です">
-  <input name="password" data-message="8文字以上で入力してください">
+  <input name="email" data-message="メールアドレスは必須です" />
+  <input name="password" data-message="8文字以上で入力してください" />
 </form>
 ```
 
 #### ネストされたキーについて
 
-* `key` が `"address.zip"` のようにドット区切りの場合：
+- `key` が `"address.zip"` のようにドット区切りの場合：
+  - `name="address.zip"` を持つ要素が対象となります。
 
-  * `name="address.zip"` を持つ要素が対象となります。
-* 配列の場合（例：`users[0].email`）も同様に、`name="users[0].email"` の形式で一致を判定します。
+- 配列の場合（例：`users[0].email`）も同様に、`name="users[0].email"` の形式で一致を判定します。
 
 #### 注意点
 
-* `data-message` 属性を画面に表示させるには、CSSなどでスタイル表示を行う必要があります。
-* 通信開始前には、対象フォーム内のすべての `data-message` 属性が削除され、前回のエラーはリセットされます。
+- `data-message` 属性を画面に表示させるには、CSSなどでスタイル表示を行う必要があります。
+- 通信開始前には、対象フォーム内のすべての `data-message` 属性が削除され、前回のエラーはリセットされます。
 
 ---
 
@@ -2326,9 +2324,9 @@ Haori-JS は次のように処理を行います。
 
 ```json
 [
-  { "key": "user.email", "message": "メールアドレスを入力してください" },
-  { "key": "items[0].name", "message": "1つ目の名前が未入力です" },
-  { "key": "items[2].price", "message": "3つ目の価格が不正です" }
+  {"key": "user.email", "message": "メールアドレスを入力してください"},
+  {"key": "items[0].name", "message": "1つ目の名前が未入力です"},
+  {"key": "items[2].price", "message": "3つ目の価格が不正です"}
 ]
 ```
 
@@ -2610,7 +2608,7 @@ apple に一致する商品は3件見つかりました
 ### フェッチ時のレスポンス JSON：
 
 ```json
-{ "status": "ok" }
+{"status": "ok"}
 ```
 
 ### 最終的な HTML 構造（送信直後）：
@@ -2660,7 +2658,6 @@ apple に一致する商品は3件見つかりました
 
 ---
 
-
 ## 8.8 ボタンで他の要素をクリックさせたい（`data-click-click`）
 
 `data-click-click` を使うと、ボタンをクリックした際に、指定したセレクタの要素を自動でクリックさせることができます。
@@ -2683,8 +2680,8 @@ apple に一致する商品は3件見つかりました
 
 ### 表示結果
 
-* 「次へ」ボタンを押すと、非表示の `#confirm` ボタンがクリックされる（イベントが発火する）
-* `#confirm` は hidden であっても `click()` は有効
+- 「次へ」ボタンを押すと、非表示の `#confirm` ボタンがクリックされる（イベントが発火する）
+- `#confirm` は hidden であっても `click()` は有効
 
 > `data-change-click` も同様の動作で、値変更時に発動します。
 
@@ -2714,8 +2711,8 @@ apple に一致する商品は3件見つかりました
 
 ### 表示結果
 
-* 入力欄が初期値 `sample@example.com` に戻る
-* `data-message` 属性も削除される
+- 入力欄が初期値 `sample@example.com` に戻る
+- `data-message` 属性も削除される
 
 > `data-change-reset` を使用すれば、チェックボックス変更に応じてリセットさせることも可能です。
 
@@ -2734,7 +2731,9 @@ apple に一致する商品は3件見つかりました
       <input name="name" />
     </div>
   </div>
-  <button type="button" data-row-add data-click-data='{"name": "新規"}'>追加</button>
+  <button type="button" data-row-add data-click-data='{"name": "新規"}'>
+    追加
+  </button>
 </form>
 ```
 
@@ -2767,11 +2766,7 @@ apple に一致する商品は3件見つかりました
   <input name="email" type="email" required />
 </form>
 
-<button
-  data-fetch="/api/check"
-  data-fetch-form="#myForm"
-  data-fetch-validate
->
+<button data-fetch="/api/check" data-fetch-form="#myForm" data-fetch-validate>
   送信
 </button>
 ```
@@ -2783,19 +2778,15 @@ apple に一致する商品は3件見つかりました
   <input name="email" type="email" required />
 </form>
 
-<button
-  data-fetch="/api/check"
-  data-fetch-form="#myForm"
-  data-fetch-validate
->
+<button data-fetch="/api/check" data-fetch-form="#myForm" data-fetch-validate>
   送信
 </button>
 ```
 
 ### 表示結果
 
-* 入力が空または不正な場合、送信は中止され、HTMLの標準エラー表示が出る
-* 正しい入力があれば、フェッチが実行される
+- 入力が空または不正な場合、送信は中止され、HTMLの標準エラー表示が出る
+- 正しい入力があれば、フェッチが実行される
 
 > このバリデーションは `form.reportValidity()` を使用しています。
 
@@ -2809,9 +2800,13 @@ apple に一致する商品は3件見つかりました
 
 ```html
 <form data-bind='{"query": {"page": 1}}' data-form-arg="query">
-  <button type="submit" data-click-form data-click-data="page={{query.page-1}}">前へ</button>
+  <button type="submit" data-click-form data-click-data="page={{query.page-1}}">
+    前へ
+  </button>
   <span>ページ {{query.page}}</span>
-  <button type="submit" data-click-form data-click-data="page={{query.page+1}}">次へ</button>
+  <button type="submit" data-click-form data-click-data="page={{query.page+1}}">
+    次へ
+  </button>
 </form>
 
 <div data-fetch="/api/items" data-fetch-form></div>
@@ -3411,7 +3406,7 @@ B
 
 ```json
 {
-  "items": [{ "name": "リンゴ" }, { "name": "バナナ" }]
+  "items": [{"name": "リンゴ"}, {"name": "バナナ"}]
 }
 ```
 
@@ -3476,7 +3471,7 @@ Content-Type ヘッダーを明示します。
 ```json
 {
   "status": "ok",
-  "items": [{ "name": "りんご" }, { "name": "みかん" }]
+  "items": [{"name": "りんご"}, {"name": "みかん"}]
 }
 ```
 
@@ -3563,7 +3558,7 @@ Content-Type ヘッダーを明示します。
 
 ```json
 {
-  "items": [{ "name": "桃" }, { "name": "ぶどう" }]
+  "items": [{"name": "桃"}, {"name": "ぶどう"}]
 }
 ```
 
@@ -4293,7 +4288,7 @@ A
 ### レスポンスの JSON（例）：
 
 ```json
-[{ "name": "商品A" }, { "name": "商品B" }]
+[{"name": "商品A"}, {"name": "商品B"}]
 ```
 
 ### 応用例：
@@ -4431,7 +4426,7 @@ Haori では、`data-fetch` や `data-click-fetch` を使って外部 API と通
 
 ```json
 {
-  "items": [{ "name": "山田" }, { "name": "田中" }]
+  "items": [{"name": "山田"}, {"name": "田中"}]
 }
 ```
 
@@ -4571,7 +4566,7 @@ Haori では、`data-fetch` や `data-click-fetch` を使って外部 API と通
 
 ```json
 {
-  "items": [{ "name": "青りんご" }, { "name": "赤りんご" }]
+  "items": [{"name": "青りんご"}, {"name": "赤りんご"}]
 }
 ```
 
@@ -4671,7 +4666,6 @@ Haori では、検索ボタンなどに `data-click-history` を指定するこ�
 1. フォーム `#searchForm` の `data-bind` 値（例：`{ "q": "ぶどう" }`）を取得
 2. `/api/search` にデータを送信（`data-click-fetch` により）
 3. 現在のページ URL に `?q=ぶどう` を追加
-
    - 例：`/search.html` → `/search.html?q=ぶどう`
 
 4. `history.pushState()` によってこの状態を履歴に追加
@@ -4722,19 +4716,15 @@ Haori-JS では、通常 `data-if` により非表示状態（`data-if-false`）
 
 ### 利用シーンの例
 
-* 非表示のセクションであってもバックグラウンドでデータ取得を行いたいとき
-* **フェッチ結果によって `data-if` の評価を変化させ、要素を表示させたいとき**
+- 非表示のセクションであってもバックグラウンドでデータ取得を行いたいとき
+- **フェッチ結果によって `data-if` の評価を変化させ、要素を表示させたいとき**
 
 ---
 
 ### HTML記述例
 
 ```html
-<div
-  data-if="user.active"
-  data-fetch="/api/user/123"
-  data-fetch-force
->
+<div data-if="user.active" data-fetch="/api/user/123" data-fetch-force>
   <p>{{user.name}}</p>
 </div>
 ```
@@ -4750,8 +4740,7 @@ Haori-JS では、通常 `data-if` により非表示状態（`data-if-false`）
   style="display: none"
   data-fetch="/api/user/123"
   data-fetch-force
->
-</div>
+></div>
 ```
 
 ---
@@ -4771,9 +4760,9 @@ Haori-JS では、通常 `data-if` により非表示状態（`data-if-false`）
 
 ### 表示結果
 
-* 初期状態では `<div>` は非表示
-* フェッチ成功により `data-bind` が更新され、`user.active = true` に変化
-* `data-if="user.active"` の評価が true になるため、要素が表示され、内部の内容がレンダリングされる
+- 初期状態では `<div>` は非表示
+- フェッチ成功により `data-bind` が更新され、`user.active = true` に変化
+- `data-if="user.active"` の評価が true になるため、要素が表示され、内部の内容がレンダリングされる
 
 ```
 佐藤
@@ -4783,18 +4772,18 @@ Haori-JS では、通常 `data-if` により非表示状態（`data-if-false`）
 
 ### 補足仕様
 
-* `data-fetch-force` は、非表示中でも強制的に `data-fetch` を実行します。
-* フェッチ結果はその要素自身の `data-bind` に設定されます。
-* その結果、`data-if` の条件が true に変われば、DOMが再表示され、プレースホルダも再評価されます。
-* `data-fetch-form` や `data-fetch-bind` と組み合わせることも可能です。
+- `data-fetch-force` は、非表示中でも強制的に `data-fetch` を実行します。
+- フェッチ結果はその要素自身の `data-bind` に設定されます。
+- その結果、`data-if` の条件が true に変われば、DOMが再表示され、プレースホルダも再評価されます。
+- `data-fetch-form` や `data-fetch-bind` と組み合わせることも可能です。
 
 ---
 
 ### 使用上の注意
 
-* `data-if` によって非表示となっていても、スコープは保持されており、`data-fetch-force` によってスコープの `data` が更新されます。
-* これにより、**`data-if` の条件式が変化して true になると、DOMが復元・表示されます。**
-* この仕組みを活用することで、「表示されていないが条件が満たされたら出現するUI」を構成できます。
+- `data-if` によって非表示となっていても、スコープは保持されており、`data-fetch-force` によってスコープの `data` が更新されます。
+- これにより、**`data-if` の条件式が変化して true になると、DOMが復元・表示されます。**
+- この仕組みを活用することで、「表示されていないが条件が満たされたら出現するUI」を構成できます。
 
 ---
 
@@ -5028,9 +5017,9 @@ Haori は、行の追加・削除・移動時に以下のカスタムイベン�
 
 ### 基本仕様
 
-* `data-each-key="id"` のように指定すると、各行の `data-bind` に含まれるキー（例：`id`）の値をもとに、行の同一性を判定します。
-* DOM の並び順が変わった場合でも、**キーが一致していればノードを再利用**し、プレースホルダのみ再評価されます。
-* キーが一致しない行は削除され、新しい行はテンプレートから再生成されます。
+- `data-each-key="id"` のように指定すると、各行の `data-bind` に含まれるキー（例：`id`）の値をもとに、行の同一性を判定します。
+- DOM の並び順が変わった場合でも、**キーが一致していればノードを再利用**し、プレースホルダのみ再評価されます。
+- キーが一致しない行は削除され、新しい行はテンプレートから再生成されます。
 
 ---
 
@@ -5070,37 +5059,37 @@ B
 
 ### 差分判定と `data-row` の付与
 
-* `data-each-key` が指定されている場合、差分描画時に自動で `data-row="キーの値"` が付与されます。
-* この属性により、開発者は描画された行とデータの対応関係を簡単に確認できます。
+- `data-each-key` が指定されている場合、差分描画時に自動で `data-row="キーの値"` が付与されます。
+- この属性により、開発者は描画された行とデータの対応関係を簡単に確認できます。
 
 ---
 
 ### キーが指定されていない場合
 
-* `data-each-key` がない場合、Haori は各行の `data-bind` 属性値（JSON文字列）をもとに構造比較を行い、差分を判定します。
-* オブジェクトの順序や構造が微妙に異なると、同じ行でも別物とみなされるため、**不必要な再描画が発生する可能性があります**。
+- `data-each-key` がない場合、Haori は各行の `data-bind` 属性値（JSON文字列）をもとに構造比較を行い、差分を判定します。
+- オブジェクトの順序や構造が微妙に異なると、同じ行でも別物とみなされるため、**不必要な再描画が発生する可能性があります**。
 
 ---
 
 ### 差分適用の順序
 
-* 差分描画は常に **DOMの上から下（top-down）順** に適用されます。
-* 親要素の描画後に、子要素の `data-each` が再帰的に処理されます。
+- 差分描画は常に **DOMの上から下（top-down）順** に適用されます。
+- 親要素の描画後に、子要素の `data-each` が再帰的に処理されます。
 
 ---
 
 ### 注意点
 
-* キー値は文字列として扱われ、`data-row="1"` のようにDOM上に反映されます。
-* `data-row` はプレースホルダ評価にも影響しませんが、差分追跡とデバッグの助けになります。
-* `data-each-key` の値が重複していると、描画が不安定になる可能性があります（キーは一意であるべきです）。
+- キー値は文字列として扱われ、`data-row="1"` のようにDOM上に反映されます。
+- `data-row` はプレースホルダ評価にも影響しませんが、差分追跡とデバッグの助けになります。
+- `data-each-key` の値が重複していると、描画が不安定になる可能性があります（キーは一意であるべきです）。
 
 ---
 
 ### 開発上の推奨
 
-* 配列内のオブジェクトに一意なキー（`id` など）がある場合は、**必ず `data-each-key` を指定**してください。
-* 特に差分更新や並び替えがある UI では、描画の最適化と正確性のために不可欠です。
+- 配列内のオブジェクトに一意なキー（`id` など）がある場合は、**必ず `data-each-key` を指定**してください。
+- 特に差分更新や並び替えがある UI では、描画の最適化と正確性のために不可欠です。
 
 ---
 
@@ -5125,8 +5114,8 @@ Haori-JS において `data-each` を用いた繰り返し表示では、配列�
 
 ### プレースホルダの再評価順序：DOM順
 
-* 各行内のプレースホルダ（`{{...}}`）は、**DOM に登場する順に順次評価され、即座に反映されます**。
-* 属性内のプレースホルダも含め、評価順はそのエレメント内の並びに従います。
+- 各行内のプレースホルダ（`{{...}}`）は、**DOM に登場する順に順次評価され、即座に反映されます**。
+- 属性内のプレースホルダも含め、評価順はそのエレメント内の並びに従います。
 
 > これにより、上から下へ順に再評価が行われ、UIの安定表示が実現されます。
 
@@ -5134,37 +5123,41 @@ Haori-JS において `data-each` を用いた繰り返し表示では、配列�
 
 ### ネスト構造への対応
 
-* `data-each` の中にさらに `data-each` が存在する場合、Haori は **親の `data-each` が描画完了してから、子の `data-each` を再帰的に評価**します。
-* 親スコープ → 子スコープ の順に `bindScope()` と `evaluateDataEach()` が実行されます。
+- `data-each` の中にさらに `data-each` が存在する場合、Haori は **親の `data-each` が描画完了してから、子の `data-each` を再帰的に評価**します。
+- 親スコープ → 子スコープ の順に `bindScope()` と `evaluateDataEach()` が実行されます。
 
 ---
 
 ### 再評価と `data-if` の影響
 
-* 非表示（`data-if="false"`）となっている行は、**`visible = false` のため再評価対象外**になります。
-* プレースホルダ・属性・子の `data-each` なども評価されません。
-* `data-if` の条件が true に変化して再表示されると、その時点で評価・描画が行われます。
+- 非表示（`data-if="false"`）となっている行は、**`visible = false` のため再評価対象外**になります。
+- プレースホルダ・属性・子の `data-each` なども評価されません。
+- `data-if` の条件が true に変化して再表示されると、その時点で評価・描画が行われます。
 
 ---
 
 ### スコープとの関係
 
-* 差分描画において行が再利用される場合、その行の `BindingScope` も引き続き使用されます。
-* 差分によって新規行が追加された場合は、`cloneNode()` の後に `bindScope()` によって新しいスコープが生成されます。
+- 差分描画において行が再利用される場合、その行の `BindingScope` も引き続き使用されます。
+- 差分によって新規行が追加された場合は、`cloneNode()` の後に `bindScope()` によって新しいスコープが生成されます。
 
 ---
 
 ### 補足：依存トラッキングは使用しない
 
-* Haori-JS はプレースホルダの依存キーを自動追跡する機構（依存トラッキング）を持ちません。
-* 代わりに、**スコープ単位で一括再評価**を行う設計になっています。
+- Haori-JS はプレースホルダの依存キーを自動追跡する機構（依存トラッキング）を持ちません。
+- 代わりに、**スコープ単位で一括再評価**を行う設計になっています。
 
 ---
 
 ### 表示例（ネストされた data-each）
 
 ```html
-<div data-bind='{"rows":[{"items":[1,2]},{"items":[3,4]}]}' data-each="rows" data-each-arg="row">
+<div
+  data-bind='{"rows":[{"items":[1,2]},{"items":[3,4]}]}'
+  data-each="rows"
+  data-each-arg="row"
+>
   <div data-each="row.items" data-each-arg="item">
     <span>{{item}}</span>
   </div>
@@ -5180,13 +5173,13 @@ Haori-JS において `data-each` を用いた繰り返し表示では、配列�
 
 ### まとめ
 
-| 項目                      | 挙動                               |
-| ----------------------- | -------------------------------- |
-| 差分適用の順序                 | 上から下（top-down）                   |
-| プレースホルダ評価順              | DOM 順（属性・テキストノードを含む）             |
-| ネストされた `data-each` の評価  | 親が終わってから子を再帰的に処理                 |
-| 非表示中（`data-if="false"`） | 再評価されない。条件が true になったタイミングで評価される |
-| 依存トラッキング                | 使用しない（スコープ単位で再評価）                |
+| 項目                            | 挙動                                                       |
+| ------------------------------- | ---------------------------------------------------------- |
+| 差分適用の順序                  | 上から下（top-down）                                       |
+| プレースホルダ評価順            | DOM 順（属性・テキストノードを含む）                       |
+| ネストされた `data-each` の評価 | 親が終わってから子を再帰的に処理                           |
+| 非表示中（`data-if="false"`）   | 再評価されない。条件が true になったタイミングで評価される |
+| 依存トラッキング                | 使用しない（スコープ単位で再評価）                         |
 
 ---
 
@@ -5198,8 +5191,8 @@ Haori-JS においては、`data-each` によって繰り返し表示された�
 
 ### 基本方針
 
-* Haori-JS は `data-bind` を UI 状態の唯一の正とみなし、外部フェッチや操作によって `data-bind` が変更されると、**その内容で画面が再構成されます**。
-* 手動入力された値や動的に追加された行は、更新後のバインドデータに含まれない限り、**DOMから消去されます**。
+- Haori-JS は `data-bind` を UI 状態の唯一の正とみなし、外部フェッチや操作によって `data-bind` が変更されると、**その内容で画面が再構成されます**。
+- 手動入力された値や動的に追加された行は、更新後のバインドデータに含まれない限り、**DOMから消去されます**。
 
 ---
 
@@ -5212,14 +5205,12 @@ Haori-JS においては、`data-each` によって繰り返し表示された�
       <input name="name" />
     </div>
   </div>
-  <button type="button" data-row-add data-click-data='{"name": "新規"}'>追加</button>
+  <button type="button" data-row-add data-click-data='{"name": "新規"}'>
+    追加
+  </button>
 </form>
 
-<button
-  data-click-fetch="/api/items"
-  data-click-form
-  data-click-bind="form"
->
+<button data-click-fetch="/api/items" data-click-form data-click-bind="form">
   更新
 </button>
 ```
@@ -5252,10 +5243,7 @@ Haori-JS においては、`data-each` によって繰り返し表示された�
 **フェッチ後のレスポンス例**：
 
 ```json
-[
-  { "name": "みかん" },
-  { "name": "ぶどう" }
-]
+[{"name": "みかん"}, {"name": "ぶどう"}]
 ```
 
 **更新後の表示**：
@@ -5271,18 +5259,18 @@ Haori-JS においては、`data-each` によって繰り返し表示された�
 
 ### 対応策（任意）
 
-* 編集内容を維持したい場合、送信前にバインド値を一時保存してからマージする処理を行う必要があります。
-* `data-each-key` を適切に指定しておけば、同一キーの行は再利用されるため、編集内容が保持されることもあります（ただし保証はされません）。
+- 編集内容を維持したい場合、送信前にバインド値を一時保存してからマージする処理を行う必要があります。
+- `data-each-key` を適切に指定しておけば、同一キーの行は再利用されるため、編集内容が保持されることもあります（ただし保証はされません）。
 
 ---
 
 ### 注意点のまとめ
 
-| 状況                                            | 結果                          |
-| --------------------------------------------- | --------------------------- |
-| `data-click-fetch` + `data-click-bind` による上書き | 対象の `data-bind` が強制的に上書きされる |
-| 手動で入力・追加した行                                   | 上書き結果に含まれていなければ削除される        |
-| `data-each-key` がない                           | 差分追跡ができず、すべての行が再生成される可能性が高い |
+| 状況                                                | 結果                                                   |
+| --------------------------------------------------- | ------------------------------------------------------ |
+| `data-click-fetch` + `data-click-bind` による上書き | 対象の `data-bind` が強制的に上書きされる              |
+| 手動で入力・追加した行                              | 上書き結果に含まれていなければ削除される               |
+| `data-each-key` がない                              | 差分追跡ができず、すべての行が再生成される可能性が高い |
 
 ---
 
@@ -5294,9 +5282,9 @@ Haori-JS では、開発者向けの機能として、`data-each` による差�
 
 ### クラス名：`haori-patched`
 
-* `data-each` の評価結果として DOM に新たに追加されたノードには、`haori-patched` というクラスが一時的に付与されます。
-* このクラスは、**開発者モードが有効なときのみ**付与されます。
-* 約5秒後、自動的にこのクラスは削除されます。
+- `data-each` の評価結果として DOM に新たに追加されたノードには、`haori-patched` というクラスが一時的に付与されます。
+- このクラスは、**開発者モードが有効なときのみ**付与されます。
+- 約5秒後、自動的にこのクラスは削除されます。
 
 ---
 
@@ -5337,14 +5325,14 @@ Haori-JS では、開発者向けの機能として、`data-each` による差�
 
 ### 補足：他の開発支援クラス
 
-* 再評価されたノードには一時的に `haori-evaluated` クラスが付与されます（→ 第15章 参照）
+- 再評価されたノードには一時的に `haori-evaluated` クラスが付与されます（→ 第15章 参照）
 
 ---
 
 ### 注意事項
 
-* 本機能はデバッグ・検証を目的としており、**本番環境では自動的に無効**になります。
-* クラスは自動的に削除されるため、スタイルは一時的な効果にとどまります。
+- 本機能はデバッグ・検証を目的としており、**本番環境では自動的に無効**になります。
+- クラスは自動的に削除されるため、スタイルは一時的な効果にとどまります。
 
 ---
 
@@ -5362,7 +5350,6 @@ Haori では、`{{...}}` プレースホルダを使って HTML の属性値や�
 Haori では、式の評価結果が `null`、`undefined`、または `NaN` であった場合、プレースホルダの評価結果は空文字列 `""` として扱われます。  
 また、式の構文エラーや実行時エラーが発生した場合も、該当プレースホルダは空として処理され、アプリケーションの動作には影響しません。  
 ※ 開発者モードが有効な場合、エラー内容は `console.warn` に出力されます。
-
 
 Haori のプレースホルダは、`{{...}}` や `{{{...}}}` の形式で記述され、**JavaScript 式として評価**されます。
 
@@ -5385,10 +5372,18 @@ Haori のプレースホルダは、`{{...}}` や `{{{...}}}` の形式で記述
 以下の識別子はセキュリティ上の理由から使用できず、すべて `undefined` として扱われます：
 
 ```js
-this, window, globalThis, global, self,
-document, eval, Function, alert, constructor, __proto__
+(this,
+  window,
+  globalThis,
+  global,
+  self,
+  document,
+  eval,
+  Function,
+  alert,
+  constructor,
+  __proto__);
 ```
-
 
 セキュリティ上の理由から、以下のような危険な識別子や構文は使用できません。
 
@@ -5412,14 +5407,11 @@ document, eval, Function, alert, constructor, __proto__
 
 ---
 
-
-
 ## 13.X data-bind の構文エラー時の挙動
 
 `data-bind` 属性に指定された JSON が構文的に不正（例：`{name: '山田'}` など）であった場合、Haori は空のオブジェクト `{}` を代替として使用します。  
 この場合、スコープは正常に生成されますが、内部変数はすべて未定義となり、関連するプレースホルダは空になります。  
 開発者モード時には、エラー内容を `console.warn` に出力します。
-
 
 ## 13.3 空のプレースホルダ構文は禁止
 
@@ -5496,6 +5488,11 @@ Haori では、属性値の中にも `{{...}}` を含めることができます
 ## 13.6 HTML として展開する：三重括弧構文
 
 安全なデータに限り、HTML をそのまま挿入することも可能です。
+トリプル波かっこ構文（`{{{...}}}`）は、要素の中身が「これだけ」の場合にだけ使えます。
+
+- 他の文字やタグ、改行と一緒に混ぜて使うことはできません。
+- 属性値の中でも使えません。
+- もし他の文字やタグと一緒に使った場合や、属性値で使った場合は、通常のプレースホルダ（{{...}}）として扱われ、HTMLとしては展開されません。
 
 ### HTML 記述例：
 
@@ -5527,7 +5524,6 @@ Haori では、属性値の中にも `{{...}}` を含めることができます
 
 `data-if` によって表示条件が false になっているノード（`data-if-false` が付与されているノード）は、スコープ上 `visible: false` として扱われ、再評価や再描画の対象にはなりません。  
 ただし、再び `data-if` の評価が true となって表示状態に復帰した場合は、そのタイミングでスコープが復元され、プレースホルダも再評価されます。
-
 
 プレースホルダは、以下の条件で再評価され、DOM が更新されます。
 
@@ -5630,11 +5626,11 @@ Haori-JS では、条件分岐や繰り返し処理などの結果に応じて�
 
 以下は代表的な自動付与属性の一覧です。
 
-| 元の属性            | 自動付与される属性（data-\* 使用時） | hor-\* 使用時      |
-| --------------- | ---------------------- | --------------- |
-| `data-if`       | `data-if-false`        | `hor-if-false`  |
-| `data-each`     | `data-row`             | `hor-row`       |
-| `data-each-key` | `data-row="キー値"`       | `hor-row="キー値"` |
+| 元の属性        | 自動付与される属性（data-\* 使用時） | hor-\* 使用時      |
+| --------------- | ------------------------------------ | ------------------ |
+| `data-if`       | `data-if-false`                      | `hor-if-false`     |
+| `data-each`     | `data-row`                           | `hor-row`          |
+| `data-each-key` | `data-row="キー値"`                  | `hor-row="キー値"` |
 
 > 例：`<div hor-each="list" hor-each-key="id">` の場合、各行には `hor-row="1"` や `hor-row="2"` のような属性が付与されます。
 
@@ -5792,9 +5788,9 @@ Haori が発火するイベントはすべて、プレフィックスとして `
 
 <script>
   document
-    .getElementById("userForm")
-    .addEventListener("haori:bind-update", (e) => {
-      console.log("更新されたデータ：", e.detail.newBind);
+    .getElementById('userForm')
+    .addEventListener('haori:bind-update', e => {
+      console.log('更新されたデータ：', e.detail.newBind);
     });
 </script>
 ```
@@ -5829,9 +5825,9 @@ Haori が発火するイベントはすべて、プレフィックスとして `
 
 <script>
   document
-    .getElementById("result")
-    .addEventListener("haori:fetch-success", (e) => {
-      console.log("取得成功：", e.detail);
+    .getElementById('result')
+    .addEventListener('haori:fetch-success', e => {
+      console.log('取得成功：', e.detail);
     });
 </script>
 ```
@@ -5874,11 +5870,11 @@ Haori が発火するイベントはすべて、プレフィックスとして `
 <div id="result" data-fetch="/api/error"></div>
 
 <script>
-  const el = document.getElementById("result");
+  const el = document.getElementById('result');
 
-  el.addEventListener("haori:fetch-error", (e) => {
-    console.error("通信エラー:", e.detail);
-    alert("サーバーに接続できませんでした");
+  el.addEventListener('haori:fetch-error', e => {
+    console.error('通信エラー:', e.detail);
+    alert('サーバーに接続できませんでした');
   });
 </script>
 ```
@@ -5938,8 +5934,8 @@ Haori が発火するイベントはすべて、プレフィックスとして `
 </form>
 
 <script>
-  document.querySelector("form").addEventListener("haori:row-add", (e) => {
-    console.log("行が追加されました。インデックス：", e.detail.index);
+  document.querySelector('form').addEventListener('haori:row-add', e => {
+    console.log('行が追加されました。インデックス：', e.detail.index);
   });
 </script>
 ```
@@ -5999,9 +5995,9 @@ Haori-JS は、`data-bind` の変更や外部フェッチなどによって DOM 
 
 ### 機能の概要
 
-* 任意のノードが再評価されると、そのノードの `classList` に `haori-evaluated` クラスが追加されます。
-* このクラスは約5秒間保持された後、自動的に削除されます。
-* **開発者モードが有効な場合のみ**適用されます。
+- 任意のノードが再評価されると、そのノードの `classList` に `haori-evaluated` クラスが追加されます。
+- このクラスは約5秒間保持された後、自動的に削除されます。
+- **開発者モードが有効な場合のみ**適用されます。
 
 ---
 
@@ -6040,9 +6036,9 @@ Haori-JS は、`data-bind` の変更や外部フェッチなどによって DOM 
 
 ### 注意事項
 
-* この機能は **自動的に削除される一時的なクラス付与**であり、本番環境では発生しません。
-* DOMの構造には影響せず、表示のみに限定されます。
-* 繰り返し再評価されるたびに、クラスは再付与されます。
+- この機能は **自動的に削除される一時的なクラス付与**であり、本番環境では発生しません。
+- DOMの構造には影響せず、表示のみに限定されます。
+- 繰り返し再評価されるたびに、クラスは再付与されます。
 
 ---
 
@@ -6080,7 +6076,7 @@ Haori はグローバル変数 `Haori` に以下の関数を提供していま�
 ### アラートの表示
 
 ```javascript
-await Haori.alert("保存が完了しました");
+await Haori.alert('保存が完了しました');
 ```
 
 ---
@@ -6088,9 +6084,9 @@ await Haori.alert("保存が完了しました");
 ### 確認ダイアログの表示と分岐処理
 
 ```javascript
-const confirmed = await Haori.confirm("本当に削除しますか？");
+const confirmed = await Haori.confirm('本当に削除しますか？');
 if (confirmed) {
-  Haori.message("削除されました", "success");
+  Haori.message('削除されました', 'success');
 }
 ```
 
@@ -6099,7 +6095,7 @@ if (confirmed) {
 ### トースト通知の表示
 
 ```javascript
-Haori.message("データを更新しました", "info");
+Haori.message('データを更新しました', 'info');
 ```
 
 ---
@@ -6107,8 +6103,8 @@ Haori.message("データを更新しました", "info");
 ### ダイアログの開閉制御
 
 ```javascript
-Haori.dialogOpen("#myDialog");
-Haori.dialogClose("#myDialog");
+Haori.dialogOpen('#myDialog');
+Haori.dialogClose('#myDialog');
 ```
 
 ---
@@ -6116,7 +6112,7 @@ Haori.dialogClose("#myDialog");
 ### DOM ノードの複製
 
 ```javascript
-const original = document.querySelector(".template");
+const original = document.querySelector('.template');
 const clone = Haori.cloneElement(original);
 document.body.appendChild(clone);
 ```
@@ -6128,12 +6124,12 @@ document.body.appendChild(clone);
 以下は Bootstrap モーダルを使った例です：
 
 ```javascript
-Haori.alert = async (message) => {
-  const modal = document.getElementById("customAlert");
-  modal.querySelector(".alert-message").textContent = message;
+Haori.alert = async message => {
+  const modal = document.getElementById('customAlert');
+  modal.querySelector('.alert-message').textContent = message;
 
-  await new Promise((resolve) => {
-    modal.querySelector(".btn-ok").onclick = () => resolve();
+  await new Promise(resolve => {
+    modal.querySelector('.btn-ok').onclick = () => resolve();
     bootstrap.Modal.getOrCreateInstance(modal).show();
   });
 };
@@ -6146,8 +6142,8 @@ Haori.alert = async (message) => {
 ### 例：バインド更新を検知して処理する
 
 ```javascript
-document.addEventListener("haori:bind-update", (e) => {
-  console.log("データが更新されました", e.detail.newBind);
+document.addEventListener('haori:bind-update', e => {
+  console.log('データが更新されました', e.detail.newBind);
 });
 ```
 
@@ -6156,8 +6152,8 @@ document.addEventListener("haori:bind-update", (e) => {
 ### 例：モーダルが開いた時の処理
 
 ```javascript
-document.addEventListener("haori:dialog-open", (e) => {
-  console.log("ダイアログが開かれた", e.detail.selector);
+document.addEventListener('haori:dialog-open', e => {
+  console.log('ダイアログが開かれた', e.detail.selector);
 });
 ```
 
@@ -6174,14 +6170,14 @@ JavaScript 標準の `element.cloneNode(true)` を使用すると、**内部状�
 
 ```javascript
 // これはNG：Haoriのバインディングが壊れる
-const clone = document.querySelector(".template").cloneNode(true);
+const clone = document.querySelector('.template').cloneNode(true);
 document.body.appendChild(clone);
 ```
 
 #### OK な方法：
 
 ```javascript
-const clone = Haori.cloneElement(document.querySelector(".template"));
+const clone = Haori.cloneElement(document.querySelector('.template'));
 document.body.appendChild(clone);
 ```
 
@@ -6203,17 +6199,17 @@ document.body.appendChild(clone);
 ### JavaScript：
 
 ```javascript
-document.getElementById("deleteButton").onclick = async () => {
-  const ok = await Haori.confirm("本当に削除しますか？");
+document.getElementById('deleteButton').onclick = async () => {
+  const ok = await Haori.confirm('本当に削除しますか？');
   if (!ok) return;
 
-  const response = await fetch("/api/delete", { method: "POST" });
+  const response = await fetch('/api/delete', {method: 'POST'});
   const json = await response.json();
 
   document
-    .getElementById("resultArea")
-    .setAttribute("data-bind", JSON.stringify({ message: json.message }));
-  Haori.message("削除しました", "success");
+    .getElementById('resultArea')
+    .setAttribute('data-bind', JSON.stringify({message: json.message}));
+  Haori.message('削除しました', 'success');
 };
 ```
 
@@ -6267,10 +6263,10 @@ Haori-JS における `data-if` の条件表示は、2025年の仕様変更に�
 - `data-if-false` は単なるフラグ属性であり、次のように出力されます：
 
 ```html
-  <div data-if="..." data-if-false></div>
-````
+<div data-if="..." data-if-false></div>
+```
 
-* 本方式により、属性（例：`data-bind-force`）の維持や開発者デバッグが容易になっています。
+- 本方式により、属性（例：`data-bind-force`）の維持や開発者デバッグが容易になっています。
 
 ---
 
@@ -6525,12 +6521,12 @@ Haori の差分パッチは、以下のような TypeScript 型で表現され�
 
 ```ts
 type Patch =
-  | { type: "insert"; index: number; key?: string; data: object }
-  | { type: "update"; index: number; key?: string; data: object }
-  | { type: "remove"; index: number; key?: string }
-  | { type: "move"; from: number; to: number; key?: string }
-  | { type: "clear" }
-  | { type: "replace"; list: Array<{ key?: string; data: object }> };
+  | {type: 'insert'; index: number; key?: string; data: object}
+  | {type: 'update'; index: number; key?: string; data: object}
+  | {type: 'remove'; index: number; key?: string}
+  | {type: 'move'; from: number; to: number; key?: string}
+  | {type: 'clear'}
+  | {type: 'replace'; list: Array<{key?: string; data: object}>};
 ```
 
 ---
@@ -6589,7 +6585,7 @@ type Patch =
 
 ```ts
 {
-  type: "clear";
+  type: 'clear';
 }
 ```
 
@@ -6704,7 +6700,6 @@ data-bind = {
 
 - `data-each-key` を省略した場合は、**各行の `data-bind` の中身を構造的に比較**して差分を判定します。
 - このときは、順序非依存の `deepEqual` により、
-
   - オブジェクトの内容が等しいかどうかを評価します。
   - 比較にはコストがかかるため、大量データの場合は `data-each-key` を指定するほうが高速です。
 
@@ -6713,7 +6708,6 @@ data-bind = {
 ### 構造比較の注意点
 
 - 比較対象がプリミティブ型（例：文字列や数値）の場合、
-
   - `"りんご"` と `"りんご"` のように文字列同士の比較になります。
 
 - ただし、Haori では**文字列や数値の配列だけを `data-each` に使用することは推奨していません**（データバインド構造が不安定になるため）。
@@ -6837,9 +6831,9 @@ Haori では、`data-each` によって繰り返し表示される行に対し�
 
 ### 描画順序の基本方針
 
-* 差分パッチは **DOM構造の上から下（top-down）** に向かって適用されます。
-* 1つの `data-each` に対応する要素群は、**定義された順番通りに表示されるよう保証**されます。
-* 差分適用後の DOM 構造が、バインドされた配列と同じ順序になるように調整されます。
+- 差分パッチは **DOM構造の上から下（top-down）** に向かって適用されます。
+- 1つの `data-each` に対応する要素群は、**定義された順番通りに表示されるよう保証**されます。
+- 差分適用後の DOM 構造が、バインドされた配列と同じ順序になるように調整されます。
 
 ---
 
@@ -6858,8 +6852,8 @@ Haori は `data-each` の入れ子にも対応しており、以下の順序で�
 
 1つの行の中に複数の `{{...}}` プレースホルダが存在する場合、それらの評価と反映は以下の順で行われます：
 
-* DOM 上のノードの並び順に従って左から右へ評価されます。
-* 各プレースホルダは即時に評価され、評価結果がテキストノードや属性に反映されます。
+- DOM 上のノードの並び順に従って左から右へ評価されます。
+- 各プレースホルダは即時に評価され、評価結果がテキストノードや属性に反映されます。
 
 ---
 
@@ -6867,9 +6861,9 @@ Haori は `data-each` の入れ子にも対応しており、以下の順序で�
 
 各差分パッチ（`insert`, `update`, `move`）には `index` または `from`/`to` などのインデックス情報が含まれます。
 
-* `index` は描画順の基準であり、DOM挿入の正確な位置を指定します。
-* `move` の場合、元の位置（`from`）と移動先（`to`）が明示されます。
-* Haori はこの情報を元に、**描画順の不整合が発生しないように制御**します。
+- `index` は描画順の基準であり、DOM挿入の正確な位置を指定します。
+- `move` の場合、元の位置（`from`）と移動先（`to`）が明示されます。
+- Haori はこの情報を元に、**描画順の不整合が発生しないように制御**します。
 
 ---
 
@@ -6882,13 +6876,13 @@ Haori はプレースホルダを非同期に遅延評価するのではなく�
 
 ### まとめ
 
-| 項目         | 処理順と内容                      |
-| ---------- | --------------------------- |
-| 差分の適用順     | 親から子へ、上から下へ再帰的に適用           |
-| 行内のプレースホルダ | DOM ノードの並び順で評価              |
-| 描画順の制御     | 差分パッチの `index` / `to` により明示 |
-| ネスト構造の差分適用 | 各階層で順に適用され、構造と順序が保証される      |
-| プレースホルダの反映 | 差分適用直後に即時反映される              |
+| 項目                 | 処理順と内容                                 |
+| -------------------- | -------------------------------------------- |
+| 差分の適用順         | 親から子へ、上から下へ再帰的に適用           |
+| 行内のプレースホルダ | DOM ノードの並び順で評価                     |
+| 描画順の制御         | 差分パッチの `index` / `to` により明示       |
+| ネスト構造の差分適用 | 各階層で順に適用され、構造と順序が保証される |
+| プレースホルダの反映 | 差分適用直後に即時反映される                 |
 
 ---
 
@@ -6908,46 +6902,46 @@ Haori では、`data-each` を用いて表示された行に対して、ユー�
 
 #### `data-row-add`
 
-* 対象がフォーム内で `data-each` 配下にある場合、`data-bind` 配列に **空のオブジェクト `{}`** が追加されます。
-* この変更により、差分パッチが発生し、新たな行が描画されます。
+- 対象がフォーム内で `data-each` 配下にある場合、`data-bind` 配列に **空のオブジェクト `{}`** が追加されます。
+- この変更により、差分パッチが発生し、新たな行が描画されます。
 
 #### `data-row-remove`
 
-* 行を削除するボタンに `data-row-remove` が指定されている場合、該当行が削除され、対応する `data-bind` の要素も配列から除外されます。
-* ただし、**対象の行が1件のみ存在する場合**は、削除されず内容がリセットされます（空文字、チェック解除、選択解除など）。
+- 行を削除するボタンに `data-row-remove` が指定されている場合、該当行が削除され、対応する `data-bind` の要素も配列から除外されます。
+- ただし、**対象の行が1件のみ存在する場合**は、削除されず内容がリセットされます（空文字、チェック解除、選択解除など）。
 
 ---
 
 ### フォーム外における行操作
 
-* フォーム外にある `data-each` に対して `data-row-add` や `data-row-remove` を行っても、`data-bind` 配列には変更は加えられません。
-* 表示上の行だけが変化し、データには反映されないため、**双方向バインディングは行われません**。
+- フォーム外にある `data-each` に対して `data-row-add` や `data-row-remove` を行っても、`data-bind` 配列には変更は加えられません。
+- 表示上の行だけが変化し、データには反映されないため、**双方向バインディングは行われません**。
 
 ---
 
 ### 手動変更と上書きの関係
 
-* `data-bind` の配列をサーバからフェッチした結果などで上書きした場合、**手動で追加・編集された行はすべて破棄されます**。
-* つまり、`data-bind` の値が変更されると、それまでの編集内容は保持されません。
+- `data-bind` の配列をサーバからフェッチした結果などで上書きした場合、**手動で追加・編集された行はすべて破棄されます**。
+- つまり、`data-bind` の値が変更されると、それまでの編集内容は保持されません。
 
 ---
 
 ### 行の初期値
 
-* 新規に追加された行には、初期HTMLに `value` 属性や `checked` 属性があれば、それが初期値として使用されます。
-* これらは `reset` や `data-row-remove` によるリセット時にも適用されます。
+- 新規に追加された行には、初期HTMLに `value` 属性や `checked` 属性があれば、それが初期値として使用されます。
+- これらは `reset` や `data-row-remove` によるリセット時にも適用されます。
 
 ---
 
 ### まとめ
 
-| 条件                   | `data-bind` への反映 | 備考           |
-| -------------------- | ---------------- | ------------ |
-| フォーム内での `add`        | 配列に `{}` を追加     | 差分パッチが発生     |
-| フォーム内での `remove`     | 配列から削除／1件ならリセット  | リセットは初期値に戻る  |
-| フォーム外での `add/remove` | 反映されない           | 表示のみ変化       |
-| フェッチ等で配列を更新          | 手動変更は失われる        | 上書き扱い        |
-| 初期HTMLに値あり           | 新規追加行に反映される      | `reset` 時も有効 |
+| 条件                        | `data-bind` への反映          | 備考                   |
+| --------------------------- | ----------------------------- | ---------------------- |
+| フォーム内での `add`        | 配列に `{}` を追加            | 差分パッチが発生       |
+| フォーム内での `remove`     | 配列から削除／1件ならリセット | リセットは初期値に戻る |
+| フォーム外での `add/remove` | 反映されない                  | 表示のみ変化           |
+| フェッチ等で配列を更新      | 手動変更は失われる            | 上書き扱い             |
+| 初期HTMLに値あり            | 新規追加行に反映される        | `reset` 時も有効       |
 
 ---
 
@@ -6968,22 +6962,21 @@ Haori では、差分描画処理やバインディングの不整合を開発�
 
 1. HTML 内に存在する `<script>` 要素のいずれかに `data-dev` 属性が付与されている。
 2. 現在のページのホスト名（`location.hostname`）が以下のいずれかに該当する：
-
-   * `localhost`
-   * `127.0.0.1`（IPv4 ローカルループバック）
-   * `::1`（IPv6 ローカルループバック）
-   * `localhost` を含むサブドメイン（例：`dev.localhost`, `test.localhost.localdomain` など）
+   - `localhost`
+   - `127.0.0.1`（IPv4 ローカルループバック）
+   - `::1`（IPv6 ローカルループバック）
+   - `localhost` を含むサブドメイン（例：`dev.localhost`, `test.localhost.localdomain` など）
 
 #### 判定例：
 
-| アクセス URL                       | 判定結果     |
-| ------------------------------ | -------- |
+| アクセス URL                   | 判定結果        |
+| ------------------------------ | --------------- |
 | `http://localhost:3000/`       | ✅ 開発者モード |
 | `http://127.0.0.1:8080/`       | ✅ 開発者モード |
 | `http://[::1]/`                | ✅ 開発者モード |
 | `https://dev.localhost.test/`  | ✅ 開発者モード |
-| `https://example.com/`         | ❌ 通常モード  |
-| `https://staging.example.com/` | ❌ 通常モード  |
+| `https://example.com/`         | ❌ 通常モード   |
+| `https://staging.example.com/` | ❌ 通常モード   |
 
 ---
 
@@ -6991,12 +6984,12 @@ Haori では、差分描画処理やバインディングの不整合を開発�
 
 開発者モードでは、次のような情報が `console.log()` や `console.warn()` を通じて出力されます：
 
-| 種別                    | 内容例                                      |
-| --------------------- | ---------------------------------------- |
-| 差分パッチの適用ログ            | `Patch applied: insert @ index 2` など     |
-| プレースホルダの構文エラー         | `Invalid expression: {{user.}}`          |
-| 未定義のバインドキー警告          | `Warning: key 'name' not found in scope` |
-| `data-each-key` の重複警告 | `Duplicate key "u1" detected` など         |
+| 種別                       | 内容例                                   |
+| -------------------------- | ---------------------------------------- |
+| 差分パッチの適用ログ       | `Patch applied: insert @ index 2` など   |
+| プレースホルダの構文エラー | `Invalid expression: {{user.}}`          |
+| 未定義のバインドキー警告   | `Warning: key 'name' not found in scope` |
+| `data-each-key` の重複警告 | `Duplicate key "u1" detected` など       |
 
 これにより、表示上では確認しづらいバインディングの失敗や評価エラーを、開発中にすばやく検出できます。
 
@@ -7006,8 +6999,8 @@ Haori では、差分描画処理やバインディングの不整合を開発�
 
 差分パッチ適用時に、以下の条件で **行要素に `data-row-debug` 属性** が自動的に付与されます：
 
-* `insert` や `update` のパッチが適用された行
-* `move` によって移動された行
+- `insert` や `update` のパッチが適用された行
+- `move` によって移動された行
 
 開発者はこの属性に対して CSS を定義することで、差分適用された行を視覚的にハイライトすることができます。
 
@@ -7026,20 +7019,20 @@ Haori では、差分描画処理やバインディングの不整合を開発�
 
 以下のような致命的な実行エラーは、開発者モードに関係なく常に `console.error()` に出力されます：
 
-* プレースホルダ構文の重大な構文エラー（例：波かっこの未対応）
-* 無効な JSON による `data-bind` 値の解析失敗
-* DOM構造の破壊（存在しないノードへのバインドなど）
+- プレースホルダ構文の重大な構文エラー（例：波かっこの未対応）
+- 無効な JSON による `data-bind` 値の解析失敗
+- DOM構造の破壊（存在しないノードへのバインドなど）
 
 ---
 
 ### まとめ
 
-| 機能               | 内容                                             |
-| ---------------- | ---------------------------------------------- |
-| 判定方法             | `<script data-dev>` または `localhost` 判定（詳細条件あり） |
-| ログ出力             | 差分パッチ、評価エラー、スコープ警告など                           |
-| `data-row-debug` | 差分行に属性付与、CSSで可視化可能                             |
-| 致命的エラー           | モードに関係なく常に出力される                                |
+| 機能             | 内容                                                        |
+| ---------------- | ----------------------------------------------------------- |
+| 判定方法         | `<script data-dev>` または `localhost` 判定（詳細条件あり） |
+| ログ出力         | 差分パッチ、評価エラー、スコープ警告など                    |
+| `data-row-debug` | 差分行に属性付与、CSSで可視化可能                           |
+| 致命的エラー     | モードに関係なく常に出力される                              |
 
 ---
 
@@ -7055,53 +7048,53 @@ Haori は、テンプレート内のプレースホルダや制御属性の式�
 
 ## 19.1 プレースホルダの構文解析とキャッシュ
 
-* `{{...}}` や `{{{...}}}` によって記述された式は、初回スキャン時に構文解析され、AST（抽象構文木）としてキャッシュされます。
-* 同一スコープ内に同じ式が複数存在する場合は、ASTが再利用されます。
-* 解析エラーがある場合は、初回スキャン時または評価時に `console.error` を出力します（致命的エラー）。
+- `{{...}}` や `{{{...}}}` によって記述された式は、初回スキャン時に構文解析され、AST（抽象構文木）としてキャッシュされます。
+- 同一スコープ内に同じ式が複数存在する場合は、ASTが再利用されます。
+- 解析エラーがある場合は、初回スキャン時または評価時に `console.error` を出力します（致命的エラー）。
 
 ---
 
 ## 19.2 評価関数とスコープ
 
-* 式の評価には、事前にコンパイルされた関数が使用されます。
-* 評価関数にはバインドスコープが引数として渡され、JavaScript の `with` 文などは使用しません。
-* プレースホルダが属するスコープは、`data-bind` の階層構造により自動的に決定されます。
+- 式の評価には、事前にコンパイルされた関数が使用されます。
+- 評価関数にはバインドスコープが引数として渡され、JavaScript の `with` 文などは使用しません。
+- プレースホルダが属するスコープは、`data-bind` の階層構造により自動的に決定されます。
 
 ---
 
 ## 19.3 スコープのマージと上書きルール
 
-* 子スコープの `data-bind` は、親スコープとマージされて評価されます。
-* 同じキーが存在する場合は子スコープの値が優先されます。
-* ただし、同一キーにオブジェクトが存在する場合はマージされず、子スコープの値で完全に上書きされます。
+- 子スコープの `data-bind` は、親スコープとマージされて評価されます。
+- 同じキーが存在する場合は子スコープの値が優先されます。
+- ただし、同一キーにオブジェクトが存在する場合はマージされず、子スコープの値で完全に上書きされます。
 
 ---
 
 ## 19.4 再評価の単位とタイミング
 
-* プレースホルダごとの依存追跡は行わず、再評価はスコープ単位で行われます。
-* 再評価は以下のタイミングで発生します：
+- プレースホルダごとの依存追跡は行わず、再評価はスコープ単位で行われます。
+- 再評価は以下のタイミングで発生します：
 
-| トリガ条件                   | 説明                        |
-| ----------------------- | ------------------------- |
-| `data-bind` の値が変更されたとき  | スコープ内の式・属性がすべて再評価されます     |
-| `data-if` の判定が変化したとき    | 非表示⇔表示が切り替わるときに限って再評価されます |
+| トリガ条件                         | 説明                                               |
+| ---------------------------------- | -------------------------------------------------- |
+| `data-bind` の値が変更されたとき   | スコープ内の式・属性がすべて再評価されます         |
+| `data-if` の判定が変化したとき     | 非表示⇔表示が切り替わるときに限って再評価されます  |
 | `data-each` の配列が変更されたとき | 差分パッチの適用と同時に、各行の再評価が行われます |
 
-* `data-if` により非表示状態（`data-if-false`）となっている要素は、`data-if` の評価結果に変化がない限り再評価されません。
+- `data-if` により非表示状態（`data-if-false`）となっている要素は、`data-if` の評価結果に変化がない限り再評価されません。
 
 ### `data-fetch-force` による強制評価
 
-* 非表示状態の要素（`data-if-false`）に対しても、`data-fetch-force` 属性が指定されている場合は、フェッチ処理が実行されます。
-* フェッチ結果は通常通り `data-bind` に反映され、`data-if` が再評価されます。
+- 非表示状態の要素（`data-if-false`）に対しても、`data-fetch-force` 属性が指定されている場合は、フェッチ処理が実行されます。
+- フェッチ結果は通常通り `data-bind` に反映され、`data-if` が再評価されます。
 
 ---
 
 ## 19.5 評価結果の反映と省略最適化
 
-* 再評価によって得られた値が前回と同一である場合、DOM操作はスキップされます。
-* `textContent` や `.value` などのプロパティは、差分がある場合のみ更新されます。
-* この最小化により、不要な再描画が抑制され、パフォーマンスが向上します。
+- 再評価によって得られた値が前回と同一である場合、DOM操作はスキップされます。
+- `textContent` や `.value` などのプロパティは、差分がある場合のみ更新されます。
+- この最小化により、不要な再描画が抑制され、パフォーマンスが向上します。
 
 ---
 
@@ -7111,36 +7104,35 @@ Haori は初期化時にDOMをスキャンしてバインド構造を構築す�
 
 ## 20.1 初期化と監視の併用
 
-* ページ読み込み時または `init()` 呼び出し時に、対象範囲のDOMをスキャンして初期構造を構築する。
-* 初期化後は `MutationObserver` を用いて、対象範囲のDOMツリーに追加・変更されたノードを自動的に監視する。
-* 監視はルート要素単位で行われる。通常は `<body>` または指定したルート要素配下全体が対象となる。
+- ページ読み込み時または `init()` 呼び出し時に、対象範囲のDOMをスキャンして初期構造を構築する。
+- 初期化後は `MutationObserver` を用いて、対象範囲のDOMツリーに追加・変更されたノードを自動的に監視する。
+- 監視はルート要素単位で行われる。通常は `<body>` または指定したルート要素配下全体が対象となる。
 
 ## 20.2 監視対象と再スキャンの条件
 
 以下のようなDOM変化が発生した場合に、Haoriは新たな要素を再スキャンして必要な初期化処理を行う：
 
-* ノードが追加された場合（childList の追加）
-* 追加されたノードが以下のいずれかの属性を含んでいる場合：
-
-  * `data-bind`
-  * `data-if`
-  * `data-each`
-  * `{{...}}` を含むテキストノードまたは属性値
-  * `data-form-*`、`data-click-*` などの制御属性
+- ノードが追加された場合（childList の追加）
+- 追加されたノードが以下のいずれかの属性を含んでいる場合：
+  - `data-bind`
+  - `data-if`
+  - `data-each`
+  - `{{...}}` を含むテキストノードまたは属性値
+  - `data-form-*`、`data-click-*` などの制御属性
 
 再スキャン対象は、**追加されたノードそのものとその配下全体**である。
 
 ## 20.3 MutationObserver の設計上の注意点
 
-* 初期描画済みのDOMに対しては、MutationObserverはトリガとならないため、**最初のスキャンは必須**である。
-* `MutationObserver` による監視は変更の粒度が粗いため、必要な属性やノード構造を検出する軽量なフィルタリング処理を通じて再スキャン対象を限定する。
-* 無関係なDOM変化（スタイル、クラス名の変更など）には反応しない。
+- 初期描画済みのDOMに対しては、MutationObserverはトリガとならないため、**最初のスキャンは必須**である。
+- `MutationObserver` による監視は変更の粒度が粗いため、必要な属性やノード構造を検出する軽量なフィルタリング処理を通じて再スキャン対象を限定する。
+- 無関係なDOM変化（スタイル、クラス名の変更など）には反応しない。
 
 ## 20.4 パフォーマンスと制限事項
 
-* 追加されたノードに対して再スキャンが発生するが、Haoriは内部的にバインド済みノードを記録しており、**二重初期化は回避される**。
-* 高頻度で大量のノードが挿入されるケースでは、複数変更をまとめて処理するバッチ最適化が将来的に検討される。
-* `MutationObserver` の使用により、開発者が明示的に `init()` を再実行する必要は基本的にない。
+- 追加されたノードに対して再スキャンが発生するが、Haoriは内部的にバインド済みノードを記録しており、**二重初期化は回避される**。
+- 高頻度で大量のノードが挿入されるケースでは、複数変更をまとめて処理するバッチ最適化が将来的に検討される。
+- `MutationObserver` の使用により、開発者が明示的に `init()` を再実行する必要は基本的にない。
 
 ---
 
@@ -7154,11 +7146,11 @@ Haori-JS では、動的な表示更新や通信、フォーム操作、行操�
 
 UI が再評価・再描画された際に発火されるイベントを以下に示します。
 
-| イベント名            | 発火対象                | 同期性 | 説明                              |
-| ---------------- | ------------------- | --- | ------------------------------- |
-| `haori:updated`  | 再評価により描画更新された要素     | 非同期 | プレースホルダや属性が再評価され、実際に変更があった場合に発火 |
-| `haori:inserted` | 新たに追加された `data-row` | 非同期 | 差分描画により DOM に挿入された要素直後に発火       |
-| `haori:removed`  | 削除された要素             | 非同期 | 差分描画により DOM から削除された直後に発火        |
+| イベント名       | 発火対象                       | 同期性 | 説明                                                           |
+| ---------------- | ------------------------------ | ------ | -------------------------------------------------------------- |
+| `haori:updated`  | 再評価により描画更新された要素 | 非同期 | プレースホルダや属性が再評価され、実際に変更があった場合に発火 |
+| `haori:inserted` | 新たに追加された `data-row`    | 非同期 | 差分描画により DOM に挿入された要素直後に発火                  |
+| `haori:removed`  | 削除された要素                 | 非同期 | 差分描画により DOM から削除された直後に発火                    |
 
 ### イベント設定（共通）
 
@@ -7174,8 +7166,8 @@ new CustomEvent("haori:updated", {
 ### 使用例：描画更新の検知
 
 ```js
-document.addEventListener("haori:updated", (e) => {
-  console.log("更新対象:", e.target);
+document.addEventListener('haori:updated', e => {
+  console.log('更新対象:', e.target);
 });
 ```
 
@@ -7185,32 +7177,32 @@ document.addEventListener("haori:updated", (e) => {
 
 ユーザーの操作（行の追加・削除・移動・送信）に応じて、以下のイベントが発火されます。
 
-| イベント名               | 発火対象                | 同期性 | 説明                                      | キャンセル可能 |
-| ------------------- | ------------------- | --- | --------------------------------------- | ------- |
-| `haori:row-added`   | 追加された `data-row` 要素 | 非同期 | `data-row-add` により行が複製された直後             | ❌       |
-| `haori:row-removed` | 削除された `data-row` 要素 | 非同期 | `data-row-remove` によって DOM から削除された直後に発火 | ❌       |
-| `haori:row-moved`   | 並び替え後の `data-row`   | 非同期 | 上下移動操作直後に発火                             | ❌       |
-| `haori:form-submit` | `<form>` 要素         | 同期  | 自動・手動送信時に送信直前で発火                        | ✅       |
+| イベント名          | 発火対象                   | 同期性 | 説明                                                    | キャンセル可能 |
+| ------------------- | -------------------------- | ------ | ------------------------------------------------------- | -------------- |
+| `haori:row-added`   | 追加された `data-row` 要素 | 非同期 | `data-row-add` により行が複製された直後                 | ❌             |
+| `haori:row-removed` | 削除された `data-row` 要素 | 非同期 | `data-row-remove` によって DOM から削除された直後に発火 | ❌             |
+| `haori:row-moved`   | 並び替え後の `data-row`    | 非同期 | 上下移動操作直後に発火                                  | ❌             |
+| `haori:form-submit` | `<form>` 要素              | 同期   | 自動・手動送信時に送信直前で発火                        | ✅             |
 
 ### イベント設定（例：キャンセル可能）
 
 ```ts
-new CustomEvent("haori:form-submit", {
+new CustomEvent('haori:form-submit', {
   bubbles: false,
   composed: false,
   cancelable: true,
   detail: {
     form: HTMLFormElement,
-    params: any // 送信予定のデータ
-  }
+    params: any, // 送信予定のデータ
+  },
 });
 ```
 
 ### 使用例：行削除の確認
 
 ```js
-document.addEventListener("haori:row-removed", (e) => {
-  console.log("行が削除されました:", e.target);
+document.addEventListener('haori:row-removed', e => {
+  console.log('行が削除されました:', e.target);
 });
 ```
 
@@ -7220,22 +7212,22 @@ document.addEventListener("haori:row-removed", (e) => {
 
 `data-fetch` や `data-click-fetch` による通信処理では、次のイベントが順に発火されます。
 
-| イベント名                  | 発火対象    | 同期性 | 説明                   | キャンセル可能 |
-| ---------------------- | ------- | --- | -------------------- | ------- |
-| `haori:fetch-start`    | 通信対象の要素 | 同期  | 通信開始直前に発火            | ✅       |
-| `haori:fetch-success`  | 通信対象の要素 | 非同期 | 通信成功・`data-bind` 反映後 | ❌       |
-| `haori:fetch-error`    | 通信対象の要素 | 非同期 | 通信失敗時に発火             | ❌       |
-| `haori:fetch-complete` | 通信対象の要素 | 非同期 | 通信成功・失敗に関係なく最後に発火    | ❌       |
+| イベント名             | 発火対象       | 同期性 | 説明                               | キャンセル可能 |
+| ---------------------- | -------------- | ------ | ---------------------------------- | -------------- |
+| `haori:fetch-start`    | 通信対象の要素 | 同期   | 通信開始直前に発火                 | ✅             |
+| `haori:fetch-success`  | 通信対象の要素 | 非同期 | 通信成功・`data-bind` 反映後       | ❌             |
+| `haori:fetch-error`    | 通信対象の要素 | 非同期 | 通信失敗時に発火                   | ❌             |
+| `haori:fetch-complete` | 通信対象の要素 | 非同期 | 通信成功・失敗に関係なく最後に発火 | ❌             |
 
 ### 使用例：ローディング制御
 
 ```js
-document.addEventListener("haori:fetch-start", (e) => {
-  e.target.classList.add("loading");
+document.addEventListener('haori:fetch-start', e => {
+  e.target.classList.add('loading');
 });
 
-document.addEventListener("haori:fetch-complete", (e) => {
-  e.target.classList.remove("loading");
+document.addEventListener('haori:fetch-complete', e => {
+  e.target.classList.remove('loading');
 });
 ```
 
@@ -7786,8 +7778,8 @@ DOM に変更がない場合、再評価が行われても `haori:updated` は�
 ```json
 {
   "items": [
-    { "name": "りんご", "price": 120 },
-    { "name": "ばなな", "price": 180 }
+    {"name": "りんご", "price": 120},
+    {"name": "ばなな", "price": 180}
   ]
 }
 ```
@@ -7921,8 +7913,8 @@ DOM に変更がない場合、再評価が行われても `haori:updated` は�
 ```json
 {
   "items": [
-    { "id": 201, "name": "パイナップル" },
-    { "id": 202, "name": "キウイ" }
+    {"id": 201, "name": "パイナップル"},
+    {"id": 202, "name": "キウイ"}
   ]
 }
 ```
