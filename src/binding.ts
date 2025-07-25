@@ -289,16 +289,6 @@ export class Binding {
   }
 
   /**
-   * バインディングを取得します。
-   *
-   * @param node 対象のノード
-   * @returns バインディングオブジェクト（存在しない場合はundefined）
-   */
-  public static get(node: Node): Binding | undefined {
-    return this.BINDING_MAP.get(node);
-  }
-
-  /**
    * ノードをバインディングを含めてクローンします。
    *
    * @param node 対象ノード
@@ -315,14 +305,18 @@ export class Binding {
   }
 
   /**
-   * 対象ノードをバインディングごと削除します。
+   * 対象ノードとその子ノードを削除します。
    *
    * @param node 対象ノード
+   * @param withDom DOMも操作する場合はtrue
    */
-  public static removeNode(node: Node): Promise<void> {
+  public static removeNode(
+    node: Node,
+    withDom: boolean = false,
+  ): Promise<void> {
     const binding = this.BINDING_MAP.get(node);
     if (binding) {
-      binding.children?.map(child => Binding.removeNode(child.target));
+      binding.children?.map(child => Binding.removeNode(child.target, withDom));
       if (binding.parent && binding.parent.children) {
         binding.parent.children = binding.parent.children.filter(
           child => child !== binding,
@@ -330,21 +324,31 @@ export class Binding {
       }
       this.BINDING_MAP.delete(node);
     }
-    return Queue.enqueue(() => {
-      node.parentNode?.removeChild(node);
-    });
+    if (withDom) {
+      return Queue.enqueue(() => {
+        node.parentNode?.removeChild(node);
+      });
+    } else {
+      return Promise.resolve();
+    }
   }
 
   /**
-   * 対象ノードの子ノードをバインディングごと全て削除します。
+   * 対象ノードの子ノードを全て削除します。
    *
    * @param node 対象ノード
+   * @param withDom DOMも操作する場合はtrue
    */
-  public static removeChildren(node: Node): Promise<void> {
+  public static removeChildren(
+    node: Node,
+    withDom: boolean = false,
+  ): Promise<void> {
     const binding = this.BINDING_MAP.get(node);
     if (binding) {
       return Promise.allSettled(
-        binding.children?.map(child => Binding.removeNode(child.target)) || [],
+        binding.children?.map(child =>
+          Binding.removeNode(child.target, withDom),
+        ) || [],
       )
         .then(() => {
           binding.children = null;
@@ -354,8 +358,9 @@ export class Binding {
         });
     } else {
       return Promise.allSettled(
-        Array.from(node.childNodes).map(child => Binding.removeNode(child)) ||
-          [],
+        Array.from(node.childNodes).map(child =>
+          Binding.removeNode(child, withDom),
+        ) || [],
       )
         .then(() => {})
         .catch(error => {
@@ -394,6 +399,58 @@ export class Binding {
   }
 
   /**
+   * ノードを参照ノードの前に挿入します。
+   *
+   * @param before 挿入するノード
+   * @param reference 参照ノード
+   * @param withDom DOMも操作する場合はtrue
+   */
+  public static insertBefore(
+    before: Node,
+    reference: Node,
+    withDom: boolean = false,
+  ): Promise<void> {
+    const beforeBinding = this.BINDING_MAP.get(before);
+    const targetBinding = this.BINDING_MAP.get(reference);
+    if (targetBinding && beforeBinding) {
+      targetBinding.insertBefore(beforeBinding);
+    }
+    if (withDom) {
+      return Queue.enqueue(() => {
+        reference.parentNode?.insertBefore(before, reference);
+      });
+    } else {
+      return Promise.resolve();
+    }
+  }
+
+  /**
+   * ノードを参照ノードの後に挿入します。
+   *
+   * @param after 挿入するノード
+   * @param reference 参照ノード
+   * @param withDom DOMも操作する場合はtrue
+   */
+  public static insertAfter(
+    after: Node,
+    reference: Node,
+    withDom: boolean = false,
+  ): Promise<void> {
+    const afterBinding = this.BINDING_MAP.get(after);
+    const targetBinding = this.BINDING_MAP.get(reference);
+    if (targetBinding && afterBinding) {
+      targetBinding.insertAfter(afterBinding);
+    }
+    if (withDom) {
+      return Queue.enqueue(() => {
+        reference.parentNode?.insertBefore(after, reference.nextSibling);
+      });
+    } else {
+      return Promise.resolve();
+    }
+  }
+
+  /**
    * 属性の変更を反映します。
    *
    * @param target 対象のノード
@@ -404,7 +461,7 @@ export class Binding {
   public static updateAttribute(
     target: Node,
     name: string,
-    value: string,
+    value: string | null,
     withDom: boolean = false,
   ): Promise<void> {
     const binding = this.BINDING_MAP.get(target);
@@ -414,7 +471,37 @@ export class Binding {
     if (withDom) {
       return Queue.enqueue(() => {
         const element = target as HTMLElement;
-        element.setAttribute(name, value);
+        if (value === null) {
+          element.removeAttribute(name);
+        } else {
+          element.setAttribute(name, value);
+        }
+      });
+    } else {
+      return Promise.resolve();
+    }
+  }
+
+  /**
+   * テキストコンテンツを更新します。
+   *
+   * @param target 対象のノード
+   * @param text 更新するテキスト
+   * @param withDom DOMも操作する場合はtrue
+   */
+  public static updateTextContent(
+    target: Node,
+    text: string,
+    withDom: boolean = false,
+  ): Promise<void> {
+    const binding = this.BINDING_MAP.get(target);
+    if (binding) {
+      binding.updateTextContent(text);
+    }
+    if (withDom) {
+      return Queue.enqueue(() => {
+        const element = target as HTMLElement;
+        element.textContent = text;
       });
     } else {
       return Promise.resolve();
@@ -428,7 +515,7 @@ export class Binding {
   private readonly isElement: boolean;
 
   /** コンテンツのリスト */
-  private readonly contents: TextContents | null;
+  private contents: TextContents | null;
 
   /** 属性のマップ */
   private readonly attributes: Map<string, AttributeContents> | null;
@@ -492,14 +579,15 @@ export class Binding {
    * バインディングを評価します。
    */
   public evaluate(): void {
-    if (!this.isElement) {
-      return;
-    }
-    this.evaluateIf();
-    this.evaluateEach();
-    if (this.visible) {
-      this.evaluateAttributes();
-      this.evaluateContents();
+    if (this.isElement) {
+      this.evaluateIf();
+      this.evaluateEach();
+      if (this.visible) {
+        this.evaluateAttributes();
+        this.evaluateContents();
+      }
+    } else if (this.parent && this.parent.visible) {
+      this.parent.evaluateContents();
     }
   }
 
@@ -657,7 +745,7 @@ export class Binding {
   }
 
   /**
-   * コンテンツをDOMに適用します。
+   * 子ノードのコンテンツをDOMに適用します。
    */
   protected evaluateContents(): void {
     if (this.children === null || this.children.length === 0) {
@@ -696,15 +784,19 @@ export class Binding {
    * @param name 属性名
    * @param value 属性値
    */
-  public updateAttribute(name: string, value: string): void {
+  public updateAttribute(name: string, value: string | null): void {
     if (!this.isElement || !this.attributes) {
       Log.error('[Haori]', 'Cannot update attribute on non-element binding.');
       return;
     }
-    this.attributes.set(name, new AttributeContents(name, value));
+    if (value === null) {
+      this.attributes.delete(name);
+    } else {
+      this.attributes.set(name, new AttributeContents(name, value));
+    }
     if (name == 'data-bind' || name == 'hor-bind') {
       try {
-        this.bindingData = JSON.parse(value);
+        this.bindingData = value === null ? null : JSON.parse(value);
         this.bindingDataCache = null;
         this.evaluate();
       } catch (error) {
@@ -722,11 +814,25 @@ export class Binding {
   }
 
   /**
+   * テキストコンテンツを更新します。
+   *
+   * @param text 更新するテキスト
+   */
+  public updateTextContent(text: string): void {
+    if (this.isElement) {
+      Log.error('[Haori]', 'Cannot update text content on element binding.');
+      return;
+    }
+    this.contents = new TextContents(text);
+    this.parent?.evaluateContents();
+  }
+
+  /**
    * 継承を考慮したバインディングデータを取得します。
    *
    * @returns バインディングデータのオブジェクト
    */
-  private getBindingData(): Record<string, unknown> {
+  public getBindingData(): Record<string, unknown> {
     if (this.bindingDataCache) {
       return this.bindingDataCache;
     }
@@ -746,7 +852,7 @@ export class Binding {
    * @param suffix 属性のサフィックス（例: "if", "each"）
    * @returns 存在する場合はtrue、そうでない場合はfalse
    */
-  private hasAttribute(suffix: string): boolean {
+  protected hasAttribute(suffix: string): boolean {
     if (!this.isElement || !this.attributes) {
       return false;
     }
@@ -763,7 +869,7 @@ export class Binding {
    * @param suffix 属性のサフィックス（例: "if", "each"）
    * @returns 属性が存在するなら属性名を、存在しないならnullを返します
    */
-  private getExistsAttributeName(suffix: string): string | null {
+  protected getExistsAttributeName(suffix: string): string | null {
     if (!this.isElement || !this.attributes) {
       return null;
     }
@@ -780,7 +886,10 @@ export class Binding {
    * @param isPrefix プレフィックスを使用するかどうか（デフォルトはfalse）
    * @returns 属性の値またはnull
    */
-  private getAttribute(name: string, isPrefix: boolean = false): string | null {
+  protected getAttribute(
+    name: string,
+    isPrefix: boolean = false,
+  ): string | null {
     if (!this.isElement || !this.attributes) {
       return null;
     }
@@ -798,7 +907,7 @@ export class Binding {
    * @param isPrefix プレフィックスを使用するかどうか（デフォルトはfalse）
    * @returns 属性の値またはnull
    */
-  private getEvaluatedAttribute(
+  protected getEvaluatedAttribute(
     name: string,
     isPrefix: boolean = false,
   ): string | boolean | null {
@@ -819,7 +928,7 @@ export class Binding {
    *   - contents: 評価された文字列
    *   - isRaw: トリプルプレースホルダ（非エスケープ）かどうか
    */
-  private getEvaluatedContents(): {contents: string; isRaw: boolean} {
+  protected getEvaluatedContents(): {contents: string; isRaw: boolean} {
     if (!this.contents) {
       return {contents: '', isRaw: false};
     }
@@ -841,24 +950,85 @@ export class Binding {
    * @param binding 対象のバインディング
    * @returns クローンされたバインディング
    */
-  private clone(): Binding {
+  protected clone(): Binding {
     return Binding.bind(this.target.cloneNode(true));
   }
 
   /**
-   * 子バインディングを挿入します。
+   * 対象バインディングを削除します。子バインディングは削除されません。
+   */
+  public remove() {
+    if (this.parent && this.parent.children) {
+      this.parent.children = this.parent.children.filter(
+        child => child !== this,
+      );
+    }
+  }
+
+  /**
+   * 子バインディングを挿入して再評価します。
    *
    * @param child 挿入する子バインディング
    */
-  private appendChild(child: Binding): void {
+  public appendChild(child: Binding): void {
     if (!this.isElement || !this.target) {
       Log.error('[Haori]', 'Cannot append child to non-element binding.');
       return;
     }
+    child.remove(); // 既存の親から削除
     if (!this.children) {
       this.children = [];
     }
     child.parent = this;
     this.children.push(child);
+    child.evaluate();
+  }
+
+  /**
+   * 指定されたバインディングを前に挿入して再評価します。
+   *
+   * @param before 前に挿入するバインディング
+   */
+  public insertBefore(before: Binding) {
+    if (!this.parent) {
+      Log.error('[Haori]', 'Cannot insert before without a parent binding.');
+      return;
+    }
+    before.remove(); // 既存の親から削除
+    if (!this.parent.children) {
+      this.parent.children = [];
+    }
+    const index = this.parent.children.indexOf(this);
+    if (index >= 0) {
+      this.parent.children.splice(index, 0, before);
+    } else {
+      this.parent.children.push(before);
+    }
+    before.parent = this.parent;
+    before.evaluate();
+  }
+
+  /**
+   * 指定されたバインディングを後ろに挿入して再評価します。
+   *
+   * @param after 後ろに挿入するバインディング
+   */
+  public insertAfter(after: Binding) {
+    if (!this.parent) {
+      Log.error('[Haori]', 'Cannot insert after without a parent binding.');
+      return;
+    }
+    after.remove(); // 既存の親から削除
+    if (!this.parent.children) {
+      this.parent.children = [];
+    }
+    const index = this.parent.children.indexOf(this);
+    if (index >= 0) {
+      this.parent.children.splice(index + 1, 0, after);
+    } else {
+      this.parent.children.push(after);
+    }
+    after.parent = this.parent;
+    after.evaluate();
   }
 }
