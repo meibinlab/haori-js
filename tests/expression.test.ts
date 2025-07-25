@@ -280,80 +280,101 @@ describe('Expression', () => {
   describe('containsDangerousPatterns', () => {
     describe('eval パターンの検出', () => {
       test('eval関数呼び出しを検出する', () => {
-        expect(Expression.containsDangerousPatterns('eval("code")')).toBe(true);
-        expect(Expression.containsDangerousPatterns('eval ("code")')).toBe(
-          true,
-        );
-        expect(Expression.containsDangerousPatterns('eval\t("code")')).toBe(
-          true,
-        );
-        expect(Expression.containsDangerousPatterns('eval\n("code")')).toBe(
-          true,
-        );
+        // protected化対応: as any でアクセス
+        expect(
+          (Expression as any).containsDangerousPatterns('eval("code")'),
+        ).toBe(true);
+        expect(
+          (Expression as any).containsDangerousPatterns('eval ("code")'),
+        ).toBe(true);
+        expect(
+          (Expression as any).containsDangerousPatterns('eval\t("code")'),
+        ).toBe(true);
+        expect(
+          (Expression as any).containsDangerousPatterns('eval\n("code")'),
+        ).toBe(true);
       });
 
       test('eval文字列を含むが関数呼び出しでないものは検出しない', () => {
-        expect(Expression.containsDangerousPatterns('evaluation')).toBe(false);
-        expect(Expression.containsDangerousPatterns('medieval')).toBe(false);
-        expect(Expression.containsDangerousPatterns('evalData')).toBe(false);
+        expect(
+          (Expression as any).containsDangerousPatterns('evaluation'),
+        ).toBe(false);
+        expect((Expression as any).containsDangerousPatterns('medieval')).toBe(
+          false,
+        );
+        expect((Expression as any).containsDangerousPatterns('evalData')).toBe(
+          false,
+        );
       });
     });
 
     describe('arguments パターンの検出', () => {
       test('arguments配列アクセスを検出する', () => {
-        expect(Expression.containsDangerousPatterns('arguments[0]')).toBe(true);
-        expect(Expression.containsDangerousPatterns('arguments [1]')).toBe(
-          true,
-        );
-        expect(Expression.containsDangerousPatterns('arguments\t[2]')).toBe(
-          true,
-        );
+        expect(
+          (Expression as any).containsDangerousPatterns('arguments[0]'),
+        ).toBe(true);
+        expect(
+          (Expression as any).containsDangerousPatterns('arguments [1]'),
+        ).toBe(true);
+        expect(
+          (Expression as any).containsDangerousPatterns('arguments\t[2]'),
+        ).toBe(true);
       });
 
       test('argumentsプロパティアクセスを検出する', () => {
-        expect(Expression.containsDangerousPatterns('arguments.callee')).toBe(
-          true,
-        );
-        expect(Expression.containsDangerousPatterns('arguments.length')).toBe(
-          true,
-        );
-        expect(Expression.containsDangerousPatterns('arguments .caller')).toBe(
-          true,
-        );
+        expect(
+          (Expression as any).containsDangerousPatterns('arguments.callee'),
+        ).toBe(true);
+        expect(
+          (Expression as any).containsDangerousPatterns('arguments.length'),
+        ).toBe(true);
+        expect(
+          (Expression as any).containsDangerousPatterns('arguments .caller'),
+        ).toBe(true);
       });
 
       test('arguments文字列を含むが危険でないものは検出しない', () => {
-        expect(Expression.containsDangerousPatterns('argumentsArray')).toBe(
-          false,
-        );
-        expect(Expression.containsDangerousPatterns('functionArguments')).toBe(
-          false,
-        );
-        expect(Expression.containsDangerousPatterns('myarguments')).toBe(false);
+        expect(
+          (Expression as any).containsDangerousPatterns('argumentsArray'),
+        ).toBe(false);
+        expect(
+          (Expression as any).containsDangerousPatterns('functionArguments'),
+        ).toBe(false);
+        expect(
+          (Expression as any).containsDangerousPatterns('myarguments'),
+        ).toBe(false);
       });
     });
 
     describe('安全な式は検出しない', () => {
       test('通常の計算式', () => {
-        expect(Expression.containsDangerousPatterns('1 + 2')).toBe(false);
-        expect(Expression.containsDangerousPatterns('Math.max(1, 2)')).toBe(
+        expect((Expression as any).containsDangerousPatterns('1 + 2')).toBe(
           false,
         );
+        expect(
+          (Expression as any).containsDangerousPatterns('Math.max(1, 2)'),
+        ).toBe(false);
       });
 
       test('values参照', () => {
-        expect(Expression.containsDangerousPatterns('values.name')).toBe(false);
-        expect(Expression.containsDangerousPatterns('values.items[0]')).toBe(
-          false,
-        );
+        expect(
+          (Expression as any).containsDangerousPatterns('values.name'),
+        ).toBe(false);
+        expect(
+          (Expression as any).containsDangerousPatterns('values.items[0]'),
+        ).toBe(false);
       });
 
       test('メソッド呼び出し', () => {
         expect(
-          Expression.containsDangerousPatterns('values.text.toUpperCase()'),
+          (Expression as any).containsDangerousPatterns(
+            'values.text.toUpperCase()',
+          ),
         ).toBe(false);
         expect(
-          Expression.containsDangerousPatterns('values.arr.filter(x => x > 0)'),
+          (Expression as any).containsDangerousPatterns(
+            'values.arr.filter(x => x > 0)',
+          ),
         ).toBe(false);
       });
     });
