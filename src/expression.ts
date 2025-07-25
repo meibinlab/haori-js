@@ -137,7 +137,7 @@ export class Expression {
    * @param expression チェック対象の式文字列
    * @return 危険なパターンが含まれている場合はtrue
    */
-  static containsDangerousPatterns(expression: string): boolean {
+  protected static containsDangerousPatterns(expression: string): boolean {
     const dangerousPatterns = [
       /\beval\s*\(/, // eval(...)
       /\barguments\s*\[/, // arguments[...]
@@ -152,7 +152,7 @@ export class Expression {
    * @param obj チェック対象のオブジェクト
    * @return 禁止識別子が含まれていればtrue
    */
-  static containsForbiddenKeys(obj: unknown): boolean {
+  protected static containsForbiddenKeys(obj: unknown): boolean {
     if (obj && typeof obj === 'object') {
       for (const key of Object.keys(obj as object)) {
         if (this.FORBIDDEN_NAMES.includes(key)) {
