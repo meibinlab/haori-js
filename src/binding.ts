@@ -289,213 +289,13 @@ export class Binding {
   }
 
   /**
-   * バインディングを評価します。
-   */
-  public static evaluate(binding: Binding): void {
-    if (!binding || !binding.isElement) {
-      return;
-    }
-    this.evaluateIf(binding);
-    this.evaluateEach(binding);
-    if (binding.visible) {
-      this.evaluateAttributes(binding);
-      this.evaluateContents(binding);
-    }
-  }
-
-  /**
-   * if 属性のバインディングを評価します。
+   * バインディングを取得します。
    *
-   * @param binding 対象のバインディング
+   * @param node 対象のノード
+   * @returns バインディングオブジェクト（存在しない場合はundefined）
    */
-  private static evaluateIf(binding: Binding): void {
-    const ifName = binding.getExistsAttributeName('if');
-    if (ifName === null) {
-      return;
-    }
-    const currentIfValue = binding.visible;
-    const ifValue = binding.getEvaluatedAttribute(ifName);
-    if (ifValue === false) {
-      if (currentIfValue !== false) {
-        // 非表示
-        binding.visible = false;
-        const element = binding.target as HTMLElement;
-        Queue.enqueue(() => {
-          binding.display = element.style.display;
-          element.style.display = 'none';
-          element.setAttribute(`${ifName}-false`, '');
-          while (element.firstChild) {
-            element.removeChild(element.firstChild);
-          }
-        });
-      }
-    } else if (currentIfValue === null) {
-      // 初期表示
-      binding.visible = true;
-    } else if (currentIfValue === false) {
-      // 再表示
-      binding.visible = true;
-      const element = binding.target as HTMLElement;
-      Queue.enqueue(() => {
-        element.style.display = binding.display || '';
-        element.removeAttribute(`${ifName}-false`);
-        binding.children?.forEach(child => {
-          element.appendChild(child.target);
-        });
-      });
-    }
-  }
-
-  /**
-   * each 属性のバインディングを評価します。
-   *
-   * @param binding 対象のバインディング
-   */
-  private static evaluateEach(binding: Binding): void {
-    const eachName = binding.getExistsAttributeName('each');
-    if (eachName === null) {
-      return;
-    }
-    const eachValue = binding.getAttribute(eachName);
-    if (!Array.isArray(eachValue)) {
-      Log.error('[Haori]', 'Invalid data-each value:', eachValue);
-      return;
-    }
-    if (eachValue) {
-      const list = eachValue as Record<string, unknown>[];
-      const element = binding.target as HTMLElement;
-      if (!binding.template) {
-        binding.template = [];
-        for (let i = 0; i < element.childNodes.length; i++) {
-          const childNode = element.childNodes[i];
-          const clonedNode = Binding.cloneNode(childNode);
-          const clonedBinding = Binding.bind(clonedNode);
-          binding.template.push(clonedBinding);
-        }
-      }
-      Queue.enqueue(() => {
-        Binding.removeChildren(element);
-      });
-      const argName = binding.getAttribute('each-arg', true);
-      const prefix = eachName.split('-')[0] + '-';
-      binding.template!.forEach(template => {
-        if (!template.hasAttribute('each-before')) {
-          return;
-        }
-        Queue.enqueue(() => {
-          const before = template.clone();
-          binding.insertChild(before);
-        });
-      });
-      binding.template!.forEach(template => {
-        if (
-          template.hasAttribute('each-before') &&
-          template.hasAttribute('each-after')
-        ) {
-          return;
-        }
-        list.forEach((item, index) => {
-          Queue.enqueue(() => {
-            const target = template.clone();
-            if (target.isElement) {
-              const element = target.target as HTMLElement;
-              // data-each-keyが指定されていればdata-row属性に値をセット
-              const keyName = Binding.getAttribute(element, 'each-key');
-              if (keyName && item && item[keyName] !== undefined) {
-                element.setAttribute('data-row', String(item[keyName]));
-              } else {
-                element.setAttribute(`${prefix}row`, '');
-              }
-              const bindValue = argName ? {[argName]: item} : item;
-              const indexName = Binding.getAttribute(element, 'each-index');
-              if (indexName) {
-                if (argName) {
-                  if (
-                    !bindValue[argName] ||
-                    typeof bindValue[argName] !== 'object'
-                  ) {
-                    bindValue[argName] = {};
-                  }
-                  (bindValue[argName] as Record<string, unknown>)[indexName] =
-                    index;
-                } else {
-                  bindValue[indexName] = index;
-                }
-              }
-              element.setAttribute(`${prefix}bind`, JSON.stringify(bindValue));
-            }
-            binding.insertChild(target);
-          });
-        });
-      });
-      binding.template!.forEach(template => {
-        if (!template.hasAttribute('each-after')) {
-          return;
-        }
-        Queue.enqueue(() => {
-          const after = template.clone();
-          binding.insertChild(after);
-        });
-      });
-    }
-  }
-
-  /**
-   * 属性の評価を行います。
-   *
-   * @param binding 対象のバインディング
-   */
-  private static evaluateAttributes(binding: Binding): void {
-    if (binding.attributes === null || binding.attributes.size === 0) {
-      return;
-    }
-    binding.attributes.forEach((attribute, key) => {
-      Queue.enqueue(() => {
-        const element = binding.target as HTMLElement;
-        const value = attribute.evaluate(binding.getBindingData());
-        if (value === false) {
-          element.removeAttribute(key);
-        } else {
-          element.setAttribute(key, value.toString());
-        }
-      });
-    });
-  }
-
-  /**
-   * コンテンツをDOMに適用します。
-   *
-   * @param binding 対象のバインディング
-   */
-  private static evaluateContents(binding: Binding): void {
-    if (binding.children === null || binding.children.length === 0) {
-      return;
-    }
-    binding.children!.forEach(child => {
-      if (child.isElement) {
-        return;
-      }
-      const text = child.getEvaluatedContents();
-      if (text.isRaw) {
-        if (binding.children!.length > 1) {
-          Log.error(
-            '[Haori]',
-            'Raw expressions are not allowed in multi-content bindings.',
-          );
-          text.isRaw = false; // RAW_EXPRESSIONをEXPRESSIONに変換
-        } else {
-          Queue.enqueue(() => {
-            const element = binding.target as HTMLElement;
-            element.innerHTML = text.contents as string;
-          });
-          return;
-        }
-      }
-      Queue.enqueue(() => {
-        const node = child.target as Text;
-        node.textContent = text.contents as string;
-      });
-    });
+  public static get(node: Node): Binding | undefined {
+    return this.BINDING_MAP.get(node);
   }
 
   /**
@@ -582,7 +382,7 @@ export class Binding {
       childBinding = new Binding(child);
     }
     if (binding) {
-      binding.insertChild(childBinding);
+      binding.appendChild(childBinding);
     }
     if (withDom) {
       return Queue.enqueue(() => {
@@ -689,6 +489,208 @@ export class Binding {
   }
 
   /**
+   * バインディングを評価します。
+   */
+  public evaluate(): void {
+    if (!this.isElement) {
+      return;
+    }
+    this.evaluateIf();
+    this.evaluateEach();
+    if (this.visible) {
+      this.evaluateAttributes();
+      this.evaluateContents();
+    }
+  }
+
+  /**
+   * if 属性のバインディングを評価します。
+   */
+  protected evaluateIf(): void {
+    const ifName = this.getExistsAttributeName('if');
+    if (ifName === null) {
+      return;
+    }
+    const currentIfValue = this.visible;
+    const ifValue = this.getEvaluatedAttribute(ifName);
+    if (ifValue === false) {
+      if (currentIfValue !== false) {
+        // 非表示
+        this.visible = false;
+        const element = this.target as HTMLElement;
+        Queue.enqueue(() => {
+          this.display = element.style.display;
+          element.style.display = 'none';
+          element.setAttribute(`${ifName}-false`, '');
+          while (element.firstChild) {
+            element.removeChild(element.firstChild);
+          }
+        });
+      }
+    } else if (currentIfValue === null) {
+      // 初期表示
+      this.visible = true;
+    } else if (currentIfValue === false) {
+      // 再表示
+      this.visible = true;
+      const element = this.target as HTMLElement;
+      Queue.enqueue(() => {
+        element.style.display = this.display || '';
+        element.removeAttribute(`${ifName}-false`);
+        this.children?.forEach(child => {
+          element.appendChild(child.target);
+        });
+      });
+    }
+  }
+
+  /**
+   * each 属性のバインディングを評価します。
+   */
+  protected evaluateEach(): void {
+    const eachName = this.getExistsAttributeName('each');
+    if (eachName === null) {
+      return;
+    }
+    const eachValue = this.getAttribute(eachName);
+    if (!Array.isArray(eachValue)) {
+      Log.error('[Haori]', 'Invalid data-each value:', eachValue);
+      return;
+    }
+    if (eachValue) {
+      const list = eachValue as Record<string, unknown>[];
+      const element = this.target as HTMLElement;
+      if (!this.template) {
+        this.template = [];
+        for (let i = 0; i < element.childNodes.length; i++) {
+          const childNode = element.childNodes[i];
+          const clonedNode = Binding.cloneNode(childNode);
+          const clonedBinding = Binding.bind(clonedNode);
+          this.template.push(clonedBinding);
+        }
+      }
+      Queue.enqueue(() => {
+        Binding.removeChildren(element);
+      });
+      const argName = this.getAttribute('each-arg', true);
+      const prefix = eachName.split('-')[0] + '-';
+      this.template!.forEach(template => {
+        if (!template.hasAttribute('each-before')) {
+          return;
+        }
+        Queue.enqueue(() => {
+          const before = template.clone();
+          this.appendChild(before);
+        });
+      });
+      this.template!.forEach(template => {
+        if (
+          template.hasAttribute('each-before') &&
+          template.hasAttribute('each-after')
+        ) {
+          return;
+        }
+        list.forEach((item, index) => {
+          Queue.enqueue(() => {
+            const target = template.clone();
+            if (target.isElement) {
+              const element = target.target as HTMLElement;
+              // data-each-keyが指定されていればdata-row属性に値をセット
+              const keyName = Binding.getAttribute(element, 'each-key');
+              if (keyName && item && item[keyName] !== undefined) {
+                element.setAttribute('data-row', String(item[keyName]));
+              } else {
+                element.setAttribute(`${prefix}row`, '');
+              }
+              const bindValue = argName ? {[argName]: item} : item;
+              const indexName = Binding.getAttribute(element, 'each-index');
+              if (indexName) {
+                if (argName) {
+                  if (
+                    !bindValue[argName] ||
+                    typeof bindValue[argName] !== 'object'
+                  ) {
+                    bindValue[argName] = {};
+                  }
+                  (bindValue[argName] as Record<string, unknown>)[indexName] =
+                    index;
+                } else {
+                  bindValue[indexName] = index;
+                }
+              }
+              element.setAttribute(`${prefix}bind`, JSON.stringify(bindValue));
+            }
+            this.appendChild(target);
+          });
+        });
+      });
+      this.template!.forEach(template => {
+        if (!template.hasAttribute('each-after')) {
+          return;
+        }
+        Queue.enqueue(() => {
+          const after = template.clone();
+          this.appendChild(after);
+        });
+      });
+    }
+  }
+
+  /**
+   * 属性の評価を行います。
+   */
+  protected evaluateAttributes(): void {
+    if (this.attributes === null || this.attributes.size === 0) {
+      return;
+    }
+    this.attributes.forEach((attribute, key) => {
+      Queue.enqueue(() => {
+        const element = this.target as HTMLElement;
+        const value = attribute.evaluate(this.getBindingData());
+        if (value === false) {
+          element.removeAttribute(key);
+        } else {
+          element.setAttribute(key, value.toString());
+        }
+      });
+    });
+  }
+
+  /**
+   * コンテンツをDOMに適用します。
+   */
+  protected evaluateContents(): void {
+    if (this.children === null || this.children.length === 0) {
+      return;
+    }
+    this.children!.forEach(child => {
+      if (child.isElement) {
+        return;
+      }
+      const text = child.getEvaluatedContents();
+      if (text.isRaw) {
+        if (this.children!.length > 1) {
+          Log.error(
+            '[Haori]',
+            'Raw expressions are not allowed in multi-content bindings.',
+          );
+          text.isRaw = false; // RAW_EXPRESSIONをEXPRESSIONに変換
+        } else {
+          Queue.enqueue(() => {
+            const element = this.target as HTMLElement;
+            element.innerHTML = text.contents as string;
+          });
+          return;
+        }
+      }
+      Queue.enqueue(() => {
+        const node = child.target as Text;
+        node.textContent = text.contents as string;
+      });
+    });
+  }
+
+  /**
    * 属性を更新します。
    *
    * @param name 属性名
@@ -704,10 +706,18 @@ export class Binding {
       try {
         this.bindingData = JSON.parse(value);
         this.bindingDataCache = null;
+        this.evaluate();
       } catch (error) {
         Log.error('[Haori]', 'Invalid data-bind attribute:', error);
         this.bindingData = null;
       }
+    } else if (
+      name == 'data-if' ||
+      name == 'hor-if' ||
+      name == 'data-each' ||
+      name == 'hor-each'
+    ) {
+      this.evaluate();
     }
   }
 
@@ -840,9 +850,9 @@ export class Binding {
    *
    * @param child 挿入する子バインディング
    */
-  private insertChild(child: Binding): void {
+  private appendChild(child: Binding): void {
     if (!this.isElement || !this.target) {
-      Log.error('[Haori]', 'Cannot insert child to non-element binding.');
+      Log.error('[Haori]', 'Cannot append child to non-element binding.');
       return;
     }
     if (!this.children) {
