@@ -4,6 +4,11 @@ import {Binding} from '../src/binding';
 describe('Binding クラスのテスト', () => {
   let container: HTMLElement;
 
+  beforeAll(() => {
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback) =>
+      setTimeout(cb, 16);
+  });
+
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -92,7 +97,7 @@ describe('Binding クラスのテスト', () => {
     const parent = container.querySelector('#p')!;
     const child = container.querySelector('#c')!;
     await Binding.bind(parent);
-    await Binding.appendChild(parent, child);
+    await Binding.appendChild(parent, child, true);
     expect(parent.contains(child)).toBe(true);
   });
 });

@@ -248,7 +248,7 @@ export class Binding {
    * @param target 対象ノード
    * @return バインディングオブジェクト
    */
-  public static async bind(target: Node): Promise<Binding> {
+  public static bind(target: Node): Binding {
     let binding = this.BINDING_MAP.get(target);
     if (binding) {
       return binding;
@@ -261,7 +261,7 @@ export class Binding {
       binding.children = [];
       for (let i = 0; i < target.childNodes.length; i++) {
         const child = target.childNodes[i];
-        const childBinding = await this.bind(child);
+        const childBinding = this.bind(child);
         binding.children.push(childBinding);
       }
     }
@@ -291,12 +291,12 @@ export class Binding {
   /**
    * バインディングを評価します。
    */
-  public static async evaluate(binding: Binding): Promise<void> {
+  public static evaluate(binding: Binding): void {
     if (!binding || !binding.isElement) {
       return;
     }
-    await this.evaluateIf(binding);
-    await this.evaluateEach(binding);
+    this.evaluateIf(binding);
+    this.evaluateEach(binding);
     if (binding.visible) {
       this.evaluateAttributes(binding);
       this.evaluateContents(binding);
@@ -308,7 +308,7 @@ export class Binding {
    *
    * @param binding 対象のバインディング
    */
-  private static async evaluateIf(binding: Binding): Promise<void> {
+  private static evaluateIf(binding: Binding): void {
     const ifName = binding.getExistsAttributeName('if');
     if (ifName === null) {
       return;
@@ -320,7 +320,7 @@ export class Binding {
         // 非表示
         binding.visible = false;
         const element = binding.target as HTMLElement;
-        await Queue.enqueue(() => {
+        Queue.enqueue(() => {
           binding.display = element.style.display;
           element.style.display = 'none';
           element.setAttribute(`${ifName}-false`, '');
@@ -336,7 +336,7 @@ export class Binding {
       // 再表示
       binding.visible = true;
       const element = binding.target as HTMLElement;
-      await Queue.enqueue(() => {
+      Queue.enqueue(() => {
         element.style.display = binding.display || '';
         element.removeAttribute(`${ifName}-false`);
         binding.children?.forEach(child => {
@@ -351,7 +351,7 @@ export class Binding {
    *
    * @param binding 対象のバインディング
    */
-  private static async evaluateEach(binding: Binding): Promise<void> {
+  private static evaluateEach(binding: Binding): void {
     const eachName = binding.getExistsAttributeName('each');
     if (eachName === null) {
       return;
@@ -368,35 +368,35 @@ export class Binding {
         binding.template = [];
         for (let i = 0; i < element.childNodes.length; i++) {
           const childNode = element.childNodes[i];
-          const clonedNode = await Binding.cloneNode(childNode);
-          const clonedBinding = await Binding.bind(clonedNode);
+          const clonedNode = Binding.cloneNode(childNode);
+          const clonedBinding = Binding.bind(clonedNode);
           binding.template.push(clonedBinding);
         }
       }
-      Queue.enqueue(async () => {
-        await Binding.removeChildren(element);
+      Queue.enqueue(() => {
+        Binding.removeChildren(element);
       });
       const argName = binding.getAttribute('each-arg', true);
       const prefix = eachName.split('-')[0] + '-';
-      binding.template!.forEach(async template => {
+      binding.template!.forEach(template => {
         if (!template.hasAttribute('each-before')) {
           return;
         }
-        Queue.enqueue(async () => {
-          const before = await template.clone();
-          await binding.insertChild(before);
+        Queue.enqueue(() => {
+          const before = template.clone();
+          binding.insertChild(before);
         });
       });
-      binding.template!.forEach(async template => {
+      binding.template!.forEach(template => {
         if (
           template.hasAttribute('each-before') &&
           template.hasAttribute('each-after')
         ) {
           return;
         }
-        list.forEach(async (item, index) => {
-          Queue.enqueue(async () => {
-            const target = await template.clone();
+        list.forEach((item, index) => {
+          Queue.enqueue(() => {
+            const target = template.clone();
             if (target.isElement) {
               const element = target.target as HTMLElement;
               // data-each-keyが指定されていればdata-row属性に値をセット
@@ -424,17 +424,17 @@ export class Binding {
               }
               element.setAttribute(`${prefix}bind`, JSON.stringify(bindValue));
             }
-            await binding.insertChild(target);
+            binding.insertChild(target);
           });
         });
       });
-      binding.template!.forEach(async template => {
+      binding.template!.forEach(template => {
         if (!template.hasAttribute('each-after')) {
           return;
         }
-        Queue.enqueue(async () => {
-          const after = await template.clone();
-          await binding.insertChild(after);
+        Queue.enqueue(() => {
+          const after = template.clone();
+          binding.insertChild(after);
         });
       });
     }
@@ -445,11 +445,11 @@ export class Binding {
    *
    * @param binding 対象のバインディング
    */
-  private static async evaluateAttributes(binding: Binding): Promise<void> {
+  private static evaluateAttributes(binding: Binding): void {
     if (binding.attributes === null || binding.attributes.size === 0) {
       return;
     }
-    binding.attributes.forEach(async (attribute, key) => {
+    binding.attributes.forEach((attribute, key) => {
       Queue.enqueue(() => {
         const element = binding.target as HTMLElement;
         const value = attribute.evaluate(binding.getBindingData());
@@ -467,11 +467,11 @@ export class Binding {
    *
    * @param binding 対象のバインディング
    */
-  private static async evaluateContents(binding: Binding): Promise<void> {
+  private static evaluateContents(binding: Binding): void {
     if (binding.children === null || binding.children.length === 0) {
       return;
     }
-    binding.children!.forEach(async child => {
+    binding.children!.forEach(child => {
       if (child.isElement) {
         return;
       }
@@ -499,15 +499,15 @@ export class Binding {
   }
 
   /**
-   * ノードをクローンします。
+   * ノードをバインディングを含めてクローンします。
    *
    * @param node 対象ノード
    * @returns クローンされたノード
    */
-  public static async cloneNode(node: Node): Promise<Node> {
+  public static cloneNode(node: Node): Node {
     const binding = this.BINDING_MAP.get(node);
     if (binding) {
-      const newBinding = await Binding.bind(node.cloneNode(true));
+      const newBinding = Binding.bind(node.cloneNode(true));
       return newBinding.target;
     } else {
       return node.cloneNode(true);
@@ -519,17 +519,20 @@ export class Binding {
    *
    * @param node 対象ノード
    */
-  public static async removeNode(node: Node): Promise<void> {
+  public static removeNode(node: Node): Promise<void> {
     const binding = this.BINDING_MAP.get(node);
     if (binding) {
-      Promise.allSettled(
-        binding.children?.map(child => Binding.removeNode(child.target)) || [],
-      ).catch(error => {
-        Log.error('[Haori]', 'Error deleting child bindings:', error);
-      });
+      binding.children?.map(child => Binding.removeNode(child.target));
+      if (binding.parent && binding.parent.children) {
+        binding.parent.children = binding.parent.children.filter(
+          child => child !== binding,
+        );
+      }
       this.BINDING_MAP.delete(node);
     }
-    node.parentNode?.removeChild(node);
+    return Queue.enqueue(() => {
+      node.parentNode?.removeChild(node);
+    });
   }
 
   /**
@@ -537,21 +540,27 @@ export class Binding {
    *
    * @param node 対象ノード
    */
-  public static async removeChildren(node: Node): Promise<void> {
+  public static removeChildren(node: Node): Promise<void> {
     const binding = this.BINDING_MAP.get(node);
     if (binding) {
-      await Promise.allSettled(
+      return Promise.allSettled(
         binding.children?.map(child => Binding.removeNode(child.target)) || [],
-      ).catch(error => {
-        Log.error('[Haori]', 'Error deleting child bindings:', error);
-      });
-      binding.children = null;
+      )
+        .then(() => {
+          binding.children = null;
+        })
+        .catch(error => {
+          Log.error('[Haori]', 'Error removing child nodes:', error);
+        });
     } else {
-      await Promise.allSettled(
-        Array.from(node.childNodes).map(child => Binding.removeNode(child)),
-      ).catch(error => {
-        Log.error('[Haori]', 'Error deleting child bindings:', error);
-      });
+      return Promise.allSettled(
+        Array.from(node.childNodes).map(child => Binding.removeNode(child)) ||
+          [],
+      )
+        .then(() => {})
+        .catch(error => {
+          Log.error('[Haori]', 'Error removing child nodes:', error);
+        });
     }
   }
 
@@ -560,17 +569,55 @@ export class Binding {
    *
    * @param parent 親ノード
    * @param child 子ノード
+   * @param withDom DOMも操作する場合はtrue
    */
-  public static async appendChild(parent: Node, child: Node): Promise<void> {
+  public static appendChild(
+    parent: Node,
+    child: Node,
+    withDom: boolean = false,
+  ): Promise<void> {
     const binding = this.BINDING_MAP.get(parent);
     let childBinding = this.BINDING_MAP.get(child);
     if (!childBinding) {
       childBinding = new Binding(child);
     }
     if (binding) {
-      await binding.insertChild(childBinding);
+      binding.insertChild(childBinding);
+    }
+    if (withDom) {
+      return Queue.enqueue(() => {
+        parent.appendChild(child);
+      });
     } else {
-      parent.appendChild(child);
+      return Promise.resolve();
+    }
+  }
+
+  /**
+   * 属性の変更を反映します。
+   *
+   * @param target 対象のノード
+   * @param name 属性名
+   * @param value 属性値
+   * @param withDom DOMも操作する場合はtrue
+   */
+  public static updateAttribute(
+    target: Node,
+    name: string,
+    value: string,
+    withDom: boolean = false,
+  ): Promise<void> {
+    const binding = this.BINDING_MAP.get(target);
+    if (binding) {
+      binding.updateAttribute(name, value);
+    }
+    if (withDom) {
+      return Queue.enqueue(() => {
+        const element = target as HTMLElement;
+        element.setAttribute(name, value);
+      });
+    } else {
+      return Promise.resolve();
     }
   }
 
@@ -779,13 +826,13 @@ export class Binding {
   }
 
   /**
-   * バインディングをクローンします。
+   * バインディングをクローンします。ノードも複製します。
    *
    * @param binding 対象のバインディング
    * @returns クローンされたバインディング
    */
-  private async clone(): Promise<Binding> {
-    return await Binding.bind(this.target.cloneNode(true));
+  private clone(): Binding {
+    return Binding.bind(this.target.cloneNode(true));
   }
 
   /**
@@ -793,7 +840,7 @@ export class Binding {
    *
    * @param child 挿入する子バインディング
    */
-  private async insertChild(child: Binding): Promise<void> {
+  private insertChild(child: Binding): void {
     if (!this.isElement || !this.target) {
       Log.error('[Haori]', 'Cannot insert child to non-element binding.');
       return;
@@ -803,9 +850,5 @@ export class Binding {
     }
     child.parent = this;
     this.children.push(child);
-    const element = this.target as HTMLElement;
-    await Queue.enqueue(() => {
-      element.appendChild(child.target);
-    });
   }
 }
