@@ -126,6 +126,27 @@ class AsyncQueue {
       Log.error('[Haori]', `Task ${item.timestamp} failed:`, error);
     }
   }
+
+  /**
+   * キューが空になるまで待機します。
+   *
+   * @returns キューが空になったら解決されるPromise
+   */
+  public async wait(): Promise<void> {
+    if (this.queue.length === 0 && !this.processing) {
+      return;
+    }
+    await new Promise<void>(resolve => {
+      const check = () => {
+        if (this.queue.length === 0 && !this.processing) {
+          resolve();
+        } else {
+          setTimeout(check, 5); // 5msごとに再チェック
+        }
+      };
+      check();
+    });
+  }
 }
 
 /**
@@ -144,5 +165,12 @@ export class Queue {
    */
   public static enqueue(task: () => void): Promise<void> {
     return this.ASYNC_QUEUE.enqueue(task);
+  }
+
+  /**
+   * 全てのキュー処理が完了するまで待機します。
+   */
+  public static wait(): Promise<void> {
+    return this.ASYNC_QUEUE.wait();
   }
 }
