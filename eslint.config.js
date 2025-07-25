@@ -22,7 +22,7 @@ export default tseslint.config(
     rules: {
       // Google TypeScript Style Guide rules
       'max-len': ['error', {code: 80}],
-      indent: ['error', 2],
+      indent: ['error', 2, {SwitchCase: 1}],
       quotes: ['error', 'single'],
       semi: ['error', 'always'],
       'comma-dangle': ['error', 'only-multiline'],
