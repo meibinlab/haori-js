@@ -13,16 +13,16 @@ import {Log} from './log';
  */
 interface QueueItem {
   /** 実行する処理 */
-  task: () => void;
+  task: () => unknown | Promise<unknown>;
 
   /** 作成時刻 */
   timestamp: number;
 
   /** 完了Promise */
-  promise: Promise<void>;
+  promise: Promise<unknown>;
 
   /** Promise解決用の関数 */
-  resolve: (value: void | PromiseLike<void>) => void;
+  resolve: (value: unknown | PromiseLike<unknown>) => void;
 
   /** Promise拒否用の関数 */
   reject: (reason?: unknown) => void;
@@ -45,10 +45,10 @@ class AsyncQueue {
    * @param task 実行する処理
    * @returns 処理完了Promise
    */
-  public enqueue(task: () => void): Promise<void> {
-    let resolve: (value: void | PromiseLike<void>) => void;
+  public enqueue(task: () => unknown): Promise<unknown> {
+    let resolve: (value: unknown | PromiseLike<unknown>) => void;
     let reject: (reason?: unknown) => void;
-    const promise = new Promise<void>((res, rej) => {
+    const promise = new Promise<unknown>((res, rej) => {
       resolve = res;
       reject = rej;
     });
@@ -163,7 +163,7 @@ export class Queue {
    * @param task 実行する処理
    * @returns 処理完了Promise
    */
-  public static enqueue(task: () => void): Promise<void> {
+  public static enqueue(task: () => unknown): Promise<unknown> {
     return this.ASYNC_QUEUE.enqueue(task);
   }
 

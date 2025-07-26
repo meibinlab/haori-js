@@ -312,7 +312,7 @@ export class Binding {
   public static removeNode(
     node: Node,
     withDom: boolean = false,
-  ): Promise<void> {
+  ): Promise<unknown> {
     const binding = this.BINDING_MAP.get(node);
     if (binding) {
       if (binding.ignoreMutationNode) {
@@ -389,7 +389,7 @@ export class Binding {
     parent: Node,
     child: Node,
     withDom: boolean = false,
-  ): Promise<void> {
+  ): Promise<unknown> {
     const binding = this.BINDING_MAP.get(parent);
     let childBinding = this.BINDING_MAP.get(child);
     if (!childBinding) {
@@ -427,7 +427,7 @@ export class Binding {
     before: Node,
     reference: Node,
     withDom: boolean = false,
-  ): Promise<void> {
+  ): Promise<unknown> {
     const beforeBinding = this.BINDING_MAP.get(before);
     if (beforeBinding && beforeBinding.ignoreMutationNode) {
       return Promise.resolve();
@@ -463,7 +463,7 @@ export class Binding {
     after: Node,
     reference: Node,
     withDom: boolean = false,
-  ): Promise<void> {
+  ): Promise<unknown> {
     const afterBinding = this.BINDING_MAP.get(after);
     if (afterBinding && afterBinding.ignoreMutationNode) {
       return Promise.resolve();
@@ -501,7 +501,7 @@ export class Binding {
     name: string,
     value: string | null,
     withDom: boolean = false,
-  ): Promise<void> {
+  ): Promise<unknown> {
     const binding = this.BINDING_MAP.get(target);
     if (binding) {
       if (binding.ignoreMutationAttributes) {
@@ -541,7 +541,7 @@ export class Binding {
     target: Node,
     text: string,
     withDom: boolean = false,
-  ): Promise<void> {
+  ): Promise<unknown> {
     const binding = this.BINDING_MAP.get(target);
     if (binding) {
       if (binding.ignoreMutationTextContent) {
