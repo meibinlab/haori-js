@@ -70,14 +70,28 @@ class AsyncQueue {
    *
    * @returns 処理完了Promise
    */
-  private async processQueue(): Promise<void> {
+  private processQueue(): void {
     if (this.processing || this.queue.length === 0) {
       return;
     }
     this.processing = true;
     try {
       const item = this.queue.shift();
-      await this.executeTask(item!);
+      if (!item) {
+        return;
+      }
+      try {
+        const result = item.task();
+        item.resolve(result);
+        Log.info('[Haori]', `Task ${item.timestamp} completed successfully`);
+      } catch (error) {
+        Log.error('[Haori]', `Task ${item.timestamp} failed:`, error);
+        try {
+          item.reject(error);
+        } catch (error2) {
+          Log.error('[Haori]', `Task ${item.timestamp} reject failed:`, error2);
+        }
+      }
     } catch (error) {
       Log.error('[Haori]', 'Error processing queue:', error);
     } finally {
@@ -97,37 +111,12 @@ class AsyncQueue {
     }
     if (typeof requestAnimationFrame !== 'undefined') {
       requestAnimationFrame(() => {
-        this.processQueue().catch(error => {
-          Log.error('[Haori]', 'Error scheduling processing:', error);
-        });
+        this.processQueue();
       });
     } else {
       setTimeout(() => {
-        this.processQueue().catch(error => {
-          Log.error('[Haori]', 'Error scheduling processing:', error);
-        });
+        this.processQueue();
       }, 16); // 60fps
-    }
-  }
-
-  /**
-   * タスクを実行します。
-   *
-   * @param item 実行するキューアイテム
-   * @returns 処理完了Promise
-   */
-  private async executeTask(item: QueueItem): Promise<void> {
-    try {
-      const result = await item.task();
-      item.resolve(result);
-      Log.info('[Haori]', `Task ${item.timestamp} completed successfully`);
-    } catch (error) {
-      Log.error('[Haori]', `Task ${item.timestamp} failed:`, error);
-      try {
-        item.reject(error);
-      } catch (error2) {
-        Log.error('[Haori]', `Task ${item.timestamp} reject failed:`, error2);
-      }
     }
   }
 
