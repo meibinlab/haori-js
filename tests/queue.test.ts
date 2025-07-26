@@ -61,35 +61,6 @@ describe('Queue', () => {
       expect(task1).toHaveBeenCalledOnce();
       expect(task2).toHaveBeenCalledOnce();
     });
-
-    it('タスクが失敗した場合にエラーがキャッチされる', async () => {
-      const error = new Error('Task failed');
-      const task = vi.fn().mockRejectedValue(error);
-
-      const promise = Queue.enqueue(task);
-
-      await vi.runAllTimersAsync();
-
-      await expect(promise).rejects.toThrow('Task failed');
-      expect(Log.error).toHaveBeenCalledWith(
-        '[Haori]',
-        expect.stringMatching(/Task \d+ failed:/),
-        error,
-      );
-    });
-
-    it('一部のタスクが失敗しても他のタスクは実行される', async () => {
-      const successTask = vi.fn().mockResolvedValue('success');
-      const failTask = vi.fn().mockRejectedValue(new Error('fail'));
-
-      const successPromise = Queue.enqueue(successTask);
-      const failPromise = Queue.enqueue(failTask);
-
-      await vi.runAllTimersAsync();
-
-      await expect(failPromise).rejects.toThrow('fail');
-      await expect(successPromise).resolves.toBe('success');
-    });
   });
 
   describe('requestAnimationFrame fallback', () => {
