@@ -54,7 +54,7 @@ class AsyncQueue {
     });
     const item: QueueItem = {
       task,
-      timestamp: Date.now(),
+      timestamp: performance.now(),
       promise,
       resolve: resolve!,
       reject: reject!,
@@ -78,13 +78,13 @@ class AsyncQueue {
     try {
       const item = this.queue.shift();
       await this.executeTask(item!);
-      if (this.queue.length > 0) {
-        this.scheduleProcessing();
-      }
     } catch (error) {
       Log.error('[Haori]', 'Error processing queue:', error);
     } finally {
       this.processing = false;
+      if (this.queue.length > 0) {
+        this.scheduleProcessing();
+      }
     }
   }
 
