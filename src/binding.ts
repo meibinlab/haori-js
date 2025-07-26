@@ -14,8 +14,34 @@ class TextContents {
   private static readonly PLACEHOLDER_REGEX =
     /\{\{\{([\s\S]+?)\}\}\}|\{\{([\s\S]+?)\}\}/g;
 
+  /**
+   * 評価結果を結合して文字列にします。
+   *
+   * @param contents 評価結果の配列
+   * @returns 結合された文字列
+   */
+  public static joinEvaluateResults(contents: unknown[]): string {
+    if (contents.length === 0) {
+      return '';
+    }
+    return contents
+      .map(c => {
+        if (c === null || c === undefined || c === false || Number.isNaN(c)) {
+          return '';
+        } else if (typeof c !== 'string') {
+          return String(c);
+        } else {
+          return c;
+        }
+      })
+      .join('');
+  }
+
   /** コンテンツのリスト */
-  contents: Content[] = [];
+  protected readonly contents: Content[] = [];
+
+  /** 強制評価フラグ（プレースホルダでなくても評価する） */
+  protected forceEvaluation: boolean;
 
   /** コンテンツを追加 */
   addContent(content: Content): void {
@@ -31,6 +57,7 @@ class TextContents {
     const regex = new RegExp(TextContents.PLACEHOLDER_REGEX, 'g');
     let lastIndex = 0;
     let match: RegExpExecArray | null;
+    this.forceEvaluation = false;
 
     while ((match = regex.exec(text)) !== null) {
       // プレースホルダ前の通常テキスト
@@ -62,7 +89,7 @@ class TextContents {
   /**
    * RAW_EXPRESSION のチェック
    */
-  checkRawExpressions(): void {
+  protected checkRawExpressions(): void {
     for (let i = 0; i < this.contents.length; i++) {
       const content = this.contents[i];
       if (
@@ -80,32 +107,34 @@ class TextContents {
   }
 
   /**
-   * 式評価を行い、結果を文字列として返します。
+   * 式評価を行い、結果を返します。
    *
    * @param bindingValues バインディングされた値のオブジェクト
-   * @returns 評価結果の文字列またはboolean
+   * @returns 評価結果のリスト
    */
-  public evaluate(bindingValues: Record<string, unknown>): string | boolean {
-    return this.contents
-      .map(c => {
-        if (
-          c.type === ExpressionType.EXPRESSION ||
-          c.type === ExpressionType.RAW_EXPRESSION
-        ) {
-          let result = Expression.evaluate(c.text, bindingValues);
-          if (
-            result === null ||
-            result === undefined ||
-            Number.isNaN(result) ||
-            result === false
-          ) {
-            result = '';
-          }
-          return new String(result);
-        }
-        return c.text;
-      })
-      .join('');
+  public evaluate(bindingValues: Record<string, unknown>): unknown[] {
+    const results: unknown[] = [];
+    this.contents.forEach(c => {
+      if (
+        this.forceEvaluation ||
+        c.type === ExpressionType.EXPRESSION ||
+        c.type === ExpressionType.RAW_EXPRESSION
+      ) {
+        const result = Expression.evaluate(c.text, bindingValues);
+        results.push(result);
+      } else {
+        results.push(c.text);
+      }
+    });
+    if (this.forceEvaluation && results.length > 1) {
+      Log.error(
+        '[Haori]',
+        'each or if expressions must have a single content.',
+        results,
+      );
+      return [results[0]];
+    }
+    return results;
   }
 
   /**
@@ -116,14 +145,20 @@ class TextContents {
   public isRaw(): boolean {
     return this.contents.some(c => c.type === ExpressionType.RAW_EXPRESSION);
   }
+
+  /**
+   * コンテンツのサイズを取得します。
+   *
+   * @returns コンテンツのサイズ
+   */
+  public getContentsSize(): number {
+    return this.contents.length;
+  }
 }
 
 class AttributeContents extends TextContents {
   /** 属性名 */
   private readonly name: string;
-
-  /** 強制評価フラグ（if、each用） */
-  private readonly forceEvaluation: boolean;
 
   /**
    * コンストラクタ。
@@ -161,42 +196,6 @@ class AttributeContents extends TextContents {
    */
   public getValue(): string {
     return this.contents.map(c => c.text).join('');
-  }
-
-  /**
-   * 式評価を行い、結果を文字列として返します。
-   * 単一の評価式で結果が null、undefined、NaN、またはfalseの場合はfalseを返します（属性を除去するため）。
-   *
-   * @param bindingValues バインディングされた値のオブジェクト
-   * @returns 評価結果の文字列またはboolean
-   */
-  public evaluate(bindingValues: Record<string, unknown>): string | boolean {
-    if (this.contents.length === 1) {
-      const content = this.contents[0];
-      const result =
-        this.forceEvaluation ||
-        content.type === ExpressionType.RAW_EXPRESSION ||
-        content.type === ExpressionType.EXPRESSION
-          ? Expression.evaluate(content.text, bindingValues)
-          : content.text;
-      if (
-        result === null ||
-        result === undefined ||
-        Number.isNaN(result) ||
-        result === false
-      ) {
-        return false;
-      }
-      return new String(result).toString();
-    } else if (this.forceEvaluation) {
-      Log.error(
-        '[Haori]',
-        'Multiple expressions are not allowed for "if" or "each" attributes.',
-      );
-      return '';
-    } else {
-      return super.evaluate(bindingValues);
-    }
   }
 
   /**
@@ -254,6 +253,7 @@ export class Binding {
       return binding;
     }
     binding = new Binding(target);
+    this.BINDING_MAP.set(target, binding);
     binding.parent = target.parentNode
       ? this.BINDING_MAP.get(target.parentNode as Node) || null
       : null;
@@ -265,7 +265,6 @@ export class Binding {
         binding.children.push(childBinding);
       }
     }
-    this.BINDING_MAP.set(target, binding);
     return binding;
   }
 
@@ -316,6 +315,9 @@ export class Binding {
   ): Promise<void> {
     const binding = this.BINDING_MAP.get(node);
     if (binding) {
+      if (binding.ignoreMutationNode) {
+        return Promise.resolve();
+      }
       binding.children?.map(child => Binding.removeNode(child.target, withDom));
       if (binding.parent && binding.parent.children) {
         binding.parent.children = binding.parent.children.filter(
@@ -326,7 +328,14 @@ export class Binding {
     }
     if (withDom) {
       return Queue.enqueue(() => {
+        if (binding) {
+          binding.ignoreMutationNode = true;
+        }
         node.parentNode?.removeChild(node);
+      }).finally(() => {
+        if (binding) {
+          binding.ignoreMutationNode = false;
+        }
       });
     } else {
       return Promise.resolve();
@@ -385,13 +394,22 @@ export class Binding {
     let childBinding = this.BINDING_MAP.get(child);
     if (!childBinding) {
       childBinding = new Binding(child);
+    } else if (childBinding.ignoreMutationNode) {
+      return Promise.resolve();
     }
     if (binding) {
       binding.appendChild(childBinding);
     }
     if (withDom) {
       return Queue.enqueue(() => {
+        if (childBinding) {
+          childBinding.ignoreMutationNode = true;
+        }
         parent.appendChild(child);
+      }).finally(() => {
+        if (childBinding) {
+          childBinding.ignoreMutationNode = false;
+        }
       });
     } else {
       return Promise.resolve();
@@ -411,13 +429,23 @@ export class Binding {
     withDom: boolean = false,
   ): Promise<void> {
     const beforeBinding = this.BINDING_MAP.get(before);
+    if (beforeBinding && beforeBinding.ignoreMutationNode) {
+      return Promise.resolve();
+    }
     const targetBinding = this.BINDING_MAP.get(reference);
     if (targetBinding && beforeBinding) {
       targetBinding.insertBefore(beforeBinding);
     }
     if (withDom) {
       return Queue.enqueue(() => {
+        if (beforeBinding) {
+          beforeBinding.ignoreMutationNode = true;
+        }
         reference.parentNode?.insertBefore(before, reference);
+      }).finally(() => {
+        if (beforeBinding) {
+          beforeBinding.ignoreMutationNode = false;
+        }
       });
     } else {
       return Promise.resolve();
@@ -437,13 +465,23 @@ export class Binding {
     withDom: boolean = false,
   ): Promise<void> {
     const afterBinding = this.BINDING_MAP.get(after);
+    if (afterBinding && afterBinding.ignoreMutationNode) {
+      return Promise.resolve();
+    }
     const targetBinding = this.BINDING_MAP.get(reference);
     if (targetBinding && afterBinding) {
       targetBinding.insertAfter(afterBinding);
     }
     if (withDom) {
       return Queue.enqueue(() => {
+        if (afterBinding) {
+          afterBinding.ignoreMutationNode = true;
+        }
         reference.parentNode?.insertBefore(after, reference.nextSibling);
+      }).finally(() => {
+        if (afterBinding) {
+          afterBinding.ignoreMutationNode = false;
+        }
       });
     } else {
       return Promise.resolve();
@@ -466,15 +504,25 @@ export class Binding {
   ): Promise<void> {
     const binding = this.BINDING_MAP.get(target);
     if (binding) {
+      if (binding.ignoreMutationAttributes) {
+        return Promise.resolve();
+      }
       binding.updateAttribute(name, value);
     }
     if (withDom) {
       return Queue.enqueue(() => {
+        if (binding) {
+          binding.ignoreMutationAttributes = true;
+        }
         const element = target as HTMLElement;
         if (value === null) {
           element.removeAttribute(name);
         } else {
           element.setAttribute(name, value);
+        }
+      }).finally(() => {
+        if (binding) {
+          binding.ignoreMutationAttributes = false;
         }
       });
     } else {
@@ -496,16 +544,33 @@ export class Binding {
   ): Promise<void> {
     const binding = this.BINDING_MAP.get(target);
     if (binding) {
+      if (binding.ignoreMutationTextContent) {
+        return Promise.resolve();
+      }
       binding.updateTextContent(text);
     }
     if (withDom) {
       return Queue.enqueue(() => {
+        if (binding) {
+          binding.ignoreMutationTextContent = true;
+        }
         const element = target as HTMLElement;
         element.textContent = text;
+      }).finally(() => {
+        if (binding) {
+          binding.ignoreMutationTextContent = false;
+        }
       });
     } else {
       return Promise.resolve();
     }
+  }
+
+  /**
+   * （テスト用）バインディングを全てクリアします。
+   */
+  public static clearBindings(): void {
+    this.BINDING_MAP.clear();
   }
 
   /** 対象ノード */
@@ -540,6 +605,15 @@ export class Binding {
 
   /** data-each 用のテンプレート */
   private template: Binding[] | null = null;
+
+  /** ノードの変更監視を無視するフラグ */
+  public ignoreMutationNode: boolean = false;
+
+  /** 属性の変更監視を無視するフラグ */
+  public ignoreMutationAttributes: boolean = false;
+
+  /** テキストコンテンツの変更監視を無視するフラグ */
+  public ignoreMutationTextContent: boolean = false;
 
   /**
    * コンストラクタ。
@@ -576,7 +650,7 @@ export class Binding {
   }
 
   /**
-   * バインディングを評価します。
+   * バインディングを子ノードを含めて評価します。
    */
   public evaluate(): void {
     if (this.isElement) {
@@ -589,6 +663,13 @@ export class Binding {
     } else if (this.parent && this.parent.visible) {
       this.parent.evaluateContents();
     }
+    if (this.visible && this.children) {
+      Promise.allSettled(this.children.map(child => child.evaluate())).catch(
+        error => {
+          Log.error('[Haori]', 'Error evaluating child evaluations:', error);
+        },
+      );
+    }
   }
 
   /**
@@ -600,19 +681,28 @@ export class Binding {
       return;
     }
     const currentIfValue = this.visible;
-    const ifValue = this.getEvaluatedAttribute(ifName);
+    const ifValue = this.getEvaluatedAttribute(ifName)![0];
     if (ifValue === false) {
       if (currentIfValue !== false) {
         // 非表示
         this.visible = false;
         const element = this.target as HTMLElement;
         Queue.enqueue(() => {
+          this.ignoreMutationAttributes = true;
+          this.children?.forEach(child => {
+            child.ignoreMutationNode = true;
+          });
           this.display = element.style.display;
           element.style.display = 'none';
           element.setAttribute(`${ifName}-false`, '');
           while (element.firstChild) {
             element.removeChild(element.firstChild);
           }
+        }).finally(() => {
+          this.ignoreMutationAttributes = false;
+          this.children?.forEach(child => {
+            child.ignoreMutationNode = false;
+          });
         });
       }
     } else if (currentIfValue === null) {
@@ -623,11 +713,21 @@ export class Binding {
       this.visible = true;
       const element = this.target as HTMLElement;
       Queue.enqueue(() => {
+        this.ignoreMutationAttributes = true;
+        this.children?.forEach(child => {
+          child.ignoreMutationNode = true;
+        });
         element.style.display = this.display || '';
         element.removeAttribute(`${ifName}-false`);
         this.children?.forEach(child => {
           element.appendChild(child.target);
         });
+      }).finally(() => {
+        this.ignoreMutationAttributes = false;
+        this.children?.forEach(child => {
+          child.ignoreMutationNode = false;
+        });
+        this.evaluate();
       });
     }
   }
@@ -640,88 +740,86 @@ export class Binding {
     if (eachName === null) {
       return;
     }
-    const eachValue = this.getAttribute(eachName);
+    const eachValue = this.getEvaluatedAttribute(eachName)![0];
     if (!Array.isArray(eachValue)) {
       Log.error('[Haori]', 'Invalid data-each value:', eachValue);
       return;
     }
-    if (eachValue) {
-      const list = eachValue as Record<string, unknown>[];
-      const element = this.target as HTMLElement;
-      if (!this.template) {
-        this.template = [];
-        for (let i = 0; i < element.childNodes.length; i++) {
-          const childNode = element.childNodes[i];
-          const clonedNode = Binding.cloneNode(childNode);
-          const clonedBinding = Binding.bind(clonedNode);
-          this.template.push(clonedBinding);
-        }
+    const list = eachValue as Record<string, unknown>[];
+    const element = this.target as HTMLElement;
+    if (!this.template) {
+      this.template = [];
+      for (let i = 0; i < element.childNodes.length; i++) {
+        const childNode = element.childNodes[i];
+        const clonedNode = Binding.cloneNode(childNode);
+        const clonedBinding = Binding.bind(clonedNode);
+        this.template.push(clonedBinding);
       }
-      Queue.enqueue(() => {
-        Binding.removeChildren(element);
-      });
-      const argName = this.getAttribute('each-arg', true);
-      const prefix = eachName.split('-')[0] + '-';
-      this.template!.forEach(template => {
-        if (!template.hasAttribute('each-before')) {
-          return;
-        }
-        Queue.enqueue(() => {
-          const before = template.clone();
-          this.appendChild(before);
-        });
-      });
-      this.template!.forEach(template => {
-        if (
-          template.hasAttribute('each-before') &&
-          template.hasAttribute('each-after')
-        ) {
-          return;
-        }
-        list.forEach((item, index) => {
-          Queue.enqueue(() => {
-            const target = template.clone();
-            if (target.isElement) {
-              const element = target.target as HTMLElement;
-              // data-each-keyが指定されていればdata-row属性に値をセット
-              const keyName = Binding.getAttribute(element, 'each-key');
-              if (keyName && item && item[keyName] !== undefined) {
-                element.setAttribute('data-row', String(item[keyName]));
-              } else {
-                element.setAttribute(`${prefix}row`, '');
-              }
-              const bindValue = argName ? {[argName]: item} : item;
-              const indexName = Binding.getAttribute(element, 'each-index');
-              if (indexName) {
-                if (argName) {
-                  if (
-                    !bindValue[argName] ||
-                    typeof bindValue[argName] !== 'object'
-                  ) {
-                    bindValue[argName] = {};
-                  }
-                  (bindValue[argName] as Record<string, unknown>)[indexName] =
-                    index;
-                } else {
-                  bindValue[indexName] = index;
-                }
-              }
-              element.setAttribute(`${prefix}bind`, JSON.stringify(bindValue));
-            }
-            this.appendChild(target);
-          });
-        });
-      });
-      this.template!.forEach(template => {
-        if (!template.hasAttribute('each-after')) {
-          return;
-        }
-        Queue.enqueue(() => {
-          const after = template.clone();
-          this.appendChild(after);
-        });
-      });
     }
+    Binding.removeChildren(element, true);
+    const argName = this.getAttribute('each-arg', true);
+    const prefix = eachName.split('-')[0] + '-';
+    this.template!.forEach(template => {
+      if (!template.hasAttribute('each-before')) {
+        return;
+      }
+      const before = template.clone();
+      Binding.appendChild(this.target, before.target, true).finally(() => {
+        before.evaluate();
+      });
+    });
+    this.template!.forEach(template => {
+      if (
+        template.hasAttribute('each-before') ||
+        template.hasAttribute('each-after')
+      ) {
+        return;
+      }
+      list.forEach((item, index) => {
+        const cloned = template.clone();
+        if (cloned.isElement) {
+          const element = cloned.target as HTMLElement;
+          // data-each-keyが指定されていればdata-row属性に値をセット
+          const keyName = this.getAttribute('each-key', true);
+          if (keyName && item && item[keyName] !== undefined) {
+            element.setAttribute('data-row', String(item[keyName]));
+          } else {
+            element.setAttribute(`${prefix}row`, '');
+          }
+          const bindValue = argName ? {[argName]: item} : item;
+          const indexName = this.getAttribute('each-index', true);
+          if (indexName) {
+            if (argName) {
+              if (
+                !bindValue[argName] ||
+                typeof bindValue[argName] !== 'object'
+              ) {
+                bindValue[argName] = {};
+              }
+              (bindValue[argName] as Record<string, unknown>)[indexName] =
+                index;
+            } else {
+              bindValue[indexName] = index;
+            }
+          }
+          console.log('TEST', bindValue);
+          cloned.bindingData = bindValue;
+          element.setAttribute(`${prefix}bind`, JSON.stringify(bindValue));
+        }
+        Binding.appendChild(this.target, cloned.target, true).finally(() => {
+          cloned.evaluate();
+        });
+      });
+    });
+    this.template!.forEach(template => {
+      if (!template.hasAttribute('each-after')) {
+        return;
+      }
+      const after = template.clone();
+      Binding.appendChild(this.target, after.target, true).finally(() => {
+        after.evaluate();
+      });
+    });
   }
 
   /**
@@ -734,12 +832,19 @@ export class Binding {
     this.attributes.forEach((attribute, key) => {
       Queue.enqueue(() => {
         const element = this.target as HTMLElement;
-        const value = attribute.evaluate(this.getBindingData());
-        if (value === false) {
+        const results = attribute.evaluate(this.getBindingData());
+        this.ignoreMutationAttributes = true;
+        if (results.length == 1 && results[0] === false) {
           element.removeAttribute(key);
         } else {
-          element.setAttribute(key, value.toString());
+          const value = TextContents.joinEvaluateResults(results);
+          if (element.getAttribute(key) === value) {
+            return;
+          }
+          element.setAttribute(key, value);
         }
+      }).finally(() => {
+        this.ignoreMutationAttributes = false;
       });
     });
   }
@@ -755,25 +860,39 @@ export class Binding {
       if (child.isElement) {
         return;
       }
-      const text = child.getEvaluatedContents();
-      if (text.isRaw) {
+      const result = child.getEvaluatedContents();
+      if (result.isRaw) {
         if (this.children!.length > 1) {
           Log.error(
             '[Haori]',
             'Raw expressions are not allowed in multi-content bindings.',
           );
-          text.isRaw = false; // RAW_EXPRESSIONをEXPRESSIONに変換
+          result.isRaw = false; // RAW_EXPRESSIONをEXPRESSIONに変換
         } else {
           Queue.enqueue(() => {
+            this.ignoreMutationTextContent = true;
             const element = this.target as HTMLElement;
-            element.innerHTML = text.contents as string;
+            const html = TextContents.joinEvaluateResults(result.contents);
+            if (element.innerHTML === html) {
+              return;
+            }
+            element.innerHTML = html;
+          }).finally(() => {
+            this.ignoreMutationTextContent = false;
           });
           return;
         }
       }
       Queue.enqueue(() => {
+        this.ignoreMutationTextContent = true;
         const node = child.target as Text;
-        node.textContent = text.contents as string;
+        const text = TextContents.joinEvaluateResults(result.contents);
+        if (node.textContent === text) {
+          return;
+        }
+        node.textContent = text;
+      }).finally(() => {
+        this.ignoreMutationTextContent = false;
       });
     });
   }
@@ -910,7 +1029,7 @@ export class Binding {
   protected getEvaluatedAttribute(
     name: string,
     isPrefix: boolean = false,
-  ): string | boolean | null {
+  ): unknown[] | null {
     if (!this.isElement || !this.attributes) {
       return null;
     }
@@ -924,22 +1043,22 @@ export class Binding {
   /**
    * コンテンツを評価し、結果の文字列を返します。
    *
-   * @returns { contents: string, isRaw: boolean }
+   * @returns { contents: unknown, isRaw: boolean }
    *   - contents: 評価された文字列
    *   - isRaw: トリプルプレースホルダ（非エスケープ）かどうか
    */
-  protected getEvaluatedContents(): {contents: string; isRaw: boolean} {
+  protected getEvaluatedContents(): {contents: unknown[]; isRaw: boolean} {
     if (!this.contents) {
-      return {contents: '', isRaw: false};
+      return {contents: [], isRaw: false};
     }
-    if (this.contents.contents.length === 1) {
+    if (this.contents.getContentsSize() === 1) {
       return {
-        contents: this.contents.evaluate(this.getBindingData()) as string,
+        contents: this.contents.evaluate(this.getBindingData()),
         isRaw: this.contents.isRaw(),
       };
     }
     return {
-      contents: this.contents.evaluate(this.getBindingData()) as string,
+      contents: this.contents.evaluate(this.getBindingData()),
       isRaw: false,
     };
   }
@@ -966,7 +1085,7 @@ export class Binding {
   }
 
   /**
-   * 子バインディングを挿入して再評価します。
+   * 子バインディングを挿入します。
    *
    * @param child 挿入する子バインディング
    */
@@ -981,11 +1100,10 @@ export class Binding {
     }
     child.parent = this;
     this.children.push(child);
-    child.evaluate();
   }
 
   /**
-   * 指定されたバインディングを前に挿入して再評価します。
+   * 指定されたバインディングを前に挿入します。
    *
    * @param before 前に挿入するバインディング
    */
@@ -1005,11 +1123,10 @@ export class Binding {
       this.parent.children.push(before);
     }
     before.parent = this.parent;
-    before.evaluate();
   }
 
   /**
-   * 指定されたバインディングを後ろに挿入して再評価します。
+   * 指定されたバインディングを後ろに挿入します。
    *
    * @param after 後ろに挿入するバインディング
    */
@@ -1029,6 +1146,5 @@ export class Binding {
       this.parent.children.push(after);
     }
     after.parent = this.parent;
-    after.evaluate();
   }
 }

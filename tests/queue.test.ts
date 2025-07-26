@@ -14,6 +14,8 @@ global.requestAnimationFrame = mockRequestAnimationFrame;
 describe('Queue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // タイマーをモックする場合はuseFakeTimersを有効化
+    vi.useFakeTimers();
     mockRequestAnimationFrame.mockImplementation((callback: () => void) => {
       setTimeout(callback, 0);
       return 1;
@@ -21,6 +23,7 @@ describe('Queue', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllTimers();
   });
 
@@ -28,7 +31,12 @@ describe('Queue', () => {
     it('タスクをキューに追加して実行される', async () => {
       const task = vi.fn().mockResolvedValue('test result');
 
-      const result = await Queue.enqueue(task);
+      const promise = Queue.enqueue(task);
+
+      // タイマーを進めてキュー処理を強制的に実行
+      await vi.runAllTimersAsync();
+
+      const result = await promise;
 
       expect(result).toBe('test result');
       expect(task).toHaveBeenCalledOnce();
@@ -45,6 +53,8 @@ describe('Queue', () => {
       const promise1 = Queue.enqueue(task1);
       const promise2 = Queue.enqueue(task2);
 
+      await vi.runAllTimersAsync();
+
       const results = await Promise.all([promise1, promise2]);
 
       expect(results).toEqual(['result1', 'result2']);
@@ -56,7 +66,11 @@ describe('Queue', () => {
       const error = new Error('Task failed');
       const task = vi.fn().mockRejectedValue(error);
 
-      await expect(Queue.enqueue(task)).rejects.toThrow('Task failed');
+      const promise = Queue.enqueue(task);
+
+      await vi.runAllTimersAsync();
+
+      await expect(promise).rejects.toThrow('Task failed');
       expect(Log.error).toHaveBeenCalledWith(
         '[Haori]',
         expect.stringMatching(/Task \d+ failed:/),
@@ -70,6 +84,8 @@ describe('Queue', () => {
 
       const successPromise = Queue.enqueue(successTask);
       const failPromise = Queue.enqueue(failTask);
+
+      await vi.runAllTimersAsync();
 
       await expect(failPromise).rejects.toThrow('fail');
       await expect(successPromise).resolves.toBe('success');
@@ -85,7 +101,11 @@ describe('Queue', () => {
 
       const task = vi.fn().mockResolvedValue('fallback test');
 
-      const result = await Queue.enqueue(task);
+      const promise = Queue.enqueue(task);
+
+      await vi.runAllTimersAsync();
+
+      const result = await promise;
 
       expect(result).toBe('fallback test');
       expect(task).toHaveBeenCalledOnce();
@@ -106,8 +126,8 @@ describe('Queue', () => {
       // タスクを開始（await しない）
       const promise = Queue.enqueue(slowTask);
 
-      // 短時間待機してタスクが開始されたことを確認
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // タイマーを進めてタスクが開始されるようにする
+      await vi.runAllTimersAsync();
 
       expect(slowTask).toHaveBeenCalledOnce();
 
