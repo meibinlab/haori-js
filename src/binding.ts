@@ -332,11 +332,15 @@ export class Binding {
           binding.ignoreMutationNode = true;
         }
         node.parentNode?.removeChild(node);
-      }).finally(() => {
-        if (binding) {
-          binding.ignoreMutationNode = false;
-        }
-      });
+      })
+        .catch(error => {
+          Log.error('[Haori]', 'Error removing node:', error);
+        })
+        .finally(() => {
+          if (binding) {
+            binding.ignoreMutationNode = false;
+          }
+        });
     } else {
       return Promise.resolve();
     }
@@ -406,11 +410,15 @@ export class Binding {
           childBinding.ignoreMutationNode = true;
         }
         parent.appendChild(child);
-      }).finally(() => {
-        if (childBinding) {
-          childBinding.ignoreMutationNode = false;
-        }
-      });
+      })
+        .catch(error => {
+          Log.error('[Haori]', 'Error appending child node:', error);
+        })
+        .finally(() => {
+          if (childBinding) {
+            childBinding.ignoreMutationNode = false;
+          }
+        });
     } else {
       return Promise.resolve();
     }
@@ -442,11 +450,15 @@ export class Binding {
           beforeBinding.ignoreMutationNode = true;
         }
         reference.parentNode?.insertBefore(before, reference);
-      }).finally(() => {
-        if (beforeBinding) {
-          beforeBinding.ignoreMutationNode = false;
-        }
-      });
+      })
+        .catch(error => {
+          Log.error('[Haori]', 'Error inserting node before reference:', error);
+        })
+        .finally(() => {
+          if (beforeBinding) {
+            beforeBinding.ignoreMutationNode = false;
+          }
+        });
     } else {
       return Promise.resolve();
     }
@@ -478,11 +490,15 @@ export class Binding {
           afterBinding.ignoreMutationNode = true;
         }
         reference.parentNode?.insertBefore(after, reference.nextSibling);
-      }).finally(() => {
-        if (afterBinding) {
-          afterBinding.ignoreMutationNode = false;
-        }
-      });
+      })
+        .catch(error => {
+          Log.error('[Haori]', 'Error inserting node after reference:', error);
+        })
+        .finally(() => {
+          if (afterBinding) {
+            afterBinding.ignoreMutationNode = false;
+          }
+        });
     } else {
       return Promise.resolve();
     }
@@ -520,11 +536,15 @@ export class Binding {
         } else {
           element.setAttribute(name, value);
         }
-      }).finally(() => {
-        if (binding) {
-          binding.ignoreMutationAttributes = false;
-        }
-      });
+      })
+        .catch(error => {
+          Log.error('[Haori]', 'Error updating attribute:', error);
+        })
+        .finally(() => {
+          if (binding) {
+            binding.ignoreMutationAttributes = false;
+          }
+        });
     } else {
       return Promise.resolve();
     }
@@ -556,11 +576,15 @@ export class Binding {
         }
         const element = target as HTMLElement;
         element.textContent = text;
-      }).finally(() => {
-        if (binding) {
-          binding.ignoreMutationTextContent = false;
-        }
-      });
+      })
+        .catch(error => {
+          Log.error('[Haori]', 'Error updating text content:', error);
+        })
+        .finally(() => {
+          if (binding) {
+            binding.ignoreMutationTextContent = false;
+          }
+        });
     } else {
       return Promise.resolve();
     }
@@ -698,12 +722,16 @@ export class Binding {
           while (element.firstChild) {
             element.removeChild(element.firstChild);
           }
-        }).finally(() => {
-          this.ignoreMutationAttributes = false;
-          this.children?.forEach(child => {
-            child.ignoreMutationNode = false;
+        })
+          .catch(error => {
+            Log.error('[Haori]', 'Error hiding element:', error);
+          })
+          .finally(() => {
+            this.ignoreMutationAttributes = false;
+            this.children?.forEach(child => {
+              child.ignoreMutationNode = false;
+            });
           });
-        });
       }
     } else if (currentIfValue === null) {
       // 初期表示
@@ -722,13 +750,17 @@ export class Binding {
         this.children?.forEach(child => {
           element.appendChild(child.target);
         });
-      }).finally(() => {
-        this.ignoreMutationAttributes = false;
-        this.children?.forEach(child => {
-          child.ignoreMutationNode = false;
+      })
+        .catch(error => {
+          Log.error('[Haori]', 'Error showing element:', error);
+        })
+        .finally(() => {
+          this.ignoreMutationAttributes = false;
+          this.children?.forEach(child => {
+            child.ignoreMutationNode = false;
+          });
+          this.evaluate();
         });
-        this.evaluate();
-      });
     }
   }
 
@@ -843,9 +875,13 @@ export class Binding {
           }
           element.setAttribute(key, value);
         }
-      }).finally(() => {
-        this.ignoreMutationAttributes = false;
-      });
+      })
+        .catch(error => {
+          Log.error('[Haori]', 'Error evaluating attribute:', key, error);
+        })
+        .finally(() => {
+          this.ignoreMutationAttributes = false;
+        });
     });
   }
 
@@ -877,9 +913,13 @@ export class Binding {
               return;
             }
             element.innerHTML = html;
-          }).finally(() => {
-            this.ignoreMutationTextContent = false;
-          });
+          })
+            .catch(error => {
+              Log.error('[Haori]', 'Error updating innerHTML:', error);
+            })
+            .finally(() => {
+              this.ignoreMutationTextContent = false;
+            });
           return;
         }
       }
@@ -891,9 +931,13 @@ export class Binding {
           return;
         }
         node.textContent = text;
-      }).finally(() => {
-        this.ignoreMutationTextContent = false;
-      });
+      })
+        .catch(error => {
+          Log.error('[Haori]', 'Error updating text content:', error);
+        })
+        .finally(() => {
+          this.ignoreMutationTextContent = false;
+        });
     });
   }
 
