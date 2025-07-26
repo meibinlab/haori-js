@@ -122,8 +122,12 @@ class AsyncQueue {
       item.resolve(result);
       Log.info('[Haori]', `Task ${item.timestamp} completed successfully`);
     } catch (error) {
-      item.reject(error);
       Log.error('[Haori]', `Task ${item.timestamp} failed:`, error);
+      try {
+        item.reject(error);
+      } catch (error2) {
+        Log.error('[Haori]', `Task ${item.timestamp} reject failed:`, error2);
+      }
     }
   }
 
