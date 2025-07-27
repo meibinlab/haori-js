@@ -70,7 +70,7 @@ class AsyncQueue {
    *
    * @returns 処理完了Promise
    */
-  private processQueue(): void {
+  private async processQueue(): Promise<void> {
     if (this.processing || this.queue.length === 0) {
       return;
     }
@@ -111,11 +111,19 @@ class AsyncQueue {
     }
     if (typeof requestAnimationFrame !== 'undefined') {
       requestAnimationFrame(() => {
-        this.processQueue();
+        this.processQueue().catch(error => {
+          Log.error(
+            '[Haori]',
+            'Error in requestAnimationFrame processing:',
+            error,
+          );
+        });
       });
     } else {
       setTimeout(() => {
-        this.processQueue();
+        this.processQueue().catch(error => {
+          Log.error('[Haori]', 'Error in setTimeout processing:', error);
+        });
       }, 16); // 60fps
     }
   }
