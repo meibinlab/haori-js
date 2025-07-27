@@ -591,6 +591,46 @@ export class Binding {
   }
 
   /**
+   * data-bind 属性の値をパースします。
+   *
+   * @param data data-bind 属性の値
+   * @returns パースされたデータオブジェクトまたはnull
+   */
+  private static parseDataBind(
+    data: string | null,
+  ): Record<string, unknown> | null {
+    if (!data) {
+      return null;
+    }
+    if (data.startsWith('{') || data.startsWith('[')) {
+      // JSONとしてパース
+      try {
+        return JSON.parse(data);
+      } catch (e) {
+        Log.error('[Haori]', 'Invalid JSON in data-bind:', e);
+        return null;
+      }
+    } else {
+      // URLSearchParamsでパース
+      const params = new URLSearchParams(data);
+      const result: Record<string, unknown> = {};
+      for (const [key, value] of params.entries()) {
+        if (result[key] !== undefined) {
+          // すでに値がある場合は配列化
+          if (Array.isArray(result[key])) {
+            (result[key] as string[]).push(value);
+          } else {
+            result[key] = [result[key], value];
+          }
+        } else {
+          result[key] = value;
+        }
+      }
+      return result;
+    }
+  }
+
+  /**
    * （テスト用）バインディングを全てクリアします。
    */
   public static clearBindings(): void {
@@ -659,13 +699,11 @@ export class Binding {
         );
       }
       const data = Binding.getAttribute(element, 'bind');
-      if (data) {
-        try {
-          this.bindingData = JSON.parse(data as string);
-        } catch (e) {
-          Log.error('[Haori]', 'Invalid data-bind attribute:', e);
-          this.bindingData = null;
-        }
+      try {
+        this.bindingData = Binding.parseDataBind(data);
+      } catch (e) {
+        Log.error('[Haori]', 'Invalid data-bind attribute:', e);
+        this.bindingData = null;
       }
     } else {
       this.contents = new TextContents(target.textContent || '');
@@ -959,7 +997,7 @@ export class Binding {
     }
     if (name == 'data-bind' || name == 'hor-bind') {
       try {
-        this.bindingData = value === null ? null : JSON.parse(value);
+        this.bindingData = Binding.parseDataBind(value);
         this.bindingDataCache = null;
         this.evaluate();
       } catch (error) {
