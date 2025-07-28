@@ -36,6 +36,7 @@ export class Observer {
           case 'attributes':
             // 属性の変更
             Log.info(
+              '[Haori]',
               'Attribute changed:',
               mutation.target,
               mutation.attributeName,
@@ -51,6 +52,7 @@ export class Observer {
           case 'childList':
             // ノードの追加・削除
             Log.info(
+              '[Haori]',
               'Child list changed:',
               Array.from(mutation.removedNodes).map(node => node.nodeName),
               Array.from(mutation.addedNodes).map(node => node.nodeName),
@@ -79,6 +81,7 @@ export class Observer {
           case 'characterData':
             // テキストノードの変更
             Log.info(
+              '[Haori]',
               'Character data changed:',
               mutation.target,
               mutation.target.textContent,
