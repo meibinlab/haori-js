@@ -43,9 +43,13 @@ class AsyncQueue {
    * 処理をキューに追加します
    *
    * @param task 実行する処理
+   * @param
    * @returns 処理完了Promise
    */
-  public enqueue(task: () => unknown): Promise<unknown> {
+  public enqueue(
+    task: () => unknown,
+    prepend: boolean = false,
+  ): Promise<unknown> {
     let resolve: (value: unknown | PromiseLike<unknown>) => void;
     let reject: (reason?: unknown) => void;
     const promise = new Promise<unknown>((res, rej) => {
@@ -59,7 +63,11 @@ class AsyncQueue {
       resolve: resolve!,
       reject: reject!,
     };
-    this.queue.push(item);
+    if (prepend) {
+      this.queue.unshift(item);
+    } else {
+      this.queue.push(item);
+    }
     Log.info('[Haori]', `Task ${item.timestamp} added to queue`);
     this.scheduleProcessing();
     return promise;
@@ -162,10 +170,14 @@ export class Queue {
    * タスクをキューに追加します。
    *
    * @param task 実行する処理
+   * @param prepend trueの場合はキューの先頭に追加、falseの場合は末尾に追加
    * @returns 処理完了Promise
    */
-  public static enqueue(task: () => unknown): Promise<unknown> {
-    return this.ASYNC_QUEUE.enqueue(task);
+  public static enqueue(
+    task: () => unknown,
+    prepend: boolean = false,
+  ): Promise<unknown> {
+    return this.ASYNC_QUEUE.enqueue(task, prepend);
   }
 
   /**
