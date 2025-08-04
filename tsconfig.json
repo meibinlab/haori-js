@@ -20,6 +20,6 @@
     "allowUnusedLabels": false,
     "allowUnreachableCode": false
   },
-  "include": ["src", "tests"],
+  "include": ["src", "tests", "vitest.config.ts", "eslint.config.js"],
   "exclude": ["node_modules", "dist"]
 }
