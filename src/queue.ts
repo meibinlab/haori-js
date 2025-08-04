@@ -6,7 +6,7 @@
  * DOM操作などの非同期処理に適しています。
  */
 
-import {Log} from './log';
+import Log from './log';
 
 /**
  * キューアイテムの基本構造。
@@ -89,16 +89,12 @@ class AsyncQueue {
         return;
       }
       try {
-        const result = item.task();
+        const result = await item.task();
         item.resolve(result);
         Log.info('[Haori]', `Task ${item.timestamp} completed successfully`);
       } catch (error) {
+        item.reject(error);
         Log.error('[Haori]', `Task ${item.timestamp} failed:`, error);
-        try {
-          item.reject(error);
-        } catch (error2) {
-          Log.error('[Haori]', `Task ${item.timestamp} reject failed:`, error2);
-        }
       }
     } catch (error) {
       Log.error('[Haori]', 'Error processing queue:', error);
@@ -119,19 +115,11 @@ class AsyncQueue {
     }
     if (typeof requestAnimationFrame !== 'undefined') {
       requestAnimationFrame(() => {
-        this.processQueue().catch(error => {
-          Log.error(
-            '[Haori]',
-            'Error in requestAnimationFrame processing:',
-            error,
-          );
-        });
+        this.processQueue();
       });
     } else {
       setTimeout(() => {
-        this.processQueue().catch(error => {
-          Log.error('[Haori]', 'Error in setTimeout processing:', error);
-        });
+        this.processQueue();
       }, 16); // 60fps
     }
   }
@@ -145,16 +133,10 @@ class AsyncQueue {
     if (this.queue.length === 0 && !this.processing) {
       return;
     }
-    await new Promise<void>(resolve => {
-      const check = () => {
-        if (this.queue.length === 0 && !this.processing) {
-          resolve();
-        } else {
-          setTimeout(check, 5); // 5msごとに再チェック
-        }
-      };
-      check();
-    });
+    const promises = this.queue.map(item => item.promise);
+    if (promises.length > 0) {
+      await Promise.allSettled(promises);
+    }
   }
 }
 
@@ -162,7 +144,7 @@ class AsyncQueue {
  * 非同期キューのデフォルトインスタンス。
  * このインスタンスを使用して、アプリケーション全体でタスクをキューイングできます。
  */
-export class Queue {
+export default class Queue {
   /** 非同期キューインスタンス */
   private static readonly ASYNC_QUEUE = new AsyncQueue();
 
