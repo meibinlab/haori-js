@@ -4,7 +4,7 @@
  * 実行環境を管理します。
  */
 
-import {Dev} from './dev';
+import Dev from './dev';
 
 /**
  * 実行環境を管理するクラスです。

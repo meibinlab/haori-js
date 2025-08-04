@@ -1,4 +1,4 @@
-import {Dev} from '../src/dev';
+import Dev from '../src/dev';
 import {Env} from '../src/env';
 
 describe('環境から開発モードを検出します', () => {

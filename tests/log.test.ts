@@ -1,17 +1,15 @@
 import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
-import {Log} from '../src/log';
-import {Dev} from '../src/dev';
 
 // devモジュールをモック
-vi.mock('../src/dev', () => ({
-  Dev: {
-    isEnabled: vi.fn(() => true),
-  },
-}));
+vi.mock('../src/dev');
+
+import Log from '../src/log';
+import Dev from '../src/dev';
 
 describe('ログ機能', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(Dev.isEnabled).mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -21,7 +19,6 @@ describe('ログ機能', () => {
   describe('info', () => {
     it('開発モードでconsole.logが呼ばれる', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      vi.mocked(Dev.isEnabled).mockReturnValue(true);
 
       Log.info('test info', 'arg1', 'arg2');
 
@@ -41,7 +38,6 @@ describe('ログ機能', () => {
   describe('warn', () => {
     it('開発モードでconsole.warnが呼ばれる', () => {
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      vi.mocked(Dev.isEnabled).mockReturnValue(true);
 
       Log.warn('test warning', 'arg1', 'arg2');
 
@@ -59,18 +55,17 @@ describe('ログ機能', () => {
   });
 
   describe('error', () => {
-    it('開発モードでconsole.errorが呼ばれる', () => {
+    it('モードに関係なくconsole.errorが呼ばれる（開発モード有効）', () => {
       const consoleSpy = vi
         .spyOn(console, 'error')
         .mockImplementation(() => {});
-      vi.mocked(Dev.isEnabled).mockReturnValue(true);
 
       Log.error('test error', 'arg1', 'arg2');
 
       expect(consoleSpy).toHaveBeenCalledWith('test error', 'arg1', 'arg2');
     });
 
-    it('開発モードが無効の時はconsole.errorが呼ばれない', () => {
+    it('モードに関係なくconsole.errorが呼ばれる（開発モード無効）', () => {
       const consoleSpy = vi
         .spyOn(console, 'error')
         .mockImplementation(() => {});
@@ -78,7 +73,7 @@ describe('ログ機能', () => {
 
       Log.error('test error', 'arg1', 'arg2');
 
-      expect(consoleSpy).not.toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith('test error', 'arg1', 'arg2');
     });
   });
 });

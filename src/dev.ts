@@ -9,7 +9,7 @@
 /**
  * 開発モード管理クラスです。
  */
-export class Dev {
+export default class Dev {
   /** 開発モードフラグ */
   private static devMode = false;
 
@@ -42,20 +42,6 @@ export class Dev {
    * @param enabled trueで有効化、falseで無効化
    */
   static set(enabled: boolean): void {
-    Dev.devMode = Boolean(enabled);
-  }
-
-  /**
-   * 開発モードでのみ実行される関数を実行します。
-   *
-   * @param fn 実行する関数
-   */
-  static only(fn: () => void): void {
-    if (Dev.devMode) {
-      fn();
-    }
+    Dev.devMode = enabled;
   }
 }
-
-// デフォルトエクスポート
-export default Dev;

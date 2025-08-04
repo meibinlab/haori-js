@@ -6,9 +6,9 @@
  * パフォーマンス向上のためのキャッシュ機能を提供します。
  */
 
-import {Log} from './log';
+import Log from './log';
 
-export class Expression {
+export default class Expression {
   /** Haoriで禁止すべき識別子一覧（eval と arguments は strict モードで無効化） */
   private static readonly FORBIDDEN_NAMES = [
     // グローバルオブジェクト
@@ -98,9 +98,9 @@ export class Expression {
 
     let evaluator = this.EXPRESSION_CACHE.get(cacheKey);
     if (!evaluator) {
+      const body =
+        '"use strict";\n' + `${this.assignments};\nreturn (${expression});`;
       try {
-        const body =
-          '"use strict";\n' + `${this.assignments};\nreturn (${expression});`;
         evaluator = new Function(...bindKeys, body) as (
           ...args: unknown[]
         ) => unknown;
