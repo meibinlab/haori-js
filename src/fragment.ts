@@ -4,11 +4,13 @@
  * メモリ上にノードツリーを保持し、DOMへの反映を非同期で行います。
  * DOMからの読み込みは行わず、オブザーバーとchangeイベントで更新されます。
  */
-
 import Queue from './queue';
 import Log from './log';
 import Expression from './expression';
 
+/**
+ * 仮想DOMのフラグメントの抽象クラス。
+ */
 export default abstract class Fragment {
   /** フラグメントの対象ノードに対するキャッシュ */
   protected static readonly FRAGMENT_CACHE = new WeakMap<Node, Fragment>();
@@ -52,9 +54,6 @@ export default abstract class Fragment {
       if (parentFragment instanceof ElementFragment) {
         fragment.setParent(parentFragment);
       }
-    }
-    if (fragment instanceof ElementFragment) {
-      fragment.buildChildren();
     }
     return fragment;
   }
@@ -222,31 +221,12 @@ export class ElementFragment extends Fragment {
 
   /**
    * エレメントフラグメントのコンストラクタ。
-   * 子フラグメントは自動的に構築されません。
+   * アトリビュートや子フラグメントは自動的に構築されません。
    *
    * @param target 対象エレメント
    */
   public constructor(target: HTMLElement) {
     super(target);
-    target.getAttributeNames().forEach(name => {
-      const contents = new AttributeContents(
-        name,
-        target.getAttribute(name) as string,
-      );
-      this.attributeMap.set(name, contents);
-    });
-  }
-
-  /**
-   * 子ノードを構築します。
-   */
-  public buildChildren() {
-    this.target.childNodes.forEach(child => {
-      const fragment = Fragment.get(child);
-      if (fragment) {
-        this.children.push(fragment);
-      }
-    });
   }
 
   /**
@@ -362,14 +342,14 @@ export class ElementFragment extends Fragment {
       element instanceof HTMLInputElement &&
       (element.type === 'checkbox' || element.type === 'radio')
     ) {
-      const valueAttribute = this.getAttribute('value');
+      const result = this.getAttribute('value');
       let newChecked: boolean;
-      if (valueAttribute === 'true') {
+      if (result === 'true') {
         newChecked = value === true;
-      } else if (valueAttribute === 'false') {
+      } else if (result === 'false') {
         newChecked = value === false;
       } else {
-        newChecked = valueAttribute === String(value);
+        newChecked = result === String(value);
       }
       if (element.checked === newChecked) {
         return Promise.resolve();
@@ -425,13 +405,13 @@ export class ElementFragment extends Fragment {
       element instanceof HTMLInputElement &&
       (element.type === 'checkbox' || element.type === 'radio')
     ) {
-      const valueAttribute = this.getAttribute('value');
-      if (valueAttribute === 'true') {
+      const result = this.getAttribute('value');
+      if (result === 'true') {
         return element.checked ? true : null;
-      } else if (valueAttribute === 'false') {
+      } else if (result === 'false') {
         return element.checked ? false : null;
       } else {
-        return element.checked ? valueAttribute : null;
+        return element.checked ? String(result) : null;
       }
     } else if (
       element instanceof HTMLInputElement ||
@@ -452,6 +432,7 @@ export class ElementFragment extends Fragment {
   /**
    * 属性の値を評価して設定します。
    * 評価値がfalseの場合は属性を削除します。
+   * 矯正評価属性の場合は元の値を設定します。
    *
    * @param name 属性名
    * @param value 属性値
@@ -468,13 +449,16 @@ export class ElementFragment extends Fragment {
     this.attributeMap.set(name, contents);
     this.skipMutationAttributes = true;
     const element = this.getTarget();
-    const evaluateValue = this.getAttribute(name);
+    const result = contents.isForceEvaluation()
+      ? value
+      : this.getAttribute(name);
     return Queue.enqueue(() => {
-      if (evaluateValue === null || evaluateValue === false) {
+      if (result === null || result === false) {
         element.removeAttribute(name);
       } else {
-        if (element.getAttribute(name) !== evaluateValue) {
-          element.setAttribute(name, evaluateValue);
+        const string = String(result);
+        if (element.getAttribute(name) !== string) {
+          element.setAttribute(name, string);
         }
       }
     }).finally(() => {
@@ -504,19 +488,19 @@ export class ElementFragment extends Fragment {
 
   /**
    * 属性の評価された値を取得します。
-   * 属性が存在しない場合はnullを返します。
+   * 複数の評価値がある場合は結合して返します。
    *
    * @param name 属性名
    * @returns 評価された値
    */
-  public getAttribute(name: string): string | false | null {
+  public getAttribute(name: string): string | false | unknown | null {
     const contents = this.attributeMap.get(name);
     if (contents === undefined) {
       return null;
     }
     const results = contents.evaluate(this.getBindingData());
-    if (results?.length == 1 && results[0] === false) {
-      return false;
+    if (results.length === 1) {
+      return results[0];
     }
     return TextContents.joinEvaluateResults(results);
   }
@@ -901,14 +885,23 @@ class TextContents {
     }
     const results: unknown[] = [];
     this.contents.forEach(c => {
-      if (
-        c.type === ExpressionType.EXPRESSION ||
-        c.type === ExpressionType.RAW_EXPRESSION
-      ) {
-        const result = Expression.evaluate(c.text, bindingValues);
-        results.push(result);
-      } else {
-        results.push(c.text);
+      try {
+        if (
+          c.type === ExpressionType.EXPRESSION ||
+          c.type === ExpressionType.RAW_EXPRESSION
+        ) {
+          const result = Expression.evaluate(c.text, bindingValues);
+          results.push(result);
+        } else {
+          results.push(c.text);
+        }
+      } catch (error) {
+        Log.error(
+          '[Haori]',
+          `Error evaluating text expression: ${c.text}`,
+          error,
+        );
+        results.push('');
       }
     });
     return results;
@@ -944,6 +937,15 @@ class AttributeContents extends TextContents {
   }
 
   /**
+   * 強制評価フラグを取得します。
+   *
+   * @returns 強制評価フラグ
+   */
+  public isForceEvaluation(): boolean {
+    return this.forceEvaluation;
+  }
+
+  /**
    * 式評価を行い、結果を返します。
    *
    * @param bindingValues バインディングされた値のオブジェクト
@@ -955,15 +957,24 @@ class AttributeContents extends TextContents {
     }
     const results: unknown[] = [];
     this.contents.forEach(c => {
-      if (
-        (this.forceEvaluation && c.type === ExpressionType.TEXT) ||
-        c.type === ExpressionType.EXPRESSION ||
-        c.type === ExpressionType.RAW_EXPRESSION
-      ) {
-        const result = Expression.evaluate(c.text, bindingValues);
-        results.push(result);
-      } else {
-        results.push(c.text);
+      try {
+        if (
+          (this.forceEvaluation && c.type === ExpressionType.TEXT) ||
+          c.type === ExpressionType.EXPRESSION ||
+          c.type === ExpressionType.RAW_EXPRESSION
+        ) {
+          const result = Expression.evaluate(c.text, bindingValues);
+          results.push(result);
+        } else {
+          results.push(c.text);
+        }
+      } catch (error) {
+        Log.error(
+          '[Haori]',
+          `Error evaluating attribute expression: ${c.text}`,
+          error,
+        );
+        results.push('');
       }
     });
     if (this.forceEvaluation && results.length > 1) {
