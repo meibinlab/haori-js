@@ -9,22 +9,27 @@ import Dev from './dev';
 /**
  * 実行環境を管理するクラスです。
  */
-export class Env {
+export default class Env {
+  private static prefix: string = 'data-';
+
   /**
-   * 実行環境から開発モードかどうかを自動検出します。
-   * scriptタグにdata-devもしくはhor-dev属性がある場合、
+   * 実行環境からプレフィックスと開発モードかどうかを自動検出します。
+   * scriptタグにdata-prefixがある場合は、その値+"-"をプレフィックスとして使用します。
+   * scriptタグにdata-dev属性がある場合、
    * もしくはローカルホスト系ドメインであれば開発モードを有効化します。
    */
-  static detectDevMode(): void {
+  static detect(): void {
     try {
-      // script タグに data-dev または hor-dev 属性がある場合
       const currentScript =
         document.currentScript ||
         document.querySelector('script[src*="haori"]');
+      if (currentScript instanceof HTMLScriptElement) {
+        const prefix = currentScript.getAttribute('data-prefix') || Env.prefix;
+        Env.prefix = prefix.endsWith('-') ? prefix : prefix + '-';
+      }
       if (
         currentScript instanceof HTMLScriptElement &&
-        (currentScript.hasAttribute('data-dev') ||
-          currentScript.hasAttribute('hor-dev'))
+        currentScript.hasAttribute(`${Env.prefix}dev`)
       ) {
         Dev.set(true);
         return;
@@ -49,4 +54,10 @@ export class Env {
       // SSRや非ブラウザ環境では無視
     }
   }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', Env.detect);
+} else {
+  Env.detect();
 }
