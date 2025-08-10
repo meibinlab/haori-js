@@ -1,11 +1,14 @@
-import Fragment from './fragment';
-import Log from './log';
-
 /**
  * @fileoverview 監視機能
  *
  * Observerクラスは、DOMの変更を監視し、バインディングの更新を行います。
  * MutationObserverを使用して、属性の変更、ノードの追加・削除、テキストノードの変更を監視します。
+ */
+import Fragment from './fragment';
+import Log from './log';
+
+/**
+ * 監視対象の要素を管理するためのクラスです。
  */
 export class Observer {
   /**
