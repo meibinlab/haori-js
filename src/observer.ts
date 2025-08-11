@@ -5,7 +5,6 @@
  * MutationObserverを使用して、属性の変更、ノードの追加・削除、テキストノードの変更を監視します。
  */
 import Common from './common';
-import Fragment from './fragment';
 import Log from './log';
 
 /**
