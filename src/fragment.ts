@@ -49,12 +49,6 @@ export default abstract class Fragment {
         return null;
     }
     Fragment.FRAGMENT_CACHE.set(node, fragment);
-    if (node.parentElement && Fragment.FRAGMENT_CACHE.has(node.parentElement)) {
-      const parentFragment = Fragment.get(node.parentElement);
-      if (parentFragment instanceof ElementFragment) {
-        fragment.setParent(parentFragment);
-      }
-    }
     return fragment;
   }
 
@@ -93,37 +87,57 @@ export default abstract class Fragment {
   /**
    * フラグメントをDOMから除去します。
    */
-  public unmount() {
+  public unmount(): Promise<void> {
     if (!this.mounted || this.skipMutationNodes) {
-      return;
+      return Promise.resolve();
     }
     this.mounted = false;
     if (this.parent) {
-      Queue.enqueue(() => {
+      return Queue.enqueue(() => {
         this.parent!.skipMutationNodes = true;
         this.parent!.getTarget().removeChild(this.target);
       }).finally(() => {
         this.parent!.skipMutationNodes = false;
-      });
+      }) as Promise<void>;
     }
+    return Promise.resolve();
   }
 
   /**
    * フラグメントをDOMに追加します。
    */
-  public mount() {
+  public mount(): Promise<void> {
     if (this.mounted || this.skipMutationNodes) {
-      return;
+      return Promise.resolve();
     }
     this.mounted = true;
     if (this.parent) {
-      Queue.enqueue(() => {
+      return Queue.enqueue(() => {
         this.parent!.skipMutationNodes = true;
         this.parent!.getTarget().appendChild(this.target);
       }).finally(() => {
         this.parent!.skipMutationNodes = false;
-      });
+      }) as Promise<void>;
     }
+    return Promise.resolve();
+  }
+
+  /**
+   * フラグメントのマウント状態を取得します。
+   *
+   * @returns マウント状態
+   */
+  public isMounted(): boolean {
+    return this.mounted;
+  }
+
+  /**
+   * フラグメントのマウント状態を設定します。
+   *
+   * @param mounted マウント状態
+   */
+  public setMounted(mounted: boolean): void {
+    this.mounted = mounted;
   }
 
   /**
@@ -135,10 +149,17 @@ export default abstract class Fragment {
 
   /**
    * フラグメントとノードを削除します。
+   *
+   * @param unmount DOMからの除去を行うかどうか（内部の子呼び出しの場合のみfalseとする）
    */
-  public remove() {
+  public remove(unmount = true) {
+    if (this.parent && unmount) {
+      this.parent.removeChild(this);
+    }
     Fragment.FRAGMENT_CACHE.delete(this.target);
-    this.unmount();
+    if (unmount) {
+      this.unmount();
+    }
   }
 
   /**
@@ -210,6 +231,12 @@ export class ElementFragment extends Fragment {
   /** 元の display 値 */
   private display: string | null = null;
 
+  /** each用のテンプレート */
+  private template: ElementFragment[] = [];
+
+  /** each比較用のキー */
+  private listKey: string | null = null;
+
   /** valueプロパティの値 */
   private value: string | number | boolean | null = null;
 
@@ -239,6 +266,29 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 子フラグメントをリストに追加します。
+   *
+   * @param child 追加する子フラグメント
+   */
+  public pushChild(child: Fragment) {
+    this.children.push(child);
+    child.setParent(this);
+  }
+
+  /**
+   * 子フラグメントをリストから削除します。
+   *
+   * @param child 削除する子フラグメント
+   */
+  public removeChild(child: Fragment): void {
+    const index = this.children.indexOf(child);
+    if (index !== -1) {
+      this.children.splice(index, 1);
+      child.setParent(null);
+    }
+  }
+
+  /**
    * フラグメントをクローンします。
    *
    * @returns クローンされたフラグメント
@@ -247,33 +297,44 @@ export class ElementFragment extends Fragment {
     const clone = new ElementFragment(
       this.target.cloneNode(true) as HTMLElement,
     );
-    clone.children.push(...this.children.map(child => child.clone()));
+    Fragment.FRAGMENT_CACHE.set(clone.getTarget(), clone);
+    clone.children.push(
+      ...this.children.map(child => {
+        const clonedChild = child.clone();
+        clonedChild.setParent(clone);
+        return clonedChild;
+      }),
+    );
     this.attributeMap.forEach((contents, name) => {
       clone.attributeMap.set(name, contents);
     });
+    clone.mounted = false;
     clone.bindingData = this.bindingData;
     clone.clearBindingDataCache();
+    clone.visible = this.visible;
+    clone.display = this.display;
+    clone.template = this.template.map(t => t.clone());
     return clone;
   }
 
   /**
    * フラグメントとノードを削除します。
+   *
+   * @param unmount DOMからの除去を行うかどうか（内部の子呼び出しの場合のみfalseとする）
    */
-  public remove() {
-    this.deleteCache();
-    this.unmount();
-  }
-
-  /**
-   * 子要素を含んだ全てのフラグメントをキャッシュから削除します。
-   */
-  protected deleteCache() {
-    Fragment.FRAGMENT_CACHE.delete(this.target);
+  public remove(unmount = true) {
     this.children.forEach(child => {
-      if (child instanceof ElementFragment) {
-        child.deleteCache();
-      }
+      child.remove(false);
     });
+    this.children.length = 0;
+    this.attributeMap.clear();
+    this.bindingData = null;
+    this.bindingDataCache = null;
+    this.template.forEach(child => {
+      child.remove(false);
+    });
+    this.template.length = 0;
+    super.remove(unmount);
   }
 
   /**
@@ -324,6 +385,33 @@ export class ElementFragment extends Fragment {
         child.clearBindingDataCache();
       }
     });
+  }
+
+  /**
+   * フラグメントのテンプレートを取得します。
+   *
+   * @returns テンプレートの配列
+   */
+  public getTemplate(): ElementFragment[] {
+    return this.template;
+  }
+
+  /**
+   * 比較用リストキーを設定します。
+   *
+   * @param key 比較用リストキー
+   */
+  public setListKey(key: string): void {
+    this.listKey = key;
+  }
+
+  /**
+   * 比較用リストキーを取得します。
+   *
+   * @returns 比較用リストキー
+   */
+  public getListKey(): string | null {
+    return this.listKey;
   }
 
   /**
@@ -506,6 +594,16 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 属性の有無を確認します。
+   *
+   * @param name 属性名
+   * @returns 属性の有無
+   */
+  public hasAttribute(name: string): boolean {
+    return this.attributeMap.has(name);
+  }
+
+  /**
    * 新しい子ノードを参照ノードの前に挿入します。
    * 参照ノードがnullの場合、親の最後に追加されます。
    *
@@ -515,25 +613,37 @@ export class ElementFragment extends Fragment {
   public insertBefore(
     newChild: Fragment,
     referenceChild: Fragment | null,
-  ): void {
+  ): Promise<unknown> {
     if (this.skipMutationNodes) {
-      return;
+      return Promise.resolve();
+    }
+
+    // 循環参照チェック
+    if (newChild === this) {
+      Log.error('[Haori]', 'Cannot insert element as child of itself');
+      return Promise.reject(new Error('Self-insertion not allowed'));
+    }
+
+    // 祖先チェック
+    let ancestor = this.parent;
+    while (ancestor) {
+      if (ancestor === newChild) {
+        Log.error('[Haori]', 'Cannot create circular reference');
+        return Promise.reject(new Error('Circular reference detected'));
+      }
+      ancestor = ancestor.getParent();
     }
 
     const newChildParent = newChild.getParent();
     if (newChildParent !== null) {
       // 既存の親から削除
-      const index = newChildParent.getChildren().indexOf(newChild);
-      if (index !== -1) {
-        newChildParent.children.splice(index, 1);
-      }
-      newChild.setParent(null);
+      newChildParent.removeChild(newChild);
     }
 
     if (referenceChild === null) {
       this.children.push(newChild);
     } else {
-      const index = this.getChildren().indexOf(referenceChild);
+      const index = this.children.indexOf(referenceChild);
       if (index === -1) {
         Log.warn(
           '[Haori]',
@@ -546,8 +656,9 @@ export class ElementFragment extends Fragment {
       }
     }
     newChild.setParent(this);
+    newChild.setMounted(true);
     this.skipMutationNodes = true;
-    Queue.enqueue(() => {
+    return Queue.enqueue(() => {
       this.target.insertBefore(
         newChild.getTarget(),
         referenceChild?.getTarget() || null,
@@ -623,6 +734,8 @@ export class TextFragment extends Fragment {
    */
   public clone(): TextFragment {
     const clone = new TextFragment(this.target.cloneNode(true) as Text);
+    Fragment.FRAGMENT_CACHE.set(clone.getTarget(), clone);
+    clone.mounted = false;
     clone.text = this.text;
     clone.contents = this.contents;
     return clone;
@@ -649,6 +762,15 @@ export class TextFragment extends Fragment {
     }
     this.text = text;
     this.contents = new TextContents(text);
+    return this.evaluate();
+  }
+
+  /**
+   * フラグメントを評価します。
+   *
+   * @returns 評価結果のPromise
+   */
+  public evaluate(): Promise<unknown> {
     return Queue.enqueue(() => {
       this.skipMutation = true;
       if (this.contents.isRawEvaluate) {
@@ -697,6 +819,8 @@ export class CommentFragment extends Fragment {
    */
   public clone(): Fragment {
     const clone = new CommentFragment(this.target.cloneNode(true) as Comment);
+    Fragment.FRAGMENT_CACHE.set(clone.getTarget(), clone);
+    clone.mounted = false;
     clone.text = this.text;
     return clone;
   }
