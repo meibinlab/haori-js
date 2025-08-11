@@ -4,6 +4,7 @@
  * Observerクラスは、DOMの変更を監視し、バインディングの更新を行います。
  * MutationObserverを使用して、属性の変更、ノードの追加・削除、テキストノードの変更を監視します。
  */
+import Common from './common';
 import Fragment from './fragment';
 import Log from './log';
 
@@ -17,8 +18,8 @@ export class Observer {
    */
   public static async init() {
     const results = await Promise.allSettled([
-      Fragment.build(document.head),
-      Fragment.build(document.body),
+      Common.scan(document.head),
+      Common.scan(document.body),
     ]);
     const [headResult, bodyResult] = results;
     if (headResult.status !== 'fulfilled') {
@@ -50,7 +51,8 @@ export class Observer {
                 mutation.attributeName,
               );
               const element = mutation.target as HTMLElement;
-              Fragment.get(element)?.setAttribute(
+              Common.setAttribute(
+                element,
                 mutation.attributeName!,
                 element.getAttribute(mutation.attributeName!),
               );
@@ -65,31 +67,13 @@ export class Observer {
                 Array.from(mutation.addedNodes).map(node => node.nodeName),
               );
               Array.from(mutation.removedNodes).forEach(node => {
-                Fragment.get(node)?.remove();
+                Common.removeNode(node);
               });
               Array.from(mutation.addedNodes).forEach(node => {
                 if (!(node.parentElement instanceof HTMLElement)) {
                   return;
                 }
-                const parent = Fragment.get(node.parentElement);
-                const target = Fragment.get(node);
-                if (parent && target) {
-                  const next = node.nextSibling
-                    ? Fragment.get(node.nextSibling)
-                    : null;
-                  parent.insertBefore(target, next);
-                } else {
-                  Log.warn(
-                    '[Haori]',
-                    'Failed to get fragments for node insertion:',
-                    {
-                      node: node.nodeName,
-                      parent: node.parentElement?.nodeName,
-                      hasParent: !!parent,
-                      hasTarget: !!target,
-                    },
-                  );
-                }
+                Common.addNode(node.parentElement, node);
               });
               break;
             }
@@ -101,16 +85,25 @@ export class Observer {
                 mutation.target,
                 mutation.target.textContent,
               );
-              if (mutation.target instanceof Text) {
-                const fragment = Fragment.get(mutation.target);
-                fragment?.setContent(mutation.target.textContent!);
-              } else if (mutation.target instanceof Comment) {
-                const fragment = Fragment.get(mutation.target);
-                fragment?.setContent(mutation.target.textContent!);
+              if (
+                mutation.target instanceof Text ||
+                mutation.target instanceof Comment
+              ) {
+                Common.changeText(
+                  mutation.target,
+                  mutation.target.textContent!,
+                );
+              } else {
+                Log.warn(
+                  '[Haori]',
+                  'Unsupported character data type:',
+                  mutation.target,
+                );
               }
               break;
             }
             default:
+              Log.warn('[Haori]', 'Unknown mutation type:', mutation.type);
               continue;
           }
         } catch (error) {
