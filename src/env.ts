@@ -10,7 +10,7 @@ import Dev from './dev';
  * 実行環境を管理するクラスです。
  */
 export default class Env {
-  private static prefix: string = 'data-';
+  private static _prefix: string = 'data-';
 
   /**
    * 実行環境からプレフィックスと開発モードかどうかを自動検出します。
@@ -24,12 +24,12 @@ export default class Env {
         document.currentScript ||
         document.querySelector('script[src*="haori"]');
       if (currentScript instanceof HTMLScriptElement) {
-        const prefix = currentScript.getAttribute('data-prefix') || Env.prefix;
-        Env.prefix = prefix.endsWith('-') ? prefix : prefix + '-';
+        const prefix = currentScript.getAttribute('data-prefix') || Env._prefix;
+        Env._prefix = prefix.endsWith('-') ? prefix : prefix + '-';
       }
       if (
         currentScript instanceof HTMLScriptElement &&
-        currentScript.hasAttribute(`${Env.prefix}dev`)
+        currentScript.hasAttribute(`${Env._prefix}dev`)
       ) {
         Dev.set(true);
         return;
@@ -53,6 +53,15 @@ export default class Env {
     } catch {
       // SSRや非ブラウザ環境では無視
     }
+  }
+
+  /**
+   * プレフィックスを取得します。
+   *
+   * @returns プレフィックス
+   */
+  public static get prefix(): string {
+    return Env._prefix;
   }
 }
 
