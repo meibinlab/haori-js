@@ -4,7 +4,7 @@
  * Observerクラスは、DOMの変更を監視し、バインディングの更新を行います。
  * MutationObserverを使用して、属性の変更、ノードの追加・削除、テキストノードの変更を監視します。
  */
-import Common from './common';
+import Core from './core';
 import Log from './log';
 
 /**
@@ -17,8 +17,8 @@ export class Observer {
    */
   public static async init() {
     const results = await Promise.allSettled([
-      Common.scan(document.head),
-      Common.scan(document.body),
+      Core.scan(document.head),
+      Core.scan(document.body),
     ]);
     const [headResult, bodyResult] = results;
     if (headResult.status !== 'fulfilled') {
@@ -50,7 +50,7 @@ export class Observer {
                 mutation.attributeName,
               );
               const element = mutation.target as HTMLElement;
-              Common.setAttribute(
+              Core.setAttribute(
                 element,
                 mutation.attributeName!,
                 element.getAttribute(mutation.attributeName!),
@@ -66,13 +66,13 @@ export class Observer {
                 Array.from(mutation.addedNodes).map(node => node.nodeName),
               );
               Array.from(mutation.removedNodes).forEach(node => {
-                Common.removeNode(node);
+                Core.removeNode(node);
               });
               Array.from(mutation.addedNodes).forEach(node => {
                 if (!(node.parentElement instanceof HTMLElement)) {
                   return;
                 }
-                Common.addNode(node.parentElement, node);
+                Core.addNode(node.parentElement, node);
               });
               break;
             }
@@ -88,10 +88,7 @@ export class Observer {
                 mutation.target instanceof Text ||
                 mutation.target instanceof Comment
               ) {
-                Common.changeText(
-                  mutation.target,
-                  mutation.target.textContent!,
-                );
+                Core.changeText(mutation.target, mutation.target.textContent!);
               } else {
                 Log.warn(
                   '[Haori]',
