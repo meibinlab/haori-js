@@ -366,6 +366,15 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 生のバインドデータを取得します。
+   *
+   * @returns 生のバインドデータ
+   */
+  public getRawBindingData(): Record<string, unknown> | null {
+    return this.bindingData;
+  }
+
+  /**
    * バインドデータを設定します。
    *
    * @param data バインドデータ
@@ -604,7 +613,7 @@ export class ElementFragment extends Fragment {
   }
 
   /**
-   * 新しい子ノードを参照ノードの前に挿入します。
+   * 子ノードを参照ノードの前に挿入します。
    * 参照ノードがnullの場合、親の最後に追加されます。
    *
    * @param newChild 新しい子ノード
@@ -666,6 +675,32 @@ export class ElementFragment extends Fragment {
     }).finally(() => {
       this.skipMutationNodes = false;
     });
+  }
+
+  /**
+   * 指定した参照ノードの後に子ノードを挿入します。
+   *
+   * @param newChild 子ノード
+   * @param referenceChild 参照ノード
+   * @returns 挿入のPromise
+   */
+  public insertAfter(
+    newChild: Fragment,
+    referenceChild: Fragment | null,
+  ): Promise<unknown> {
+    if (referenceChild == null) {
+      return this.insertBefore(newChild, null);
+    }
+    const index = this.children.indexOf(referenceChild);
+    if (index === -1) {
+      Log.warn(
+        '[Haori]',
+        'Reference child not found in children.',
+        referenceChild,
+      );
+      return this.insertBefore(newChild, null);
+    }
+    return this.insertBefore(newChild, this.children[index + 1] || null);
   }
 
   /**
