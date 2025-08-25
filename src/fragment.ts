@@ -232,7 +232,7 @@ export class ElementFragment extends Fragment {
   private display: string | null = null;
 
   /** each用のテンプレート */
-  private template: ElementFragment[] = [];
+  private template: ElementFragment | null = null;
 
   /** each比較用のキー */
   private listKey: string | null = null;
@@ -254,6 +254,7 @@ export class ElementFragment extends Fragment {
    */
   public constructor(target: HTMLElement) {
     super(target);
+    this.syncValue();
   }
 
   /**
@@ -263,6 +264,17 @@ export class ElementFragment extends Fragment {
    */
   public getChildren(): Fragment[] {
     return this.children;
+  }
+
+  /**
+   * 子エレメントフラグメントのリストを取得します。
+   *
+   * @returns 子エレメントフラグメントのリスト
+   */
+  public getChildElementFragments(): ElementFragment[] {
+    return this.children.filter(
+      child => child instanceof ElementFragment,
+    ) as ElementFragment[];
   }
 
   /**
@@ -313,7 +325,7 @@ export class ElementFragment extends Fragment {
     clone.clearBindingDataCache();
     clone.visible = this.visible;
     clone.display = this.display;
-    clone.template = this.template.map(t => t.clone());
+    clone.template = this.template?.clone() || null;
     return clone;
   }
 
@@ -330,10 +342,8 @@ export class ElementFragment extends Fragment {
     this.attributeMap.clear();
     this.bindingData = null;
     this.bindingDataCache = null;
-    this.template.forEach(child => {
-      child.remove(false);
-    });
-    this.template.length = 0;
+    this.template?.remove(false);
+    this.template = null;
     super.remove(unmount);
   }
 
@@ -401,8 +411,17 @@ export class ElementFragment extends Fragment {
    *
    * @returns テンプレートの配列
    */
-  public getTemplate(): ElementFragment[] {
+  public getTemplate(): ElementFragment | null {
     return this.template;
+  }
+
+  /**
+   * フラグメントのテンプレートを設定します。
+   *
+   * @param template フラグメントのテンプレート
+   */
+  public setTemplate(template: ElementFragment | null): void {
+    this.template = template;
   }
 
   /**
@@ -425,13 +444,16 @@ export class ElementFragment extends Fragment {
 
   /**
    * 入力エレメントに値を設定します。
-   * チェックボックとラジオボタンの場合は値に一致するかどうかをチェック状態を変更します。
+   * チェックボックとラジオボタンの場合は値に一致するかどうかでチェック状態を変更します。
    *
    * @param value 値
    * @returns エレメントの更新のPromise
    */
   public setValue(value: string | number | boolean | null): Promise<unknown> {
     if (this.skipChangeValue) {
+      return Promise.resolve();
+    }
+    if (this.value === value) {
       return Promise.resolve();
     }
     const element = this.getTarget();
@@ -448,6 +470,7 @@ export class ElementFragment extends Fragment {
       } else {
         newChecked = result === String(value);
       }
+      this.value = newChecked ? value : null;
       if (element.checked === newChecked) {
         return Promise.resolve();
       }
@@ -463,9 +486,6 @@ export class ElementFragment extends Fragment {
       element instanceof HTMLTextAreaElement ||
       element instanceof HTMLSelectElement
     ) {
-      if (this.value === value) {
-        return Promise.resolve();
-      }
       this.value = value;
       this.skipChangeValue = true;
       return Queue.enqueue(() => {
@@ -492,37 +512,41 @@ export class ElementFragment extends Fragment {
   }
 
   /**
-   * 入力エレメントの評価された値を取得します。
+   * 入力エレメントの値を取得します。
+   * DOM要素の現在の値と同期します。
    *
-   * @returns 評価された値
+   * @returns 入力エレメントの値
    */
   public getValue(): string | number | boolean | null {
+    return this.value;
+  }
+
+  /**
+   * 内部の値をDOMの値と同期します。
+   */
+  private syncValue() {
     const element = this.getTarget();
-    if (
-      element instanceof HTMLInputElement &&
-      (element.type === 'checkbox' || element.type === 'radio')
-    ) {
-      const result = this.getAttribute('value');
-      if (result === 'true') {
-        return element.checked ? true : null;
-      } else if (result === 'false') {
-        return element.checked ? false : null;
+    if (element instanceof HTMLInputElement) {
+      if (element.type === 'checkbox' || element.type === 'radio') {
+        if (element.checked) {
+          const value = element.value;
+          if (value === 'true') {
+            this.value = true;
+          } else if (value === 'false') {
+            this.value = false;
+          } else {
+            this.value = value;
+          }
+        } else {
+          this.value = null;
+        }
       } else {
-        return element.checked ? String(result) : null;
+        this.value = element.value;
       }
-    } else if (
-      element instanceof HTMLInputElement ||
-      element instanceof HTMLTextAreaElement ||
-      element instanceof HTMLSelectElement
-    ) {
-      return this.value;
-    } else {
-      Log.warn(
-        '[Haori]',
-        'setValue is not supported for this element type.',
-        element,
-      );
-      return null;
+    } else if (element instanceof HTMLTextAreaElement) {
+      this.value = element.value;
+    } else if (element instanceof HTMLSelectElement) {
+      this.value = element.value;
     }
   }
 

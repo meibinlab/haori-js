@@ -304,8 +304,8 @@ export default class Core {
    * @param fragment 対象フラグメント
    */
   public static evaluateEach(fragment: ElementFragment) {
-    const template = fragment.getTemplate();
-    if (template.length === 0) {
+    let template = fragment.getTemplate();
+    if (template === null) {
       // テンプレートの作成
       fragment.getChildren().forEach(child => {
         if (child instanceof ElementFragment) {
@@ -315,8 +315,12 @@ export default class Core {
           ) {
             return;
           }
-          template.push(child);
-          child.unmount();
+          if (template === null) {
+            template = child;
+            child.unmount();
+          } else {
+            Log.warn('[Haori]', 'Template must be a single child element.');
+          }
         } else {
           Log.error(
             '[Haori]',
@@ -325,6 +329,7 @@ export default class Core {
           );
         }
       });
+      fragment.setTemplate(template);
     }
     if (!fragment.isVisible || !fragment.isMounted()) {
       return;
@@ -362,15 +367,14 @@ export default class Core {
     const keyArg = parent.getAttribute(`${Env.prefix}each-key`);
     const keyDataMap: Map<
       string,
-      {item: (typeof newList)[0]; itemIndex: number; templateIndex: number}
+      {item: (typeof newList)[0]; itemIndex: number}
     > = new Map();
     const newKeys: string[] = [];
     newList.forEach((item, itemIndex) => {
       const listKey = Core.createListKey(item, keyArg ? String(keyArg) : null);
-      for (let i = 0; i < parent.getTemplate().length; i++) {
-        const fullKey = `${listKey}:${i}`;
-        newKeys.push(fullKey);
-        keyDataMap.set(fullKey, {item, itemIndex, templateIndex: i});
+      if (parent.getTemplate() !== null) {
+        newKeys.push(listKey);
+        keyDataMap.set(listKey, {item, itemIndex});
       }
     });
     let childElements = parent
@@ -396,14 +400,14 @@ export default class Core {
       .filter(child => child.hasAttribute(`${Env.prefix}each-before`)).length;
     newKeys.forEach(newKey => {
       const srcIndex = srcKeys.indexOf(newKey);
-      const {item, itemIndex, templateIndex} = keyDataMap.get(newKey)!;
+      const {item, itemIndex} = keyDataMap.get(newKey)!;
       let child;
       if (srcIndex !== -1) {
         // 既存の要素を再利用
         child = childElements[srcIndex];
       } else {
         // 新しい要素を追加
-        child = parent.getTemplate()[templateIndex].clone();
+        child = parent.getTemplate()!.clone();
       }
       Core.updateRowFragment(
         child,
