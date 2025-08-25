@@ -1,0 +1,191 @@
+/**
+ * @fileoverview フォーム双方向バインディング
+ *
+ * フォームと入力要素の双方向バインディングを実現します。
+ */
+
+import Env from './env';
+import {ElementFragment} from './fragment';
+import Log from './log';
+
+/**
+ * Formクラスは、フォームの双方向バインディングを提供します。
+ * 入力要素の値をフォームにバインドし、フォームのバインド値を入力要素に反映します。
+ */
+export class Form {
+  /**
+   * フォーム内にある入力エレメントの値をオブジェクトとして取得します。
+   * data-form-object属性があると、そのエレメント内の値はオブジェクトとして処理されます。
+   * 入力エレメントにdata-form-list属性があると、そのエレメントの値はリストとして処理されます。
+   * 入力エレメント以外にdata-form-list属性があると、そのエレメントの値はオブジェクトのリストとして処理されます。
+   *
+   * @param form フォームのElementFragment
+   */
+  public static getValues(form: ElementFragment): Record<string, unknown> {
+    const values: Record<string, unknown> = {};
+    return Form.getPartValues(form, values);
+  }
+
+  /**
+   * フォーム内の各入力エレメントから値を取得し、オブジェクトとして返します。
+   * 入力エレメントのname属性、data-form-object属性、data-form-list属性に基づいて値を整理します。
+   *
+   * @param fragment 対象のElementFragment
+   * @param values オブジェクトに追加する値のオブジェクト
+   * @returns values と同じオブジェクト
+   */
+  private static getPartValues(
+    fragment: ElementFragment,
+    values: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const name = fragment.getAttribute('name');
+    const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
+    const listName = fragment.getAttribute(`${Env.prefix}form-list`);
+    if (name) {
+      if (listName) {
+        if (Array.isArray(values[String(name)])) {
+          (values[String(name)] as unknown[]).push(fragment.getValue());
+        } else {
+          values[String(name)] = [fragment.getValue()];
+        }
+      } else {
+        values[String(name)] = fragment.getValue();
+      }
+      if (objectName) {
+        Log.warn(
+          'Haori',
+          `Element cannot have both ${Env.prefix}form-object` +
+            ' and name attributes.',
+        );
+      }
+      for (const child of fragment.getChildElementFragments()) {
+        Form.getPartValues(child, values);
+      }
+    } else if (objectName) {
+      const childValues: Record<string, unknown> = {};
+      for (const child of fragment.getChildElementFragments()) {
+        Form.getPartValues(child, childValues);
+      }
+      if (Object.keys(childValues).length > 0) {
+        values[String(objectName)] = childValues;
+      }
+      if (listName) {
+        Log.warn(
+          'Haori',
+          `Element cannot have both ${Env.prefix}form-list` +
+            ` and ${Env.prefix}form-object attributes.`,
+        );
+      }
+    } else if (listName) {
+      const childList: Record<string, unknown>[] = [];
+      for (const child of fragment.getChildElementFragments()) {
+        const childValues: Record<string, unknown> = {};
+        Form.getPartValues(child, childValues);
+        if (Object.keys(childValues).length > 0) {
+          childList.push(childValues);
+        }
+      }
+      if (childList.length > 0) {
+        values[String(listName)] = childList;
+      }
+    } else {
+      for (const child of fragment.getChildElementFragments()) {
+        Form.getPartValues(child, values);
+      }
+    }
+    return values;
+  }
+
+  /**
+   * フォーム内にある入力エレメントに値を設定します。
+   * フォームのdata-bind属性に値が反映されます。
+   *
+   * @param form フォームのElementFragment
+   * @param values フォームに設定する値のオブジェクト
+   * @param force data-form-detach属性があるエレメントにも値を反映するかどうか
+   */
+  public static setValues(
+    form: ElementFragment,
+    values: Record<string, unknown>,
+    force: boolean = false,
+  ): void {
+    Form.setPartValues(form, values, null, force);
+  }
+
+  /**
+   * フラグメント内にある各入力エレメントに値を設定します。
+   *
+   * @param fragment 対象フラグメント
+   * @param values フラグメントに設定する値のオブジェクト
+   * @param index 配列の場合のインデックス
+   * @param force data-form-detach属性があるエレメントにも値を反映するかどうか
+   */
+  private static setPartValues(
+    fragment: ElementFragment,
+    values: Record<string, unknown>,
+    index: number | null = null,
+    force: boolean = false,
+  ): void {
+    const name = fragment.getAttribute('name');
+    const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
+    const listName = fragment.getAttribute(`${Env.prefix}form-list`);
+    const detach = fragment.getAttribute(`${Env.prefix}form-detach`);
+    if (name) {
+      if (!detach || force) {
+        const value = values[String(name)];
+        if (listName && Array.isArray(value) && index !== null) {
+          fragment.setValue(value[index]);
+        } else if (
+          typeof value === 'string' ||
+          typeof value === 'number' ||
+          typeof value === 'boolean' ||
+          value === null
+        ) {
+          fragment.setValue(value);
+        } else {
+          fragment.setValue(String(value));
+        }
+      }
+    } else if (objectName) {
+      const childValues = values[String(objectName)];
+      if (childValues && typeof childValues === 'object') {
+        for (const child of fragment.getChildElementFragments()) {
+          Form.setPartValues(
+            child,
+            childValues as Record<string, unknown>,
+            null,
+            force,
+          );
+        }
+      }
+    } else if (listName) {
+      const childList = values[String(listName)];
+      if (Array.isArray(childList)) {
+        const children = fragment.getChildElementFragments();
+        for (let i = 0; i < children.length; i++) {
+          const child = children[i];
+          if (childList.length > i) {
+            Form.setPartValues(
+              child,
+              childList[i] as Record<string, unknown>,
+              i,
+              force,
+            );
+          } else {
+            Form.setPartValues(child, {}, i, force);
+          }
+        }
+      }
+    } else {
+      for (const child of fragment.getChildElementFragments()) {
+        Form.setPartValues(child, values, null, force);
+      }
+    }
+  }
+
+  public static reset(element: ElementFragment): void {}
+
+  public static clearMessages(element: ElementFragment): void {}
+
+  public static addErrorMessage(key: string, message: string): void {}
+}
