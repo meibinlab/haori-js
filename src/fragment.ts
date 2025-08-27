@@ -522,6 +522,13 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 内部の値をクリアします。エレメントのvalue値は変化しません。
+   */
+  public clearValue() {
+    this.value = null;
+  }
+
+  /**
    * 内部の値をDOMの値と同期します。
    */
   private syncValue() {
