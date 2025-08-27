@@ -223,13 +223,7 @@ export class Form {
    * @returns すべてのクリア処理が完了するPromise
    */
   public static clearMessages(fragment: ElementFragment): Promise<void> {
-    const thisPromise = Haori.clearMessages(
-      fragment.getTarget(),
-    ) as Promise<void>;
-    const childPromises = fragment.getChildElementFragments().map(child => {
-      return Form.clearMessages(child);
-    });
-    return Promise.all([thisPromise, ...childPromises]).then(() => void 0);
+    return Haori.clearMessages(fragment.getTarget()) as Promise<void>;
   }
 
   public static addErrorMessage(key: string, message: string): void {}
