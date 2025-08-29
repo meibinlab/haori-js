@@ -62,6 +62,8 @@ data-???-data: フェッチパラメータ。フェッチURLが指定されて�
 
 data-???-form: フェッチパラメータを取得するフォームのセレクタ。属性値が省略されている場合は当該エレメントもしくは先祖エレメントのformエレメントを対象とする。フェッチURLが指定されていない場合はレスポンスデータとして利用する。
 
+data-???-before-run: スクリプトを実行する。戻り値がfalseの場合は以後の処理を停止する。
+
 data-???-fetch: 属性値をURLとし、レスポンスを当該エレメントのdata-bind属性に設定する。フェッチに成功した場合のみ処理を継続する。
 
 data-???-fetch-method: HTTPメソッド。省略時はGETとする。
@@ -75,6 +77,8 @@ data-???-bind: データをバインドするセレクタ。
 data-???-bind-arg: データを設定するパラメータ名。
 
 data-???-bind-params: データのバインド対象となるパラメータ名を&区切りで指定する。
+
+data-???-after-run: 処理が成功した場合にスクリプトを実行する。戻り値がfalseの場合は以後の処理を停止する。
 
 data-???-alert: 処理が成功した場合にアラートメッセージを表示する。
 
@@ -99,12 +103,14 @@ data-???-redirect: 処理が成功した場合に属性値のURLにリダイレ�
 1. data-???-validate: バリデーション実行
 2. data-???-confirm: 確認ダイアログ表示
 3. data-???-data / data-???-form: データ取得
-4. data-???-fetch: HTTP通信実行
-5. data-???-bind: データバインド実行
-6. data-???-adjust: 値調整実行
-7. data-???-reset: リセット処理実行
-8. data-???-refetch: 再フェッチ実行
-9. data-???-click: クリック実行
-10. data-???-open / data-???-close: ダイアログ操作
-11. data-???-alert / data-???-message: メッセージ表示
-12. data-???-redirect: リダイレクト実行（最後に実行）
+4. data-???-before-run: フェッチ前スクリプト実行
+5. data-???-fetch: HTTP通信実行
+6. data-???-after-run: フェッチ後スクリプト実行
+7. data-???-bind: データバインド実行
+8. data-???-adjust: 値調整実行
+9. data-???-reset: リセット処理実行
+10. data-???-refetch: 再フェッチ実行
+11. data-???-click: クリック実行
+12. data-???-open / data-???-close: ダイアログ操作
+13. data-???-alert / data-???-message: メッセージ表示
+14. data-???-redirect: リダイレクト実行（最後に実行）
