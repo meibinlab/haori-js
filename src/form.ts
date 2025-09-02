@@ -185,6 +185,13 @@ export class Form {
     }
   }
 
+  /**
+   * 対象フラグメントとその子孫要素の値を初期化します。
+   * 値の初期化とメッセージのクリアを行います。
+   *
+   * @param fragment 対象フラグメント
+   * @returns リセットの完了を示すPromise
+   */
   public static reset(fragment: ElementFragment): Promise<void> {
     Form.clearValues(fragment);
     const clearMessagePromise = Form.clearMessages(fragment);
@@ -226,5 +233,101 @@ export class Form {
     return Haori.clearMessages(fragment.getTarget()) as Promise<void>;
   }
 
-  public static addErrorMessage(key: string, message: string): void {}
+  /**
+   * キーに一致するフラグメントにエラーメッセージを追加します。
+   * キーに一致するフラグメントが見つからない場合は、指定されたフラグメントにメッセージを追加します。
+   *
+   * @param fragment 対象フラグメント
+   * @param key キー（ドット区切りの文字列）
+   * @param message 追加するエラーメッセージ
+   */
+  public static addErrorMessage(
+    fragment: ElementFragment,
+    key: string,
+    message: string,
+  ): void {
+    const targetFragments = Form.findFragmentsByKey(fragment, key);
+    targetFragments.forEach(targetFragment => {
+      Haori.addErrorMessage(targetFragment.getTarget(), message);
+    });
+    if (targetFragments.length === 0) {
+      Haori.addErrorMessage(fragment.getTarget(), message);
+    }
+  }
+
+  /**
+   * 指定されたキーに一致するフラグメントを検索します。
+   *
+   * @param fragment 対象フラグメント
+   * @param key キー（ドット区切りの文字列）
+   * @returns 一致するフラグメントの配列
+   */
+  public static findFragmentsByKey(
+    fragment: ElementFragment,
+    key: string,
+  ): ElementFragment[] {
+    return Form.findFragmentByKeyParts(fragment, key.split('.'));
+  }
+
+  /**
+   * 指定されたキーに一致するフラグメントを検索します。
+   * data-form-list属性で指定された場合はdata-row属性を持つ子要素の位置と添字が一致するものを対象とします。
+   *
+   * @param fragment 対象フラグメント
+   * @param parts キーのパーツ
+   * @returns 一致するフラグメントの配列
+   */
+  private static findFragmentByKeyParts(
+    fragment: ElementFragment,
+    parts: string[],
+  ): ElementFragment[] {
+    const results: ElementFragment[] = [];
+    const key = parts[0];
+    if (parts.length == 1) {
+      const name = fragment.getAttribute('name');
+      if (name === key) {
+        results.push(fragment);
+      }
+    }
+    if (fragment.hasAttribute(`${Env.prefix}form-object`)) {
+      if (parts.length > 1) {
+        const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
+        if (objectName === key) {
+          fragment.getChildElementFragments().forEach(child => {
+            results.push(...Form.findFragmentByKeyParts(child, parts.slice(1)));
+          });
+        }
+      }
+    } else if (fragment.hasAttribute(`${Env.prefix}form-list`)) {
+      if (parts.length > 1) {
+        const listName = fragment.getAttribute(`${Env.prefix}form-list`);
+        const firstPoint = key.lastIndexOf('[');
+        const lastPoint = key.lastIndexOf(']');
+        if (firstPoint !== -1 && lastPoint !== -1 && firstPoint < lastPoint) {
+          const rawKey = key.substring(0, firstPoint);
+          if (listName === rawKey) {
+            const indexString = key.substring(firstPoint + 1, lastPoint);
+            const index = Number(indexString);
+            if (isNaN(index)) {
+              Log.error('Haori', `Invalid index: ${key}`);
+            } else {
+              const rows = fragment
+                .getChildElementFragments()
+                .filter(child => child.hasAttribute(`${Env.prefix}row`));
+              if (index < rows.length) {
+                results.push(
+                  ...Form.findFragmentByKeyParts(rows[index], parts.slice(1)),
+                );
+              }
+            }
+          }
+        }
+      }
+    } else {
+      fragment.getChildElementFragments().forEach(child => {
+        results.push(...Form.findFragmentByKeyParts(child, parts));
+      });
+    }
+    return results;
+  }
 }
