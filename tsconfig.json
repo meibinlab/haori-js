@@ -3,7 +3,7 @@
     "target": "ES2020",
     "module": "ESNext",
     "strict": true,
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "outDir": "dist",
     "rootDir": ".",
     "lib": ["DOM", "ES2020"],
@@ -20,6 +20,12 @@
     "allowUnusedLabels": false,
     "allowUnreachableCode": false
   },
-  "include": ["src", "tests", "vitest.config.ts", "eslint.config.js"],
+  "include": [
+    "src",
+    "tests",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "eslint.config.js"
+  ],
   "exclude": ["node_modules", "dist"]
 }
