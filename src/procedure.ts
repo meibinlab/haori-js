@@ -81,7 +81,13 @@ export default class Procedure {
   /** レスポンスデータをバインドする際のキー名 */
   private bindArg: string | null = null;
 
-  async execute(): Promise<void> {
+  /** 値を変更するフラグメント */
+  private adjustFragments: ElementFragment[] | null = null;
+
+  /** 変更する値の増減値 */
+  private adjustValue: number | null = null;
+
+  async run(): Promise<void> {
     if (this.formFragment && this.validate(this.formFragment) === false) {
       return;
     }
@@ -104,27 +110,27 @@ export default class Procedure {
           'fetchOptions' in result ? result.fetchOptions : fetchOptions
         ) as RequestInit | null;
       }
-      if (fetchUrl) {
-        fetch(fetchUrl, fetchOptions ? fetchOptions : undefined).then(
-          async response => {
-            await this.afterFetch(response);
-          },
-        );
-      } else {
-        const response = new Response();
-        response.headers.set('Content-Type', 'application/json');
-        response.json = async () => {
-          return this.data ? this.data : {};
-        };
-        await this.afterFetch(response);
-      }
+    }
+    if (fetchUrl) {
+      fetch(fetchUrl, fetchOptions ? fetchOptions : undefined).then(
+        async response => {
+          await this.handleFetchResult(response);
+        },
+      );
+    } else {
+      const response = new Response();
+      response.headers.set('Content-Type', 'application/json');
+      response.json = async () => {
+        return this.data ? this.data : {};
+      };
+      await this.handleFetchResult(response);
     }
   }
 
   /**
    * フェッチ後の処理を実行します。
    */
-  private async afterFetch(response: Response): Promise<void> {
+  private async handleFetchResult(response: Response): Promise<void> {
     if (this.afterCallback) {
       const result = this.afterCallback(response);
       if (result === false) {
@@ -136,46 +142,8 @@ export default class Procedure {
         ) as Response;
       }
     }
-    let data: Record<string, unknown> | string | null = null;
-    if (this.bindFragments && this.bindFragments.length > 0) {
-      if (response.headers.get('Content-Type')?.includes('application/json')) {
-        data = await response.json();
-      } else {
-        data = await response.text();
-      }
-      if (this.bindParams) {
-        const newData = {} as Record<string, unknown>;
-        this.bindParams.forEach(param => {
-          if (data && typeof data === 'object' && param in data) {
-            newData[param] = data[param];
-          }
-        });
-        data = newData;
-      }
-      if (this.bindArg) {
-        this.bindFragments.forEach(fragment => {
-          const bindingData = fragment.getBindingData();
-          bindingData[this.bindArg as string] = data;
-          Core.setAttribute(
-            fragment.getTarget(),
-            `${Env.prefix}-bind`,
-            JSON.stringify(bindingData),
-          );
-        });
-      } else if (typeof data === 'string') {
-        Log.error('Haori', 'string data cannot be bound without a bindArg.');
-        return;
-      } else {
-        this.bindFragments.forEach(fragment => {
-          fragment.setBindingData(data as Record<string, unknown>);
-          Core.setAttribute(
-            fragment.getTarget(),
-            `${Env.prefix}-bind`,
-            JSON.stringify(data),
-          );
-        });
-      }
-    }
+    await this.bindResult(response);
+    await this.adjust();
   }
 
   /**
@@ -235,5 +203,79 @@ export default class Procedure {
       return Promise.resolve(true);
     }
     return Haori.confirm(this.confirmMessage);
+  }
+
+  /**
+   * 結果データを対象のフラグメントにバインドします。
+   *
+   * @param response フェッチのレスポンスオブジェクト
+   */
+  private async bindResult(response: Response): Promise<void> {
+    let data: Record<string, unknown> | string | null = null;
+    if (!this.bindFragments || this.bindFragments.length === 0) {
+      return;
+    }
+    if (response.headers.get('Content-Type')?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
+    if (this.bindParams) {
+      const newData = {} as Record<string, unknown>;
+      this.bindParams.forEach(param => {
+        if (data && typeof data === 'object' && param in data) {
+          newData[param] = data[param];
+        }
+      });
+      data = newData;
+    }
+    if (this.bindArg) {
+      this.bindFragments.forEach(fragment => {
+        const bindingData = fragment.getBindingData();
+        bindingData[this.bindArg as string] = data;
+        Core.setAttribute(
+          fragment.getTarget(),
+          `${Env.prefix}-bind`,
+          JSON.stringify(bindingData),
+        );
+      });
+    } else if (typeof data === 'string') {
+      Log.error('Haori', 'string data cannot be bound without a bindArg.');
+      return;
+    } else {
+      this.bindFragments.forEach(fragment => {
+        fragment.setBindingData(data as Record<string, unknown>);
+        Core.setAttribute(
+          fragment.getTarget(),
+          `${Env.prefix}-bind`,
+          JSON.stringify(data),
+        );
+      });
+    }
+  }
+
+  /**
+   * 値の増減を行います。
+   */
+  private async adjust(): Promise<void> {
+    if (!this.adjustFragments || this.adjustFragments.length === 0) {
+      return;
+    }
+    for (const fragment of this.adjustFragments) {
+      let valueString = fragment.getValue();
+      if (
+        valueString === null ||
+        valueString === undefined ||
+        valueString === ''
+      ) {
+        valueString = '0';
+      }
+      let value = Number(valueString);
+      if (isNaN(value)) {
+        value = 0;
+      }
+      value += this.adjustValue as number;
+      await fragment.setValue(String(value));
+    }
   }
 }
