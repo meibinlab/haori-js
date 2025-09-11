@@ -25,7 +25,6 @@ export default abstract class Fragment {
   public static get(node: Text): TextFragment;
   public static get(node: Comment): CommentFragment;
   public static get(node: Node | null): Fragment | null;
-  public static get(node: null): null;
   public static get(node: Node | null): Fragment | null {
     if (node == null) {
       return null;
@@ -48,19 +47,7 @@ export default abstract class Fragment {
         Log.warn('[Haori]', 'Unsupported node type:', node.nodeType);
         return null;
     }
-    Fragment.FRAGMENT_CACHE.set(node, fragment);
     return fragment;
-  }
-
-  public static async build(node: HTMLElement): Promise<ElementFragment>;
-  public static async build(node: Text): Promise<TextFragment>;
-  public static async build(node: Comment): Promise<CommentFragment>;
-  public static async build(
-    node: HTMLElement | Text | Comment,
-  ): Promise<ElementFragment | TextFragment | CommentFragment> {
-    return Queue.enqueue(() => {
-      return Fragment.get(node);
-    }) as Promise<ElementFragment | TextFragment | CommentFragment>;
   }
 
   /** 親フラグメント */
@@ -82,41 +69,57 @@ export default abstract class Fragment {
    */
   protected constructor(target: Node) {
     this.target = target;
+    Fragment.FRAGMENT_CACHE.set(target, this);
   }
 
   /**
    * フラグメントをDOMから除去します。
+   *
+   * @return 除去のPromise
    */
   public unmount(): Promise<void> {
     if (!this.mounted || this.skipMutationNodes) {
       return Promise.resolve();
     }
-    this.mounted = false;
     if (this.parent) {
+      const parent = this.parent;
+      const prevSkip = parent.skipMutationNodes;
       return Queue.enqueue(() => {
-        this.parent!.skipMutationNodes = true;
-        this.parent!.getTarget().removeChild(this.target);
+        parent.skipMutationNodes = true;
+        if (this.target.parentNode === parent.getTarget()) {
+          parent.getTarget().removeChild(this.target);
+        }
+        this.mounted = false;
       }).finally(() => {
-        this.parent!.skipMutationNodes = false;
+        parent.skipMutationNodes = prevSkip;
       }) as Promise<void>;
+    } else {
+      this.mounted = false;
     }
     return Promise.resolve();
   }
 
   /**
    * フラグメントをDOMに追加します。
+   *
+   * @return 追加のPromise
    */
   public mount(): Promise<void> {
     if (this.mounted || this.skipMutationNodes) {
       return Promise.resolve();
     }
-    this.mounted = true;
     if (this.parent) {
+      const parent = this.parent;
+      const prevSkip = parent.skipMutationNodes;
       return Queue.enqueue(() => {
-        this.parent!.skipMutationNodes = true;
-        this.parent!.getTarget().appendChild(this.target);
+        parent.skipMutationNodes = true;
+        if (this.target.parentNode !== parent.getTarget()) {
+          // 既に同じ親なら何もしない
+          parent.getTarget().appendChild(this.target);
+        }
+        this.mounted = true;
       }).finally(() => {
-        this.parent!.skipMutationNodes = false;
+        parent.skipMutationNodes = prevSkip;
       }) as Promise<void>;
     }
     return Promise.resolve();
@@ -151,15 +154,17 @@ export default abstract class Fragment {
    * フラグメントとノードを削除します。
    *
    * @param unmount DOMからの除去を行うかどうか（内部の子呼び出しの場合のみfalseとする）
+   * @return 除去のPromise
    */
-  public remove(unmount = true) {
-    if (this.parent && unmount) {
+  public remove(unmount = true): Promise<void> {
+    if (this.parent) {
       this.parent.removeChild(this);
     }
     Fragment.FRAGMENT_CACHE.delete(this.target);
     if (unmount) {
-      this.unmount();
+      return this.unmount();
     }
+    return Promise.resolve();
   }
 
   /**
@@ -248,13 +253,25 @@ export class ElementFragment extends Fragment {
 
   /**
    * エレメントフラグメントのコンストラクタ。
-   * アトリビュートや子フラグメントは自動的に構築されません。
+   * アトリビュートや子フラグメントの作成も行います。
    *
    * @param target 対象エレメント
    */
   public constructor(target: HTMLElement) {
     super(target);
     this.syncValue();
+    target.getAttributeNames().forEach(name => {
+      const value = target.getAttribute(name);
+      if (value !== null && !this.attributeMap.has(name)) {
+        const contents = new AttributeContents(name, value);
+        this.attributeMap.set(name, contents);
+      }
+    });
+    target.childNodes.forEach(node => {
+      const childFragment = Fragment.get(node);
+      childFragment!.setParent(this);
+      this.children.push(childFragment!);
+    });
   }
 
   /**
@@ -279,6 +296,7 @@ export class ElementFragment extends Fragment {
 
   /**
    * 子フラグメントをリストに追加します。
+   * DOMの追加は行いません。
    *
    * @param child 追加する子フラグメント
    */
@@ -289,15 +307,18 @@ export class ElementFragment extends Fragment {
 
   /**
    * 子フラグメントをリストから削除します。
+   * DOMからの削除は行いません。
    *
    * @param child 削除する子フラグメント
    */
   public removeChild(child: Fragment): void {
     const index = this.children.indexOf(child);
-    if (index !== -1) {
-      this.children.splice(index, 1);
-      child.setParent(null);
+    if (index < 0) {
+      Log.warn('[Haori]', 'Child fragment not found.', child);
+      return;
     }
+    this.children.splice(index, 1);
+    child.setParent(null);
   }
 
   /**
@@ -307,25 +328,19 @@ export class ElementFragment extends Fragment {
    */
   public clone(): ElementFragment {
     const clone = new ElementFragment(
-      this.target.cloneNode(true) as HTMLElement,
+      this.target.cloneNode(false) as HTMLElement,
     );
-    Fragment.FRAGMENT_CACHE.set(clone.getTarget(), clone);
-    clone.children.push(
-      ...this.children.map(child => {
-        const clonedChild = child.clone();
-        clonedChild.setParent(clone);
-        return clonedChild;
-      }),
-    );
-    this.attributeMap.forEach((contents, name) => {
-      clone.attributeMap.set(name, contents);
+    this.children.forEach(child => {
+      const childClone = child.clone();
+      clone.getTarget().appendChild(childClone.getTarget());
+      clone.pushChild(childClone);
     });
     clone.mounted = false;
     clone.bindingData = this.bindingData;
     clone.clearBindingDataCache();
     clone.visible = this.visible;
     clone.display = this.display;
-    clone.template = this.template?.clone() || null;
+    clone.template = this.template;
     return clone;
   }
 
@@ -333,18 +348,23 @@ export class ElementFragment extends Fragment {
    * フラグメントとノードを削除します。
    *
    * @param unmount DOMからの除去を行うかどうか（内部の子呼び出しの場合のみfalseとする）
+   * @return 除去のPromise
    */
-  public remove(unmount = true) {
+  public remove(unmount = true): Promise<void> {
+    const promises: Promise<void>[] = [];
     this.children.forEach(child => {
-      child.remove(false);
+      promises.push(child.remove(false));
     });
     this.children.length = 0;
     this.attributeMap.clear();
     this.bindingData = null;
     this.bindingDataCache = null;
-    this.template?.remove(false);
-    this.template = null;
-    super.remove(unmount);
+    if (this.template) {
+      promises.push(this.template.remove(false));
+      this.template = null;
+    }
+    promises.push(super.remove(unmount));
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -409,7 +429,7 @@ export class ElementFragment extends Fragment {
   /**
    * フラグメントのテンプレートを取得します。
    *
-   * @returns テンプレートの配列
+   * @returns テンプレート
    */
   public getTemplate(): ElementFragment | null {
     return this.template;
@@ -649,6 +669,7 @@ export class ElementFragment extends Fragment {
    *
    * @param newChild 新しい子ノード
    * @param referenceChild 参照ノード
+   * @return 挿入のPromise
    */
   public insertBefore(
     newChild: Fragment,
@@ -665,13 +686,15 @@ export class ElementFragment extends Fragment {
     }
 
     // 祖先チェック
+    const ancestors = new Set<Fragment>();
     let ancestor = this.parent;
     while (ancestor) {
-      if (ancestor === newChild) {
-        Log.error('[Haori]', 'Cannot create circular reference');
-        return Promise.reject(new Error('Circular reference detected'));
-      }
+      ancestors.add(ancestor);
       ancestor = ancestor.getParent();
+    }
+    if (ancestors.has(newChild)) {
+      Log.error('[Haori]', 'Cannot create circular reference');
+      return Promise.reject(new Error('Circular reference detected'));
     }
 
     const newChildParent = newChild.getParent();
@@ -695,8 +718,11 @@ export class ElementFragment extends Fragment {
         this.children.splice(index, 0, newChild);
       }
     }
+
     newChild.setParent(this);
-    newChild.setMounted(true);
+    newChild.setMounted(this.mounted);
+
+    const prevSkip = this.skipMutationNodes;
     this.skipMutationNodes = true;
     return Queue.enqueue(() => {
       this.target.insertBefore(
@@ -704,7 +730,7 @@ export class ElementFragment extends Fragment {
         referenceChild?.getTarget() || null,
       );
     }).finally(() => {
-      this.skipMutationNodes = false;
+      this.skipMutationNodes = prevSkip;
     });
   }
 
@@ -745,25 +771,27 @@ export class ElementFragment extends Fragment {
 
   /**
    * エレメントを非表示にし、子ノードをDOMから削除します。
+   *
+   * @returns エレメントの非表示のPromise
    */
-  public hide(): void {
+  public hide(): Promise<void> {
     this.visible = false;
     this.display = this.getTarget().style.display;
     this.getTarget().style.display = 'none';
-    this.children.forEach(child => {
-      child.unmount();
-    });
+    const promises = this.children.map(child => child.unmount());
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
    * エレメントを表示し、子ノードをDOMに追加します。
+   *
+   * @return エレメントの表示のPromise
    */
-  public show(): void {
-    this.children.forEach(child => {
-      child.mount();
-    });
+  public show(): Promise<void> {
+    const promises = this.children.map(child => child.mount());
     this.getTarget().style.display = this.display ?? '';
     this.visible = true;
+    return Promise.all(promises).then(() => undefined);
   }
 }
 
@@ -800,7 +828,6 @@ export class TextFragment extends Fragment {
    */
   public clone(): TextFragment {
     const clone = new TextFragment(this.target.cloneNode(true) as Text);
-    Fragment.FRAGMENT_CACHE.set(clone.getTarget(), clone);
     clone.mounted = false;
     clone.text = this.text;
     clone.contents = this.contents;
@@ -823,7 +850,7 @@ export class TextFragment extends Fragment {
    * @returns 更新のPromise
    */
   public setContent(text: string): Promise<unknown> {
-    if (this.skipMutation || this.text === text || this.parent === null) {
+    if (this.skipMutation || this.text === text) {
       return Promise.resolve();
     }
     this.text = text;
@@ -837,6 +864,11 @@ export class TextFragment extends Fragment {
    * @returns 評価結果のPromise
    */
   public evaluate(): Promise<unknown> {
+    if (this.contents.isRawEvaluate && this.parent === null) {
+      return Promise.reject(
+        new Error('Parent fragment is required for raw evaluation'),
+      );
+    }
     return Queue.enqueue(() => {
       this.skipMutation = true;
       if (this.contents.isRawEvaluate) {
@@ -885,7 +917,6 @@ export class CommentFragment extends Fragment {
    */
   public clone(): Fragment {
     const clone = new CommentFragment(this.target.cloneNode(true) as Comment);
-    Fragment.FRAGMENT_CACHE.set(clone.getTarget(), clone);
     clone.mounted = false;
     clone.text = this.text;
     return clone;
