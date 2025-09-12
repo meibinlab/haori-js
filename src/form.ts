@@ -4,6 +4,7 @@
  * フォームと入力要素の双方向バインディングを実現します。
  */
 
+import Core from './core';
 import Env from './env';
 import {ElementFragment} from './fragment';
 import {Haori} from './haori';
@@ -105,13 +106,14 @@ export class Form {
    * @param form フォームのElementFragment
    * @param values フォームに設定する値のオブジェクト
    * @param force data-form-detach属性があるエレメントにも値を反映するかどうか
+   * @returns Promise（DOMの更新が完了したら解決される）
    */
   public static setValues(
     form: ElementFragment,
     values: Record<string, unknown>,
     force: boolean = false,
-  ): void {
-    Form.setPartValues(form, values, null, force);
+  ): Promise<void> {
+    return Form.setPartValues(form, values, null, force);
   }
 
   /**
@@ -121,13 +123,15 @@ export class Form {
    * @param values フラグメントに設定する値のオブジェクト
    * @param index 配列の場合のインデックス
    * @param force data-form-detach属性があるエレメントにも値を反映するかどうか
+   * @returns Promise（DOMの更新が完了したら解決される）
    */
   private static setPartValues(
     fragment: ElementFragment,
     values: Record<string, unknown>,
     index: number | null = null,
     force: boolean = false,
-  ): void {
+  ): Promise<void> {
+    const promises: Promise<void>[] = [];
     const name = fragment.getAttribute('name');
     const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);
@@ -136,27 +140,29 @@ export class Form {
       if (!detach || force) {
         const value = values[String(name)];
         if (listName && Array.isArray(value) && index !== null) {
-          fragment.setValue(value[index]);
+          promises.push(fragment.setValue(value[index]));
         } else if (
           typeof value === 'string' ||
           typeof value === 'number' ||
           typeof value === 'boolean' ||
           value === null
         ) {
-          fragment.setValue(value);
+          promises.push(fragment.setValue(value));
         } else {
-          fragment.setValue(String(value));
+          promises.push(fragment.setValue(String(value)));
         }
       }
     } else if (objectName) {
       const childValues = values[String(objectName)];
       if (childValues && typeof childValues === 'object') {
         for (const child of fragment.getChildElementFragments()) {
-          Form.setPartValues(
-            child,
-            childValues as Record<string, unknown>,
-            null,
-            force,
+          promises.push(
+            Form.setPartValues(
+              child,
+              childValues as Record<string, unknown>,
+              null,
+              force,
+            ),
           );
         }
       }
@@ -167,22 +173,25 @@ export class Form {
         for (let i = 0; i < children.length; i++) {
           const child = children[i];
           if (childList.length > i) {
-            Form.setPartValues(
-              child,
-              childList[i] as Record<string, unknown>,
-              i,
-              force,
+            promises.push(
+              Form.setPartValues(
+                child,
+                childList[i] as Record<string, unknown>,
+                i,
+                force,
+              ),
             );
           } else {
-            Form.setPartValues(child, {}, i, force);
+            promises.push(Form.setPartValues(child, {}, i, force));
           }
         }
       }
     } else {
       for (const child of fragment.getChildElementFragments()) {
-        Form.setPartValues(child, values, null, force);
+        promises.push(Form.setPartValues(child, values, null, force));
       }
     }
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -190,25 +199,29 @@ export class Form {
    * 値の初期化とメッセージのクリアを行います。
    *
    * @param fragment 対象フラグメント
-   * @returns リセットの完了を示すPromise
+   * @returns すべての初期化処理が完了するPromise
    */
   public static reset(fragment: ElementFragment): Promise<void> {
+    const promises: Promise<void>[] = [];
     Form.clearValues(fragment);
-    const clearMessagePromise = Form.clearMessages(fragment);
-    const resetPromise = Queue.enqueue(() => {
-      const element = fragment.getTarget();
-      if (element instanceof HTMLFormElement) {
-        element.reset();
-      } else {
-        const parent = element.parentElement;
-        const next = element.nextElementSibling;
-        const form = document.createElement('form');
-        form.appendChild(element);
-        form.reset();
-        parent!.insertBefore(element, next);
-      }
-    }) as Promise<void>;
-    return Promise.all([clearMessagePromise, resetPromise]).then(() => void 0);
+    promises.push(Form.clearMessages(fragment));
+    promises.push(
+      Queue.enqueue(() => {
+        const element = fragment.getTarget();
+        if (element instanceof HTMLFormElement) {
+          element.reset();
+        } else {
+          const parent = element.parentElement;
+          const next = element.nextElementSibling;
+          const form = document.createElement('form');
+          form.appendChild(element);
+          form.reset();
+          parent!.insertBefore(element, next);
+        }
+      }) as Promise<void>,
+    );
+    promises.push(Core.evaluateAll(fragment));
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -227,7 +240,7 @@ export class Form {
    * フラグメントとその子要素のメッセージをクリアします。
    *
    * @param fragment 対象フラグメント
-   * @returns すべてのクリア処理が完了するPromise
+   * @returns Promise（メッセージのクリアが完了したら解決される）
    */
   public static clearMessages(fragment: ElementFragment): Promise<void> {
     return Haori.clearMessages(fragment.getTarget()) as Promise<void>;
@@ -239,20 +252,23 @@ export class Form {
    *
    * @param fragment 対象フラグメント
    * @param key キー（ドット区切りの文字列）
-   * @param message 追加するエラーメッセージ
+   * @param message 追加するエラーメッセージ]
+   * @return Promise（メッセージの追加が完了したら解決される）
    */
   public static addErrorMessage(
     fragment: ElementFragment,
     key: string,
     message: string,
-  ): void {
+  ): Promise<void> {
+    const promises: Promise<void>[] = [];
     const targetFragments = Form.findFragmentsByKey(fragment, key);
     targetFragments.forEach(targetFragment => {
-      Haori.addErrorMessage(targetFragment.getTarget(), message);
+      promises.push(Haori.addErrorMessage(targetFragment.getTarget(), message));
     });
     if (targetFragments.length === 0) {
-      Haori.addErrorMessage(fragment.getTarget(), message);
+      promises.push(Haori.addErrorMessage(fragment.getTarget(), message));
     }
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
