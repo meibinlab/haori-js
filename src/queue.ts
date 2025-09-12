@@ -33,6 +33,8 @@ interface QueueItem {
  * キュー内の処理を管理し、順次実行します。
  */
 class AsyncQueue {
+  private readonly MAX_BUDGET = 8; // 1フレームあたりの最大処理時間（ms）
+
   /** キュー内の処理 */
   private readonly queue: QueueItem[] = [];
 
@@ -43,7 +45,7 @@ class AsyncQueue {
    * 処理をキューに追加します
    *
    * @param task 実行する処理
-   * @param
+   * @param prepend trueの場合はキューの先頭に追加、falseの場合は末尾に追加
    * @returns 処理完了Promise
    */
   public enqueue(
@@ -68,7 +70,6 @@ class AsyncQueue {
     } else {
       this.queue.push(item);
     }
-    Log.info('[Haori]', `Task ${item.timestamp} added to queue`);
     this.scheduleProcessing();
     return promise;
   }
@@ -84,17 +85,23 @@ class AsyncQueue {
     }
     this.processing = true;
     try {
-      const item = this.queue.shift();
-      if (!item) {
-        return;
-      }
-      try {
-        const result = await item.task();
-        item.resolve(result);
-        Log.info('[Haori]', `Task ${item.timestamp} completed successfully`);
-      } catch (error) {
-        item.reject(error);
-        Log.error('[Haori]', `Task ${item.timestamp} failed:`, error);
+      const start = performance.now();
+      while (this.queue.length > 0) {
+        const item = this.queue.shift();
+        if (!item) {
+          return;
+        }
+        try {
+          const result = await item.task();
+          item.resolve(result);
+        } catch (error) {
+          item.reject(error);
+          Log.error('[Haori]', `Task ${item.timestamp} failed:`, error);
+        }
+        if (performance.now() - start > this.MAX_BUDGET) {
+          // 1フレームの処理時間を超えたら一旦終了
+          break;
+        }
       }
     } catch (error) {
       Log.error('[Haori]', 'Error processing queue:', error);

@@ -23,52 +23,40 @@ export default class Core {
    * @param element スキャン対象の要素
    */
   public static scan(element: HTMLElement): void {
-    const parent = Fragment.get(element);
-    const childNodes = Array.from(element.childNodes);
-    for (const child of childNodes) {
-      switch (child.nodeType) {
-        case Node.ELEMENT_NODE: {
-          const childElement = child as HTMLElement;
-          const fragment = Fragment.get(child as HTMLElement);
-          parent.pushChild(fragment);
-          const processedAttributes = new Set<string>();
-          for (const suffix of Core.PRIORITY_ATTRIBUTE_SUFFIXES) {
-            // 優先属性の処理
-            const name = Env.prefix + suffix;
-            if (childElement.hasAttribute(name)) {
-              Core.setAttribute(
-                childElement,
-                name,
-                childElement.getAttribute(name),
-              );
-              processedAttributes.add(name);
-            }
-          }
-          for (const name of childElement.getAttributeNames()) {
-            if (processedAttributes.has(name)) {
-              // すでに処理済みの属性はスキップ
-              continue;
-            }
-            const value = childElement.getAttribute(name);
-            if (value) {
-              Core.setAttribute(childElement, name, value);
-            }
-          }
-          Core.scan(child as HTMLElement);
-          break;
-        }
-        case Node.TEXT_NODE: {
-          const fragment = Fragment.get(child as Text);
-          parent.pushChild(fragment);
-          break;
-        }
-        case Node.COMMENT_NODE: {
-          const fragment = Fragment.get(child as Comment);
-          parent.pushChild(fragment);
-          break;
-        }
+    const fragment = Fragment.get(element);
+    if (!fragment) {
+      return;
+    }
+    const processedAttributes = new Set<string>();
+    for (const suffix of Core.PRIORITY_ATTRIBUTE_SUFFIXES) {
+      // 優先属性の処理
+      const name = Env.prefix + suffix;
+      if (fragment.hasAttribute(name)) {
+        Core.setAttribute(
+          fragment.getTarget(),
+          name,
+          fragment.getRawAttribute(name),
+        );
+        processedAttributes.add(name);
       }
     }
+    for (const name of fragment.getAttributeNames()) {
+      if (processedAttributes.has(name)) {
+        // すでに処理済みの属性はスキップ
+        continue;
+      }
+      const value = fragment.getRawAttribute(name);
+      if (value !== null) {
+        Core.setAttribute(fragment.getTarget(), name, value);
+      }
+    }
+    fragment.getChildren().forEach(child => {
+      if (child instanceof ElementFragment) {
+        Core.scan(child.getTarget());
+      } else if (child instanceof TextFragment) {
+        Core.evaluateText(child);
+      }
+    });
   }
 
   /**
@@ -78,12 +66,13 @@ export default class Core {
    * @param element エレメント
    * @param name 属性名
    * @param value 属性値
+   * @returns Promise (DOM操作が完了したときに解決される)
    */
   public static setAttribute(
     element: HTMLElement,
     name: string,
     value: string | null,
-  ): void {
+  ): Promise<void> {
     const fragment = Fragment.get(element);
     switch (name) {
       case `${Env.prefix}bind`: {
@@ -103,10 +92,32 @@ export default class Core {
         break;
     }
     if (value === null) {
-      fragment.removeAttribute(name);
+      return fragment.removeAttribute(name);
     } else {
-      fragment.setAttribute(name, value);
+      return fragment.setAttribute(name, value);
     }
+  }
+
+  /**
+   * エレメントに属性を設定し、評価を行います。
+   *
+   * @param element エレメント
+   * @param name 属性名
+   * @param value 属性値
+   * @returns Promise (DOM操作が完了したときに解決される)
+   */
+  public static setBindingData(
+    element: HTMLElement,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const fragment = Fragment.get(element);
+    fragment.setBindingData(data);
+    const promises: Promise<void>[] = [];
+    promises.push(
+      fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(data)),
+    );
+    promises.push(Core.evaluateAll(fragment));
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -195,13 +206,18 @@ export default class Core {
    *
    * @param element 変更するエレメント
    * @param value 新しい値
+   * @returns Promise (DOM操作が完了したときに解決される)
    */
-  public static changeValue(element: HTMLElement, value: string) {
+  public static changeValue(
+    element: HTMLElement,
+    value: string,
+  ): Promise<void> {
     const fragment = Fragment.get(element);
     if (fragment.getValue() === value) {
-      return;
+      return Promise.resolve();
     }
-    fragment.setValue(value);
+    const promises: Promise<void>[] = [];
+    promises.push(fragment.setValue(value));
     const formFragment = Core.getFormFragment(fragment);
     if (formFragment) {
       const values = Form.getValues(formFragment);
@@ -216,12 +232,9 @@ export default class Core {
       } else {
         bindingData = values;
       }
-      Core.setAttribute(
-        formFragment.getTarget(),
-        `${Env.prefix}form`,
-        JSON.stringify(bindingData),
-      );
+      promises.push(Core.setBindingData(formFragment.getTarget(), bindingData));
     }
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -247,39 +260,45 @@ export default class Core {
    * フラグメントとその子要素を評価します。
    *
    * @param fragment 対象フラグメント
+   * @return Promise (DOM操作が完了したときに解決される)
    */
-  public static evaluateAll(fragment: ElementFragment) {
+  public static evaluateAll(fragment: ElementFragment): Promise<void> {
+    const promises: Promise<void>[] = [];
     if (fragment.hasAttribute(`${Env.prefix}if`)) {
-      Core.evaluateIf(fragment);
+      promises.push(Core.evaluateIf(fragment));
     }
     if (fragment.hasAttribute(`${Env.prefix}each`)) {
-      Core.evaluateEach(fragment);
+      promises.push(Core.evaluateEach(fragment));
     }
     fragment.getChildren().forEach(child => {
       if (child instanceof ElementFragment) {
-        Core.evaluateAll(child);
+        promises.push(Core.evaluateAll(child));
       } else if (child instanceof TextFragment) {
-        Core.evaluateText(child);
+        promises.push(Core.evaluateText(child));
       }
     });
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
    * テキストフラグメントを評価します。
    *
    * @param fragment 対象フラグメント
-   * @returns 評価結果
+   * @returns Promise (DOM操作が完了したときに解決される)
    */
-  public static evaluateText(fragment: TextFragment) {
+  public static evaluateText(fragment: TextFragment): Promise<void> {
     return fragment.evaluate();
   }
 
   /**
    * if要素を評価します。
+   * 値がfalse、null、undefined、NaNの場合は非表示にし、それ以外の場合は表示します。
    *
    * @param fragment 対象フラグメント
+   * @return Promise (DOM操作が完了したときに解決される)
    */
-  public static evaluateIf(fragment: ElementFragment) {
+  public static evaluateIf(fragment: ElementFragment): Promise<void> {
+    const promises: Promise<void>[] = [];
     const condition = fragment.getAttribute(`${Env.prefix}if`);
     if (
       condition === false ||
@@ -288,22 +307,27 @@ export default class Core {
       Number.isNaN(condition)
     ) {
       if (fragment.isVisible()) {
-        fragment.hide();
+        promises.push(fragment.hide());
       }
     } else {
       if (!fragment.isVisible()) {
-        fragment.show();
-        Core.evaluateAll(fragment);
+        promises.push(fragment.show());
+        promises.push(Core.evaluateAll(fragment));
       }
     }
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
    * each要素を評価します。
+   * 非表示または未マウントの場合は処理をスキップします。
    *
    * @param fragment 対象フラグメント
    */
-  public static evaluateEach(fragment: ElementFragment) {
+  public static evaluateEach(fragment: ElementFragment): Promise<void> {
+    if (!fragment.isVisible() || !fragment.isMounted()) {
+      return Promise.resolve();
+    }
     let template = fragment.getTemplate();
     if (template === null) {
       // テンプレートの作成
@@ -331,23 +355,12 @@ export default class Core {
       });
       fragment.setTemplate(template);
     }
-    if (!fragment.isVisible || !fragment.isMounted()) {
-      return;
-    }
     const data = fragment.getAttribute(`${Env.prefix}each`);
-    let keyArg = fragment.getAttribute(`${Env.prefix}each-key`);
-    if (keyArg) {
-      keyArg = String(keyArg);
-    }
-    let indexKey = fragment.getAttribute(`${Env.prefix}each-index`);
-    if (indexKey) {
-      indexKey = String(indexKey);
-    }
     if (!Array.isArray(data)) {
       Log.error('[Haori]', 'Invalid each attribute:', data);
-      return;
+      return Promise.resolve();
     }
-    this.updateDiff(fragment, data);
+    return this.updateDiff(fragment, data);
   }
 
   /**
@@ -359,7 +372,7 @@ export default class Core {
   private static updateDiff(
     parent: ElementFragment,
     newList: (Record<string, unknown> | string | number)[],
-  ) {
+  ): Promise<void> {
     let indexKey = parent.getAttribute(`${Env.prefix}each-index`);
     if (indexKey) {
       indexKey = String(indexKey);
@@ -377,6 +390,7 @@ export default class Core {
         keyDataMap.set(listKey, {item, itemIndex});
       }
     });
+    const promises: Promise<void>[] = [];
     let childElements = parent
       .getChildren()
       .filter(child => child instanceof ElementFragment)
@@ -388,7 +402,7 @@ export default class Core {
     childElements = childElements.filter(child => {
       const index = newKeys.indexOf(String(child.getListKey()));
       if (index === -1) {
-        child.remove();
+        promises.push(child.remove());
         return false;
       }
       return true;
@@ -417,10 +431,13 @@ export default class Core {
         keyArg ? String(keyArg) : null,
         newKey,
       );
-      parent.insertBefore(child, parent.getChildren()[insertIndex] || null);
-      Core.evaluateAll(child);
+      promises.push(
+        parent.insertBefore(child, parent.getChildren()[insertIndex] || null),
+      );
+      promises.push(Core.evaluateAll(child));
       insertIndex++;
     });
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -494,7 +511,7 @@ export default class Core {
       } else {
         Log.error(
           '[Haori]',
-          `Primitive value requires 'each-arg' attribute: ${data}`,
+          `Primitive value requires '${Env.prefix}each-arg' attribute: ${data}`,
         );
         return;
       }

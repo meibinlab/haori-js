@@ -469,7 +469,7 @@ export class ElementFragment extends Fragment {
    * @param value 値
    * @returns エレメントの更新のPromise
    */
-  public setValue(value: string | number | boolean | null): Promise<unknown> {
+  public setValue(value: string | number | boolean | null): Promise<void> {
     if (this.skipChangeValue) {
       return Promise.resolve();
     }
@@ -500,7 +500,7 @@ export class ElementFragment extends Fragment {
         element.dispatchEvent(new Event('change', {bubbles: true}));
       }).finally(() => {
         this.skipChangeValue = false;
-      });
+      }) as Promise<void>;
     } else if (
       element instanceof HTMLInputElement ||
       element instanceof HTMLTextAreaElement ||
@@ -520,7 +520,7 @@ export class ElementFragment extends Fragment {
         element.dispatchEvent(new Event('change', {bubbles: true}));
       }).finally(() => {
         this.skipChangeValue = false;
-      });
+      }) as Promise<void>;
     } else {
       Log.warn(
         '[Haori]',
@@ -586,7 +586,7 @@ export class ElementFragment extends Fragment {
    * @param value 属性値
    * @returns 属性の更新のPromise
    */
-  public setAttribute(name: string, value: string | null): Promise<unknown> {
+  public setAttribute(name: string, value: string | null): Promise<void> {
     if (this.skipMutationAttributes) {
       return Promise.resolve();
     }
@@ -611,7 +611,7 @@ export class ElementFragment extends Fragment {
       }
     }).finally(() => {
       this.skipMutationAttributes = false;
-    });
+    }) as Promise<void>;
   }
 
   /**
@@ -620,7 +620,7 @@ export class ElementFragment extends Fragment {
    * @param name 属性名
    * @returns 属性の削除のPromise
    */
-  public removeAttribute(name: string): Promise<unknown> {
+  public removeAttribute(name: string): Promise<void> {
     if (this.skipMutationAttributes) {
       return Promise.resolve();
     }
@@ -631,7 +631,7 @@ export class ElementFragment extends Fragment {
       element.removeAttribute(name);
     }).finally(() => {
       this.skipMutationAttributes = false;
-    });
+    }) as Promise<void>;
   }
 
   /**
@@ -651,6 +651,29 @@ export class ElementFragment extends Fragment {
       return results[0];
     }
     return TextContents.joinEvaluateResults(results);
+  }
+
+  /**
+   * 属性の生の値を取得します。
+   *
+   * @param name 属性名
+   * @returns 生の属性値
+   */
+  public getRawAttribute(name: string): string | null {
+    const contents = this.attributeMap.get(name);
+    if (contents === undefined) {
+      return null;
+    }
+    return contents.getValue();
+  }
+
+  /**
+   * 属性名のリストを取得します。
+   *
+   * @return 属性名のリスト
+   */
+  public getAttributeNames(): string[] {
+    return Array.from(this.attributeMap.keys());
   }
 
   /**
@@ -674,7 +697,7 @@ export class ElementFragment extends Fragment {
   public insertBefore(
     newChild: Fragment,
     referenceChild: Fragment | null,
-  ): Promise<unknown> {
+  ): Promise<void> {
     if (this.skipMutationNodes) {
       return Promise.resolve();
     }
@@ -731,7 +754,7 @@ export class ElementFragment extends Fragment {
       );
     }).finally(() => {
       this.skipMutationNodes = prevSkip;
-    });
+    }) as Promise<void>;
   }
 
   /**
@@ -744,7 +767,7 @@ export class ElementFragment extends Fragment {
   public insertAfter(
     newChild: Fragment,
     referenceChild: Fragment | null,
-  ): Promise<unknown> {
+  ): Promise<void> {
     if (referenceChild == null) {
       return this.insertBefore(newChild, null);
     }
@@ -849,7 +872,7 @@ export class TextFragment extends Fragment {
    * @param text テキスト
    * @returns 更新のPromise
    */
-  public setContent(text: string): Promise<unknown> {
+  public setContent(text: string): Promise<void> {
     if (this.skipMutation || this.text === text) {
       return Promise.resolve();
     }
@@ -863,7 +886,7 @@ export class TextFragment extends Fragment {
    *
    * @returns 評価結果のPromise
    */
-  public evaluate(): Promise<unknown> {
+  public evaluate(): Promise<void> {
     if (this.contents.isRawEvaluate && this.parent === null) {
       return Promise.reject(
         new Error('Parent fragment is required for raw evaluation'),
@@ -884,7 +907,7 @@ export class TextFragment extends Fragment {
       }
     }).finally(() => {
       this.skipMutation = false;
-    });
+    }) as Promise<void>;
   }
 }
 
@@ -937,7 +960,7 @@ export class CommentFragment extends Fragment {
    * @param text テキスト
    * @return 更新のPromise
    */
-  public setContent(text: string): Promise<unknown> {
+  public setContent(text: string): Promise<void> {
     if (this.skipMutation || this.text === text) {
       return Promise.resolve();
     }
@@ -947,7 +970,7 @@ export class CommentFragment extends Fragment {
       this.target.textContent = this.text;
     }).finally(() => {
       this.skipMutation = false;
-    });
+    }) as Promise<void>;
   }
 }
 
