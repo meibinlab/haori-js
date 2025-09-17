@@ -137,7 +137,7 @@ export default class Procedure {
         const response = new Response();
         response.headers.set('Content-Type', 'application/json');
         response.json = async () => {
-          return this.options.data ? this.options.data : {};
+          return this.options.data ?? {};
         };
         return this.handleFetchResult(response);
       }

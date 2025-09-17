@@ -358,7 +358,7 @@ export default class Core {
     const data = fragment.getAttribute(`${Env.prefix}each`);
     if (!Array.isArray(data)) {
       Log.error('[Haori]', 'Invalid each attribute:', data);
-      return Promise.resolve();
+      return Promise.reject(new Error('Invalid each attribute.'));
     }
     return this.updateDiff(fragment, data);
   }
