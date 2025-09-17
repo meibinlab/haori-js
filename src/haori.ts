@@ -48,14 +48,14 @@ export class Haori {
    *
    * @param element 開くダイアログのHTML要素
    */
-  public static openDialog(element: HTMLElement): Promise<unknown> {
+  public static openDialog(element: HTMLElement): Promise<void> {
     return Queue.enqueue(() => {
       if (element instanceof HTMLDialogElement) {
         element.showModal();
       } else {
         Log.error('[Haori]', 'Element is not a dialog: ', element);
       }
-    }, true);
+    }, true) as Promise<void>;
   }
 
   /**
@@ -63,14 +63,14 @@ export class Haori {
    *
    * @param element 閉じるダイアログのHTML要素
    */
-  public static closeDialog(element: HTMLElement): Promise<unknown> {
+  public static closeDialog(element: HTMLElement): Promise<void> {
     return Queue.enqueue(() => {
       if (element instanceof HTMLDialogElement) {
         element.close();
       } else {
         Log.error('[Haori]', 'Element is not a dialog: ', element);
       }
-    }, true);
+    }, true) as Promise<void>;
   }
 
   /**
@@ -82,10 +82,10 @@ export class Haori {
   public static addErrorMessage(
     target: HTMLElement | HTMLFormElement,
     message: string,
-  ): Promise<unknown> {
+  ): Promise<void> {
     return Queue.enqueue(() => {
       target.parentElement?.setAttribute('data-message', message);
-    }, true);
+    }, true) as Promise<void>;
   }
 
   /**
@@ -93,12 +93,12 @@ export class Haori {
    *
    * @param parent メッセージをクリアする親要素
    */
-  public static clearMessages(parent: HTMLElement): Promise<unknown> {
+  public static clearMessages(parent: HTMLElement): Promise<void> {
     return Queue.enqueue(() => {
       parent.removeAttribute('data-message');
       parent.querySelectorAll('[data-message]').forEach(element => {
         element.removeAttribute('data-message');
       });
-    }, true);
+    }, true) as Promise<void>;
   }
 }
