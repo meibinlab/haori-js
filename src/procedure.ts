@@ -5,7 +5,6 @@
  */
 
 import Core from './core';
-import Env from './env';
 import {ElementFragment} from './fragment';
 import {Haori} from './haori';
 import Log from './log';
@@ -36,105 +35,123 @@ export interface AfterCallbackResult {
 }
 
 /**
+ * Procedureクラスのオプションインターフェース。
+ */
+export interface ProcedureOptions {
+  /** バリデーションを行うかどうか */
+  valid?: boolean;
+
+  /** 確認メッセージ */
+  confirmMessage?: string | null;
+
+  /** 送信もしくは受信データ */
+  data?: Record<string, unknown> | null;
+
+  /** フェッチ前実行スクリプト */
+  beforeCallback?: (
+    fetchUrl: string | null,
+    fetchOptions: RequestInit | null,
+  ) => BeforeCallbackResult | boolean | void;
+
+  /** 対象フォームフラグメント */
+  formFragment?: ElementFragment | null;
+
+  /** フェッチURL */
+  fetchUrl?: string | null;
+
+  /** フェッチオプション */
+  fetchOptions?: RequestInit | null;
+
+  /** フェッチ後実行スクリプト */
+  afterCallback?: (
+    response: Response | Record<string, unknown>,
+  ) => AfterCallbackResult | boolean | void;
+
+  /** バインド対象フラグメント */
+  bindFragments?: ElementFragment[] | null;
+
+  /** レスポンスデータから抽出するパラメータ名のリスト */
+  bindParams?: string[] | null;
+
+  /** レスポンスデータをバインドする際のキー名 */
+  bindArg?: string | null;
+
+  /** 値を変更するフラグメント */
+  adjustFragments?: ElementFragment[] | null;
+
+  /** 変更する値の増減値 */
+  adjustValue?: number | null;
+}
+
+/**
  * 手続き的処理管理クラスです。
  */
 export default class Procedure {
-  /** バリデーションを行うかどうか */
-  private valid = false;
+  /** オプション */
+  private readonly options: ProcedureOptions;
 
-  /** 確認メッセージ */
-  private confirmMessage: string | null = null;
+  /**
+   * Procedureクラスのコンストラクタです。
+   *
+   * @param options オプション
+   */
+  constructor(options: ProcedureOptions = {}) {
+    this.options = options;
+  }
 
-  /** 送信もしくは受信データ */
-  private data: Record<string, unknown> | null = null;
-
-  /** フェッチ前実行スクリプト */
-  private beforeCallback:
-    | ((
-        fetchUrl: string | null,
-        fetchOptions: RequestInit | null,
-      ) => BeforeCallbackResult | boolean | void)
-    | null = null;
-
-  /** 対象フォームフラグメント */
-  private formFragment: ElementFragment;
-
-  /** フェッチURL */
-  private fetchUrl: string | null = null;
-
-  /** フェッチオプション */
-  private fetchOptions: RequestInit | null = null;
-
-  /** フェッチ後実行スクリプト */
-  private afterCallback:
-    | ((
-        response: Response | Record<string, unknown>,
-      ) => AfterCallbackResult | boolean | void)
-    | null = null;
-
-  /** バインド対象フラグメント */
-  private bindFragments: ElementFragment[] | null = null;
-
-  /** レスポンスデータから抽出するパラメータ名のリスト */
-  private bindParams: string[] | null = null;
-
-  /** レスポンスデータをバインドする際のキー名 */
-  private bindArg: string | null = null;
-
-  /** 値を変更するフラグメント */
-  private adjustFragments: ElementFragment[] | null = null;
-
-  /** 変更する値の増減値 */
-  private adjustValue: number | null = null;
-
-  async run(): Promise<void> {
-    if (this.formFragment && this.validate(this.formFragment) === false) {
-      return;
+  run(): Promise<void> {
+    if (
+      this.options.formFragment &&
+      this.validate(this.options.formFragment) === false
+    ) {
+      return Promise.resolve();
     }
-    const confirmed = await this.confirm();
-    if (!confirmed) {
-      return;
-    }
-    let fetchUrl = this.fetchUrl;
-    let fetchOptions = this.fetchOptions;
-    if (this.beforeCallback) {
-      const result = this.beforeCallback(fetchUrl, fetchOptions);
-      if (result === false) {
-        return;
+    return this.confirm().then(confirmed => {
+      if (!confirmed) {
+        return Promise.resolve();
       }
-      if (typeof result === 'object') {
-        fetchUrl = ('fetchUrl' in result ? result.fetchUrl : fetchUrl) as
-          | string
-          | null;
-        fetchOptions = (
-          'fetchOptions' in result ? result.fetchOptions : fetchOptions
-        ) as RequestInit | null;
+      let fetchUrl = this.options.fetchUrl;
+      let fetchOptions = this.options.fetchOptions;
+      if (this.options.beforeCallback) {
+        const result = this.options.beforeCallback(
+          fetchUrl || null,
+          fetchOptions || null,
+        );
+        if (result === false || (typeof result === 'object' && result.stop)) {
+          return Promise.resolve();
+        }
+        if (typeof result === 'object') {
+          fetchUrl = ('fetchUrl' in result ? result.fetchUrl : fetchUrl) as
+            | string
+            | null;
+          fetchOptions = (
+            'fetchOptions' in result ? result.fetchOptions : fetchOptions
+          ) as RequestInit | null;
+        }
       }
-    }
-    if (fetchUrl) {
-      fetch(fetchUrl, fetchOptions ? fetchOptions : undefined).then(
-        async response => {
-          await this.handleFetchResult(response);
-        },
-      );
-    } else {
-      const response = new Response();
-      response.headers.set('Content-Type', 'application/json');
-      response.json = async () => {
-        return this.data ? this.data : {};
-      };
-      await this.handleFetchResult(response);
-    }
+      if (fetchUrl) {
+        return fetch(fetchUrl, fetchOptions || undefined).then(response => {
+          return this.handleFetchResult(response);
+        });
+      } else {
+        const response = new Response();
+        response.headers.set('Content-Type', 'application/json');
+        response.json = async () => {
+          return this.options.data ? this.options.data : {};
+        };
+        return this.handleFetchResult(response);
+      }
+    });
   }
 
   /**
    * フェッチ後の処理を実行します。
    */
-  private async handleFetchResult(response: Response): Promise<void> {
-    if (this.afterCallback) {
-      const result = this.afterCallback(response);
-      if (result === false) {
-        return;
+  private handleFetchResult(response: Response): Promise<void> {
+    if (this.options.afterCallback) {
+      const result = this.options.afterCallback(response);
+      if (result === false || (typeof result === 'object' && result.stop)) {
+        return Promise.resolve();
       }
       if (typeof result === 'object' && 'response' in result) {
         response = (
@@ -142,8 +159,10 @@ export default class Procedure {
         ) as Response;
       }
     }
-    await this.bindResult(response);
-    await this.adjust();
+    const promises: Promise<void>[] = [];
+    promises.push(this.bindResult(response));
+    promises.push(this.adjust());
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -154,7 +173,7 @@ export default class Procedure {
    * @returns バリデーション結果（true: 成功, false: 失敗）
    */
   validate(fragment: ElementFragment): boolean {
-    if (this.valid === false) {
+    if (this.options.valid === false) {
       return true;
     }
     const target = fragment.getTarget();
@@ -199,10 +218,13 @@ export default class Procedure {
    * @returns ユーザーの確認結果を含むPromise（true: 確認, false: キャンセル）
    */
   private confirm(): Promise<boolean> {
-    if (this.confirmMessage === null) {
+    if (
+      this.options.confirmMessage === null ||
+      this.options.confirmMessage === undefined
+    ) {
       return Promise.resolve(true);
     }
-    return Haori.confirm(this.confirmMessage);
+    return Haori.confirm(this.options.confirmMessage);
   }
 
   /**
@@ -210,58 +232,67 @@ export default class Procedure {
    *
    * @param response フェッチのレスポンスオブジェクト
    */
-  private async bindResult(response: Response): Promise<void> {
-    let data: Record<string, unknown> | string | null = null;
-    if (!this.bindFragments || this.bindFragments.length === 0) {
-      return;
+  private bindResult(response: Response): Promise<void> {
+    if (
+      !this.options.bindFragments ||
+      this.options.bindFragments.length === 0
+    ) {
+      return Promise.resolve();
     }
-    if (response.headers.get('Content-Type')?.includes('application/json')) {
-      data = await response.json();
-    } else {
-      data = await response.text();
-    }
-    if (this.bindParams) {
-      const newData = {} as Record<string, unknown>;
-      this.bindParams.forEach(param => {
-        if (data && typeof data === 'object' && param in data) {
-          newData[param] = data[param];
-        }
-      });
-      data = newData;
-    }
-    if (this.bindArg) {
-      this.bindFragments.forEach(fragment => {
-        const bindingData = fragment.getBindingData();
-        bindingData[this.bindArg as string] = data;
-        Core.setAttribute(
-          fragment.getTarget(),
-          `${Env.prefix}-bind`,
-          JSON.stringify(bindingData),
+    const promise = response.headers
+      .get('Content-Type')
+      ?.includes('application/json')
+      ? response.json()
+      : response.text();
+    return promise.then(data => {
+      if (this.options.bindParams) {
+        const newData = {} as Record<string, unknown>;
+        this.options.bindParams.forEach(param => {
+          if (data && typeof data === 'object' && param in data) {
+            newData[param] = data[param];
+          }
+        });
+        data = newData;
+      }
+      const promises: Promise<void>[] = [];
+      if (this.options.bindArg) {
+        this.options.bindFragments!.forEach(fragment => {
+          const bindingData = fragment.getBindingData();
+          bindingData[this.options.bindArg as string] = data;
+          promises.push(Core.setBindingData(fragment.getTarget(), bindingData));
+        });
+      } else if (typeof data === 'string') {
+        Log.error('Haori', 'string data cannot be bound without a bindArg.');
+        return Promise.reject(
+          new Error('string data cannot be bound without a bindArg.'),
         );
-      });
-    } else if (typeof data === 'string') {
-      Log.error('Haori', 'string data cannot be bound without a bindArg.');
-      return;
-    } else {
-      this.bindFragments.forEach(fragment => {
-        fragment.setBindingData(data as Record<string, unknown>);
-        Core.setAttribute(
-          fragment.getTarget(),
-          `${Env.prefix}-bind`,
-          JSON.stringify(data),
-        );
-      });
-    }
+      } else {
+        this.options.bindFragments!.forEach(fragment => {
+          promises.push(
+            Core.setBindingData(
+              fragment.getTarget(),
+              data as Record<string, unknown>,
+            ),
+          );
+        });
+      }
+      return Promise.all(promises).then(() => undefined);
+    });
   }
 
   /**
    * 値の増減を行います。
    */
-  private async adjust(): Promise<void> {
-    if (!this.adjustFragments || this.adjustFragments.length === 0) {
-      return;
+  private adjust(): Promise<void> {
+    if (
+      !this.options.adjustFragments ||
+      this.options.adjustFragments.length === 0
+    ) {
+      return Promise.resolve();
     }
-    for (const fragment of this.adjustFragments) {
+    const adjustValue = this.options.adjustValue ?? 0;
+    const promises: Promise<void>[] = [];
+    for (const fragment of this.options.adjustFragments) {
       let valueString = fragment.getValue();
       if (
         valueString === null ||
@@ -274,8 +305,9 @@ export default class Procedure {
       if (isNaN(value)) {
         value = 0;
       }
-      value += this.adjustValue as number;
-      await fragment.setValue(String(value));
+      value += adjustValue;
+      promises.push(fragment.setValue(String(value)));
     }
+    return Promise.all(promises).then(() => undefined);
   }
 }
