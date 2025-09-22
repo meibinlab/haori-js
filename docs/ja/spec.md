@@ -981,13 +981,12 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
 
 ---
 
-## 5.3 `data-row` による行バインディング
+## 5.3 `data-list` による行バインディング
 
-`data-each` 属性によって繰り返し描画される要素の中で、各行を構成する要素には自動的に `data-row` 属性が付与されます。これは、フォームとの双方向バインディングにおいて、**1行分の入力項目をひとまとまりのオブジェクトとして扱うためのマーカー**として使用されます。
+`data-list` 属性によって繰り返し描画される要素は、フォームとの双方向バインディングにおいて、配列としてマッピングされます。
 
 ### 特徴
 
-- `data-each` の対象が配列である場合、その配列の各要素ごとに `data-row` を持つノードが複製されます。
 - 行内に含まれる `input` や `select` などのフォーム要素は、`name` 属性に基づいてオブジェクト形式でバインディングされます。
 - 各行の `data-bind` は、その行に対応する配列要素の内容（オブジェクト）になります。
 
@@ -997,7 +996,7 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
 
 ```html
 <form data-bind='{"list":[{"id":1,"name":"山田"},{"id":2,"name":"佐藤"}]}'>
-  <div data-each="list">
+  <div data-each="list" data-list="list">
     <div>
       <input name="id" />
       <input name="name" />
@@ -1012,7 +1011,7 @@ Haori では、`form` 要素の中にさらに `data-bind` が存在する場合
 
 ```html
 <form data-bind='{"list":[{"id":1,"name":"山田"},{"id":2,"name":"佐藤"}]}'>
-  <div data-each="list">
+  <div data-each="list" data-list="list">
     <div data-row data-bind='{"id":1,"name":"山田"}'>
       <input name="id" value="1" />
       <input name="name" value="山田" />

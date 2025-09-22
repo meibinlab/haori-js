@@ -346,4 +346,24 @@ export default class Form {
     }
     return results;
   }
+
+  /**
+   * 対象のフラグメントがフォームフラグメントであればそれを返し、
+   * そうでなければ先祖要素をたどってフォームフラグメントを探します。
+   *
+   * @param fragment
+   */
+  public static getFormFragment(
+    fragment: ElementFragment,
+  ): ElementFragment | null {
+    const element = fragment.getTarget();
+    if (element instanceof HTMLFormElement) {
+      return fragment;
+    }
+    const parent = fragment.getParent();
+    if (parent) {
+      return this.getFormFragment(parent);
+    }
+    return null;
+  }
 }

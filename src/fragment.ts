@@ -7,6 +7,7 @@
 import Queue from './queue';
 import Log from './log';
 import Expression from './expression';
+import Env from './env';
 
 /**
  * 仮想DOMのフラグメントの抽象クラス。
@@ -811,6 +812,7 @@ export class ElementFragment extends Fragment {
     this.visible = false;
     this.display = this.getTarget().style.display;
     this.getTarget().style.display = 'none';
+    this.getTarget().setAttribute(`${Env.prefix}if-false`, '');
     const promises = this.children.map(child => child.unmount());
     return Promise.all(promises).then(() => undefined);
   }
@@ -823,6 +825,7 @@ export class ElementFragment extends Fragment {
   public show(): Promise<void> {
     const promises = this.children.map(child => child.mount());
     this.getTarget().style.display = this.display ?? '';
+    this.getTarget().removeAttribute(`${Env.prefix}if-false`);
     this.visible = true;
     return Promise.all(promises).then(() => undefined);
   }

@@ -139,7 +139,9 @@ export default class Procedure {
         if (formSelector) {
           const formElement = document.body.querySelector(formSelector);
           if (formElement !== null) {
-            options.formFragment = Fragment.get(formElement) as ElementFragment;
+            options.formFragment = Form.getFormFragment(
+              Fragment.get(formElement) as ElementFragment,
+            );
           } else {
             Log.error(
               'Haori',
@@ -214,6 +216,16 @@ ${body}
         'Content-Type': fragment.getAttribute(
           `${Env.prefix}${event ? '-' + event : ''}-fetch-content-type`,
         ) as string,
+      };
+    } else if (
+      fetchOptions.method &&
+      fetchOptions.method !== 'GET' &&
+      fetchOptions.method !== 'HEAD' &&
+      fetchOptions.method !== 'OPTIONS'
+    ) {
+      fetchOptions.headers = {
+        ...fetchOptions.headers,
+        'Content-Type': 'application/json',
       };
     }
     if (Object.keys(fetchOptions).length > 0) {
