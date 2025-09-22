@@ -6,7 +6,7 @@
 
 import Core from './core';
 import Env from './env';
-import {Form} from './form';
+import Form from './form';
 import Fragment, {ElementFragment} from './fragment';
 import Haori from './haori';
 import Log from './log';
