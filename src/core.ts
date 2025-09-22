@@ -8,6 +8,7 @@ import Env from './env';
 import Form from './form';
 import Fragment, {ElementFragment, TextFragment} from './fragment';
 import Log from './log';
+import Procedure from './procedure';
 
 /**
  * アプリケーションの中心的な制御を行うクラスです。
@@ -17,46 +18,80 @@ export default class Core {
   /** 優先処理する属性のサフィックス（処理順序で定義） */
   private static readonly PRIORITY_ATTRIBUTE_SUFFIXES = ['bind', 'if', 'each'];
 
+  /** 遅延処理する属性のサフィックス */
+  private static readonly DEFERRED_ATTRIBUTE_SUFFIXES = ['fetch'];
+
+  /**
+   * 遅延属性かどうか（完全名で判定）を判定します。
+   *
+   * @param name 属性名
+   * @returns 遅延属性かどうか
+   */
+  private static isDeferredAttributeName(name: string): boolean {
+    return Core.DEFERRED_ATTRIBUTE_SUFFIXES.some(
+      suffix => name === `${Env.prefix}${suffix}`,
+    );
+  }
+
   /**
    * 指定された要素と、その子要素をスキャンし、Fragmentを生成します。
    *
    * @param element スキャン対象の要素
+   * @returns Promise (スキャンが完了したときに解決される)
    */
-  public static scan(element: HTMLElement): void {
+  public static scan(element: HTMLElement): Promise<void> {
     const fragment = Fragment.get(element);
     if (!fragment) {
-      return;
+      return Promise.resolve();
     }
+    const promises: Promise<void>[] = [];
     const processedAttributes = new Set<string>();
     for (const suffix of Core.PRIORITY_ATTRIBUTE_SUFFIXES) {
       // 優先属性の処理
       const name = Env.prefix + suffix;
       if (fragment.hasAttribute(name)) {
-        Core.setAttribute(
-          fragment.getTarget(),
-          name,
-          fragment.getRawAttribute(name),
+        promises.push(
+          Core.setAttribute(
+            fragment.getTarget(),
+            name,
+            fragment.getRawAttribute(name),
+          ),
         );
         processedAttributes.add(name);
       }
     }
     for (const name of fragment.getAttributeNames()) {
-      if (processedAttributes.has(name)) {
-        // すでに処理済みの属性はスキップ
+      if (processedAttributes.has(name) || Core.isDeferredAttributeName(name)) {
+        // すでに処理済みもしくは遅延処理の属性はスキップ
         continue;
       }
       const value = fragment.getRawAttribute(name);
       if (value !== null) {
-        Core.setAttribute(fragment.getTarget(), name, value);
+        promises.push(Core.setAttribute(fragment.getTarget(), name, value));
+      }
+    }
+    for (const suffix of Core.DEFERRED_ATTRIBUTE_SUFFIXES) {
+      // 遅延属性の処理
+      const name = Env.prefix + suffix;
+      if (fragment.hasAttribute(name)) {
+        promises.push(
+          Core.setAttribute(
+            fragment.getTarget(),
+            name,
+            fragment.getRawAttribute(name),
+          ),
+        );
+        processedAttributes.add(name);
       }
     }
     fragment.getChildren().forEach(child => {
       if (child instanceof ElementFragment) {
-        Core.scan(child.getTarget());
+        promises.push(Core.scan(child.getTarget()));
       } else if (child instanceof TextFragment) {
-        Core.evaluateText(child);
+        promises.push(Core.evaluateText(child));
       }
     });
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -74,6 +109,7 @@ export default class Core {
     value: string | null,
   ): Promise<void> {
     const fragment = Fragment.get(element);
+    const promises: Promise<void>[] = [];
     switch (name) {
       case `${Env.prefix}bind`: {
         if (value === null) {
@@ -81,21 +117,25 @@ export default class Core {
         } else {
           fragment.setBindingData(Core.parseDataBind(value));
         }
-        Core.evaluateAll(fragment);
+        promises.push(Core.evaluateAll(fragment));
         break;
       }
       case `${Env.prefix}if`:
-        Core.evaluateIf(fragment);
+        promises.push(Core.evaluateIf(fragment));
         break;
       case `${Env.prefix}each`:
-        Core.evaluateEach(fragment);
+        promises.push(Core.evaluateEach(fragment));
+        break;
+      case `${Env.prefix}fetch`:
+        promises.push(new Procedure(fragment, null).run());
         break;
     }
     if (value === null) {
-      return fragment.removeAttribute(name);
+      promises.push(fragment.removeAttribute(name));
     } else {
-      return fragment.setAttribute(name, value);
+      promises.push(fragment.setAttribute(name, value));
     }
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**

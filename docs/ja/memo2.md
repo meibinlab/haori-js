@@ -48,7 +48,7 @@ data-url-param: URLのパラメータをバインドする。
 
 data-url-arg: URLパラメータをバインドするパラメータ名。
 
-## 以下、???の部分には、click、change、load、scrollが入り、それぞれにイベント発生時に動作する。
+## 以下、???の部分には、click、change、loadが入り、それぞれにイベント発生時に動作する。
 
 data-???-validate: フォームバリデーションを行う。バリデーションに成功した場合のみ処理を継続する
 

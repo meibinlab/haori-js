@@ -5,6 +5,7 @@
  * MutationObserverを使用して、属性の変更、ノードの追加・削除、テキストノードの変更を監視します。
  */
 import Core from './core';
+import EventDispatcher from './event_dispatcher';
 import Log from './log';
 
 /**
@@ -29,6 +30,7 @@ export class Observer {
     }
     Observer.observe(document.head);
     Observer.observe(document.body);
+    new EventDispatcher().start();
   }
 
   /**
