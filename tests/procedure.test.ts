@@ -103,7 +103,7 @@ describe('Procedureクラス', () => {
   it('validateOneは非input要素でtrueを返す', () => {
     const fragment = new MockFragment();
     fragment.setTarget(document.createElement('div'));
-    const proc = new Procedure();
+    const proc = new Procedure({});
     expect(proc['validateOne'](fragment as unknown as ElementFragment)).toBe(
       true,
     );
