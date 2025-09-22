@@ -5,17 +5,45 @@ import Queue from './queue';
  * Haoriクラスは、アプリケーション全体で使用されるユーティリティメソッドを提供します。
  * 挙動を変更する場合は必要に応じてオーバライドしてください。
  */
-export class Haori {
+export default class Haori {
   /**
-   * アラートダイアログを表示します。
+   * 通知ダイアログを表示します。
    *
-   * @param message アラートメッセージ
-   * @returns アラートが閉じられると解決されるPromise
+   * @param message 表示メッセージ
+   * @returns 通知が閉じられると解決されるPromise
    */
-  public static alert(message: string): Promise<void> {
+  public static dialog(message: string): Promise<void> {
     return Queue.enqueue(() => {
       window.alert(message);
     }, true) as Promise<void>;
+  }
+
+  /**
+   * 通知トーストを表示します。
+   *
+   * @param message 表示メッセージ
+   * @param level メッセージのレベル（'info' | 'warning' | 'error'）
+   * @return 通知が表示されると解決されるPromise
+   */
+  public static async toast(
+    message: string,
+    level: 'info' | 'warning' | 'error',
+  ): Promise<void> {
+    const toast = document.createElement('div');
+    toast.className = `haori-toast haori-toast-${level}`;
+    toast.textContent = message;
+    toast.setAttribute('popover', 'manual');
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toast);
+    toast.showPopover();
+    setTimeout(() => {
+      try {
+        toast.hidePopover();
+      } finally {
+        toast.remove();
+      }
+    }, 3000);
   }
 
   /**
@@ -28,19 +56,6 @@ export class Haori {
     return Queue.enqueue(() => {
       return window.confirm(message);
     }, true) as Promise<boolean>;
-  }
-
-  /**
-   * 通知メッセージを表示します。
-   *
-   * @param message 通知メッセージ
-   * @param level メッセージのレベル（'info' | 'warning' | 'error'）
-   */
-  public static message(
-    message: string,
-    level: 'info' | 'warning' | 'error',
-  ): Promise<void> {
-    return Haori.alert(`[${level.toUpperCase()}] ${message}`);
   }
 
   /**

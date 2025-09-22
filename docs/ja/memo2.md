@@ -68,9 +68,9 @@ data-???-fetch: 属性値をURLとし、レスポンスを当該エレメント�
 
 data-???-fetch-method: HTTPメソッド。省略時はGETとする。
 
-data-???-fetch-content-type: Content-Typeヘッダに指定する値。省略時はメソッドがGET、OPTIONS、HEADの場合はapplication/x-www-form-urlencoded、それ以外の場合はapplication/jsonとする。
-
 data-???-fetch-headers: リクエストヘッダに設定する値。JSONもしくはリクエストパラメータ形式とする。
+
+data-???-fetch-content-type: Content-Typeヘッダに指定する値。省略時はメソッドがGET、OPTIONS、HEADの場合はapplication/x-www-form-urlencoded、それ以外の場合はapplication/jsonとする。
 
 data-???-bind: データをバインドするセレクタ。
 
@@ -80,9 +80,9 @@ data-???-bind-params: データのバインド対象となるパラメータ名�
 
 data-???-after-run: 処理が成功した場合にスクリプトを実行する。戻り値がfalseの場合は以後の処理を停止する。
 
-data-???-alert: 処理が成功した場合にアラートメッセージを表示する。
+data-???-dialog: 処理が成功した場合にダイアログメッセージを表示する。
 
-data-???-message: 処理が成功した場合にトースト等のメッセージを表示する。
+data-???-toast: 処理が成功した場合にトースト等のメッセージを表示する。
 
 data-???-reset: CSSセレクタを指定する。対象および含まれるエレメントをリセットする。値の初期化、data-eachによる複製の削除。メッセージの除去。
 
@@ -96,7 +96,7 @@ data-???-open: 対象のダイアログを成功するとCSSセレクタで指�
 
 data-???-close: 対象のダイアログを成功するとCSSセレクタで指定する。処理が成功した場合にダイアログを閉じる。
 
-data-???-redirect: 処理が成功した場合に属性値のURLにリダイレクトします。data-???-alertが存在する場合はアラートが閉じられてから動作します。
+data-???-redirect: 処理が成功した場合に属性値のURLにリダイレクトします。data-???-dialogが存在する場合はダイアログが閉じられてから動作します。
 
 ## イベント属性の処理順序
 
@@ -112,5 +112,5 @@ data-???-redirect: 処理が成功した場合に属性値のURLにリダイレ�
 10. data-???-refetch: 再フェッチ実行
 11. data-???-click: クリック実行
 12. data-???-open / data-???-close: ダイアログ操作
-13. data-???-alert / data-???-message: メッセージ表示
+13. data-???-dialog / data-???-toast: メッセージ表示
 14. data-???-redirect: リダイレクト実行（最後に実行）

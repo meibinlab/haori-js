@@ -1,7 +1,7 @@
 import {describe, it, beforeEach, expect, vi} from 'vitest';
 import Procedure from '../src/procedure';
 import Core from '../src/core';
-import {Haori} from '../src/haori';
+import Haori from '../src/haori';
 import type {ElementFragment} from '../src/fragment';
 
 vi.mock('../src/core');
@@ -35,6 +35,7 @@ describe('Procedureクラス', () => {
     fragment.setTarget(input);
     const proc = new Procedure({
       formFragment: fragment as unknown as ElementFragment,
+      valid: true,
     });
     await expect(proc.run()).resolves.toBeUndefined();
     expect(input.focus).toHaveBeenCalled();
@@ -109,7 +110,7 @@ describe('Procedureクラス', () => {
   });
 
   it('confirmはメッセージがなければtrueを返す', async () => {
-    const proc = new Procedure();
+    const proc = new Procedure({});
     await expect(proc['confirm']()).resolves.toBe(true);
   });
 });

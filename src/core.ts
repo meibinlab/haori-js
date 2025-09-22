@@ -126,7 +126,7 @@ export default class Core {
    * @param data data-bind 属性の値
    * @returns パースされたデータオブジェクト
    */
-  private static parseDataBind(data: string): Record<string, unknown> {
+  public static parseDataBind(data: string): Record<string, unknown> {
     if (data.startsWith('{') || data.startsWith('[')) {
       // JSONとしてパース
       try {

@@ -5,8 +5,10 @@
  */
 
 import Core from './core';
-import {ElementFragment} from './fragment';
-import {Haori} from './haori';
+import Env from './env';
+import {Form} from './form';
+import Fragment, {ElementFragment} from './fragment';
+import Haori from './haori';
 import Log from './log';
 
 /**
@@ -62,11 +64,6 @@ export interface ProcedureOptions {
   /** フェッチオプション */
   fetchOptions?: RequestInit | null;
 
-  /** フェッチ後実行スクリプト */
-  afterCallback?: (
-    response: Response | Record<string, unknown>,
-  ) => AfterCallbackResult | boolean | void;
-
   /** バインド対象フラグメント */
   bindFragments?: ElementFragment[] | null;
 
@@ -76,30 +73,277 @@ export interface ProcedureOptions {
   /** レスポンスデータをバインドする際のキー名 */
   bindArg?: string | null;
 
+  /** フェッチ後実行スクリプト */
+  afterCallback?: (
+    response: Response | Record<string, unknown>,
+  ) => AfterCallbackResult | boolean | void;
+
   /** 値を変更するフラグメント */
   adjustFragments?: ElementFragment[] | null;
 
   /** 変更する値の増減値 */
   adjustValue?: number | null;
+
+  /** リセットするフラグメント */
+  resetFragments?: ElementFragment[] | null;
+
+  /** 再フェッチするフラグメント */
+  refetchFragments?: ElementFragment[] | null;
+
+  /** クリックするフラグメント */
+  clickFragments?: ElementFragment[] | null;
+
+  /** ダイアログを開くフラグメント */
+  openFragments?: ElementFragment[] | null;
+
+  /** ダイアログを閉じるフラグメント */
+  closeFragments?: ElementFragment[] | null;
+
+  /** ダイアログメッセージ */
+  dialogMessage?: string | null;
+
+  /** トーストメッセージ */
+  toastMessage?: string | null;
+
+  /** リダイレクトURL */
+  redirectUrl?: string | null;
 }
 
 /**
  * 手続き的処理管理クラスです。
  */
 export default class Procedure {
+  private static buildOptions(
+    fragment: ElementFragment,
+    event: string | null,
+  ): ProcedureOptions {
+    const options: ProcedureOptions = {};
+    if (event) {
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-valid`)) {
+        options.valid = true;
+      }
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-confirm`)) {
+        options.confirmMessage = fragment.getAttribute(
+          `${Env.prefix}-${event}-confirm`,
+        ) as string;
+      }
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-data`)) {
+        options.data = Core.parseDataBind(
+          fragment.getRawAttribute(`${Env.prefix}-${event}-data`) as string,
+        );
+      }
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-form`)) {
+        const formSelector = fragment.getRawAttribute(
+          `${Env.prefix}-${event}-form`,
+        ) as string | null;
+        if (formSelector) {
+          const formElement = document.body.querySelector(formSelector);
+          if (formElement !== null) {
+            options.formFragment = Fragment.get(formElement) as ElementFragment;
+          } else {
+            Log.error(
+              'Haori',
+              `Form element not found: ${formSelector}` +
+                ` (${Env.prefix}-${event}-form)`,
+            );
+          }
+        }
+      }
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-before`)) {
+        const body = fragment.getRawAttribute(
+          `${Env.prefix}-${event}-before`,
+        ) as string;
+        try {
+          options.beforeCallback = new Function(
+            'fetchUrl',
+            'fetchOptions',
+            `
+"use strict";
+${body}
+`,
+          ) as (
+            fetchUrl: string | null,
+            fetchOptions: RequestInit | null,
+          ) => BeforeCallbackResult | boolean | void;
+        } catch (e) {
+          Log.error('Haori', `Invalid before script: ${e}`);
+        }
+      }
+    }
+    if (
+      fragment.existsAttribute(`${Env.prefix}${event ? '-' + event : ''}-fetch`)
+    ) {
+      options.fetchUrl = fragment.getAttribute(
+        `${Env.prefix}${event ? '-' + event : ''}-fetch`,
+      ) as string;
+    }
+    const fetchOptions: RequestInit = {};
+    if (
+      fragment.existsAttribute(
+        `${Env.prefix}${event ? '-' + event : ''}-fetch-method`,
+      )
+    ) {
+      fetchOptions.method = fragment.getAttribute(
+        `${Env.prefix}${event ? '-' + event : ''}-fetch-method`,
+      ) as string;
+    }
+    if (
+      fragment.existsAttribute(
+        `${Env.prefix}${event ? '-' + event : ''}-fetch-headers`,
+      )
+    ) {
+      const headersString = fragment.getRawAttribute(
+        `${Env.prefix}${event ? '-' + event : ''}-fetch-headers`,
+      ) as string;
+      try {
+        fetchOptions.headers = Core.parseDataBind(headersString) as Record<
+          string,
+          string
+        >;
+      } catch (e) {
+        Log.error('Haori', `Invalid fetch headers: ${e}`);
+      }
+    }
+    if (
+      fragment.existsAttribute(
+        `${Env.prefix}${event ? '-' + event : ''}-fetch-content-type`,
+      )
+    ) {
+      fetchOptions.headers = {
+        ...fetchOptions.headers,
+        'Content-Type': fragment.getAttribute(
+          `${Env.prefix}${event ? '-' + event : ''}-fetch-content-type`,
+        ) as string,
+      };
+    }
+    if (Object.keys(fetchOptions).length > 0) {
+      options.fetchOptions = fetchOptions;
+    }
+    if (fragment.existsAttribute(`${Env.prefix}-${event ?? 'fetch'}-bind`)) {
+      const bindSelector = fragment.getRawAttribute(
+        `${Env.prefix}-${event ?? 'fetch'}-bind`,
+      ) as string | null;
+      if (bindSelector) {
+        const bindElements = document.body.querySelectorAll(bindSelector);
+        if (bindElements.length > 0) {
+          options.bindFragments = [];
+          bindElements.forEach(element => {
+            const fragment = Fragment.get(element);
+            if (fragment) {
+              options.bindFragments!.push(fragment as ElementFragment);
+            }
+          });
+        } else {
+          Log.error(
+            'Haori',
+            `Bind element not found: ${bindSelector}` +
+              ` (${Env.prefix}-${event ?? 'fetch'}-bind)`,
+          );
+        }
+      }
+    }
+    if (
+      fragment.existsAttribute(`${Env.prefix}-${event ?? 'fetch'}-bind-arg`)
+    ) {
+      options.bindArg = fragment.getRawAttribute(
+        `${Env.prefix}-${event ?? 'fetch'}-bind-arg`,
+      ) as string | null;
+    }
+    if (
+      fragment.existsAttribute(`${Env.prefix}-${event ?? 'fetch'}-bind-params`)
+    ) {
+      const paramsString = fragment.getRawAttribute(
+        `${Env.prefix}-${event ?? 'fetch'}-bind-params`,
+      ) as string;
+      options.bindParams = paramsString.split('&').map(p => p.trim());
+    }
+    if (event) {
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-after-run`)) {
+        const body = fragment.getRawAttribute(
+          `${Env.prefix}-${event}-after-run`,
+        ) as string;
+        try {
+          options.afterCallback = new Function(
+            'response',
+            `
+"use strict";
+${body}
+`,
+          ) as (
+            response: Response | Record<string, unknown>,
+          ) => AfterCallbackResult | boolean | void;
+        } catch (e) {
+          Log.error('Haori', `Invalid after script: ${e}`);
+        }
+      }
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-dialog`)) {
+        options.dialogMessage = fragment.getAttribute(
+          `${Env.prefix}-${event}-dialog`,
+        ) as string;
+      }
+    }
+    return options;
+  }
+
+  /**
+   * ElementFragment の構造的タイプガード。
+   *
+   * @param value チェックする値
+   * @returns ElementFragment である場合は true、それ以外は false
+   */
+  private static isElementFragment(value: unknown): value is ElementFragment {
+    if (typeof value !== 'object' || value === null) return false;
+    const obj = value as Record<string, unknown>;
+    return (
+      typeof obj.getTarget === 'function' &&
+      typeof obj.getChildElementFragments === 'function'
+    );
+  }
+
   /** オプション */
   private readonly options: ProcedureOptions;
 
   /**
-   * Procedureクラスのコンストラクタです。
+   * オプションを指定してProcedureクラスのインスタンスを生成します。
    *
    * @param options オプション
    */
-  constructor(options: ProcedureOptions = {}) {
-    this.options = options;
+  constructor(options: ProcedureOptions);
+
+  /**
+   * フラグメントの属性からオプションを生成してProcedureクラスのインスタンスを生成します。
+   *
+   * @param fragment フラグメント
+   * @param event イベント名
+   */
+  constructor(fragment: ElementFragment, event: string | null);
+
+  /**
+   * コンストラクタ。
+   *
+   * @param arg1 オプションもしくはフラグメント
+   * @param arg2 イベント名
+   */
+  constructor(
+    arg1: ProcedureOptions | ElementFragment,
+    arg2: string | null = null,
+  ) {
+    if (Procedure.isElementFragment(arg1)) {
+      this.options = Procedure.buildOptions(arg1, arg2);
+    } else {
+      this.options = arg1;
+    }
   }
 
+  /**
+   * 一連の処理を実行します。オプションが空の場合は即座にresolveされます。
+   *
+   * @returns 実行結果のPromise
+   */
   run(): Promise<void> {
+    if (Object.keys(this.options).length === 0) {
+      return Promise.resolve();
+    }
     if (
       this.options.formFragment &&
       this.validate(this.options.formFragment) === false
@@ -117,16 +361,18 @@ export default class Procedure {
           fetchUrl || null,
           fetchOptions || null,
         );
-        if (result === false || (typeof result === 'object' && result.stop)) {
-          return Promise.resolve();
-        }
-        if (typeof result === 'object') {
-          fetchUrl = ('fetchUrl' in result ? result.fetchUrl : fetchUrl) as
-            | string
-            | null;
-          fetchOptions = (
-            'fetchOptions' in result ? result.fetchOptions : fetchOptions
-          ) as RequestInit | null;
+        if (result !== undefined && result !== null) {
+          if (result === false || (typeof result === 'object' && result.stop)) {
+            return Promise.resolve();
+          }
+          if (typeof result === 'object') {
+            fetchUrl = ('fetchUrl' in result ? result.fetchUrl : fetchUrl) as
+              | string
+              | null;
+            fetchOptions = (
+              'fetchOptions' in result ? result.fetchOptions : fetchOptions
+            ) as RequestInit | null;
+          }
         }
       }
       if (fetchUrl) {
@@ -134,11 +380,9 @@ export default class Procedure {
           return this.handleFetchResult(response);
         });
       } else {
-        const response = new Response();
-        response.headers.set('Content-Type', 'application/json');
-        response.json = async () => {
-          return this.options.data ?? {};
-        };
+        const response = new Response(JSON.stringify(this.options.data ?? {}), {
+          headers: {'Content-Type': 'application/json'},
+        });
         return this.handleFetchResult(response);
       }
     });
@@ -150,19 +394,82 @@ export default class Procedure {
   private handleFetchResult(response: Response): Promise<void> {
     if (this.options.afterCallback) {
       const result = this.options.afterCallback(response);
-      if (result === false || (typeof result === 'object' && result.stop)) {
-        return Promise.resolve();
-      }
-      if (typeof result === 'object' && 'response' in result) {
-        response = (
-          'response' in result ? result.response : response
-        ) as Response;
+      if (result !== undefined && result !== null) {
+        if (result === false || (typeof result === 'object' && result.stop)) {
+          return Promise.resolve();
+        }
+        if (typeof result === 'object' && 'response' in result) {
+          response = (
+            'response' in result ? result.response : response
+          ) as Response;
+        }
       }
     }
     const promises: Promise<void>[] = [];
     promises.push(this.bindResult(response));
     promises.push(this.adjust());
-    return Promise.all(promises).then(() => undefined);
+    if (this.options.resetFragments && this.options.resetFragments.length > 0) {
+      this.options.resetFragments.forEach(fragment => {
+        promises.push(Form.reset(fragment));
+      });
+    }
+    if (
+      this.options.refetchFragments &&
+      this.options.refetchFragments.length > 0
+    ) {
+      this.options.refetchFragments.forEach(fragment => {
+        promises.push(new Procedure(fragment, null).run());
+      });
+    }
+    if (this.options.clickFragments && this.options.clickFragments.length > 0) {
+      this.options.clickFragments.forEach(fragment => {
+        const target = fragment.getTarget();
+        if (typeof target.click === 'function') {
+          target.click();
+        } else {
+          target.dispatchEvent(
+            new MouseEvent('click', {bubbles: true, cancelable: true}),
+          );
+        }
+      });
+    }
+    if (this.options.openFragments && this.options.openFragments.length > 0) {
+      this.options.openFragments.forEach(fragment => {
+        const target = fragment.getTarget();
+        if (target instanceof HTMLDialogElement) {
+          promises.push(Haori.openDialog(target));
+        } else {
+          Log.error('Haori', 'Element is not a dialog: ', target);
+        }
+      });
+    }
+    if (this.options.closeFragments && this.options.closeFragments.length > 0) {
+      this.options.closeFragments.forEach(fragment => {
+        const target = fragment.getTarget();
+        if (target instanceof HTMLDialogElement) {
+          promises.push(Haori.closeDialog(target));
+        } else {
+          Log.error('Haori', 'Element is not a dialog: ', target);
+        }
+      });
+    }
+    let dialogPromise: Promise<void>;
+    if (this.options.dialogMessage) {
+      dialogPromise = Haori.dialog(this.options.dialogMessage);
+    } else {
+      dialogPromise = Promise.resolve();
+    }
+    return dialogPromise.then(() => {
+      if (this.options.toastMessage) {
+        Haori.toast(this.options.toastMessage, 'info');
+      }
+      return Promise.all(promises).then(() => {
+        if (this.options.redirectUrl) {
+          window.location.href = this.options.redirectUrl;
+        }
+        return Promise.resolve();
+      });
+    });
   }
 
   /**
@@ -173,7 +480,7 @@ export default class Procedure {
    * @returns バリデーション結果（true: 成功, false: 失敗）
    */
   validate(fragment: ElementFragment): boolean {
-    if (this.options.valid === false) {
+    if (this.options.valid !== true) {
       return true;
     }
     const target = fragment.getTarget();
@@ -218,13 +525,11 @@ export default class Procedure {
    * @returns ユーザーの確認結果を含むPromise（true: 確認, false: キャンセル）
    */
   private confirm(): Promise<boolean> {
-    if (
-      this.options.confirmMessage === null ||
-      this.options.confirmMessage === undefined
-    ) {
+    const message = this.options.confirmMessage;
+    if (message === null || message === undefined) {
       return Promise.resolve(true);
     }
-    return Haori.confirm(this.options.confirmMessage);
+    return Haori.confirm(message);
   }
 
   /**

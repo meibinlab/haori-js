@@ -668,6 +668,16 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 属性の存在を確認します。
+   *
+   * @param name 属性名
+   * @return 属性が存在する場合はtrue、存在しない場合はfalse
+   */
+  public existsAttribute(name: string): boolean {
+    return this.attributeMap.has(name);
+  }
+
+  /**
    * 属性名のリストを取得します。
    *
    * @return 属性名のリスト
