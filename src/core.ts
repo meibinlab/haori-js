@@ -5,7 +5,7 @@
  * アプリケーションの中心的な機能を提供します。
  */
 import Env from './env';
-import {Form} from './form';
+import Form from './form';
 import Fragment, {ElementFragment, TextFragment} from './fragment';
 import Log from './log';
 

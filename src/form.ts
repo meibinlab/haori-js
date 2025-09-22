@@ -7,7 +7,7 @@
 import Core from './core';
 import Env from './env';
 import {ElementFragment} from './fragment';
-import {Haori} from './haori';
+import Haori from './haori';
 import Log from './log';
 import Queue from './queue';
 
@@ -15,7 +15,7 @@ import Queue from './queue';
  * Formクラスは、フォームの双方向バインディングを提供します。
  * 入力要素の値をフォームにバインドし、フォームのバインド値を入力要素に反映します。
  */
-export class Form {
+export default class Form {
   /**
    * フォーム内にある入力エレメントの値をオブジェクトとして取得します。
    * data-form-object属性があると、そのエレメント内の値はオブジェクトとして処理されます。

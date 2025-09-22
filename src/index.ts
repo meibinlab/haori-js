@@ -6,14 +6,14 @@
 
 import Core from './core';
 import Env from './env';
-import {ElementFragment} from './fragment';
-import {Form} from './form';
-import {Haori} from './haori';
+import Fragment from './fragment';
+import Form from './form';
+import Haori from './haori';
 import Log from './log';
 import Queue from './queue';
 
 // メインクラスとユーティリティをエクスポート
-export {Core, Env, ElementFragment, Form, Haori, Log, Queue};
+export {Core, Env, Fragment, Form, Haori, Log, Queue};
 
 // デフォルトエクスポート（Haoriをメインとして提供）
 export default Haori;
