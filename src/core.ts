@@ -431,6 +431,7 @@ export default class Core {
       indexKey = String(indexKey);
     }
     const keyArg = parent.getAttribute(`${Env.prefix}each-key`);
+    const itemArg = parent.getAttribute(`${Env.prefix}each-arg`);
     const keyDataMap: Map<
       string,
       {item: (typeof newList)[0]; itemIndex: number}
@@ -481,7 +482,7 @@ export default class Core {
         item,
         indexKey as string | null,
         itemIndex,
-        keyArg ? String(keyArg) : null,
+        itemArg ? String(itemArg) : null,
         newKey,
       );
       promises.push(

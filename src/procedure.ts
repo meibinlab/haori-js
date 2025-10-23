@@ -308,7 +308,7 @@ ${body}
     }
     const bindArgAttr = event
       ? Procedure.attrName(event, 'bind-arg')
-      : Procedure.attrName(null, 'bind-arg', true);
+      : Procedure.attrName(null, 'arg', true);
     if (fragment.existsAttribute(bindArgAttr)) {
       options.bindArg = fragment.getRawAttribute(bindArgAttr) as string | null;
     }
