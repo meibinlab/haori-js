@@ -6,6 +6,7 @@
 
 import Fragment from './fragment';
 import Procedure from './procedure';
+import Log from './log';
 
 /**
  * イベントの振り分けを行うクラスです。
@@ -82,7 +83,7 @@ export default class EventDispatcher {
       return;
     }
     new Procedure(fragment, type).run().catch(error => {
-      console.error('Haori', 'Procedure execution error:', error);
+      Log.error('[Haori]', 'Procedure execution error:', error);
     });
   }
 

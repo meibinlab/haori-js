@@ -394,6 +394,8 @@ export default class Core {
           }
           if (template === null) {
             template = child;
+            // テンプレートは children から切り離しつつ DOM からは除去する
+            fragment.removeChild(child);
             child.unmount();
           } else {
             Log.warn('[Haori]', 'Template must be a single child element.');
@@ -426,6 +428,11 @@ export default class Core {
     parent: ElementFragment,
     newList: (Record<string, unknown> | string | number)[],
   ): Promise<void> {
+    const template = parent.getTemplate();
+    if (template === null) {
+      Log.error('[Haori]', 'Template is not set for each element.');
+      return Promise.resolve();
+    }
     let indexKey = parent.getAttribute(`${Env.prefix}each-index`);
     if (indexKey) {
       indexKey = String(indexKey);
@@ -439,12 +446,10 @@ export default class Core {
     const newKeys: string[] = [];
     newList.forEach((item, itemIndex) => {
       const listKey = Core.createListKey(item, keyArg ? String(keyArg) : null);
-      if (parent.getTemplate() !== null) {
-        newKeys.push(listKey);
-        keyDataMap.set(listKey, {item, itemIndex});
-      }
+      newKeys.push(listKey);
+      keyDataMap.set(listKey, {item, itemIndex});
     });
-    const promises: Promise<void>[] = [];
+    const removalPromises: Promise<void>[] = [];
     let childElements = parent
       .getChildren()
       .filter(child => child instanceof ElementFragment)
@@ -456,7 +461,7 @@ export default class Core {
     childElements = childElements.filter(child => {
       const index = newKeys.indexOf(String(child.getListKey()));
       if (index === -1) {
-        promises.push(child.remove());
+        removalPromises.push(child.remove());
         return false;
       }
       return true;
@@ -466,6 +471,7 @@ export default class Core {
       .getChildren()
       .filter(child => child instanceof ElementFragment)
       .filter(child => child.hasAttribute(`${Env.prefix}each-before`)).length;
+    let chain = Promise.resolve();
     newKeys.forEach(newKey => {
       const srcIndex = srcKeys.indexOf(newKey);
       const {item, itemIndex} = keyDataMap.get(newKey)!;
@@ -475,7 +481,7 @@ export default class Core {
         child = childElements[srcIndex];
       } else {
         // 新しい要素を追加
-        child = parent.getTemplate()!.clone();
+        child = template.clone();
       }
       Core.updateRowFragment(
         child,
@@ -485,13 +491,16 @@ export default class Core {
         itemArg ? String(itemArg) : null,
         newKey,
       );
-      promises.push(
-        parent.insertBefore(child, parent.getChildren()[insertIndex] || null),
+      chain = chain.then(() =>
+        parent
+          .insertBefore(child, parent.getChildren()[insertIndex] || null)
+          .then(() => Core.evaluateAll(child)),
       );
-      promises.push(Core.evaluateAll(child));
       insertIndex++;
     });
-    return Promise.all(promises).then(() => undefined);
+    return Promise.all(removalPromises)
+      .then(() => chain)
+      .then(() => undefined);
   }
 
   /**
