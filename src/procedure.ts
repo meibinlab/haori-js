@@ -197,6 +197,9 @@ export default class Procedure {
                 ` (${Procedure.attrName(event, 'form')})`,
             );
           }
+        } else {
+          // 属性はあるが値が省略された場合は自要素もしくは先祖の form を対象
+          options.formFragment = Form.getFormFragment(fragment);
         }
       }
       if (fragment.existsAttribute(`${Env.prefix}-${event}-before-run`)) {
@@ -375,6 +378,65 @@ ${body}
           Procedure.attrName(event, 'dialog'),
         ) as string;
       }
+      if (fragment.existsAttribute(Procedure.attrName(event, 'toast'))) {
+        options.toastMessage = fragment.getAttribute(
+          Procedure.attrName(event, 'toast'),
+        ) as string;
+      }
+      if (fragment.existsAttribute(Procedure.attrName(event, 'redirect'))) {
+        options.redirectUrl = fragment.getAttribute(
+          Procedure.attrName(event, 'redirect'),
+        ) as string;
+      }
+
+      // reset/refetch/click/open/close（イベント、CSSセレクタ）
+      const selectorAttrs = [
+        'reset',
+        'refetch',
+        'click',
+        'open',
+        'close',
+      ] as const;
+      selectorAttrs.forEach(attrKey => {
+        const attrName = Procedure.attrName(event, attrKey);
+        if (!fragment.existsAttribute(attrName)) {
+          return;
+        }
+        const selector = fragment.getRawAttribute(attrName) as string | null;
+        const list: ElementFragment[] = [];
+        if (selector) {
+          const elements = document.body.querySelectorAll(selector);
+          elements.forEach(el => {
+            const frag = Fragment.get(el);
+            if (frag) list.push(frag as ElementFragment);
+          });
+          if (list.length === 0) {
+            Log.error('Haori', `Element not found: ${selector} (${attrName})`);
+          }
+        } else {
+          // 値が省略されている場合は自要素を対象
+          list.push(fragment);
+        }
+        if (list.length > 0) {
+          switch (attrKey) {
+            case 'reset':
+              options.resetFragments = list;
+              break;
+            case 'refetch':
+              options.refetchFragments = list;
+              break;
+            case 'click':
+              options.clickFragments = list;
+              break;
+            case 'open':
+              options.openFragments = list;
+              break;
+            case 'close':
+              options.closeFragments = list;
+              break;
+          }
+        }
+      });
     }
 
     // 非イベントの data / form（data-fetch-data / data-fetch-form）も取り込む
@@ -406,6 +468,9 @@ ${body}
                 `${Procedure.attrName(null, 'fetch-form', true)})`,
             );
           }
+        } else {
+          // 属性はあるが値が省略された場合は自要素もしくは先祖の form を対象
+          options.formFragment = Form.getFormFragment(fragment);
         }
       }
     }
