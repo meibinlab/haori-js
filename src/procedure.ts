@@ -682,6 +682,11 @@ ${body}
    * フェッチ後の処理を実行します。
    */
   private handleFetchResult(response: Response): Promise<void> {
+    // エラー応答時は以後の処理を停止し、メッセージを伝播
+    if (!response.ok) {
+      return this.handleFetchError(response);
+    }
+
     if (this.options.afterCallback) {
       const result = this.options.afterCallback(response);
       if (result !== undefined && result !== null) {
@@ -764,6 +769,101 @@ ${body}
         return Promise.resolve();
       });
     });
+  }
+
+  /**
+   * フェッチエラー応答のメッセージを適切な要素へ伝播します。
+   */
+  private async handleFetchError(response: Response): Promise<void> {
+    // ベースとなるフォーム/フラグメントを決定
+    let baseFragment: ElementFragment | null = null;
+    if (this.options.formFragment) {
+      baseFragment = this.options.formFragment;
+    } else if (this.options.targetFragment) {
+      baseFragment =
+        Form.getFormFragment(this.options.targetFragment) ||
+        this.options.targetFragment;
+    }
+
+    const addGeneralMessage = async (message: string) => {
+      const targetEl = baseFragment
+        ? baseFragment.getTarget()
+        : document.body;
+      await Haori.addErrorMessage(targetEl, message);
+    };
+
+    // コンテンツタイプに応じて解析
+    const contentType = response.headers.get('Content-Type') || '';
+    if (contentType.includes('application/json')) {
+      try {
+        const data = await response.json();
+        // 代表的な形式に対応
+        const entries: Array<{key?: string; message: string}> = [];
+        if (data && typeof data === 'object') {
+          if (typeof data.message === 'string') {
+            entries.push({message: data.message});
+          }
+          if (Array.isArray(data.messages)) {
+            for (const m of data.messages) {
+              if (typeof m === 'string') {
+                entries.push({message: m});
+              }
+            }
+          }
+          if (data.errors && typeof data.errors === 'object') {
+            for (const [k, v] of Object.entries(data.errors)) {
+              if (Array.isArray(v)) {
+                entries.push({key: k, message: v.join('\n')});
+              } else if (typeof v === 'string') {
+                entries.push({key: k, message: v});
+              } else if (v != null) {
+                entries.push({key: k, message: String(v)});
+              }
+            }
+          }
+          // キー: 値（文字列/配列）形式にフォールバック
+          if (entries.length === 0) {
+            for (const [k, v] of Object.entries(data)) {
+              if (k === 'message' || k === 'messages' || k === 'errors') {
+                continue;
+              }
+              if (Array.isArray(v)) {
+                entries.push({key: k, message: v.join('\n')});
+              } else if (typeof v === 'string') {
+                entries.push({key: k, message: v});
+              }
+            }
+          }
+        }
+        if (entries.length === 0) {
+          // 汎用メッセージ
+          await addGeneralMessage(`${response.status} ${response.statusText}`);
+          return;
+        }
+        // メッセージを反映
+        for (const e of entries) {
+          if (e.key && baseFragment) {
+            await Form.addErrorMessage(baseFragment, e.key, e.message);
+          } else {
+            await addGeneralMessage(e.message);
+          }
+        }
+        return;
+      } catch {
+        // JSON 解析失敗時はテキストにフォールバック
+      }
+    }
+    // テキストとして処理
+    try {
+      const text = await response.text();
+      if (text && text.trim().length > 0) {
+        await addGeneralMessage(text.trim());
+      } else {
+        await addGeneralMessage(`${response.status} ${response.statusText}`);
+      }
+    } catch {
+      await addGeneralMessage(`${response.status} ${response.statusText}`);
+    }
   }
 
   /**
