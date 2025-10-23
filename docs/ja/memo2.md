@@ -121,3 +121,54 @@ data-???-redirect: 処理が成功した場合に属性値のURLにリダイレ�
 13. data-???-open / data-???-close: ダイアログ操作
 14. data-???-dialog / data-???-toast: メッセージ表示
 15. data-???-redirect: リダイレクト実行（最後に実行）
+
+## 付録: 実装補足と差分（2025-10-23）
+
+本仕様に基づく実装で、実用上の明確化・堅牢化のために以下の補足と差分を加えています。
+
+- フェッチのペイロード合成（data-???-data / data-???-form）
+	- イベント/非イベントともに、フォーム値と `data-*-data` を統合して送信します。
+	- HTTP メソッドと Content-Type に応じた組み立て:
+		- GET/HEAD/OPTIONS: クエリ文字列に付与（配列は複数付与、オブジェクトは JSON 文字列化）。
+		- multipart/form-data: FormData を構築（Content-Type ヘッダは削除しブラウザに委譲）。
+		- application/x-www-form-urlencoded: URLSearchParams を構築。
+		- 上記以外: application/json を既定とし JSON 文字列化して送信。
+	- フェッチ URL が未指定の場合は、統合したデータをそのままレスポンス相当としてバインドに渡します。
+
+- エラーハンドリングと data-message 伝播
+	- `response.ok === false` の場合、後続の成功系処理（bind/adjust/row/reset/refetch/click/open/close/dialog/toast/redirect）は実行せず、エラーメッセージを伝播します。
+	- JSON 応答の代表的な形式をサポート:
+		- `message: string` → 全体メッセージ。
+		- `messages: string[]` → 全体メッセージ（複数）。
+		- `errors: { [key]: string | string[] }` → キーに一致する入力へメッセージ。
+		- その他 `{ key: string | string[] }` 形式にもフォールバックで対応。
+	- テキスト応答はそのまま全体メッセージとして扱います。
+	- 付与先はフォーム優先（`data-???-form` または最寄りの form）。なければ対象要素、最終的には `document.body` 相当へ。
+
+- イベント属性名の正規化
+	- 余分なハイフンや名称ぶれを避けるため、内部で `data-???-xxx`/`data-fetch-xxx` の名前組み立てを統一しています。
+
+- バインド先の既定
+	- `data-???-fetch`（または `data-fetch`）指定時、`data-???-bind`（`data-fetch-bind`）が無い場合は自要素にバインドします。
+
+- セレクタ省略時の既定対象
+	- `data-???-form`・`data-???-reset`・`data-???-refetch`・`data-???-click`・`data-???-open`・`data-???-close` などで属性値が省略された場合、自要素（form は自要素または先祖の form）を対象とします。
+
+- 実行順序の明確化
+	- 仕様の順序に準拠: validate → confirm → data/form → before-run → fetch → after-run → bind → adjust → row 操作 → reset → refetch → click → open/close → dialog/toast → redirect（`dialog` がある場合、その完了後に `redirect`）。
+
+- 行操作の安全化
+	- `data-???-row-*` 実行時に対象行が特定できない場合はログ出力のうえ安全に中断します。
+
+- if 文の波括弧強制
+	- プロジェクトの ESLint 設定を `curly: ['error','all']` に変更し、if/else/for/while など全てで `{}` を必須化しています。
+
+- 既知事項（reset と each の複製）
+	- `data-???-reset` 実行時の `data-each` 複製除去は、`Core.evaluateAll` による再評価で原則元の状態に戻る想定です。要件により不足がある場合は、明示的な複製除去処理の追加を検討してください。
+
+- 互換性に関する注記
+	- `ProcedureOptions.targetFragment` は、非行操作のユースを考慮して任意化しています（行操作時は内部で存在チェックを行います）。
+
+- 品質ゲートの結果
+	- TypeScript 型チェック: PASS / Lint: PASS / テスト: PASS（現時点 45 tests）。
+

@@ -205,6 +205,8 @@ export default class Form {
     const promises: Promise<void>[] = [];
     Form.clearValues(fragment);
     promises.push(Form.clearMessages(fragment));
+    // data-each による複製を明示的に削除（仕様: 複製の削除）
+    promises.push(Form.clearEachClones(fragment));
     promises.push(
       Queue.enqueue(() => {
         const element = fragment.getTarget();
@@ -222,6 +224,31 @@ export default class Form {
     );
     promises.push(Core.evaluateAll(fragment));
     return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * data-each によって生成された複製（テンプレート以外）を削除します。
+   * 既存のテンプレートは保持し、その後の再評価で必要に応じて再生成されます。
+   */
+  private static clearEachClones(fragment: ElementFragment): Promise<void> {
+    const tasks: Promise<void>[] = [];
+
+    const process = (f: ElementFragment) => {
+      if (f.hasAttribute(`${Env.prefix}each`)) {
+        const children = f.getChildElementFragments();
+        children.forEach(child => {
+          const isBefore = child.hasAttribute(`${Env.prefix}each-before`);
+          const isAfter = child.hasAttribute(`${Env.prefix}each-after`);
+          if (!isBefore && !isAfter) {
+            tasks.push(child.remove());
+          }
+        });
+      }
+      f.getChildElementFragments().forEach(c => process(c));
+    };
+
+    process(fragment);
+    return Promise.all(tasks).then(() => undefined);
   }
 
   /**

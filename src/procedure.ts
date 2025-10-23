@@ -141,7 +141,7 @@ export default class Procedure {
     hasFetchFallback: boolean = false,
   ): string {
     if (event) {
-      return `${Env.prefix}${'-' + event}-${key}`;
+      return `${Env.prefix}${event}-${key}`;
     }
     return hasFetchFallback
       ? `${Env.prefix}fetch-${key}`
@@ -202,9 +202,9 @@ export default class Procedure {
           options.formFragment = Form.getFormFragment(fragment);
         }
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-before-run`)) {
+      if (fragment.existsAttribute(`${Env.prefix}${event}-before-run`)) {
         const body = fragment.getRawAttribute(
-          `${Env.prefix}-${event}-before-run`,
+          `${Env.prefix}${event}-before-run`,
         ) as string;
         try {
           options.beforeCallback = new Function(
@@ -266,6 +266,17 @@ ${body}
       fetchOptions.headers = {
         ...fetchOptions.headers,
         'Content-Type': 'application/json',
+      };
+    } else if (
+      fetchOptions.method &&
+      (fetchOptions.method === 'GET' ||
+        fetchOptions.method === 'HEAD' ||
+        fetchOptions.method === 'OPTIONS')
+    ) {
+      // 仕様: GET/HEAD/OPTIONS 既定は application/x-www-form-urlencoded
+      fetchOptions.headers = {
+        ...fetchOptions.headers,
+        'Content-Type': 'application/x-www-form-urlencoded',
       };
     }
     if (Object.keys(fetchOptions).length > 0) {
@@ -355,9 +366,9 @@ ${body}
       if (fragment.existsAttribute(Procedure.attrName(event, 'row-next'))) {
         options.rowMoveNext = true;
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-after-run`)) {
+      if (fragment.existsAttribute(`${Env.prefix}${event}-after-run`)) {
         const body = fragment.getRawAttribute(
-          `${Env.prefix}-${event}-after-run`,
+          `${Env.prefix}${event}-after-run`,
         ) as string;
         try {
           options.afterCallback = new Function(
@@ -752,23 +763,27 @@ ${body}
         }
       });
     }
-    let dialogPromise: Promise<void>;
-    if (this.options.dialogMessage) {
-      dialogPromise = Haori.dialog(this.options.dialogMessage);
-    } else {
-      dialogPromise = Promise.resolve();
-    }
-    return dialogPromise.then(() => {
-      if (this.options.toastMessage) {
-        Haori.toast(this.options.toastMessage, 'info');
-      }
-      return Promise.all(promises).then(() => {
+    // 仕様順序: 先に各種操作（bind/adjust/row/reset/refetch/click/open/close）を完了
+    return Promise.all(promises)
+      .then(() => {
+        // その後にダイアログ/トーストを表示
+        if (this.options.dialogMessage) {
+          return Haori.dialog(this.options.dialogMessage);
+        }
+        return Promise.resolve();
+      })
+      .then(() => {
+        if (this.options.toastMessage) {
+          return Haori.toast(this.options.toastMessage, 'info');
+        }
+        return Promise.resolve();
+      })
+      .then(() => {
         if (this.options.redirectUrl) {
           window.location.href = this.options.redirectUrl;
         }
         return Promise.resolve();
       });
-    });
   }
 
   /**
@@ -1085,7 +1100,11 @@ ${body}
     if (!prevFragment) {
       return Promise.resolve();
     }
-    return prevFragment.insertBefore(rowFragment, prevFragment);
+    const parent = rowFragment.getParent();
+    if (!parent) {
+      return Promise.resolve();
+    }
+    return parent.insertBefore(rowFragment, prevFragment);
   }
 
   /**
@@ -1105,6 +1124,10 @@ ${body}
     if (!nextFragment) {
       return Promise.resolve();
     }
-    return nextFragment.insertAfter(rowFragment, nextFragment);
+    const parent = rowFragment.getParent();
+    if (!parent) {
+      return Promise.resolve();
+    }
+    return parent.insertAfter(rowFragment, nextFragment);
   }
 }
