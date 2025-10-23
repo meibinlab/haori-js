@@ -99,7 +99,17 @@ export default class Haori {
     message: string,
   ): Promise<void> {
     return Queue.enqueue(() => {
-      target.parentElement?.setAttribute('data-message', message);
+      // 仕様: 入力要素の場合は親要素に、フォーム要素の場合はフォーム自身に data-message を付与する。
+      if (target instanceof HTMLFormElement) {
+        target.setAttribute('data-message', message);
+        return;
+      }
+      if (target.parentElement) {
+        target.parentElement.setAttribute('data-message', message);
+        return;
+      }
+      // 親が無い場合は当該要素に付与（フォールバック）
+      target.setAttribute('data-message', message);
     }, true) as Promise<void>;
   }
 

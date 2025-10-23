@@ -172,3 +172,11 @@ data-???-redirect: 処理が成功した場合に属性値のURLにリダイレ�
 - 品質ゲートの結果
 	- TypeScript 型チェック: PASS / Lint: PASS / テスト: PASS（現時点 45 tests）。
 
+— 追加補足（before-run / after-run の戻り値と停止条件）
+
+- before-run / after-run の戻り値の扱い
+	- `false` または `{ stop: true }` を返した場合、以後の処理（フェッチや成功系フロー）を直ちに停止します。
+	- before-run は `{ fetchUrl, fetchOptions }` を返すことでフェッチ設定を上書き可能です（例: URL の差し替え）。
+	- after-run は `{ response }` を返すことで以降のバインド対象レスポンスを差し替え可能です。
+	- フェッチがエラー（`response.ok === false`）の場合、after-run は実行されません（エラーメッセージ伝播のみ）。
+
