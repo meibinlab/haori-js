@@ -58,6 +58,14 @@ data-???-adjust: CSSセレクタで指定したエレメントのvalue値を変�
 
 data-???-adjust-vaelu: value値の増減量。
 
+data-???-row-add: 対象のエレメントが属している行の後ろに新しい行を追加する。
+
+data-???-row-remove: 対象のエレメントが属している行を削除する。
+
+data-???-row-prev: 対象のエレメントが属している行と前の行を入れ替える。
+
+data-???-row-next: 対象のエレメントが属している行と次の行を入れ替える。
+
 data-???-data: フェッチパラメータ。フェッチURLが指定されていない場合はレスポンスデータとして利用する。
 
 data-???-form: フェッチパラメータを取得するフォームのセレクタ。属性値が省略されている場合は当該エレメントもしくは先祖エレメントのformエレメントを対象とする。フェッチURLが指定されていない場合はレスポンスデータとして利用する。
@@ -108,9 +116,10 @@ data-???-redirect: 処理が成功した場合に属性値のURLにリダイレ�
 6. data-???-after-run: フェッチ後スクリプト実行
 7. data-???-bind: データバインド実行
 8. data-???-adjust: 値調整実行
-9. data-???-reset: リセット処理実行
-10. data-???-refetch: 再フェッチ実行
-11. data-???-click: クリック実行
-12. data-???-open / data-???-close: ダイアログ操作
-13. data-???-dialog / data-???-toast: メッセージ表示
-14. data-???-redirect: リダイレクト実行（最後に実行）
+9. data-???-row-add / data-???-row-remvoe / data-???-row-prev / data-???-row-next: 行データの変更
+10. data-???-reset: リセット処理実行
+11. data-???-refetch: 再フェッチ実行
+12. data-???-click: クリック実行
+13. data-???-open / data-???-close: ダイアログ操作
+14. data-???-dialog / data-???-toast: メッセージ表示
+15. data-???-redirect: リダイレクト実行（最後に実行）

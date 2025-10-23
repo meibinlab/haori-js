@@ -40,6 +40,9 @@ export interface AfterCallbackResult {
  * Procedureクラスのオプションインターフェース。
  */
 export interface ProcedureOptions {
+  /** 処理対象のフラグメント */
+  targetFragment: ElementFragment;
+
   /** バリデーションを行うかどうか */
   valid?: boolean;
 
@@ -84,6 +87,18 @@ export interface ProcedureOptions {
   /** 変更する値の増減値 */
   adjustValue?: number | null;
 
+  /** 行追加の有無 */
+  rowAdd?: boolean | null;
+
+  /** 行削除の有無 */
+  rowRemove?: boolean | null;
+
+  /** 前の行へ移動するかどうか */
+  rowMovePrev?: boolean | null;
+
+  /** 次の行へ移動するかどうか */
+  rowMoveNext?: boolean | null;
+
   /** リセットするフラグメント */
   resetFragments?: ElementFragment[] | null;
 
@@ -117,7 +132,9 @@ export default class Procedure {
     fragment: ElementFragment,
     event: string | null,
   ): ProcedureOptions {
-    const options: ProcedureOptions = {};
+    const options: ProcedureOptions = {
+      targetFragment: fragment,
+    };
     if (event) {
       if (fragment.existsAttribute(`${Env.prefix}-${event}-valid`)) {
         options.valid = true;
@@ -270,6 +287,50 @@ ${body}
       options.bindParams = paramsString.split('&').map(p => p.trim());
     }
     if (event) {
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-adjust`)) {
+        const adjustSelector = fragment.getRawAttribute(
+          `${Env.prefix}-${event}-adjust`,
+        ) as string | null;
+        if (adjustSelector) {
+          const adjustElements = document.body.querySelectorAll(adjustSelector);
+          if (adjustElements.length > 0) {
+            options.adjustFragments = [];
+            adjustElements.forEach(element => {
+              const fragment = Fragment.get(element);
+              if (fragment) {
+                options.adjustFragments!.push(fragment as ElementFragment);
+              }
+            });
+          } else {
+            Log.error(
+              'Haori',
+              `Adjust element not found: ${adjustSelector}` +
+                ` (${Env.prefix}-${event}-adjust)`,
+            );
+          }
+        }
+        if (fragment.existsAttribute(`${Env.prefix}-${event}-adjust-value`)) {
+          const valueString = fragment.getRawAttribute(
+            `${Env.prefix}-${event}-adjust-value`,
+          ) as string;
+          const value = Number(valueString);
+          if (!isNaN(value)) {
+            options.adjustValue = value;
+          }
+        }
+      }
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-row-add`)) {
+        options.rowAdd = true;
+      }
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-row-remove`)) {
+        options.rowRemove = true;
+      }
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-row-prev`)) {
+        options.rowMovePrev = true;
+      }
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-row-next`)) {
+        options.rowMoveNext = true;
+      }
       if (fragment.existsAttribute(`${Env.prefix}-${event}-after-run`)) {
         const body = fragment.getRawAttribute(
           `${Env.prefix}-${event}-after-run`,
@@ -420,6 +481,10 @@ ${body}
     const promises: Promise<void>[] = [];
     promises.push(this.bindResult(response));
     promises.push(this.adjust());
+    promises.push(this.addRow());
+    promises.push(this.removeRow());
+    promises.push(this.movePrevRow());
+    promises.push(this.moveNextRow());
     if (this.options.resetFragments && this.options.resetFragments.length > 0) {
       this.options.resetFragments.forEach(fragment => {
         promises.push(Form.reset(fragment));
@@ -626,5 +691,118 @@ ${body}
       promises.push(fragment.setValue(String(value)));
     }
     return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * 行フラグメントを取得します。
+   *
+   * @returns 行フラグメントまたはnull
+   */
+  private getRowFragment(): ElementFragment | null {
+    const rowFragment = this.options.targetFragment.closestByAttribute(
+      `${Env.prefix}-row`,
+    );
+    if (!rowFragment) {
+      Log.error(
+        'Haori',
+        `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
+      );
+      return null;
+    }
+    return rowFragment;
+  }
+
+  /**
+   * 行を追加します。
+   *
+   * @returns 処理結果のPromise
+   */
+  private addRow(): Promise<void> {
+    if (this.options.rowAdd !== true) {
+      return Promise.resolve();
+    }
+    const rowFragment = this.getRowFragment();
+    if (!rowFragment) {
+      return Promise.reject(
+        new Error(
+          `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
+        ),
+      );
+    }
+    const promises: Promise<void>[] = [];
+    const newFragment = rowFragment.clone();
+    promises.push(
+      rowFragment.getParent()!.insertAfter(newFragment, rowFragment),
+    );
+    promises.push(Core.evaluateAll(newFragment));
+    return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * 行を削除します。
+   *
+   * @returns 処理結果のPromise
+   */
+  private removeRow(): Promise<void> {
+    if (this.options.rowRemove !== true) {
+      return Promise.resolve();
+    }
+    const rowFragment = this.getRowFragment();
+    if (!rowFragment) {
+      return Promise.reject(
+        new Error(
+          `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
+        ),
+      );
+    }
+    return rowFragment.remove();
+  }
+
+  /**
+   * 前の行へ移動します。
+   *
+   * @returns 処理結果のPromise
+   */
+  private movePrevRow(): Promise<void> {
+    if (this.options.rowMovePrev !== true) {
+      return Promise.resolve();
+    }
+    const rowFragment = this.getRowFragment();
+    if (!rowFragment) {
+      return Promise.reject(
+        new Error(
+          `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
+        ),
+      );
+    }
+    const prevFragment = rowFragment.getPrevious();
+    if (!prevFragment) {
+      return Promise.resolve();
+    }
+    return prevFragment.insertBefore(rowFragment, prevFragment);
+  }
+
+  /**
+   * 次の行へ移動します。
+   *
+   * @returns 処理結果のPromise
+   */
+  private moveNextRow(): Promise<void> {
+    if (this.options.rowMoveNext !== true) {
+      return Promise.resolve();
+    }
+    const rowFragment = this.getRowFragment();
+    if (!rowFragment) {
+      return Promise.reject(
+        new Error(
+          `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
+        ),
+      );
+    }
+    const nextFragment = rowFragment.getNext();
+    if (!nextFragment) {
+      return Promise.resolve();
+    }
+    return nextFragment.insertAfter(rowFragment, nextFragment);
   }
 }

@@ -795,6 +795,44 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 前のエレメントフラグメントを取得します。
+   * 存在しない場合はnullを返します。
+   *
+   * @return 前のエレメントフラグメントまたはnull
+   */
+  public getPrevious(): ElementFragment | null {
+    const parent = this.getParent();
+    if (parent === null) {
+      return null;
+    }
+    const siblings = parent.getChildElementFragments();
+    const index = siblings.indexOf(this);
+    if (index <= 0) {
+      return null;
+    }
+    return siblings[index - 1];
+  }
+
+  /**
+   * 次のエレメントフラグメントを取得します。
+   * 存在しない場合はnullを返します。
+   *
+   * @return 次のエレメントフラグメントまたはnull
+   */
+  public getNext(): ElementFragment | null {
+    const parent = this.getParent();
+    if (parent === null) {
+      return null;
+    }
+    const siblings = parent.getChildElementFragments();
+    const index = siblings.indexOf(this);
+    if (index < 0 || index + 1 >= siblings.length) {
+      return null;
+    }
+    return siblings[index + 1];
+  }
+
+  /**
    * 表示状態を返します。
    *
    * @returns 表示状態
@@ -828,6 +866,24 @@ export class ElementFragment extends Fragment {
     this.getTarget().removeAttribute(`${Env.prefix}if-false`);
     this.visible = true;
     return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * 指定した属性名を持つ最も近い親要素を返します。
+   * 見つからない場合はnullを返します。
+   *
+   * @param name 属性名
+   * @returns 最も近い親要素またはnull
+   */
+  public closestByAttribute(name: string): ElementFragment | null {
+    if (this.hasAttribute(name)) {
+      return this;
+    }
+    const parent = this.getParent();
+    if (parent === null) {
+      return null;
+    }
+    return parent.closestByAttribute(name);
   }
 }
 
