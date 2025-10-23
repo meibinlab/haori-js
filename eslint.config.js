@@ -37,7 +37,7 @@ export default tseslint.config(
       'eol-last': ['error'],
       'no-trailing-spaces': ['error'],
       'brace-style': ['error', '1tbs'],
-      curly: ['error', 'multi-line'],
+  curly: ['error', 'all'],
       'no-var': 'error',
       'prefer-const': 'error',
       'prefer-arrow-callback': 'error',

@@ -93,9 +93,15 @@ export default class EventDispatcher {
    * @returns HTMLElement または null
    */
   private getElementFromTarget(target: EventTarget | null): HTMLElement | null {
-    if (!target) return null;
-    if (target instanceof HTMLElement) return target;
-    if (target instanceof Node) return target.parentElement;
+    if (!target) {
+      return null;
+    }
+    if (target instanceof HTMLElement) {
+      return target;
+    }
+    if (target instanceof Node) {
+      return target.parentElement;
+    }
     return null;
   }
 }

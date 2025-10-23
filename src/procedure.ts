@@ -41,7 +41,7 @@ export interface AfterCallbackResult {
  */
 export interface ProcedureOptions {
   /** 処理対象のフラグメント */
-  targetFragment: ElementFragment;
+  targetFragment?: ElementFragment;
 
   /** バリデーションを行うかどうか */
   valid?: boolean;
@@ -408,7 +408,9 @@ ${body}
           const elements = document.body.querySelectorAll(selector);
           elements.forEach(el => {
             const frag = Fragment.get(el);
-            if (frag) list.push(frag as ElementFragment);
+            if (frag) {
+              list.push(frag as ElementFragment);
+            }
           });
           if (list.length === 0) {
             Log.error('Haori', `Element not found: ${selector} (${attrName})`);
@@ -492,7 +494,9 @@ ${body}
    * @returns ElementFragment である場合は true、それ以外は false
    */
   private static isElementFragment(value: unknown): value is ElementFragment {
-    if (typeof value !== 'object' || value === null) return false;
+    if (typeof value !== 'object' || value === null) {
+      return false;
+    }
     const obj = value as Record<string, unknown>;
     return (
       typeof obj.getTarget === 'function' &&
@@ -575,12 +579,98 @@ ${body}
           }
         }
       }
+
+      // フォーム値と data を統合してペイロードを作成
+      const payload: Record<string, unknown> = {};
+      if (this.options.formFragment) {
+        const formValues = Form.getValues(this.options.formFragment);
+        Object.assign(payload, formValues);
+      }
+      if (this.options.data && typeof this.options.data === 'object') {
+        Object.assign(payload, this.options.data);
+      }
+
+      const hasPayload = Object.keys(payload).length > 0;
       if (fetchUrl) {
-        return fetch(fetchUrl, fetchOptions || undefined).then(response => {
+        const finalOptions: RequestInit = {...(fetchOptions || {})};
+        const headers = new Headers(
+          (finalOptions.headers as HeadersInit | undefined) || undefined,
+        );
+        const method = (finalOptions.method || 'GET').toUpperCase();
+
+        if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+          if (hasPayload) {
+            const url = new URL(fetchUrl!, window.location.href);
+            const params = new URLSearchParams(url.search);
+            for (const [k, v] of Object.entries(payload)) {
+              if (v === undefined) {
+                continue;
+              }
+              if (v === null) {
+                params.append(k, '');
+              } else if (Array.isArray(v)) {
+                v.forEach(item => {
+                  params.append(k, String(item));
+                });
+              } else if (typeof v === 'object' || typeof v === 'function') {
+                params.append(k, JSON.stringify(v));
+              } else {
+                params.append(k, String(v));
+              }
+            }
+            url.search = params.toString();
+            fetchUrl = url.toString();
+          }
+        } else if (hasPayload) {
+          const contentType = headers.get('Content-Type') || '';
+          if (/multipart\/form-data/i.test(contentType)) {
+            headers.delete('Content-Type');
+            const formData = new FormData();
+            for (const [k, v] of Object.entries(payload)) {
+              if (v === undefined || v === null) {
+                formData.append(k, '');
+              } else if (v instanceof Blob) {
+                formData.append(k, v);
+              } else if (Array.isArray(v)) {
+                v.forEach(item => formData.append(k, String(item)));
+              } else if (typeof v === 'object') {
+                formData.append(k, JSON.stringify(v));
+              } else {
+                formData.append(k, String(v));
+              }
+            }
+            finalOptions.body = formData;
+          } else if (/application\/x-www-form-urlencoded/i.test(contentType)) {
+            const params = new URLSearchParams();
+            for (const [k, v] of Object.entries(payload)) {
+              if (v === undefined) {
+                continue;
+              }
+              if (v === null) {
+                params.append(k, '');
+              } else if (Array.isArray(v)) {
+                v.forEach(item => params.append(k, String(item)));
+              } else if (typeof v === 'object') {
+                params.append(k, JSON.stringify(v));
+              } else {
+                params.append(k, String(v));
+              }
+            }
+            finalOptions.body = params;
+          } else {
+            headers.set('Content-Type', 'application/json');
+            finalOptions.body = JSON.stringify(payload);
+          }
+        }
+
+        finalOptions.headers = headers;
+
+        return fetch(fetchUrl, finalOptions).then(response => {
           return this.handleFetchResult(response);
         });
       } else {
-        const response = new Response(JSON.stringify(this.options.data ?? {}), {
+        const merged = hasPayload ? payload : {};
+        const response = new Response(JSON.stringify(merged), {
           headers: {'Content-Type': 'application/json'},
         });
         return this.handleFetchResult(response);
@@ -826,14 +916,15 @@ ${body}
    * @returns 行フラグメントまたはnull
    */
   private getRowFragment(): ElementFragment | null {
+    if (!this.options.targetFragment) {
+      Log.error('Haori', 'Target fragment is not specified for row operation.');
+      return null;
+    }
     const rowFragment = this.options.targetFragment.closestByAttribute(
       `${Env.prefix}row`,
     );
     if (!rowFragment) {
-      Log.error(
-        'Haori',
-        `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
-      );
+      Log.error('Haori', 'Row fragment not found.');
       return null;
     }
     return rowFragment;
@@ -850,11 +941,7 @@ ${body}
     }
     const rowFragment = this.getRowFragment();
     if (!rowFragment) {
-      return Promise.reject(
-        new Error(
-          `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
-        ),
-      );
+      return Promise.reject(new Error('Row fragment not found.'));
     }
     const promises: Promise<void>[] = [];
     const newFragment = rowFragment.clone();
@@ -876,11 +963,7 @@ ${body}
     }
     const rowFragment = this.getRowFragment();
     if (!rowFragment) {
-      return Promise.reject(
-        new Error(
-          `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
-        ),
-      );
+      return Promise.reject(new Error('Row fragment not found.'));
     }
     return rowFragment.remove();
   }
@@ -896,11 +979,7 @@ ${body}
     }
     const rowFragment = this.getRowFragment();
     if (!rowFragment) {
-      return Promise.reject(
-        new Error(
-          `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
-        ),
-      );
+      return Promise.reject(new Error('Row fragment not found.'));
     }
     const prevFragment = rowFragment.getPrevious();
     if (!prevFragment) {
@@ -920,11 +999,7 @@ ${body}
     }
     const rowFragment = this.getRowFragment();
     if (!rowFragment) {
-      return Promise.reject(
-        new Error(
-          `Row fragment not found: ${this.options.targetFragment.getTarget()}`,
-        ),
-      );
+      return Promise.reject(new Error('Row fragment not found.'));
     }
     const nextFragment = rowFragment.getNext();
     if (!nextFragment) {
