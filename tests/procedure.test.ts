@@ -34,6 +34,7 @@ describe('Procedureクラス', () => {
     vi.spyOn(input, 'focus').mockImplementation(() => {});
     fragment.setTarget(input);
     const proc = new Procedure({
+      targetFragment: fragment as unknown as ElementFragment,
       formFragment: fragment as unknown as ElementFragment,
       valid: true,
     });
@@ -72,13 +73,11 @@ describe('Procedureクラス', () => {
 
   it('bindFragmentsにバインドされる', async () => {
     vi.spyOn(Core, 'setBindingData').mockResolvedValue(undefined as void);
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({foo: 'bar'}), {
-          headers: {'Content-Type': 'application/json'},
-        }),
-      ) as unknown as typeof fetch;
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({foo: 'bar'}), {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    ) as unknown as typeof fetch;
     const fragment = new MockFragment();
     const proc = new Procedure({
       fetchUrl: 'http://test',

@@ -128,6 +128,33 @@ export interface ProcedureOptions {
  * 手続き的処理管理クラスです。
  */
 export default class Procedure {
+  /**
+   * イベント属性名を正しく生成します。
+   * 例: ("click", "fetch") => "data-click-fetch"
+   *    (null, "fetch") => "data-fetch"
+   *    ("change", "bind-arg") => "data-change-bind-arg"
+   * 非イベント変種が "data-fetch-xxx" として存在するものについては、event が null の場合にそちらを返します。
+   */
+  private static attrName(
+    event: string | null,
+    key: string,
+    hasFetchFallback: boolean = false,
+  ): string {
+    if (event) {
+      return `${Env.prefix}${'-' + event}-${key}`;
+    }
+    return hasFetchFallback
+      ? `${Env.prefix}fetch-${key}`
+      : `${Env.prefix}${key}`;
+  }
+
+  /**
+   * オプションをフラグメントの属性から構築します。
+   *
+   * @param fragment フラグメント
+   * @param event イベント名
+   * @return 構築されたオプション
+   */
   private static buildOptions(
     fragment: ElementFragment,
     event: string | null,
@@ -136,22 +163,26 @@ export default class Procedure {
       targetFragment: fragment,
     };
     if (event) {
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-valid`)) {
+      // validate（spec: data-???-validate）
+      if (fragment.existsAttribute(Procedure.attrName(event, 'validate'))) {
         options.valid = true;
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-confirm`)) {
+      // confirm
+      if (fragment.existsAttribute(Procedure.attrName(event, 'confirm'))) {
         options.confirmMessage = fragment.getAttribute(
-          `${Env.prefix}-${event}-confirm`,
+          Procedure.attrName(event, 'confirm'),
         ) as string;
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-data`)) {
+      // data（イベント）
+      if (fragment.existsAttribute(Procedure.attrName(event, 'data'))) {
         options.data = Core.parseDataBind(
-          fragment.getRawAttribute(`${Env.prefix}-${event}-data`) as string,
+          fragment.getRawAttribute(Procedure.attrName(event, 'data')) as string,
         );
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-form`)) {
+      // form（イベント）
+      if (fragment.existsAttribute(Procedure.attrName(event, 'form'))) {
         const formSelector = fragment.getRawAttribute(
-          `${Env.prefix}-${event}-form`,
+          Procedure.attrName(event, 'form'),
         ) as string | null;
         if (formSelector) {
           const formElement = document.body.querySelector(formSelector);
@@ -163,7 +194,7 @@ export default class Procedure {
             Log.error(
               'Haori',
               `Form element not found: ${formSelector}` +
-                ` (${Env.prefix}-${event}-form)`,
+                ` (${Procedure.attrName(event, 'form')})`,
             );
           }
         }
@@ -189,30 +220,23 @@ ${body}
         }
       }
     }
-    if (
-      fragment.existsAttribute(`${Env.prefix}${event ? '-' + event : ''}-fetch`)
-    ) {
-      options.fetchUrl = fragment.getAttribute(
-        `${Env.prefix}${event ? '-' + event : ''}-fetch`,
-      ) as string;
+    // fetch URL（イベントあり/なし）
+    const fetchAttrName = Procedure.attrName(event, 'fetch');
+    const hasFetchAttr = fragment.existsAttribute(fetchAttrName);
+    if (hasFetchAttr) {
+      options.fetchUrl = fragment.getAttribute(fetchAttrName) as string;
     }
     const fetchOptions: RequestInit = {};
-    if (
-      fragment.existsAttribute(
-        `${Env.prefix}${event ? '-' + event : ''}-fetch-method`,
-      )
-    ) {
-      fetchOptions.method = fragment.getAttribute(
-        `${Env.prefix}${event ? '-' + event : ''}-fetch-method`,
-      ) as string;
+    // fetch-method（イベントあり/なし）
+    const fetchMethodAttr = Procedure.attrName(event, 'fetch-method', true);
+    if (fragment.existsAttribute(fetchMethodAttr)) {
+      fetchOptions.method = fragment.getAttribute(fetchMethodAttr) as string;
     }
-    if (
-      fragment.existsAttribute(
-        `${Env.prefix}${event ? '-' + event : ''}-fetch-headers`,
-      )
-    ) {
+    // fetch-headers（イベントあり/なし）
+    const fetchHeadersAttr = Procedure.attrName(event, 'fetch-headers', true);
+    if (fragment.existsAttribute(fetchHeadersAttr)) {
       const headersString = fragment.getRawAttribute(
-        `${Env.prefix}${event ? '-' + event : ''}-fetch-headers`,
+        fetchHeadersAttr,
       ) as string;
       try {
         fetchOptions.headers = Core.parseDataBind(headersString) as Record<
@@ -223,16 +247,12 @@ ${body}
         Log.error('Haori', `Invalid fetch headers: ${e}`);
       }
     }
-    if (
-      fragment.existsAttribute(
-        `${Env.prefix}${event ? '-' + event : ''}-fetch-content-type`,
-      )
-    ) {
+    // fetch-content-type（イベントあり/なし）
+    const fetchCTAttr = Procedure.attrName(event, 'fetch-content-type', true);
+    if (fragment.existsAttribute(fetchCTAttr)) {
       fetchOptions.headers = {
         ...fetchOptions.headers,
-        'Content-Type': fragment.getAttribute(
-          `${Env.prefix}${event ? '-' + event : ''}-fetch-content-type`,
-        ) as string,
+        'Content-Type': fragment.getAttribute(fetchCTAttr) as string,
       };
     } else if (
       fetchOptions.method &&
@@ -248,10 +268,12 @@ ${body}
     if (Object.keys(fetchOptions).length > 0) {
       options.fetchOptions = fetchOptions;
     }
-    if (fragment.existsAttribute(`${Env.prefix}-${event ?? 'fetch'}-bind`)) {
-      const bindSelector = fragment.getRawAttribute(
-        `${Env.prefix}-${event ?? 'fetch'}-bind`,
-      ) as string | null;
+    // bind（イベントあり/なし: 非イベントは data-fetch-bind）
+    const bindAttr = event
+      ? Procedure.attrName(event, 'bind')
+      : Procedure.attrName(null, 'bind', true);
+    if (fragment.existsAttribute(bindAttr)) {
+      const bindSelector = fragment.getRawAttribute(bindAttr) as string | null;
       if (bindSelector) {
         const bindElements = document.body.querySelectorAll(bindSelector);
         if (bindElements.length > 0) {
@@ -265,31 +287,28 @@ ${body}
         } else {
           Log.error(
             'Haori',
-            `Bind element not found: ${bindSelector}` +
-              ` (${Env.prefix}-${event ?? 'fetch'}-bind)`,
+            `Bind element not found: ${bindSelector} (${bindAttr})`,
           );
         }
       }
     }
-    if (
-      fragment.existsAttribute(`${Env.prefix}-${event ?? 'fetch'}-bind-arg`)
-    ) {
-      options.bindArg = fragment.getRawAttribute(
-        `${Env.prefix}-${event ?? 'fetch'}-bind-arg`,
-      ) as string | null;
+    const bindArgAttr = event
+      ? Procedure.attrName(event, 'bind-arg')
+      : Procedure.attrName(null, 'bind-arg', true);
+    if (fragment.existsAttribute(bindArgAttr)) {
+      options.bindArg = fragment.getRawAttribute(bindArgAttr) as string | null;
     }
-    if (
-      fragment.existsAttribute(`${Env.prefix}-${event ?? 'fetch'}-bind-params`)
-    ) {
-      const paramsString = fragment.getRawAttribute(
-        `${Env.prefix}-${event ?? 'fetch'}-bind-params`,
-      ) as string;
+    const bindParamsAttr = event
+      ? Procedure.attrName(event, 'bind-params')
+      : Procedure.attrName(null, 'bind-params', true);
+    if (fragment.existsAttribute(bindParamsAttr)) {
+      const paramsString = fragment.getRawAttribute(bindParamsAttr) as string;
       options.bindParams = paramsString.split('&').map(p => p.trim());
     }
     if (event) {
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-adjust`)) {
+      if (fragment.existsAttribute(Procedure.attrName(event, 'adjust'))) {
         const adjustSelector = fragment.getRawAttribute(
-          `${Env.prefix}-${event}-adjust`,
+          Procedure.attrName(event, 'adjust'),
         ) as string | null;
         if (adjustSelector) {
           const adjustElements = document.body.querySelectorAll(adjustSelector);
@@ -305,13 +324,15 @@ ${body}
             Log.error(
               'Haori',
               `Adjust element not found: ${adjustSelector}` +
-                ` (${Env.prefix}-${event}-adjust)`,
+                ` (${Procedure.attrName(event, 'adjust')})`,
             );
           }
         }
-        if (fragment.existsAttribute(`${Env.prefix}-${event}-adjust-value`)) {
+        if (
+          fragment.existsAttribute(Procedure.attrName(event, 'adjust-value'))
+        ) {
           const valueString = fragment.getRawAttribute(
-            `${Env.prefix}-${event}-adjust-value`,
+            Procedure.attrName(event, 'adjust-value'),
           ) as string;
           const value = Number(valueString);
           if (!isNaN(value)) {
@@ -319,16 +340,16 @@ ${body}
           }
         }
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-row-add`)) {
+      if (fragment.existsAttribute(Procedure.attrName(event, 'row-add'))) {
         options.rowAdd = true;
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-row-remove`)) {
+      if (fragment.existsAttribute(Procedure.attrName(event, 'row-remove'))) {
         options.rowRemove = true;
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-row-prev`)) {
+      if (fragment.existsAttribute(Procedure.attrName(event, 'row-prev'))) {
         options.rowMovePrev = true;
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-row-next`)) {
+      if (fragment.existsAttribute(Procedure.attrName(event, 'row-next'))) {
         options.rowMoveNext = true;
       }
       if (fragment.existsAttribute(`${Env.prefix}-${event}-after-run`)) {
@@ -349,11 +370,52 @@ ${body}
           Log.error('Haori', `Invalid after script: ${e}`);
         }
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-dialog`)) {
+      if (fragment.existsAttribute(Procedure.attrName(event, 'dialog'))) {
         options.dialogMessage = fragment.getAttribute(
-          `${Env.prefix}-${event}-dialog`,
+          Procedure.attrName(event, 'dialog'),
         ) as string;
       }
+    }
+
+    // 非イベントの data / form（data-fetch-data / data-fetch-form）も取り込む
+    if (!event) {
+      if (
+        fragment.existsAttribute(Procedure.attrName(null, 'fetch-data', true))
+      ) {
+        const raw = fragment.getRawAttribute(
+          Procedure.attrName(null, 'fetch-data', true),
+        ) as string;
+        options.data = Core.parseDataBind(raw);
+      }
+      if (
+        fragment.existsAttribute(Procedure.attrName(null, 'fetch-form', true))
+      ) {
+        const formSelector = fragment.getRawAttribute(
+          Procedure.attrName(null, 'fetch-form', true),
+        ) as string | null;
+        if (formSelector) {
+          const formElement = document.body.querySelector(formSelector);
+          if (formElement !== null) {
+            options.formFragment = Form.getFormFragment(
+              Fragment.get(formElement) as ElementFragment,
+            );
+          } else {
+            Log.error(
+              'Haori',
+              `Form element not found: ${formSelector} (` +
+                `${Procedure.attrName(null, 'fetch-form', true)})`,
+            );
+          }
+        }
+      }
+    }
+
+    // fetch が指定されているのにバインド先が無い場合、デフォルトで自要素にバインド
+    if (
+      hasFetchAttr &&
+      (!options.bindFragments || options.bindFragments.length === 0)
+    ) {
+      options.bindFragments = [fragment];
     }
     return options;
   }
@@ -700,7 +762,7 @@ ${body}
    */
   private getRowFragment(): ElementFragment | null {
     const rowFragment = this.options.targetFragment.closestByAttribute(
-      `${Env.prefix}-row`,
+      `${Env.prefix}row`,
     );
     if (!rowFragment) {
       Log.error(
