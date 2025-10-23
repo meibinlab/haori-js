@@ -168,9 +168,9 @@ export default class Procedure {
           }
         }
       }
-      if (fragment.existsAttribute(`${Env.prefix}-${event}-before`)) {
+      if (fragment.existsAttribute(`${Env.prefix}-${event}-before-run`)) {
         const body = fragment.getRawAttribute(
-          `${Env.prefix}-${event}-before`,
+          `${Env.prefix}-${event}-before-run`,
         ) as string;
         try {
           options.beforeCallback = new Function(

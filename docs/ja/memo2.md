@@ -56,7 +56,7 @@ data-???-confirm: 確認ダイアログを表示し、OKの場合のみ処理を
 
 data-???-adjust: CSSセレクタで指定したエレメントのvalue値を変更する。
 
-data-???-adjust-vaelu: value値の増減量。
+data-???-adjust-value: value値の増減量。
 
 data-???-row-add: 対象のエレメントが属している行の後ろに新しい行を追加する。
 
@@ -94,8 +94,6 @@ data-???-toast: 処理が成功した場合にトースト等のメッセージ�
 
 data-???-reset: CSSセレクタを指定する。対象および含まれるエレメントをリセットする。値の初期化、data-eachによる複製の削除。メッセージの除去。
 
-data-???-reset-params: リセット対象のパラメータを&区切りで指定する。
-
 data-???-click: 処理が成功した場合にクリックされるエレメントのセレクタ。
 
 data-???-refetch: 処理が成功した場合に対象エレメントのdata-fetchを実行する。
@@ -116,7 +114,7 @@ data-???-redirect: 処理が成功した場合に属性値のURLにリダイレ�
 6. data-???-after-run: フェッチ後スクリプト実行
 7. data-???-bind: データバインド実行
 8. data-???-adjust: 値調整実行
-9. data-???-row-add / data-???-row-remvoe / data-???-row-prev / data-???-row-next: 行データの変更
+9. data-???-row-add / data-???-row-remove / data-???-row-prev / data-???-row-next: 行データの変更
 10. data-???-reset: リセット処理実行
 11. data-???-refetch: 再フェッチ実行
 12. data-???-click: クリック実行

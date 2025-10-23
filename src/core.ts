@@ -9,6 +9,7 @@ import Form from './form';
 import Fragment, {ElementFragment, TextFragment} from './fragment';
 import Log from './log';
 import Procedure from './procedure';
+import Url from './url';
 
 /**
  * アプリケーションの中心的な制御を行うクラスです。
@@ -19,7 +20,7 @@ export default class Core {
   private static readonly PRIORITY_ATTRIBUTE_SUFFIXES = ['bind', 'if', 'each'];
 
   /** 遅延処理する属性のサフィックス */
-  private static readonly DEFERRED_ATTRIBUTE_SUFFIXES = ['fetch'];
+  private static readonly DEFERRED_ATTRIBUTE_SUFFIXES = ['fetch', 'url-param'];
 
   /**
    * 遅延属性かどうか（完全名で判定）を判定します。
@@ -114,10 +115,10 @@ export default class Core {
       case `${Env.prefix}bind`: {
         if (value === null) {
           fragment.clearBindingDataCache();
+          fragment.setBindingData({});
         } else {
           fragment.setBindingData(Core.parseDataBind(value));
         }
-        promises.push(Core.evaluateAll(fragment));
         break;
       }
       case `${Env.prefix}if`:
@@ -129,6 +130,18 @@ export default class Core {
       case `${Env.prefix}fetch`:
         promises.push(new Procedure(fragment, null).run());
         break;
+      case `${Env.prefix}url-param`: {
+        const arg = fragment.getAttribute(`${Env.prefix}url-arg`);
+        const params = Url.readParams();
+        if (arg === null) {
+          Core.setBindingData(element, params);
+        } else {
+          const data = fragment.getRawBindingData() || {};
+          data[String(arg)] = params;
+          Core.setBindingData(element, data);
+        }
+        break;
+      }
     }
     if (value === null) {
       promises.push(fragment.removeAttribute(name));
