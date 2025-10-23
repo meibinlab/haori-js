@@ -95,6 +95,16 @@ export default abstract class Fragment {
         parent.skipMutationNodes = prevSkip;
       }) as Promise<void>;
     } else {
+      // 親フラグメント情報が無くても、DOM 上に親ノードが存在する場合は安全に除去する。
+      const host = this.target.parentNode as (HTMLElement | null);
+      if (host) {
+        return Queue.enqueue(() => {
+          if (this.target.parentNode === host) {
+            host.removeChild(this.target);
+          }
+          this.mounted = false;
+        }) as Promise<void>;
+      }
       this.mounted = false;
     }
     return Promise.resolve();
