@@ -213,9 +213,30 @@ data-???-redirect: 処理が成功した場合に属性値のURLにリダイレ�
 - 非イベントの `data-fetch-arg`
 	- 非イベント属性（`data-fetch`）で取得したレスポンスをバインドする際、`data-fetch-arg` が指定されていれば、`{ [arg]: response }` の形にラップしてバインドします。
 	- 例: `data-fetch-arg="result"` の場合、`{ result: <レスポンス> }` がバインド対象になります。
+	- ミニ例:
+		```
+		<div data-fetch="/api/user" data-fetch-arg="user">
+		  名前: {{user.name}}
+		</div>
+		```
+		レスポンスが `{ "name": "Taro" }` の場合、テキストは「名前: Taro」と表示されます。
 
 - イベント属性側の `data-???-bind-arg`
 	- イベント版（`data-???-fetch` と組み合わせ）では `data-???-bind-arg` を使用します。意味は上記と同じで、レスポンスを `{ [arg]: response }` に整形してからバインドします。
+	- ミニ例:
+		```
+		<button
+		  data-click-fetch="/api/user"
+		  data-click-bind="#userView"
+		  data-click-bind-arg="user"
+		>
+		  取得
+		</button>
+		<div id="userView">
+		  {{user.name}}
+		</div>
+		```
+		クリック後、レスポンスが `{ "name": "Taro" }` なら `#userView` に「Taro」が表示されます。
 
 — 追加補足（each の引数・キー・インデックス）
 
@@ -223,11 +244,35 @@ data-???-redirect: 処理が成功した場合に属性値のURLにリダイレ�
 	- `data-each-arg` は「複製された各要素のパラメータ名」です。
 	- each のリストがプリミティブ値（文字列/数値など）の場合、`data-each-arg` は必須です。未指定の場合はエラーとなります。
 	- each のリストがオブジェクトの場合は、オブジェクトのキーがそのままバインドされます（`data-each-arg` を指定した場合は `{ [arg]: オブジェクト }` の形に入れ子化）。
+	- ミニ例（プリミティブ配列）:
+		```
+		<div data-each='["A","B"]' data-each-arg="item">
+		  <span>{{item}}</span>
+		</div>
+		```
+		→ `<span>A</span><span>B</span>` を生成。
 
 - data-each-key（差分・一意性のためのキー）
 	- `data-each-key` は差分更新やノード再利用のための比較キーです。バインド名には影響しません。
 	- 指定されたキーが無い/未定義の場合はランダムな UUID が生成されます。
+	- ミニ例（オブジェクト配列 + 安定キー）:
+		```
+		<ul data-each='[{"id":1,"name":"A"},{"id":2,"name":"B"}]' data-each-key="id">
+		  <li>{{name}}</li>
+		</ul>
+		```
 
 - data-each-index（インデックスのキー名）
 	- `data-each-index` を指定すると、各要素のバインドデータへインデックス番号がそのキー名で付与されます。
+	- ミニ例（インデックス付与）:
+		```
+		<ul data-each='[{"name":"A"},{"name":"B"}]' data-each-index="i">
+		  <li>{{i}}: {{name}}</li>
+		</ul>
+		```
+		→ `<li>0: A</li><li>1: B</li>` を生成。
+
+— 実装注記（each の挿入順の安定化）
+
+- `data-each` による複製挿入は、DOM 反映を逐次的に行うことで順序と一貫性を保証しています（オブザーバーの無限ループ回避フラグと協調するため）。API/仕様の変更はありませんが、描画が大きい場合でも順序は決定的です。
 
