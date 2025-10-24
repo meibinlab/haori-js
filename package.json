@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "dev:demo": "vite --config demo/vite.config.ts",
+    "build:demo": "vite build --config demo/vite.config.ts",
+    "preview:demo": "vite preview --config demo/vite.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",

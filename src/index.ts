@@ -11,6 +11,8 @@ import Form from './form';
 import Haori from './haori';
 import Log from './log';
 import Queue from './queue';
+// ブラウザ運用時の監視・自動起動（本番動作）は observer モジュールが担います
+import './observer';
 
 // メインクラスとユーティリティをエクスポート
 export {Core, Env, Fragment, Form, Haori, Log, Queue};

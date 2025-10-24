@@ -6,7 +6,7 @@ export default defineConfig({
     lib: {
       entry: 'src/index.ts',
       name: 'Haori',
-      formats: ['es', 'cjs'],
+      formats: ['es', 'cjs', 'iife'],
       fileName: fmt => `haori.${fmt}.js`,
     },
     sourcemap: true,

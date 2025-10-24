@@ -3,6 +3,8 @@ import tseslint from 'typescript-eslint';
 import path from 'node:path';
 
 export default tseslint.config(
+  // デモ用の TypeScript ファイルは対象外（HTMLのみのデモを想定）
+  {ignores: ['demo/**']},
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -36,8 +38,8 @@ export default tseslint.config(
       'space-infix-ops': ['error'],
       'eol-last': ['error'],
       'no-trailing-spaces': ['error'],
-      'brace-style': ['error', '1tbs'],
-  curly: ['error', 'all'],
+    'brace-style': ['error', '1tbs'],
+    curly: ['error', 'all'],
       'no-var': 'error',
       'prefer-const': 'error',
       'prefer-arrow-callback': 'error',

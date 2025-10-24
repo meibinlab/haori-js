@@ -10,6 +10,8 @@ import Fragment, {ElementFragment, TextFragment} from './fragment';
 import Log from './log';
 import Procedure from './procedure';
 import Url from './url';
+import {Import} from './import';
+import Queue from './queue';
 
 /**
  * アプリケーションの中心的な制御を行うクラスです。
@@ -130,6 +132,23 @@ export default class Core {
       case `${Env.prefix}fetch`:
         promises.push(new Procedure(fragment, null).run());
         break;
+      case `${Env.prefix}import`: {
+        if (typeof value === 'string') {
+          promises.push(
+            Import.load(value)
+              .then(html =>
+                // DOM 更新はキュー内で実行し、オブザーバーに差分を拾わせる
+                Queue.enqueue(() => {
+                  fragment.getTarget().innerHTML = html;
+                }) as Promise<void>,
+              )
+              .catch(error => {
+                Log.error('[Haori]', 'Failed to import HTML:', value, error);
+              }) as unknown as Promise<void>,
+          );
+        }
+        break;
+      }
       case `${Env.prefix}url-param`: {
         const arg = fragment.getAttribute(`${Env.prefix}url-arg`);
         const params = Url.readParams();
@@ -221,7 +240,9 @@ export default class Core {
     if (fragment) {
       parent.insertBefore(fragment, next);
       if (fragment instanceof ElementFragment) {
-        Core.evaluateAll(fragment);
+        // 新規追加ノードは属性評価（bind/if/each/import など含む）のフルスキャンを行う。
+        // これにより、取り込まれた断片内の data-import の入れ子や data-bind も正しく処理される。
+        Core.scan(fragment.getTarget());
       } else if (fragment instanceof TextFragment) {
         Core.evaluateText(fragment);
       }
