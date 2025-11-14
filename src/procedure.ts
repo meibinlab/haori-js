@@ -10,6 +10,7 @@ import Form from './form';
 import Fragment, {ElementFragment} from './fragment';
 import Haori from './haori';
 import Log from './log';
+import HaoriEvent from './event';
 
 /**
  * フェッチ前実行スクリプト戻り値型。
@@ -676,9 +677,41 @@ ${body}
 
         finalOptions.headers = headers;
 
-        return fetch(fetchUrl, finalOptions).then(response => {
-          return this.handleFetchResult(response);
-        });
+        // fetchstartイベントを発火
+        if (this.options.targetFragment && fetchUrl) {
+          const startedAt = performance.now();
+          HaoriEvent.fetchStart(
+            this.options.targetFragment.getTarget(),
+            fetchUrl,
+            finalOptions,
+            hasPayload ? payload : undefined,
+          );
+
+          return fetch(fetchUrl, finalOptions)
+            .then(response => {
+              return this.handleFetchResult(
+                response,
+                fetchUrl || undefined,
+                startedAt,
+              );
+            })
+            .catch(error => {
+              if (fetchUrl) {
+                HaoriEvent.fetchError(
+                  this.options.targetFragment!.getTarget(),
+                  fetchUrl,
+                  error,
+                );
+              }
+              throw error;
+            });
+        } else if (fetchUrl) {
+          return fetch(fetchUrl, finalOptions).then(response => {
+            return this.handleFetchResult(response, fetchUrl || undefined);
+          });
+        } else {
+          return Promise.resolve();
+        }
       } else {
         const merged = hasPayload ? payload : {};
         const response = new Response(JSON.stringify(merged), {
@@ -692,10 +725,33 @@ ${body}
   /**
    * フェッチ後の処理を実行します。
    */
-  private handleFetchResult(response: Response): Promise<void> {
+  private handleFetchResult(
+    response: Response,
+    url?: string,
+    startedAt?: number,
+  ): Promise<void> {
     // エラー応答時は以後の処理を停止し、メッセージを伝播
     if (!response.ok) {
+      if (this.options.targetFragment && url) {
+        HaoriEvent.fetchError(
+          this.options.targetFragment.getTarget(),
+          url,
+          new Error(`${response.status} ${response.statusText}`),
+          response.status,
+          startedAt,
+        );
+      }
       return this.handleFetchError(response);
+    }
+
+    // fetchendイベントを発火
+    if (this.options.targetFragment && url && startedAt) {
+      HaoriEvent.fetchEnd(
+        this.options.targetFragment.getTarget(),
+        url,
+        response.status,
+        startedAt,
+      );
     }
 
     if (this.options.afterCallback) {
@@ -801,9 +857,7 @@ ${body}
     }
 
     const addGeneralMessage = async (message: string) => {
-      const targetEl = baseFragment
-        ? baseFragment.getTarget()
-        : document.body;
+      const targetEl = baseFragment ? baseFragment.getTarget() : document.body;
       await Haori.addErrorMessage(targetEl, message);
     };
 

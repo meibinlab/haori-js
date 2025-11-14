@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Haori Event System Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .event-log { background: #f5f5f5; padding: 10px; height: 200px; overflow-y: scroll; border: 1px solid #ddd; margin: 10px 0; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        button { margin: 5px; padding: 8px 12px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>Haori Event System Test</h1>
+    
+    <div class="event-log" id="eventLog"></div>
+    <button onclick="clearLog()">Clear Log</button>
+
+    <!-- Import Event Test -->
+    <div class="test-section">
+        <h2>Import Events Test</h2>
+        <button onclick="testImport()">Test Import Events</button>
+        <div data-haori="importTest"></div>
+    </div>
+
+    <!-- Bind Event Test -->
+    <div class="test-section">
+        <h2>Bind Events Test</h2>
+        <button onclick="testBind()">Change Bind Data</button>
+        <div data-haori="bindTest">
+            <p data-bind="message">{{message}}</p>
+            <p data-bind="count">Count: {{count}}</p>
+        </div>
+    </div>
+
+    <!-- Each Event Test -->
+    <div class="test-section">
+        <h2>Each Events Test</h2>
+        <button onclick="testEach()">Modify List</button>
+        <div data-haori="eachTest">
+            <div data-each="items">
+                <p>{{name}} - {{value}}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Show/Hide Event Test -->
+    <div class="test-section">
+        <h2>Show/Hide Events Test</h2>
+        <button onclick="testShowHide()">Toggle Visibility</button>
+        <div data-haori="showHideTest">
+            <p data-if="visible" class="conditional-content">This content can be shown or hidden</p>
+        </div>
+    </div>
+
+    <!-- Fetch Event Test -->
+    <div class="test-section">
+        <h2>Fetch Events Test</h2>
+        <button onclick="testFetch()">Test Fetch</button>
+        <form data-haori="fetchTest" data-procedure-url="/api/test" data-procedure-method="POST">
+            <input type="hidden" name="test" value="data">
+            <button type="submit">Submit Form</button>
+        </form>
+    </div>
+
+    <script type="module">
+        import Haori from '../dist/haori.es.js';
+
+        // ログ表示用のヘルパー関数
+        function logEvent(eventName, detail) {
+            const log = document.getElementById('eventLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const detailStr = detail ? JSON.stringify(detail, null, 2) : 'no detail';
+            log.innerHTML += `<div><strong>[${timestamp}] ${eventName}</strong><br><pre>${detailStr}</pre></div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // イベントリスナーの設定
+        document.addEventListener('haori:ready', (e) => logEvent('haori:ready', e.detail));
+        document.addEventListener('haori:render', (e) => logEvent('haori:render', e.detail));
+        
+        document.addEventListener('haori:importstart', (e) => logEvent('haori:importstart', e.detail));
+        document.addEventListener('haori:importend', (e) => logEvent('haori:importend', e.detail));
+        document.addEventListener('haori:importerror', (e) => logEvent('haori:importerror', e.detail));
+        
+        document.addEventListener('haori:bindchange', (e) => logEvent('haori:bindchange', e.detail));
+        
+        document.addEventListener('haori:eachupdate', (e) => logEvent('haori:eachupdate', e.detail));
+        document.addEventListener('haori:rowadd', (e) => logEvent('haori:rowadd', e.detail));
+        document.addEventListener('haori:rowremove', (e) => logEvent('haori:rowremove', e.detail));
+        document.addEventListener('haori:rowmove', (e) => logEvent('haori:rowmove', e.detail));
+        
+        document.addEventListener('haori:show', (e) => logEvent('haori:show', e.detail));
+        document.addEventListener('haori:hide', (e) => logEvent('haori:hide', e.detail));
+        
+        document.addEventListener('haori:fetchstart', (e) => logEvent('haori:fetchstart', e.detail));
+        document.addEventListener('haori:fetchend', (e) => logEvent('haori:fetchend', e.detail));
+        document.addEventListener('haori:fetcherror', (e) => logEvent('haori:fetcherror', e.detail));
+
+        // Haoriの初期化
+        const haori = new Haori();
+        
+        // 初期データの設定
+        haori.setData('importTest', {});
+        haori.setData('bindTest', { message: 'Hello World', count: 0 });
+        haori.setData('eachTest', { 
+            items: [
+                { name: 'Item 1', value: 10 },
+                { name: 'Item 2', value: 20 }
+            ]
+        });
+        haori.setData('showHideTest', { visible: true });
+        haori.setData('fetchTest', {});
+
+        // テスト関数をグローバルに公開
+        window.clearLog = function() {
+            document.getElementById('eventLog').innerHTML = '';
+        };
+
+        window.testImport = function() {
+            const element = document.querySelector('[data-haori="importTest"]');
+            element.setAttribute('data-import', JSON.stringify({
+                test: 'import data',
+                timestamp: Date.now()
+            }));
+        };
+
+        window.testBind = function() {
+            const currentData = haori.getData('bindTest');
+            haori.setData('bindTest', {
+                message: 'Updated Message!',
+                count: currentData.count + 1
+            });
+        };
+
+        window.testEach = function() {
+            const currentData = haori.getData('eachTest');
+            const newItems = [...currentData.items];
+            
+            // ランダムに追加、削除、または変更
+            const action = Math.floor(Math.random() * 3);
+            switch(action) {
+                case 0: // 追加
+                    newItems.push({ name: `Item ${newItems.length + 1}`, value: Math.floor(Math.random() * 100) });
+                    break;
+                case 1: // 削除
+                    if (newItems.length > 1) {
+                        newItems.splice(Math.floor(Math.random() * newItems.length), 1);
+                    }
+                    break;
+                case 2: // 変更
+                    if (newItems.length > 0) {
+                        const index = Math.floor(Math.random() * newItems.length);
+                        newItems[index].value = Math.floor(Math.random() * 100);
+                    }
+                    break;
+            }
+            
+            haori.setData('eachTest', { items: newItems });
+        };
+
+        window.testShowHide = function() {
+            const currentData = haori.getData('showHideTest');
+            haori.setData('showHideTest', { visible: !currentData.visible });
+        };
+
+        window.testFetch = function() {
+            // フォームを手動で送信してfetchイベントをトリガー
+            const form = document.querySelector('[data-haori="fetchTest"]');
+            const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+            form.dispatchEvent(submitEvent);
+        };
+
+        // 初期ログ
+        logEvent('Page Loaded', { message: 'Event system test page loaded' });
+    </script>
+</body>
+</html>

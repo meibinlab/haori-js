@@ -12,6 +12,7 @@ import Procedure from './procedure';
 import Url from './url';
 import {Import} from './import';
 import Queue from './queue';
+import HaoriEvent from './event';
 
 /**
  * アプリケーションの中心的な制御を行うクラスです。
@@ -134,15 +135,23 @@ export default class Core {
         break;
       case `${Env.prefix}import`: {
         if (typeof value === 'string') {
+          const target = fragment.getTarget();
+          const startedAt = performance.now();
+          HaoriEvent.importStart(target, value);
+
           promises.push(
             Import.load(value)
-              .then(html =>
+              .then(html => {
+                const bytes = new TextEncoder().encode(html).length;
                 // DOM 更新はキュー内で実行し、オブザーバーに差分を拾わせる
-                Queue.enqueue(() => {
-                  fragment.getTarget().innerHTML = html;
-                }) as Promise<void>,
-              )
+                return Queue.enqueue(() => {
+                  target.innerHTML = html;
+                }).then(() => {
+                  HaoriEvent.importEnd(target, value, bytes, startedAt);
+                });
+              })
               .catch(error => {
+                HaoriEvent.importError(target, value, error);
                 Log.error('[Haori]', 'Failed to import HTML:', value, error);
               }) as unknown as Promise<void>,
           );
@@ -183,12 +192,17 @@ export default class Core {
     data: Record<string, unknown>,
   ): Promise<void> {
     const fragment = Fragment.get(element);
+    const previous = fragment.getRawBindingData();
     fragment.setBindingData(data);
     const promises: Promise<void>[] = [];
     promises.push(
       fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(data)),
     );
     promises.push(Core.evaluateAll(fragment));
+
+    // bindchangeイベントを発火
+    HaoriEvent.bindChange(element, previous, data, 'manual');
+
     return Promise.all(promises).then(() => undefined);
   }
 
@@ -381,11 +395,19 @@ export default class Core {
       Number.isNaN(condition)
     ) {
       if (fragment.isVisible()) {
-        promises.push(fragment.hide());
+        promises.push(
+          fragment.hide().then(() => {
+            HaoriEvent.hide(fragment.getTarget());
+          }),
+        );
       }
     } else {
       if (!fragment.isVisible()) {
-        promises.push(fragment.show());
+        promises.push(
+          fragment.show().then(() => {
+            HaoriEvent.show(fragment.getTarget());
+          }),
+        );
         promises.push(Core.evaluateAll(fragment));
       }
     }
@@ -521,7 +543,28 @@ export default class Core {
     });
     return Promise.all(removalPromises)
       .then(() => chain)
-      .then(() => undefined);
+      .then(() => {
+        // eachupdateイベントを発火
+        const validNewKeys = newKeys.filter(
+          (key): key is string => key !== null,
+        );
+        const validSrcKeys = srcKeys.filter(
+          (key): key is string => key !== null,
+        );
+        const addedKeys = validNewKeys.filter(
+          key => !validSrcKeys.includes(key),
+        );
+        const removedKeys = validSrcKeys.filter(
+          key => !validNewKeys.includes(key),
+        );
+        HaoriEvent.eachUpdate(
+          parent.getTarget(),
+          addedKeys,
+          removedKeys,
+          validNewKeys,
+        );
+        return undefined;
+      });
   }
 
   /**
