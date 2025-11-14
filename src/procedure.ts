@@ -165,23 +165,23 @@ export default class Procedure {
     };
     if (event) {
       // validate（spec: data-???-validate）
-      if (fragment.existsAttribute(Procedure.attrName(event, 'validate'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'validate'))) {
         options.valid = true;
       }
       // confirm
-      if (fragment.existsAttribute(Procedure.attrName(event, 'confirm'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'confirm'))) {
         options.confirmMessage = fragment.getAttribute(
           Procedure.attrName(event, 'confirm'),
         ) as string;
       }
       // data（イベント）
-      if (fragment.existsAttribute(Procedure.attrName(event, 'data'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'data'))) {
         options.data = Core.parseDataBind(
           fragment.getRawAttribute(Procedure.attrName(event, 'data')) as string,
         );
       }
       // form（イベント）
-      if (fragment.existsAttribute(Procedure.attrName(event, 'form'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'form'))) {
         const formSelector = fragment.getRawAttribute(
           Procedure.attrName(event, 'form'),
         ) as string | null;
@@ -203,7 +203,7 @@ export default class Procedure {
           options.formFragment = Form.getFormFragment(fragment);
         }
       }
-      if (fragment.existsAttribute(`${Env.prefix}${event}-before-run`)) {
+      if (fragment.hasAttribute(`${Env.prefix}${event}-before-run`)) {
         const body = fragment.getRawAttribute(
           `${Env.prefix}${event}-before-run`,
         ) as string;
@@ -226,19 +226,19 @@ ${body}
     }
     // fetch URL（イベントあり/なし）
     const fetchAttrName = Procedure.attrName(event, 'fetch');
-    const hasFetchAttr = fragment.existsAttribute(fetchAttrName);
+    const hasFetchAttr = fragment.hasAttribute(fetchAttrName);
     if (hasFetchAttr) {
       options.fetchUrl = fragment.getAttribute(fetchAttrName) as string;
     }
     const fetchOptions: RequestInit = {};
     // fetch-method（イベントあり/なし）
     const fetchMethodAttr = Procedure.attrName(event, 'fetch-method', true);
-    if (fragment.existsAttribute(fetchMethodAttr)) {
+    if (fragment.hasAttribute(fetchMethodAttr)) {
       fetchOptions.method = fragment.getAttribute(fetchMethodAttr) as string;
     }
     // fetch-headers（イベントあり/なし）
     const fetchHeadersAttr = Procedure.attrName(event, 'fetch-headers', true);
-    if (fragment.existsAttribute(fetchHeadersAttr)) {
+    if (fragment.hasAttribute(fetchHeadersAttr)) {
       const headersString = fragment.getRawAttribute(
         fetchHeadersAttr,
       ) as string;
@@ -253,7 +253,7 @@ ${body}
     }
     // fetch-content-type（イベントあり/なし）
     const fetchCTAttr = Procedure.attrName(event, 'fetch-content-type', true);
-    if (fragment.existsAttribute(fetchCTAttr)) {
+    if (fragment.hasAttribute(fetchCTAttr)) {
       fetchOptions.headers = {
         ...fetchOptions.headers,
         'Content-Type': fragment.getAttribute(fetchCTAttr) as string,
@@ -287,7 +287,7 @@ ${body}
     const bindAttr = event
       ? Procedure.attrName(event, 'bind')
       : Procedure.attrName(null, 'bind', true);
-    if (fragment.existsAttribute(bindAttr)) {
+    if (fragment.hasAttribute(bindAttr)) {
       const bindSelector = fragment.getRawAttribute(bindAttr) as string | null;
       if (bindSelector) {
         const bindElements = document.body.querySelectorAll(bindSelector);
@@ -310,18 +310,18 @@ ${body}
     const bindArgAttr = event
       ? Procedure.attrName(event, 'bind-arg')
       : Procedure.attrName(null, 'arg', true);
-    if (fragment.existsAttribute(bindArgAttr)) {
+    if (fragment.hasAttribute(bindArgAttr)) {
       options.bindArg = fragment.getRawAttribute(bindArgAttr) as string | null;
     }
     const bindParamsAttr = event
       ? Procedure.attrName(event, 'bind-params')
       : Procedure.attrName(null, 'bind-params', true);
-    if (fragment.existsAttribute(bindParamsAttr)) {
+    if (fragment.hasAttribute(bindParamsAttr)) {
       const paramsString = fragment.getRawAttribute(bindParamsAttr) as string;
       options.bindParams = paramsString.split('&').map(p => p.trim());
     }
     if (event) {
-      if (fragment.existsAttribute(Procedure.attrName(event, 'adjust'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'adjust'))) {
         const adjustSelector = fragment.getRawAttribute(
           Procedure.attrName(event, 'adjust'),
         ) as string | null;
@@ -344,7 +344,7 @@ ${body}
           }
         }
         if (
-          fragment.existsAttribute(Procedure.attrName(event, 'adjust-value'))
+          fragment.hasAttribute(Procedure.attrName(event, 'adjust-value'))
         ) {
           const valueString = fragment.getRawAttribute(
             Procedure.attrName(event, 'adjust-value'),
@@ -355,19 +355,19 @@ ${body}
           }
         }
       }
-      if (fragment.existsAttribute(Procedure.attrName(event, 'row-add'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'row-add'))) {
         options.rowAdd = true;
       }
-      if (fragment.existsAttribute(Procedure.attrName(event, 'row-remove'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'row-remove'))) {
         options.rowRemove = true;
       }
-      if (fragment.existsAttribute(Procedure.attrName(event, 'row-prev'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'row-prev'))) {
         options.rowMovePrev = true;
       }
-      if (fragment.existsAttribute(Procedure.attrName(event, 'row-next'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'row-next'))) {
         options.rowMoveNext = true;
       }
-      if (fragment.existsAttribute(`${Env.prefix}${event}-after-run`)) {
+      if (fragment.hasAttribute(`${Env.prefix}${event}-after-run`)) {
         const body = fragment.getRawAttribute(
           `${Env.prefix}${event}-after-run`,
         ) as string;
@@ -385,17 +385,17 @@ ${body}
           Log.error('Haori', `Invalid after script: ${e}`);
         }
       }
-      if (fragment.existsAttribute(Procedure.attrName(event, 'dialog'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'dialog'))) {
         options.dialogMessage = fragment.getAttribute(
           Procedure.attrName(event, 'dialog'),
         ) as string;
       }
-      if (fragment.existsAttribute(Procedure.attrName(event, 'toast'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'toast'))) {
         options.toastMessage = fragment.getAttribute(
           Procedure.attrName(event, 'toast'),
         ) as string;
       }
-      if (fragment.existsAttribute(Procedure.attrName(event, 'redirect'))) {
+      if (fragment.hasAttribute(Procedure.attrName(event, 'redirect'))) {
         options.redirectUrl = fragment.getAttribute(
           Procedure.attrName(event, 'redirect'),
         ) as string;
@@ -411,7 +411,7 @@ ${body}
       ] as const;
       selectorAttrs.forEach(attrKey => {
         const attrName = Procedure.attrName(event, attrKey);
-        if (!fragment.existsAttribute(attrName)) {
+        if (!fragment.hasAttribute(attrName)) {
           return;
         }
         const selector = fragment.getRawAttribute(attrName) as string | null;
@@ -456,7 +456,7 @@ ${body}
     // 非イベントの data / form（data-fetch-data / data-fetch-form）も取り込む
     if (!event) {
       if (
-        fragment.existsAttribute(Procedure.attrName(null, 'fetch-data', true))
+        fragment.hasAttribute(Procedure.attrName(null, 'fetch-data', true))
       ) {
         const raw = fragment.getRawAttribute(
           Procedure.attrName(null, 'fetch-data', true),
@@ -464,7 +464,7 @@ ${body}
         options.data = Core.parseDataBind(raw);
       }
       if (
-        fragment.existsAttribute(Procedure.attrName(null, 'fetch-form', true))
+        fragment.hasAttribute(Procedure.attrName(null, 'fetch-form', true))
       ) {
         const formSelector = fragment.getRawAttribute(
           Procedure.attrName(null, 'fetch-form', true),
