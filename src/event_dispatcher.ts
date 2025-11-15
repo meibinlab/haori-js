@@ -88,7 +88,7 @@ export default class EventDispatcher {
       fragment.syncValue();
     }
 
-    new Procedure(fragment, type).run().catch(error => {G
+    new Procedure(fragment, type).run().catch(error => {
       Log.error('[Haori]', 'Procedure execution error:', error);
     });
   }

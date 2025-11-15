@@ -48,6 +48,12 @@ export default class Core {
     if (!fragment) {
       return Promise.resolve();
     }
+    // DOMに組み込まれている場合はmountedをtrueにする
+    if (element.parentNode) {
+      fragment.setMounted(
+        Fragment.get(element.parentNode as HTMLElement)?.isMounted() || false,
+      );
+    }
     const promises: Promise<void>[] = [];
     const processedAttributes = new Set<string>();
     for (const suffix of Core.PRIORITY_ATTRIBUTE_SUFFIXES) {
@@ -525,6 +531,7 @@ export default class Core {
       } else {
         // 新しい要素を追加
         child = template.clone();
+        Core.scan(child.getTarget());
       }
       Core.updateRowFragment(
         child,
