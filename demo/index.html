@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Haori.js デモ</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #4CAF50;
+            margin-top: 30px;
+            border-left: 4px solid #4CAF50;
+            padding-left: 10px;
+        }
+        .demo-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fafafa;
+        }
+        .output {
+            background: #e8f5e9;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
+        .dom-viewer {
+            background: #263238;
+            color: #aed581;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        button, input[type="submit"] {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        button:hover, input[type="submit"]:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        input[type="text"], input[type="number"], select, textarea {
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+            max-width: 300px;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px 0;
+            font-weight: bold;
+            color: #555;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background: #4CAF50;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #323232;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            padding: 8px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+        }
+        .show-dom-btn {
+            background: #2196F3;
+            margin-left: 10px;
+        }
+        .show-dom-btn:hover {
+            background: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Haori.js インタラクティブデモ</h1>
+        <p>このページは、Haori.jsの機能をHTML属性のみで実現したデモです。</p>
+
+        <!-- 1. データバインディング -->
+        <h2>1. データバインディング</h2>
+        <div class="demo-section" id="demo1">
+            <div data-bind='{"name":"田中太郎","age":25,"city":"東京"}'>
+                <div class="output">
+                    <p><strong>名前:</strong> {{name}}</p>
+                    <p><strong>年齢:</strong> {{age}}歳</p>
+                    <p><strong>都市:</strong> {{city}}</p>
+                </div>
+            </div>
+            <button class="show-dom-btn" data-demo-id="demo1">DOMを表示</button>
+            <div id="dom-demo1" class="dom-viewer" style="display:none;"></div>
+        </div>
+
+        <!-- 2. 条件分岐 -->
+        <h2>2. 条件分岐 (data-if)</h2>
+        <div class="demo-section" id="demo2">
+            <div data-bind='{"showMessage":true,"count":5}'>
+                <label>
+                    <input type="checkbox" name="showMessage">
+                    メッセージを表示
+                </label>
+
+                <div class="output">
+                    <p data-if="showMessage">✅ メッセージが表示されています</p>
+                    <p data-if="!showMessage">❌ メッセージは非表示です</p>
+                    <p data-if="count >= 5">カウントは5以上です (現在: {{count}})</p>
+                </div>
+            </div>
+            <button class="show-dom-btn" data-demo-id="demo2">DOMを表示</button>
+            <div id="dom-demo2" class="dom-viewer" style="display:none;"></div>
+        </div>
+
+        <!-- 3. リスト表示 -->
+        <h2>3. リスト表示 (data-each)</h2>
+        <div class="demo-section" id="demo3">
+            <div data-bind='{"users":[{"id":1,"name":"田中太郎","age":25},{"id":2,"name":"佐藤花子","age":30},{"id":3,"name":"鈴木一郎","age":28}]}'>
+                <div class="output">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>名前</th>
+                                <th>年齢</th>
+                            </tr>
+                        </thead>
+                        <tbody data-each="users" data-each-key="id">
+                            <tr>
+                                <td>{{id}}</td>
+                                <td>{{name}}</td>
+                                <td>{{age}}歳</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <button class="show-dom-btn" data-demo-id="demo3">DOMを表示</button>
+            <div id="dom-demo3" class="dom-viewer" style="display:none;"></div>
+        </div>
+
+        <!-- 4. フォーム双方向バインディング -->
+        <h2>4. フォーム双方向バインディング</h2>
+        <div class="demo-section" id="demo4">
+            <form data-bind='{"username":"","email":"","message":""}'>
+                <label>ユーザー名:</label>
+                <input type="text" name="username" placeholder="名前を入力">
+
+                <label>メールアドレス:</label>
+                <input type="text" name="email" placeholder="メール@example.com">
+
+                <label>メッセージ:</label>
+                <textarea name="message" rows="3" placeholder="メッセージを入力"></textarea>
+
+                <div class="output">
+                    <h3>入力内容:</h3>
+                    <p><strong>ユーザー名:</strong> {{username}}</p>
+                    <p><strong>メール:</strong> {{email}}</p>
+                    <p><strong>メッセージ:</strong> {{message}}</p>
+                </div>
+            </form>
+            <button class="show-dom-btn" data-demo-id="demo4">DOMを表示</button>
+            <div id="dom-demo4" class="dom-viewer" style="display:none;"></div>
+        </div>
+
+        <!-- 5. 行操作 (追加・削除) -->
+        <h2>5. 行操作 (追加・削除・並び替え)</h2>
+        <div class="demo-section" id="demo5">
+            <div data-bind='{"items":[{"name":"項目1"},{"name":"項目2"}]}'>
+                <div class="output">
+                    <ul data-each="items" data-each-key="name">
+                        <li>
+                            <input type="text" name="name" value="{{name}}" style="width: 200px;">
+                            <button data-click-row-prev>↑</button>
+                            <button data-click-row-next>↓</button>
+                            <button data-click-row-add>➕ 追加</button>
+                            <button data-click-row-remove style="background: #f44336;">🗑️ 削除</button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <button class="show-dom-btn" data-demo-id="demo5">DOMを表示</button>
+            <div id="dom-demo5" class="dom-viewer" style="display:none;"></div>
+        </div>
+
+        <!-- 6. カウンター (adjust) -->
+        <h2>6. カウンター (data-click-adjust)</h2>
+        <div class="demo-section" id="demo6">
+            <div data-bind='{"counter":0}'>
+                <div class="output">
+                    <p style="font-size: 24px;"><strong>カウント:</strong> {{counter}}</p>
+                </div>
+                <input type="number" id="counter" name="counter" value="{{counter}}" readonly>
+                <div>
+                    <button data-click-adjust="#counter" data-click-adjust-value="1">+1</button>
+                    <button data-click-adjust="#counter" data-click-adjust-value="5">+5</button>
+                    <button data-click-adjust="#counter" data-click-adjust-value="-1">-1</button>
+                    <button data-click-adjust="#counter" data-click-adjust-value="-5">-5</button>
+                    <button data-click-reset="#counter" style="background: #ff9800;">リセット</button>
+                </div>
+            </div>
+            <button class="show-dom-btn" data-demo-id="demo6">DOMを表示</button>
+            <div id="dom-demo6" class="dom-viewer" style="display:none;"></div>
+        </div>
+
+        <!-- 7. ダイアログとトースト -->
+        <h2>7. ダイアログとトースト</h2>
+        <div class="demo-section" id="demo7">
+            <button data-click-dialog="これはダイアログメッセージです！">ダイアログを表示</button>
+            <button data-click-toast="トースト通知が表示されました" style="background: #FF9800;">トーストを表示</button>
+            <button
+                data-click-confirm="本当に実行しますか？"
+                data-click-toast="実行しました！"
+                style="background: #f44336;">
+                確認付きアクション
+            </button>
+            <button class="show-dom-btn" data-demo-id="demo7">DOMを表示</button>
+            <div id="dom-demo7" class="dom-viewer" style="display:none;"></div>
+        </div>
+
+        <!-- 8. 計算式 -->
+        <h2>8. 計算式</h2>
+        <div class="demo-section" id="demo8">
+            <form data-bind='{"price":1000,"quantity":1,"taxRate":0.1}'>
+                <label>単価:</label>
+                <input type="number" name="price" value="{{price}}">
+
+                <label>数量:</label>
+                <input type="number" name="quantity" value="{{quantity}}">
+
+                <label>消費税率:</label>
+                <select name="taxRate">
+                    <option value="0.08">8%</option>
+                    <option value="0.1" selected>10%</option>
+                </select>
+
+                <div class="output">
+                    <p><strong>小計:</strong> {{price * quantity}}円</p>
+                    <p><strong>消費税:</strong> {{Math.floor(price * quantity * taxRate)}}円</p>
+                    <p><strong>合計:</strong> {{price * quantity + Math.floor(price * quantity * taxRate)}}円</p>
+                </div>
+            </form>
+            <button class="show-dom-btn" data-demo-id="demo8">DOMを表示</button>
+            <div id="dom-demo8" class="dom-viewer" style="display:none;"></div>
+        </div>
+
+        <!-- 9. ネストしたデータ -->
+        <h2>9. ネストしたデータ</h2>
+        <div class="demo-section" id="demo9">
+            <div data-bind='{"user":{"name":"山田太郎","profile":{"age":35,"email":"yamada@example.com","address":"東京都渋谷区"}}}'>
+                <div class="output">
+                    <h3>ユーザー情報</h3>
+                    <p><strong>名前:</strong> {{user.name}}</p>
+                    <p><strong>年齢:</strong> {{user.profile.age}}歳</p>
+                    <p><strong>メール:</strong> {{user.profile.email}}</p>
+                    <p><strong>住所:</strong> {{user.profile.address}}</p>
+                </div>
+            </div>
+            <button class="show-dom-btn" data-demo-id="demo9">DOMを表示</button>
+            <div id="dom-demo9" class="dom-viewer" style="display:none;"></div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        import Haori from '../src/index.ts';
+
+        // Haoriの初期化
+        const haori = new Haori();
+
+        // DOM表示ボタンのイベントリスナー設定
+        document.addEventListener('click', function(e) {
+            const button = e.target.closest('.show-dom-btn');
+            if (!button) return;
+
+            const demoId = button.getAttribute('data-demo-id');
+            if (!demoId) return;
+
+            const section = document.getElementById(demoId);
+            const domViewer = document.getElementById('dom-' + demoId);
+
+            if (domViewer.style.display === 'none') {
+                const html = section.querySelector('.demo-section > div, .demo-section > form')?.outerHTML || section.innerHTML;
+                domViewer.textContent = formatHTML(html);
+                domViewer.style.display = 'block';
+            } else {
+                domViewer.style.display = 'none';
+            }
+        });
+
+        function formatHTML(html) {
+            let formatted = '';
+            let indent = 0;
+
+            html.split(/(<[^>]+>)/g).forEach(function(node) {
+                if (node.match(/^<\/\w/)) {
+                    indent--;
+                }
+
+                if (node.trim()) {
+                    formatted += '  '.repeat(Math.max(0, indent)) + node.trim() + '\n';
+                }
+
+                if (node.match(/^<\w[^>]*[^\/]>$/)) {
+                    indent++;
+                }
+            });
+
+            return formatted;
+        }
+    </script>
+</body>
+</html>
