@@ -54,12 +54,52 @@ describe('ElementFragment の mount/unmount/hide/show', () => {
     await childFrag.unmount();
     expect(childFrag.isMounted()).toBe(false);
     expect(inner.parentNode).toBeNull();
+  });
 
-    // hide/show
+  it('hide/show でテキストノードを含む子要素が保持される', async () => {
+    const wrapper = document.createElement('div');
+    const p = document.createElement('p');
+    p.textContent = 'テストテキスト';
+    wrapper.appendChild(p);
+
+    const wrapperFrag = new ElementFragment(wrapper);
+
+    // 初期状態: 子要素とテキストが存在
+    expect(wrapper.children.length).toBe(1);
+    expect(p.textContent).toBe('テストテキスト');
+
+    // 1回目: hide → show
     await wrapperFrag.hide();
     expect(wrapper.style.display).toBe('none');
+    expect(wrapper.getAttribute('data-if-false')).toBe('');
+    expect(wrapper.children.length).toBe(1); // 子要素は残っている
+    expect(p.textContent).toBe('テストテキスト'); // テキストも残っている
+
     await wrapperFrag.show();
     expect(wrapper.style.display).toBe('');
+    expect(wrapper.hasAttribute('data-if-false')).toBe(false);
+    expect(wrapper.children.length).toBe(1);
+    expect(p.textContent).toBe('テストテキスト');
+
+    // 2回目: hide → show（複数回のサイクルをテスト）
+    await wrapperFrag.hide();
+    expect(wrapper.style.display).toBe('none');
+    expect(wrapper.children.length).toBe(1);
+    expect(p.textContent).toBe('テストテキスト');
+
+    await wrapperFrag.show();
+    expect(wrapper.style.display).toBe('');
+    expect(wrapper.children.length).toBe(1);
+    expect(p.textContent).toBe('テストテキスト');
+
+    // 3回目: hide → show（さらに繰り返し）
+    await wrapperFrag.hide();
+    expect(wrapper.children.length).toBe(1);
+    expect(p.textContent).toBe('テストテキスト');
+
+    await wrapperFrag.show();
+    expect(wrapper.children.length).toBe(1);
+    expect(p.textContent).toBe('テストテキスト'); // 何度でもテキストが保持される
   });
 });
 

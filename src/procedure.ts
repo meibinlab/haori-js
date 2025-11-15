@@ -202,6 +202,9 @@ export default class Procedure {
           // 属性はあるが値が省略された場合は自要素もしくは先祖の form を対象
           options.formFragment = Form.getFormFragment(fragment);
         }
+      } else if (event === 'change') {
+        // changeイベントの場合、data-change-form属性がなくても自動的にフォームを検索
+        options.formFragment = Form.getFormFragment(fragment);
       }
       if (fragment.hasAttribute(`${Env.prefix}${event}-before-run`)) {
         const body = fragment.getRawAttribute(

@@ -561,8 +561,9 @@ export class ElementFragment extends Fragment {
 
   /**
    * 内部の値をDOMの値と同期します。
+   * changeイベント時など、DOM値が変更された後に呼び出されます。
    */
-  private syncValue() {
+  public syncValue() {
     const element = this.getTarget();
     if (element instanceof HTMLInputElement) {
       if (element.type === 'checkbox' || element.type === 'radio') {
@@ -850,7 +851,7 @@ export class ElementFragment extends Fragment {
   }
 
   /**
-   * エレメントを非表示にし、子ノードをDOMから削除します。
+   * エレメントを非表示にします。
    *
    * @returns エレメントの非表示のPromise
    */
@@ -859,21 +860,19 @@ export class ElementFragment extends Fragment {
     this.display = this.getTarget().style.display;
     this.getTarget().style.display = 'none';
     this.getTarget().setAttribute(`${Env.prefix}if-false`, '');
-    const promises = this.children.map(child => child.unmount());
-    return Promise.all(promises).then(() => undefined);
+    return Promise.resolve();
   }
 
   /**
-   * エレメントを表示し、子ノードをDOMに追加します。
+   * エレメントを表示します。
    *
    * @return エレメントの表示のPromise
    */
   public show(): Promise<void> {
-    const promises = this.children.map(child => child.mount());
     this.getTarget().style.display = this.display ?? '';
     this.getTarget().removeAttribute(`${Env.prefix}if-false`);
     this.visible = true;
-    return Promise.all(promises).then(() => undefined);
+    return Promise.resolve();
   }
 
   /**

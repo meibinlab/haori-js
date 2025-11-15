@@ -4,7 +4,7 @@
  * クリック/変更/ロードイベントを検出し Procedure に委譲します。
  */
 
-import Fragment from './fragment';
+import Fragment, {ElementFragment} from './fragment';
 import Procedure from './procedure';
 import Log from './log';
 
@@ -82,7 +82,13 @@ export default class EventDispatcher {
     if (!fragment) {
       return;
     }
-    new Procedure(fragment, type).run().catch(error => {
+
+    // changeイベントの場合、DOM値と同期
+    if (type === 'change' && fragment instanceof ElementFragment) {
+      fragment.syncValue();
+    }
+
+    new Procedure(fragment, type).run().catch(error => {G
       Log.error('[Haori]', 'Procedure execution error:', error);
     });
   }

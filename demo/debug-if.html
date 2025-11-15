@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>data-if Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 2px solid #ccc; }
+        .result { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>data-if デバッグテスト</h1>
+
+    <!-- テスト1: 単純なtrue/false -->
+    <div class="test-section">
+        <h2>テスト1: 単純なtrue/false</h2>
+        <form data-bind='{"visible":true}'>
+            <label>
+                <input type="checkbox" name="visible" value="true" checked>
+                visible を切り替え
+            </label>
+            <div class="result">
+                <p data-if="visible">✅ visible=true なので表示されるはず</p>
+                <p data-if="!visible">❌ visible=true なので非表示のはず</p>
+            </div>
+        </form>
+    </div>
+
+    <!-- テスト2: チェックボックス連動 -->
+    <div class="test-section">
+        <h2>テスト2: チェックボックス連動</h2>
+        <form data-bind='{"showMessage":true}'>
+            <label>
+                <input type="checkbox" name="showMessage" value="true" checked>
+                メッセージを表示
+            </label>
+            <div class="result">
+                <p data-if="showMessage">✅ チェックONで表示</p>
+                <p data-if="!showMessage">❌ チェックOFFで表示</p>
+            </div>
+        </form>
+    </div>
+
+    <!-- テスト3: 数値比較 -->
+    <div class="test-section">
+        <h2>テスト3: 数値比較</h2>
+        <form data-bind='{"count":5}'>
+            <input type="number" name="count" value="5">
+            <div class="result">
+                <p>現在のカウント: <span>{{count}}</span></p>
+                <p data-if="count >= 5">✅ count >= 5 なので表示</p>
+                <p data-if="count &lt; 5">❌ count &lt; 5 なので非表示のはず</p>
+            </div>
+        </form>
+    </div>
+
+    <!-- テスト4: ネストしたdata-if -->
+    <div class="test-section">
+        <h2>テスト4: ネストしたdata-if</h2>
+        <form data-bind='{"outer":true,"inner":true}'>
+            <label>
+                <input type="checkbox" name="outer" value="true" checked>
+                outer を切り替え
+            </label>
+            <label>
+                <input type="checkbox" name="inner" value="true" checked>
+                inner を切り替え
+            </label>
+            <div class="result">
+                <div data-if="outer">
+                    <p>✅ outer=true (表示中)</p>
+                    <div data-if="inner">
+                        <p>✅ outer=true かつ inner=true (表示中)</p>
+                    </div>
+                    <div data-if="!inner">
+                        <p>❌ outer=true かつ inner=false (非表示のはず)</p>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script type="module">
+        // Haoriモジュールをインポートすると自動的に初期化されます
+        import '../dist/haori.es.js';
+
+        console.log('Haori module loaded');
+
+        // 初期状態をログ出力
+        setTimeout(() => {
+            console.log('=== Initial State Check ===');
+            document.querySelectorAll('[data-if]').forEach((el, idx) => {
+                const ifValue = el.getAttribute('data-if');
+                const isVisible = el.style.display !== 'none' && !el.hasAttribute('data-if-false');
+                console.log(`[${idx}] data-if="${ifValue}" visible=${isVisible}`, el);
+            });
+        }, 500);
+    </script>
+</body>
+</html>
