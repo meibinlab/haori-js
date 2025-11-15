@@ -400,7 +400,7 @@ import Haori from 'haori'
 
 **記述するHTML**:
 ```html
-<form data-bind='{"username":"","email":""}'>
+<form>
   <div>
     <label>ユーザー名:</label>
     <input type="text" name="username">
@@ -422,15 +422,28 @@ import Haori from 'haori'
 
 **動作**:
 - ユーザーが入力欄に文字を入力すると、リアルタイムで「入力内容」の部分が更新されます
-- フォームの`name`属性と`data-bind`のキー名が対応しています
+- フォームの`name`属性の値が自動的にバインディングデータとして使用されます
+- **`data-bind`属性は省略可能**です。入力時に自動的に追加・更新されます
+
+**自動バインディングの仕組み**:
+1. フォーム内の入力要素で値が変更される（`change`イベント）
+2. フォーム要素の`data-bind`属性が自動的に更新される
+3. バインディングデータが更新され、`{{変数名}}`や`data-if`などが自動的に再評価される
+
+初期値を設定したい場合は、従来通り`data-bind`属性を記述できます:
+```html
+<form data-bind='{"username":"太郎","email":""}'>
+  <!-- 初期値が設定されます -->
+</form>
+```
 
 ### チェックボックスとラジオボタン
 
 ```html
-<form data-bind='{"agree":false,"plan":""}'>
+<form>
   <!-- チェックボックス -->
   <label>
-    <input type="checkbox" name="agree">
+    <input type="checkbox" name="agree" value="true">
     利用規約に同意する
   </label>
 
@@ -453,10 +466,12 @@ import Haori from 'haori'
 </form>
 ```
 
+**注意**: チェックボックスで`true`/`false`の真偽値を扱う場合は、`value="true"`属性を追加してください。
+
 ### セレクトボックス
 
 ```html
-<form data-bind='{"country":""}'>
+<form>
   <label>国を選択:</label>
   <select name="country">
     <option value="">選択してください</option>
@@ -504,18 +519,18 @@ import Haori from 'haori'
 
 **記述するHTML**:
 ```html
-<form data-bind='{"price":1000,"quantity":3,"total":3000}'>
+<form>
   <label>
     単価:
-    <input type="number" name="price" value="{{price}}">
+    <input type="number" name="price">
   </label>
   <label>
     数量:
-    <input type="number" name="quantity" value="{{quantity}}">
+    <input type="number" name="quantity">
   </label>
   <label>
     合計（送信されない）:
-    <input type="number" name="total" value="{{total}}" data-form-detach readonly>
+    <input type="number" name="total" value="{{price * quantity}}" data-form-detach readonly>
   </label>
 </form>
 ```

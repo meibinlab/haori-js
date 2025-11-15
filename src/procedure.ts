@@ -343,9 +343,7 @@ ${body}
             );
           }
         }
-        if (
-          fragment.hasAttribute(Procedure.attrName(event, 'adjust-value'))
-        ) {
+        if (fragment.hasAttribute(Procedure.attrName(event, 'adjust-value'))) {
           const valueString = fragment.getRawAttribute(
             Procedure.attrName(event, 'adjust-value'),
           ) as string;
@@ -455,17 +453,13 @@ ${body}
 
     // 非イベントの data / form（data-fetch-data / data-fetch-form）も取り込む
     if (!event) {
-      if (
-        fragment.hasAttribute(Procedure.attrName(null, 'fetch-data', true))
-      ) {
+      if (fragment.hasAttribute(Procedure.attrName(null, 'fetch-data', true))) {
         const raw = fragment.getRawAttribute(
           Procedure.attrName(null, 'fetch-data', true),
         ) as string;
         options.data = Core.parseDataBind(raw);
       }
-      if (
-        fragment.hasAttribute(Procedure.attrName(null, 'fetch-form', true))
-      ) {
+      if (fragment.hasAttribute(Procedure.attrName(null, 'fetch-form', true))) {
         const formSelector = fragment.getRawAttribute(
           Procedure.attrName(null, 'fetch-form', true),
         ) as string | null;
@@ -713,6 +707,27 @@ ${body}
           return Promise.resolve();
         }
       } else {
+        // fetchUrlが無い場合(changeイベント等)、bindFragmentsが無ければformFragmentにバインド
+        if (
+          (!this.options.bindFragments ||
+            this.options.bindFragments.length === 0) &&
+          this.options.formFragment &&
+          hasPayload
+        ) {
+          // 双方向バインディング: フォーム値を自動的にバインディングデータに反映
+          const formFragment = this.options.formFragment;
+          const formElement = formFragment.getTarget();
+
+          formElement.setAttribute(
+            `${Env.prefix}bind`,
+            JSON.stringify(payload),
+          );
+
+          const bindingData = formFragment.getBindingData();
+          Object.assign(bindingData, payload);
+          return Core.setBindingData(formElement, bindingData);
+        }
+
         const merged = hasPayload ? payload : {};
         const response = new Response(JSON.stringify(merged), {
           headers: {'Content-Type': 'application/json'},

@@ -812,6 +812,32 @@ async handleError(response: Response): Promise<void> {
 
 **役割**: フォーム双方向バインディング
 
+#### 双方向バインディングの自動更新
+
+フォーム要素（`<form>`タグ）内の入力要素で`change`イベントが発火すると、以下の処理が自動的に実行されます：
+
+1. **フォーム値の取得**: `Form.getValues()`でフォーム内のすべての入力値を取得
+2. **`data-bind`属性の更新**: フォーム要素の`data-bind`属性にフォーム値のJSONを設定
+3. **バインディングデータの更新**: フラグメントのバインディングデータを更新
+4. **DOM更新**: `Core.setBindingData()`で関連する要素（`{{variable}}`、`data-if`など）を自動更新
+
+これにより、`data-bind`属性を明示的に記述しなくても、フォーム要素内の入力変更が自動的にバインディングデータとして反映され、リアクティブな更新が実現されます。
+
+**処理フロー**:
+```
+ユーザー入力 (change event)
+  ↓
+EventDispatcher → Procedure('change').run()
+  ↓
+Form.getValues() → フォーム値取得
+  ↓
+formElement.setAttribute('data-bind', JSON.stringify(values))
+  ↓
+Core.setBindingData() → DOM更新
+  ↓
+data-if / data-each / {{variable}} などが自動更新
+```
+
 #### 主要メソッド
 
 ```typescript

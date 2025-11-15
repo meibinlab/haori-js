@@ -576,7 +576,15 @@ export class ElementFragment extends Fragment {
             this.value = value;
           }
         } else {
-          this.value = null;
+          // チェックボックスがOFFの場合
+          const value = element.value;
+          if (value === 'true') {
+            this.value = false;
+          } else if (value === 'false') {
+            this.value = true;
+          } else {
+            this.value = null;
+          }
         }
       } else {
         this.value = element.value;
