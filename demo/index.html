@@ -46,16 +46,8 @@
             border-left: 4px solid #4CAF50;
         }
         .dom-viewer {
-            background: #263238;
-            color: #aed581;
-            padding: 15px;
             margin: 10px 0;
             border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
         }
         button, input[type="submit"] {
             background: #4CAF50;
@@ -344,15 +336,51 @@
 
             const section = document.getElementById(demoId);
             const domViewer = document.getElementById('dom-' + demoId);
+            if (!section || !domViewer) return;
 
-            if (domViewer.style.display === 'none') {
-                const html = section.querySelector('.demo-section > div, .demo-section > form')?.outerHTML || section.innerHTML;
-                domViewer.textContent = formatHTML(html);
+            if (domViewer.style.display === 'none' || domViewer.style.display === '') {
+                const targetElement = section.querySelector('div[data-bind], form');
+                if (!targetElement) return;
+
+                const html = targetElement.outerHTML;
+                const formatted = formatHTML(html);
+
+                // Shadow DOMを使用してHaoriのMutationObserverから隔離
+                if (!domViewer.shadowRoot) {
+                    domViewer.attachShadow({ mode: 'open' });
+                }
+
+                // Shadow DOM内にスタイルとコンテンツを設定
+                domViewer.shadowRoot.innerHTML = `
+                    <style>
+                        :host { display: block; }
+                        pre {
+                            margin: 0;
+                            padding: 15px;
+                            background: #263238;
+                            color: #aed581;
+                            font-family: 'Courier New', monospace;
+                            font-size: 12px;
+                            border-radius: 4px;
+                            overflow-x: auto;
+                            white-space: pre-wrap;
+                            word-wrap: break-word;
+                        }
+                    </style>
+                    <pre>${escapeHtml(formatted)}</pre>
+                `;
+
                 domViewer.style.display = 'block';
             } else {
                 domViewer.style.display = 'none';
             }
         });
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
 
         function formatHTML(html) {
             let formatted = '';

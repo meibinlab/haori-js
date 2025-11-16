@@ -21,52 +21,70 @@
     <!-- Import Event Test -->
     <div class="test-section">
         <h2>Import Events Test</h2>
-        <button onclick="testImport()">Test Import Events</button>
-        <div data-haori="importTest"></div>
+        <p>Import機能はHTMLファイルの動的読み込みに使用されます。</p>
+        <div data-haori="importTest">
+            <!-- data-importでHTMLを読み込むとイベントが発火します -->
+        </div>
     </div>
 
     <!-- Bind Event Test -->
     <div class="test-section">
         <h2>Bind Events Test</h2>
-        <button onclick="testBind()">Change Bind Data</button>
-        <div data-haori="bindTest">
-            <p data-bind="message">{{message}}</p>
-            <p data-bind="count">Count: {{count}}</p>
+        <p>フォーム要素を変更するとbindchangeイベントが発火します。</p>
+        <div data-bind='{"message":"Hello World","count":0}'>
+            <label>メッセージ: <input type="text" name="message"></label><br>
+            <label>カウント: <input type="number" name="count"></label>
+            <div>
+                <p>現在の値: {{message}} (カウント: {{count}})</p>
+            </div>
         </div>
     </div>
 
     <!-- Each Event Test -->
     <div class="test-section">
         <h2>Each Events Test</h2>
-        <button onclick="testEach()">Modify List</button>
-        <div data-haori="eachTest">
-            <div data-each="items">
-                <p>{{name}} - {{value}}</p>
-            </div>
+        <p>行の追加・削除ボタンでeachupdateイベントが発火します。</p>
+        <div data-bind='{"items":[{"name":"Item 1","value":10},{"name":"Item 2","value":20}]}'>
+            <ul data-each="items" data-each-key="name">
+                <li>
+                    <input type="text" name="name" value="{{name}}" style="width: 150px;">
+                    <input type="number" name="value" value="{{value}}" style="width: 80px;">
+                    <button data-click-row-add>➕</button>
+                    <button data-click-row-remove>🗑️</button>
+                </li>
+            </ul>
         </div>
     </div>
 
     <!-- Show/Hide Event Test -->
     <div class="test-section">
         <h2>Show/Hide Events Test</h2>
-        <button onclick="testShowHide()">Toggle Visibility</button>
-        <div data-haori="showHideTest">
-            <p data-if="visible" class="conditional-content">This content can be shown or hidden</p>
-        </div>
+        <p>チェックボックスをON/OFFするとshow/hideイベントが発火します。</p>
+        <form data-bind='{"visible":true}'>
+            <label>
+                <input type="checkbox" name="visible" value="true" checked>
+                表示する
+            </label>
+            <div>
+                <p data-if="visible">✅ このコンテンツは表示されています</p>
+                <p data-if="!visible">❌ このコンテンツは非表示です</p>
+            </div>
+        </form>
     </div>
 
     <!-- Fetch Event Test -->
     <div class="test-section">
         <h2>Fetch Events Test</h2>
-        <button onclick="testFetch()">Test Fetch</button>
-        <form data-haori="fetchTest" data-procedure-url="/api/test" data-procedure-method="POST">
-            <input type="hidden" name="test" value="data">
-            <button type="submit">Submit Form</button>
+        <p>フォームを送信するとfetchイベントが発火します（実際のサーバーがないためエラーになります）。</p>
+        <form data-procedure-url="/api/test" data-procedure-method="POST">
+            <input type="text" name="testData" value="test" placeholder="テストデータ">
+            <button type="submit">送信（fetchイベントテスト）</button>
         </form>
     </div>
 
     <script type="module">
-        import Haori from '../src/index.ts';
+        // Haoriモジュールをインポートすると自動的に初期化されます
+        import '../dist/haori.es.js';
 
         // ログ表示用のヘルパー関数
         function logEvent(eventName, detail) {
@@ -99,82 +117,15 @@
         document.addEventListener('haori:fetchend', (e) => logEvent('haori:fetchend', e.detail));
         document.addEventListener('haori:fetcherror', (e) => logEvent('haori:fetcherror', e.detail));
 
-        // Haoriの初期化
-        const haori = new Haori();
-        
-        // 初期データの設定
-        haori.setData('importTest', {});
-        haori.setData('bindTest', { message: 'Hello World', count: 0 });
-        haori.setData('eachTest', { 
-            items: [
-                { name: 'Item 1', value: 10 },
-                { name: 'Item 2', value: 20 }
-            ]
-        });
-        haori.setData('showHideTest', { visible: true });
-        haori.setData('fetchTest', {});
-
-        // テスト関数をグローバルに公開
+        // ログクリア関数
         window.clearLog = function() {
             document.getElementById('eventLog').innerHTML = '';
         };
 
-        window.testImport = function() {
-            const element = document.querySelector('[data-haori="importTest"]');
-            element.setAttribute('data-import', JSON.stringify({
-                test: 'import data',
-                timestamp: Date.now()
-            }));
-        };
-
-        window.testBind = function() {
-            const currentData = haori.getData('bindTest');
-            haori.setData('bindTest', {
-                message: 'Updated Message!',
-                count: currentData.count + 1
-            });
-        };
-
-        window.testEach = function() {
-            const currentData = haori.getData('eachTest');
-            const newItems = [...currentData.items];
-            
-            // ランダムに追加、削除、または変更
-            const action = Math.floor(Math.random() * 3);
-            switch(action) {
-                case 0: // 追加
-                    newItems.push({ name: `Item ${newItems.length + 1}`, value: Math.floor(Math.random() * 100) });
-                    break;
-                case 1: // 削除
-                    if (newItems.length > 1) {
-                        newItems.splice(Math.floor(Math.random() * newItems.length), 1);
-                    }
-                    break;
-                case 2: // 変更
-                    if (newItems.length > 0) {
-                        const index = Math.floor(Math.random() * newItems.length);
-                        newItems[index].value = Math.floor(Math.random() * 100);
-                    }
-                    break;
-            }
-            
-            haori.setData('eachTest', { items: newItems });
-        };
-
-        window.testShowHide = function() {
-            const currentData = haori.getData('showHideTest');
-            haori.setData('showHideTest', { visible: !currentData.visible });
-        };
-
-        window.testFetch = function() {
-            // フォームを手動で送信してfetchイベントをトリガー
-            const form = document.querySelector('[data-haori="fetchTest"]');
-            const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-            form.dispatchEvent(submitEvent);
-        };
-
         // 初期ログ
-        logEvent('Page Loaded', { message: 'Event system test page loaded' });
+        setTimeout(() => {
+            logEvent('Page Loaded', { message: 'Event system test page loaded' });
+        }, 100);
     </script>
 </body>
 </html>
