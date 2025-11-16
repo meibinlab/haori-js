@@ -50,9 +50,15 @@ export default class Core {
     }
     // DOMに組み込まれている場合はmountedをtrueにする
     if (element.parentNode) {
-      fragment.setMounted(
-        Fragment.get(element.parentNode as HTMLElement)?.isMounted() || false,
-      );
+      const parentFragment = Fragment.get(element.parentNode as HTMLElement);
+      if (parentFragment?.isMounted()) {
+        fragment.setMounted(true);
+      } else if (document.body.contains(element)) {
+        // document.bodyに含まれている場合はマウント済みとする
+        fragment.setMounted(true);
+      } else {
+        fragment.setMounted(false);
+      }
     }
     const promises: Promise<void>[] = [];
     const processedAttributes = new Set<string>();
@@ -433,6 +439,7 @@ export default class Core {
     let template = fragment.getTemplate();
     if (template === null) {
       // テンプレートの作成
+      const unmountPromises: Promise<void>[] = [];
       fragment.getChildren().forEach(child => {
         if (child instanceof ElementFragment) {
           if (
@@ -443,21 +450,36 @@ export default class Core {
           }
           if (template === null) {
             template = child;
-            // テンプレートは children から切り離しつつ DOM からは除去する
+            // テンプレートを children から切り離し、DOM からも除去する
             fragment.removeChild(child);
-            child.unmount();
+            // 直接DOMから削除
+            const templateTarget = child.getTarget();
+            if (templateTarget.parentNode) {
+              unmountPromises.push(
+                Queue.enqueue(() => {
+                  if (templateTarget.parentNode) {
+                    templateTarget.parentNode.removeChild(templateTarget);
+                  }
+                  child.setMounted(false);
+                }) as Promise<void>,
+              );
+            }
           } else {
             Log.warn('[Haori]', 'Template must be a single child element.');
           }
-        } else {
-          Log.error(
-            '[Haori]',
-            'Unsupported child node type:',
-            child.getTarget().nodeType,
-          );
         }
+        // TextNodeやCommentNodeはテンプレートにならないので無視
       });
       fragment.setTemplate(template);
+      const data = fragment.getAttribute(`${Env.prefix}each`);
+      if (!Array.isArray(data)) {
+        Log.error('[Haori]', 'Invalid each attribute:', data);
+        return Promise.reject(new Error('Invalid each attribute.'));
+      }
+      // テンプレートの unmount 完了後に updateDiff を実行
+      return Promise.all(unmountPromises).then(() =>
+        this.updateDiff(fragment, data),
+      );
     }
     const data = fragment.getAttribute(`${Env.prefix}each`);
     if (!Array.isArray(data)) {
@@ -531,7 +553,6 @@ export default class Core {
       } else {
         // 新しい要素を追加
         child = template.clone();
-        Core.scan(child.getTarget());
       }
       Core.updateRowFragment(
         child,
