@@ -516,7 +516,11 @@ export default class Core {
     > = new Map();
     const newKeys: string[] = [];
     newList.forEach((item, itemIndex) => {
-      const listKey = Core.createListKey(item, keyArg ? String(keyArg) : null);
+      const listKey = Core.createListKey(
+        item,
+        keyArg ? String(keyArg) : null,
+        itemIndex,
+      );
       newKeys.push(listKey);
       keyDataMap.set(listKey, {item, itemIndex});
     });
@@ -538,12 +542,12 @@ export default class Core {
       return true;
     });
     const srcKeys = childElements.map(child => child.getListKey());
-    let insertIndex = parent
+    const baseInsertIndex = parent
       .getChildren()
       .filter(child => child instanceof ElementFragment)
       .filter(child => child.hasAttribute(`${Env.prefix}each-before`)).length;
     let chain = Promise.resolve();
-    newKeys.forEach(newKey => {
+    newKeys.forEach((newKey, loopIndex) => {
       const srcIndex = srcKeys.indexOf(newKey);
       const {item, itemIndex} = keyDataMap.get(newKey)!;
       let child;
@@ -562,12 +566,12 @@ export default class Core {
         itemArg ? String(itemArg) : null,
         newKey,
       );
+      const currentInsertIndex = baseInsertIndex + loopIndex;
       chain = chain.then(() =>
         parent
-          .insertBefore(child, parent.getChildren()[insertIndex] || null)
+          .insertBefore(child, parent.getChildren()[currentInsertIndex] || null)
           .then(() => Core.evaluateAll(child)),
       );
-      insertIndex++;
     });
     return Promise.all(removalPromises)
       .then(() => chain)
@@ -600,25 +604,28 @@ export default class Core {
    *
    * @param item 対象オブジェクト
    * @param keyArg リストキーに使用するプロパティ名
+   * @param index 配列のインデックス
    * @returns リストキー
    */
   private static createListKey(
     item: Record<string, unknown> | string | number,
     keyArg: string | null,
+    index: number,
   ): string {
     let listKey: string;
     if (typeof item === 'object' && item !== null) {
       if (keyArg) {
         const key = item[keyArg as string];
         if (key === null || key === undefined) {
-          listKey = crypto.randomUUID();
+          listKey = `__index_${index}`;
         } else if (typeof key == 'object') {
           listKey = JSON.stringify(key);
         } else {
           listKey = String(key);
         }
       } else {
-        listKey = crypto.randomUUID();
+        // data-each-key がない場合はインデックスをキーとして使用
+        listKey = `__index_${index}`;
       }
     } else {
       listKey = String(item);
