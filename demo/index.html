@@ -158,18 +158,24 @@
         <!-- 2. 条件分岐 -->
         <h2>2. 条件分岐 (data-if)</h2>
         <div class="demo-section" id="demo2">
-            <div data-bind='{"showMessage":true,"count":5}'>
+            <form>
                 <label>
-                    <input type="checkbox" name="showMessage">
+                    <input type="checkbox" name="showMessage" value="true">
                     メッセージを表示
+                </label>
+
+                <label>
+                    カウント値:
+                    <input type="number" name="count" value="{{count}}" style="max-width: 100px;">
                 </label>
 
                 <div class="output">
                     <p data-if="showMessage">✅ メッセージが表示されています</p>
                     <p data-if="!showMessage">❌ メッセージは非表示です</p>
-                    <p data-if="count >= 5">カウントは5以上です (現在: {{count}})</p>
+                    <p data-if="count >= 5">✅ カウントは5以上です (現在: {{count}})</p>
+                    <p data-if="count < 5">❌ カウントは5未満です (現在: {{count}})</p>
                 </div>
-            </div>
+            </form>
             <button class="show-dom-btn" data-demo-id="demo2">DOMを表示</button>
             <div id="dom-demo2" class="dom-viewer" style="display:none;"></div>
         </div>
@@ -204,7 +210,7 @@
         <!-- 4. フォーム双方向バインディング -->
         <h2>4. フォーム双方向バインディング</h2>
         <div class="demo-section" id="demo4">
-            <form data-bind='{"username":"","email":"","message":""}'>
+            <form>
                 <label>ユーザー名:</label>
                 <input type="text" name="username" placeholder="名前を入力">
 
@@ -283,7 +289,7 @@
         <!-- 8. 計算式 -->
         <h2>8. 計算式</h2>
         <div class="demo-section" id="demo8">
-            <form data-bind='{"price":1000,"quantity":1,"taxRate":0.1}'>
+            <form>
                 <label>単価:</label>
                 <input type="number" name="price" value="{{price}}">
 
@@ -325,10 +331,8 @@
     </div>
 
     <script type="module">
-        import Haori from '../src/index.ts';
-
-        // Haoriの初期化
-        const haori = new Haori();
+        // Haoriモジュールをインポートすると自動的に初期化されます（observer.tsにより）
+        import '../dist/haori.es.js';
 
         // DOM表示ボタンのイベントリスナー設定
         document.addEventListener('click', function(e) {
