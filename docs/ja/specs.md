@@ -1671,7 +1671,7 @@ Content-Typeを指定します。
 
 ##### `data-{event}-row-remove`
 
-対象要素が属する行を削除します。
+対象要素が属する行を削除します。ただし、リスト内に1行しか存在しない場合は削除されません。
 
 ```html
 <button data-click-row-remove>削除</button>

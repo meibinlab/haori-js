@@ -1154,6 +1154,20 @@ ${body}
     if (!rowFragment) {
       return Promise.reject(new Error('Row fragment not found.'));
     }
+    // 1行だった場合は削除しない
+    const parent = rowFragment.getParent();
+    if (parent) {
+      const siblings = parent.getChildElementFragments().filter(child => {
+        // data-each-before と data-each-after を除外
+        return (
+          !child.hasAttribute(`${Env.prefix}each-before`) &&
+          !child.hasAttribute(`${Env.prefix}each-after`)
+        );
+      });
+      if (siblings.length <= 1) {
+        return Promise.resolve();
+      }
+    }
     return rowFragment.remove();
   }
 
