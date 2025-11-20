@@ -1,0 +1,15 @@
+src/
+tests/
+demo/
+docs/
+*.ts
+*.tsx
+*.js
+*.jsx
+*.map
+vite.config.ts
+vitest.config.ts
+eslint.config.js
+.prettierrc.json
+.vscode/
+.claude/

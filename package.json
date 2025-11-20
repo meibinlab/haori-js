@@ -44,7 +44,7 @@
       "import": "./dist/haori.js"
     }
   },
-  "main": "index.js",
+  "main": "dist/haori.es.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist"
