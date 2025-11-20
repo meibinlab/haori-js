@@ -201,53 +201,71 @@ export default class Form {
    * @param fragment 対象フラグメント
    * @returns すべての初期化処理が完了するPromise
    */
-  public static reset(fragment: ElementFragment): Promise<void> {
-    const promises: Promise<void>[] = [];
+  public static async reset(fragment: ElementFragment): Promise<void> {
+    // 値をクリア
     Form.clearValues(fragment);
-    promises.push(Form.clearMessages(fragment));
-    // data-each による複製を明示的に削除（仕様: 複製の削除）
-    promises.push(Form.clearEachClones(fragment));
-    promises.push(
-      Queue.enqueue(() => {
-        const element = fragment.getTarget();
-        if (element instanceof HTMLFormElement) {
-          element.reset();
-        } else {
-          const parent = element.parentElement;
+
+    // メッセージをクリアし、data-eachの複製を削除
+    await Promise.all([
+      Form.clearMessages(fragment),
+      Form.clearEachClones(fragment),
+    ]);
+
+    // フォーム要素をリセット
+    await Queue.enqueue(() => {
+      const element = fragment.getTarget();
+      if (element instanceof HTMLFormElement) {
+        element.reset();
+      } else {
+        const parent = element.parentElement;
+        if (parent) {
           const next = element.nextElementSibling;
           const form = document.createElement('form');
           form.appendChild(element);
           form.reset();
-          parent!.insertBefore(element, next);
+          parent.insertBefore(element, next);
         }
-      }) as Promise<void>,
-    );
-    promises.push(Core.evaluateAll(fragment));
-    return Promise.all(promises).then(() => undefined);
+      }
+    });
+
+    // 再評価
+    await Core.evaluateAll(fragment);
   }
 
   /**
    * data-each によって生成された複製（テンプレート以外）を削除します。
    * 既存のテンプレートは保持し、その後の再評価で必要に応じて再生成されます。
+   * 対象エレメント自体がdata-eachを持つ場合はその子の複製を削除しますが、
+   * 対象エレメント自体は削除しません。
    */
   private static clearEachClones(fragment: ElementFragment): Promise<void> {
     const tasks: Promise<void>[] = [];
 
-    const process = (f: ElementFragment) => {
+    const removeClones = (f: ElementFragment) => {
       if (f.hasAttribute(`${Env.prefix}each`)) {
-        const children = f.getChildElementFragments();
-        children.forEach(child => {
+        for (const child of f.getChildElementFragments()) {
           const isBefore = child.hasAttribute(`${Env.prefix}each-before`);
           const isAfter = child.hasAttribute(`${Env.prefix}each-after`);
           if (!isBefore && !isAfter) {
             tasks.push(child.remove());
           }
-        });
+        }
       }
-      f.getChildElementFragments().forEach(c => process(c));
     };
 
-    process(fragment);
+    const processChildren = (f: ElementFragment) => {
+      removeClones(f);
+      for (const child of f.getChildElementFragments()) {
+        processChildren(child);
+      }
+    };
+
+    // 対象フラグメント自体のクローンを削除し、子エレメント以下を再帰処理
+    removeClones(fragment);
+    for (const child of fragment.getChildElementFragments()) {
+      processChildren(child);
+    }
+
     return Promise.all(tasks).then(() => undefined);
   }
 

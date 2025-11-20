@@ -261,6 +261,10 @@ export default class Core {
    */
   public static addNode(parentElement: HTMLElement, node: Node) {
     const parent = Fragment.get(parentElement);
+    // skipMutationNodesが設定されている場合は処理をスキップ
+    if (parent.isSkipMutationNodes()) {
+      return;
+    }
     const next = Fragment.get(node.nextSibling);
     const fragment = Fragment.get(node);
     if (fragment) {
@@ -283,6 +287,11 @@ export default class Core {
   public static removeNode(node: Node) {
     const fragment = Fragment.get(node);
     if (fragment) {
+      const parent = fragment.getParent();
+      // skipMutationNodesが設定されている場合は処理をスキップ
+      if (parent && parent.isSkipMutationNodes()) {
+        return;
+      }
       fragment.remove();
     }
   }

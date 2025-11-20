@@ -1136,6 +1136,8 @@ ${body}
       rowFragment.getParent()!.insertAfter(newFragment, rowFragment),
     );
     promises.push(Core.evaluateAll(newFragment));
+    // 追加された行のフォーム要素をリセット
+    promises.push(Form.reset(newFragment as ElementFragment));
     return Promise.all(promises).then(() => undefined);
   }
 

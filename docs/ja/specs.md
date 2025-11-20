@@ -1660,7 +1660,7 @@ Content-Typeを指定します。
 
 ##### `data-{event}-row-add`
 
-対象要素が属する行の後に新しい行を追加します。
+対象要素が属する行の後に新しい行を追加します。追加された行のフォーム要素は空の状態にリセットされます。
 
 ```html
 <div data-each="items" data-each-arg="item">

@@ -74,6 +74,15 @@ export default abstract class Fragment {
   }
 
   /**
+   * skipMutationNodesフラグの値を取得します。
+   *
+   * @returns skipMutationNodesの値
+   */
+  public isSkipMutationNodes(): boolean {
+    return this.skipMutationNodes;
+  }
+
+  /**
    * フラグメントをDOMから除去します。
    *
    * @return 除去のPromise
@@ -740,6 +749,18 @@ export class ElementFragment extends Fragment {
       return Promise.reject(new Error('Circular reference detected'));
     }
 
+    // 同じ親内での移動かどうかを確認
+    const isSameParent = newChild.getParent() === this;
+    let newChildIndex = -1;
+    let referenceIndex = -1;
+
+    if (isSameParent) {
+      newChildIndex = this.children.indexOf(newChild);
+      if (referenceChild !== null) {
+        referenceIndex = this.children.indexOf(referenceChild);
+      }
+    }
+
     const newChildParent = newChild.getParent();
     if (newChildParent !== null) {
       // 既存の親から削除
@@ -749,7 +770,19 @@ export class ElementFragment extends Fragment {
     if (referenceChild === null) {
       this.children.push(newChild);
     } else {
-      const index = this.children.indexOf(referenceChild);
+      let index: number;
+      if (isSameParent) {
+        // 同じ親内での移動の場合、削除後のインデックスを調整
+        if (newChildIndex !== -1 && newChildIndex < referenceIndex) {
+          // 削除する要素が参照要素より前にあった場合、インデックスは1つ減る
+          index = referenceIndex - 1;
+        } else {
+          index = referenceIndex;
+        }
+      } else {
+        index = this.children.indexOf(referenceChild);
+      }
+
       if (index === -1) {
         Log.warn(
           '[Haori]',
