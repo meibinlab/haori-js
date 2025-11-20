@@ -108,6 +108,26 @@
             border-radius: 4px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
+        [popover].haori-toast {
+            display: block;
+            inset: auto 20px 20px auto;
+            background: #323232;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: none;
+            margin: 0;
+        }
+        [popover].haori-toast-info {
+            background: #2196F3;
+        }
+        [popover].haori-toast-warning {
+            background: #FF9800;
+        }
+        [popover].haori-toast-error {
+            background: #f44336;
+        }
         ul {
             list-style: none;
             padding: 0;
@@ -226,19 +246,19 @@
         <!-- 5. 行操作 (追加・削除) -->
         <h2>5. 行操作 (追加・削除・並び替え)</h2>
         <div class="demo-section" id="demo5">
-            <div data-bind='{"items":[{"name":"項目1"},{"name":"項目2"}]}'>
+            <form data-bind='{"items":[{"name":"項目1"},{"name":"項目2"}]}'>
                 <div class="output">
                     <ul data-each="items" data-each-key="name">
                         <li>
                             {{name}}: <input type="text" name="name" style="width: 200px;">
-                            <button data-click-row-prev>↑</button>
-                            <button data-click-row-next>↓</button>
-                            <button data-click-row-add>➕ 追加</button>
-                            <button data-click-row-remove style="background: #f44336;">🗑️ 削除</button>
+                            <button type="button" data-click-row-prev>↑</button>
+                            <button type="button" data-click-row-next>↓</button>
+                            <button type="button" data-click-row-add>➕ 追加</button>
+                            <button type="button" data-click-row-remove style="background: #f44336;">🗑️ 削除</button>
                         </li>
                     </ul>
                 </div>
-            </div>
+            </form>
             <button class="show-dom-btn" data-demo-id="demo5">DOMを表示</button>
             <div id="dom-demo5" class="dom-viewer" style="display:none;"></div>
         </div>
@@ -266,14 +286,16 @@
         <!-- 7. ダイアログとトースト -->
         <h2>7. ダイアログとトースト</h2>
         <div class="demo-section" id="demo7">
-            <button data-click-dialog="これはダイアログメッセージです！">ダイアログを表示</button>
-            <button data-click-toast="トースト通知が表示されました" style="background: #FF9800;">トーストを表示</button>
-            <button
-                data-click-confirm="本当に実行しますか？"
-                data-click-toast="実行しました！"
-                style="background: #f44336;">
-                確認付きアクション
-            </button>
+            <div data-bind='{}'>
+                <button data-click-dialog="これはダイアログメッセージです！">ダイアログを表示</button>
+                <button data-click-toast="トースト通知が表示されました" style="background: #FF9800;">トーストを表示</button>
+                <button
+                    data-click-confirm="本当に実行しますか？"
+                    data-click-toast="実行しました！"
+                    style="background: #f44336;">
+                    確認付きアクション
+                </button>
+            </div>
             <button class="show-dom-btn" data-demo-id="demo7">DOMを表示</button>
             <div id="dom-demo7" class="dom-viewer" style="display:none;"></div>
         </div>
