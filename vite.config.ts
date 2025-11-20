@@ -12,6 +12,11 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       external: [],
+      output: {
+        // Ensure Rollup uses named exports for the CJS bundle to avoid
+        // consumers needing to access `.default` when requiring the package.
+        exports: 'named',
+      },
     },
   },
   plugins: [
