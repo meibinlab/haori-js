@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 1.0.0
+Version: 0.1.0
 
 ---
 
@@ -41,7 +41,7 @@ npm install haori
 Via CDN:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/haori@1.0.0/dist/haori.iife.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/haori@0.1.0/dist/haori.iife.js"></script>
 ```
 
 ES Module import:
@@ -62,7 +62,7 @@ You can use Haori with plain HTML. Minimal example:
 <head>
 	<meta charset="utf-8">
 	<title>Haori Sample</title>
-	<script src="https://cdn.jsdelivr.net/npm/haori@1.0.0/dist/haori.iife.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/haori@0.1.0/dist/haori.iife.js"></script>
 </head>
 <body>
 	<div data-bind='{"name":"Taro"}'>

@@ -735,7 +735,7 @@ describe('Form', () => {
         title: 'ドキュメントタイトル',
         metadata: {
           author: '著者名',
-          version: '1.0.0',
+          version: '0.1.0',
         },
         sections: [
           {

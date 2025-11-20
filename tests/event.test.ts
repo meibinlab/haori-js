@@ -83,11 +83,11 @@ describe('HaoriEvent', () => {
       const handler = vi.fn();
       document.addEventListener('haori:ready', handler);
 
-      HaoriEvent.ready('1.0.0');
+      HaoriEvent.ready('0.1.0');
 
       expect(handler).toHaveBeenCalledTimes(1);
       const event = handler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail).toEqual({version: '1.0.0'});
+      expect(event.detail).toEqual({version: '0.1.0'});
 
       document.removeEventListener('haori:ready', handler);
     });
