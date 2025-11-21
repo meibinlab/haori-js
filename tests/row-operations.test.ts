@@ -263,7 +263,7 @@ describe('Row operations', () => {
       await new Promise(resolve => setTimeout(resolve, 100));
 
       // 追加
-      let addButtons = container.querySelectorAll('button[data-click-row-add]');
+      const addButtons = container.querySelectorAll('button[data-click-row-add]');
       (addButtons[0] as HTMLButtonElement).click();
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -271,14 +271,14 @@ describe('Row operations', () => {
       expect(items.length).toBe(3);
 
       // 移動
-      let prevButtons = container.querySelectorAll(
+      const prevButtons = container.querySelectorAll(
         'button[data-click-row-prev]'
       );
       (prevButtons[2] as HTMLButtonElement).click();
       await new Promise(resolve => setTimeout(resolve, 100));
 
       // 削除
-      let removeButtons = container.querySelectorAll(
+      const removeButtons = container.querySelectorAll(
         'button[data-click-row-remove]'
       );
       (removeButtons[0] as HTMLButtonElement).click();

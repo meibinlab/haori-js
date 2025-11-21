@@ -16,20 +16,27 @@ describe('data-each 実ブラウザ挙動テスト', () => {
   });
 
   it('data-bind + data-eachで複数行が生成される', async () => {
-    container.innerHTML = `
-      <div data-bind='{"users":[{"id":1,"name":"田中太郎","age":25},{"id":2,"name":"佐藤花子","age":30}]}'>
-        <table>
-          <tbody data-each="users">
-            <tr>
-              <td>{{id}}</td>
-              <td>{{name}}</td>
-              <td>{{age}}歳</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    const root = document.createElement('div');
+    const bindData = {
+      users: [
+        {id: 1, name: '田中太郎', age: 25},
+        {id: 2, name: '佐藤花子', age: 30},
+      ],
+    };
+
+    root.setAttribute('data-bind', JSON.stringify(bindData));
+    root.innerHTML = `
+      <table>
+        <tbody data-each="users">
+          <tr>
+            <td>{{id}}</td>
+            <td>{{name}}</td>
+            <td>{{age}}歳</td>
+          </tr>
+        </tbody>
+      </table>
     `;
-    const root = container.querySelector('div') as HTMLElement;
+    container.appendChild(root);
     // ブラウザ同様、Core.scanのみ呼ぶ
     await Core.scan(root);
     await Queue.wait();

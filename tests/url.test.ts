@@ -11,7 +11,7 @@ describe('Url', () => {
   beforeEach(() => {
     // window.locationをモック
     Object.defineProperty(window, 'location', {
-      value: { ...originalLocation, search: '' },
+      value: {...originalLocation, search: ''},
       writable: true,
     });
   });
@@ -26,7 +26,7 @@ describe('Url', () => {
   describe('readParams', () => {
     it('単一のパラメータを取得する', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?name=tanaka' },
+        value: {...originalLocation, search: '?name=tanaka'},
         writable: true,
       });
 
@@ -37,7 +37,7 @@ describe('Url', () => {
 
     it('複数のパラメータを取得する', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?name=tanaka&age=30&city=tokyo' },
+        value: {...originalLocation, search: '?name=tanaka&age=30&city=tokyo'},
         writable: true,
       });
 
@@ -52,7 +52,7 @@ describe('Url', () => {
 
     it('パラメータがない場合は空オブジェクトを返す', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '' },
+        value: {...originalLocation, search: ''},
         writable: true,
       });
 
@@ -63,7 +63,7 @@ describe('Url', () => {
 
     it('?のみの場合は空オブジェクトを返す', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?' },
+        value: {...originalLocation, search: '?'},
         writable: true,
       });
 
@@ -74,7 +74,7 @@ describe('Url', () => {
 
     it('URLエンコードされた値をデコードする', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?name=%E7%94%B0%E4%B8%AD&message=hello%20world' },
+        value: {...originalLocation, search: '?name=%E7%94%B0%E4%B8%AD&message=hello%20world'},
         writable: true,
       });
 
@@ -88,7 +88,7 @@ describe('Url', () => {
 
     it('空の値を持つパラメータを処理する', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?name=&age=30' },
+        value: {...originalLocation, search: '?name=&age=30'},
         writable: true,
       });
 
@@ -102,7 +102,7 @@ describe('Url', () => {
 
     it('値なしのパラメータを処理する', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?flag&name=tanaka' },
+        value: {...originalLocation, search: '?flag&name=tanaka'},
         writable: true,
       });
 
@@ -116,7 +116,7 @@ describe('Url', () => {
 
     it('同じキーの複数パラメータは後の値が優先される', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?name=tanaka&name=suzuki' },
+        value: {...originalLocation, search: '?name=tanaka&name=suzuki'},
         writable: true,
       });
 
@@ -129,7 +129,7 @@ describe('Url', () => {
 
     it('特殊文字を含むパラメータを処理する', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?query=a%2Bb%3Dc&path=%2Fhome%2Fuser' },
+        value: {...originalLocation, search: '?query=a%2Bb%3Dc&path=%2Fhome%2Fuser'},
         writable: true,
       });
 
@@ -143,7 +143,7 @@ describe('Url', () => {
 
     it('日本語のキーと値を処理する', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?%E5%90%8D%E5%89%8D=%E5%A4%AA%E9%83%8E' },
+        value: {...originalLocation, search: '?%E5%90%8D%E5%89%8D=%E5%A4%AA%E9%83%8E'},
         writable: true,
       });
 
@@ -156,7 +156,7 @@ describe('Url', () => {
 
     it('数値として解釈される値も文字列として返す', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?count=123&price=45.67' },
+        value: {...originalLocation, search: '?count=123&price=45.67'},
         writable: true,
       });
 
@@ -172,7 +172,7 @@ describe('Url', () => {
 
     it('真偽値として解釈される値も文字列として返す', () => {
       Object.defineProperty(window, 'location', {
-        value: { ...originalLocation, search: '?enabled=true&disabled=false' },
+        value: {...originalLocation, search: '?enabled=true&disabled=false'},
         writable: true,
       });
 

@@ -2,7 +2,7 @@
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';
 import Queue from '../src/queue';
-import Fragment, {ElementFragment} from '../src/fragment';
+// Fragment はこのテストで直接使用しないためインポートを削除
 
 describe('data-each with tbody element', () => {
   let container: HTMLElement;
@@ -17,21 +17,28 @@ describe('data-each with tbody element', () => {
   });
 
   it('tbodyにdata-each属性を設定した場合、trがテンプレートとして使われる', async () => {
-    container.innerHTML = `
-      <div data-bind='{"users":[{"id":1,"name":"田中太郎","age":25},{"id":2,"name":"佐藤花子","age":30}]}'>
-        <table>
-          <tbody data-each="users" data-each-key="id">
-            <tr>
-              <td>{{id}}</td>
-              <td>{{name}}</td>
-              <td>{{age}}歳</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    `;
+    const root = document.createElement('div');
+    const bindData = {
+      users: [
+        {id: 1, name: '田中太郎', age: 25},
+        {id: 2, name: '佐藤花子', age: 30},
+      ],
+    };
 
-    const root = container.querySelector('div') as HTMLElement;
+    root.setAttribute('data-bind', JSON.stringify(bindData));
+    root.innerHTML = `
+      <table>
+        <tbody data-each="users" data-each-key="id">
+          <tr>
+            <td>{{id}}</td>
+            <td>{{name}}</td>
+            <td>{{age}}歳</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+    container.appendChild(root);
+
     // markMountedは呼ばず、Core.scanのみ
     await Core.scan(root);
     await Queue.wait();
@@ -53,7 +60,7 @@ describe('data-each with tbody element', () => {
     const rows = tbody?.querySelectorAll('tr');
     console.log('Generated rows:', rows?.length);
     console.log('tbody innerHTML:', tbody?.innerHTML);
-    
+
     if (rows && rows.length > 0) {
       console.log('First row content:', rows[0].innerHTML);
       if (rows.length > 1) {

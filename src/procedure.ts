@@ -235,53 +235,143 @@ ${body}
     }
     const fetchOptions: RequestInit = {};
     // fetch-method（イベントあり/なし）
-    const fetchMethodAttr = Procedure.attrName(event, 'fetch-method', true);
-    if (fragment.hasAttribute(fetchMethodAttr)) {
-      fetchOptions.method = fragment.getAttribute(fetchMethodAttr) as string;
+    // event: data-{event}-fetch-method, non-event: data-fetch-method
+    if (event) {
+      const fetchMethodAttrEvent = Procedure.attrName(event, 'fetch-method');
+      if (fragment.hasAttribute(fetchMethodAttrEvent)) {
+        fetchOptions.method = fragment.getAttribute(
+          fetchMethodAttrEvent,
+        ) as string;
+      }
+    } else {
+      const fetchMethodAttrNonEvent = Procedure.attrName(null, 'method', true);
+      if (fragment.hasAttribute(fetchMethodAttrNonEvent)) {
+        fetchOptions.method = fragment.getAttribute(
+          fetchMethodAttrNonEvent,
+        ) as string;
+      }
     }
     // fetch-headers（イベントあり/なし）
-    const fetchHeadersAttr = Procedure.attrName(event, 'fetch-headers', true);
-    if (fragment.hasAttribute(fetchHeadersAttr)) {
-      const headersString = fragment.getRawAttribute(
-        fetchHeadersAttr,
-      ) as string;
-      try {
-        fetchOptions.headers = Core.parseDataBind(headersString) as Record<
-          string,
-          string
-        >;
-      } catch (e) {
-        Log.error('Haori', `Invalid fetch headers: ${e}`);
+    // event: data-{event}-fetch-headers, non-event: data-fetch-headers
+    if (event) {
+      const fetchHeadersAttrEvent = Procedure.attrName(event, 'fetch-headers');
+      if (fragment.hasAttribute(fetchHeadersAttrEvent)) {
+        const headersString = fragment.getRawAttribute(
+          fetchHeadersAttrEvent,
+        ) as string;
+        try {
+          fetchOptions.headers = Core.parseDataBind(headersString) as Record<
+            string,
+            string
+          >;
+        } catch (e) {
+          Log.error('Haori', `Invalid fetch headers: ${e}`);
+        }
+      }
+    } else {
+      const fetchHeadersAttrNonEvent = Procedure.attrName(
+        null,
+        'headers',
+        true,
+      );
+      if (fragment.hasAttribute(fetchHeadersAttrNonEvent)) {
+        const headersString = fragment.getRawAttribute(
+          fetchHeadersAttrNonEvent,
+        ) as string;
+        try {
+          fetchOptions.headers = Core.parseDataBind(headersString) as Record<
+            string,
+            string
+          >;
+        } catch (e) {
+          Log.error('Haori', `Invalid fetch headers: ${e}`);
+        }
       }
     }
     // fetch-content-type（イベントあり/なし）
-    const fetchCTAttr = Procedure.attrName(event, 'fetch-content-type', true);
-    if (fragment.hasAttribute(fetchCTAttr)) {
-      fetchOptions.headers = {
-        ...fetchOptions.headers,
-        'Content-Type': fragment.getAttribute(fetchCTAttr) as string,
-      };
-    } else if (
-      fetchOptions.method &&
-      fetchOptions.method !== 'GET' &&
-      fetchOptions.method !== 'HEAD' &&
-      fetchOptions.method !== 'OPTIONS'
-    ) {
-      fetchOptions.headers = {
-        ...fetchOptions.headers,
-        'Content-Type': 'application/json',
-      };
-    } else if (
-      fetchOptions.method &&
-      (fetchOptions.method === 'GET' ||
-        fetchOptions.method === 'HEAD' ||
-        fetchOptions.method === 'OPTIONS')
-    ) {
-      // 仕様: GET/HEAD/OPTIONS 既定は application/x-www-form-urlencoded
-      fetchOptions.headers = {
-        ...fetchOptions.headers,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      };
+    // event: data-{event}-fetch-content-type
+    // non-event: data-fetch-content-type
+    if (event) {
+      const fetchCTAttrEvent = Procedure.attrName(
+        event,
+        'fetch-content-type',
+      );
+      if (fragment.hasAttribute(fetchCTAttrEvent)) {
+        fetchOptions.headers = {
+          ...fetchOptions.headers,
+          'Content-Type': fragment.getAttribute(fetchCTAttrEvent) as string,
+        };
+      } else if (
+        fetchOptions.method &&
+        fetchOptions.method !== 'GET' &&
+        fetchOptions.method !== 'HEAD' &&
+        fetchOptions.method !== 'OPTIONS'
+      ) {
+        // only set default Content-Type when one is not already provided
+        let hasContentType = false;
+        if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+          const headersObj = fetchOptions.headers as Record<string, unknown>;
+          hasContentType = 'Content-Type' in headersObj;
+        }
+        if (!hasContentType) {
+          fetchOptions.headers = {
+            ...fetchOptions.headers,
+            'Content-Type': 'application/json',
+          };
+        }
+      } else if (
+        fetchOptions.method &&
+        (fetchOptions.method === 'GET' ||
+          fetchOptions.method === 'HEAD' ||
+          fetchOptions.method === 'OPTIONS')
+      ) {
+        // 仕様: GET/HEAD/OPTIONS 既定は application/x-www-form-urlencoded
+        fetchOptions.headers = {
+          ...fetchOptions.headers,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        };
+      }
+    } else {
+      const fetchCTAttrNonEvent = Procedure.attrName(
+        null,
+        'content-type',
+        true,
+      );
+      if (fragment.hasAttribute(fetchCTAttrNonEvent)) {
+        fetchOptions.headers = {
+          ...fetchOptions.headers,
+          'Content-Type': fragment.getAttribute(fetchCTAttrNonEvent) as string,
+        };
+      } else if (
+        fetchOptions.method &&
+        fetchOptions.method !== 'GET' &&
+        fetchOptions.method !== 'HEAD' &&
+        fetchOptions.method !== 'OPTIONS'
+      ) {
+        // only set default Content-Type when one is not already provided
+        let hasContentType = false;
+        if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
+          const headersObj = fetchOptions.headers as Record<string, unknown>;
+          hasContentType = 'Content-Type' in headersObj;
+        }
+        if (!hasContentType) {
+          fetchOptions.headers = {
+            ...fetchOptions.headers,
+            'Content-Type': 'application/json',
+          };
+        }
+      } else if (
+        fetchOptions.method &&
+        (fetchOptions.method === 'GET' ||
+          fetchOptions.method === 'HEAD' ||
+          fetchOptions.method === 'OPTIONS')
+      ) {
+        // 仕様: GET/HEAD/OPTIONS 既定は application/x-www-form-urlencoded
+        fetchOptions.headers = {
+          ...fetchOptions.headers,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        };
+      }
     }
     if (Object.keys(fetchOptions).length > 0) {
       options.fetchOptions = fetchOptions;
@@ -310,11 +400,35 @@ ${body}
         }
       }
     }
-    const bindArgAttr = event
-      ? Procedure.attrName(event, 'bind-arg')
-      : Procedure.attrName(null, 'arg', true);
-    if (fragment.hasAttribute(bindArgAttr)) {
-      options.bindArg = fragment.getRawAttribute(bindArgAttr) as string | null;
+    const bindArgAttrEvent = Procedure.attrName(event, 'bind-arg');
+    const bindArgAttrNonEventLegacy = Procedure.attrName(
+      null,
+      'arg',
+      true,
+    ); // data-fetch-arg
+    const bindArgAttrNonEventNew = Procedure.attrName(
+      null,
+      'bind-arg',
+      true,
+    ); // data-fetch-bind-arg (less common)
+    if (event) {
+      if (fragment.hasAttribute(bindArgAttrEvent)) {
+        options.bindArg = fragment.getRawAttribute(bindArgAttrEvent) as
+          | string
+          | null;
+      }
+    } else {
+      // Prefer legacy `data-fetch-arg` for non-event usage.
+      // Fallback to `data-fetch-bind-arg` if legacy is not present.
+      if (fragment.hasAttribute(bindArgAttrNonEventLegacy)) {
+        options.bindArg = fragment.getRawAttribute(
+          bindArgAttrNonEventLegacy,
+        ) as string | null;
+      } else if (fragment.hasAttribute(bindArgAttrNonEventNew)) {
+        options.bindArg = fragment.getRawAttribute(bindArgAttrNonEventNew) as
+          | string
+          | null;
+      }
     }
     const bindParamsAttr = event
       ? Procedure.attrName(event, 'bind-params')
@@ -456,15 +570,15 @@ ${body}
 
     // 非イベントの data / form（data-fetch-data / data-fetch-form）も取り込む
     if (!event) {
-      if (fragment.hasAttribute(Procedure.attrName(null, 'fetch-data', true))) {
+      if (fragment.hasAttribute(Procedure.attrName(null, 'data', true))) {
         const raw = fragment.getRawAttribute(
-          Procedure.attrName(null, 'fetch-data', true),
+          Procedure.attrName(null, 'data', true),
         ) as string;
         options.data = Core.parseDataBind(raw);
       }
-      if (fragment.hasAttribute(Procedure.attrName(null, 'fetch-form', true))) {
+      if (fragment.hasAttribute(Procedure.attrName(null, 'form', true))) {
         const formSelector = fragment.getRawAttribute(
-          Procedure.attrName(null, 'fetch-form', true),
+          Procedure.attrName(null, 'form', true),
         ) as string | null;
         if (formSelector) {
           const formElement = document.body.querySelector(formSelector);

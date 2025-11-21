@@ -871,7 +871,7 @@ import Haori from 'haori'
     data-click-validate
     data-click-form="#loginForm"
     data-click-fetch="/api/login"
-    data-click-method="POST"
+    data-click-fetch-method="POST"
   >
     ログイン
   </button>
@@ -886,7 +886,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 <button
   data-click-confirm="本当に削除しますか？"
   data-click-fetch="/api/delete/123"
-  data-click-method="DELETE"
+  data-click-fetch-method="DELETE"
 >
   削除
 </button>
@@ -897,7 +897,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 ```html
 <button
   data-click-fetch="/api/update"
-  data-click-method="POST"
+  data-click-fetch-method="POST"
   data-click-data='{"status":"active","priority":1}'
 >
   有効化
@@ -913,7 +913,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 
   <button
     data-click-fetch="/api/register"
-    data-click-method="POST"
+    data-click-fetch-method="POST"
     data-click-form="#myForm"
   >
     登録
@@ -1134,7 +1134,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 ```html
 <button
   data-click-fetch="/api/save"
-  data-click-method="POST"
+  data-click-fetch-method="POST"
   data-click-dialog="保存が完了しました"
 >
   保存
@@ -1146,7 +1146,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 ```html
 <button
   data-click-fetch="/api/save"
-  data-click-method="POST"
+  data-click-fetch-method="POST"
   data-click-toast="保存しました"
 >
   保存
@@ -1160,7 +1160,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 ```html
 <button
   data-click-fetch="/api/complete"
-  data-click-method="POST"
+  data-click-fetch-method="POST"
   data-click-redirect="/success"
 >
   完了
@@ -1223,7 +1223,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
         <input type="text" name="newTodo" placeholder="新しいタスク">
         <button
           data-click-fetch="/api/todos"
-          data-click-method="POST"
+          data-click-fetch-method="POST"
           data-click-form="#addForm"
           data-click-refetch="#app"
           data-click-reset="#addForm"
@@ -1244,7 +1244,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 
           <button
             data-click-fetch="/api/todos/{{id}}"
-            data-click-method="DELETE"
+            data-click-fetch-method="DELETE"
             data-click-refetch="#app"
           >
             削除
@@ -1282,7 +1282,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
       <input type="text" name="keyword" placeholder="名前で検索">
       <button
         data-click-fetch="/api/users/search"
-        data-click-method="GET"
+        data-click-fetch-method="GET"
         data-click-form="#searchForm"
         data-click-bind="#results"
       >
@@ -1371,7 +1371,7 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
       <!-- 購入ボタン -->
       <button
         data-click-fetch="/api/checkout"
-        data-click-method="POST"
+        data-click-fetch-method="POST"
         data-click-form="#cart"
         data-click-confirm="この内容で購入しますか？"
         data-click-redirect="/order-complete"

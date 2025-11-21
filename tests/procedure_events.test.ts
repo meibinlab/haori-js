@@ -99,7 +99,7 @@ describe('イベント属性: before-run / after-run', () => {
     const frag = createFragmentWith({
       'data-click-fetch': 'https://example.com/original',
       'data-click-before-run':
-        "return { fetchUrl: 'https://example.com/override' };",
+        'return { fetchUrl: \'https://example.com/override\' };',
       'data-click-after-run': 'return;',
     });
     const fetchMock = (global.fetch = vi.fn().mockResolvedValue(

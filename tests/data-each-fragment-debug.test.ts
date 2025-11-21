@@ -26,7 +26,11 @@ describe('data-each内部処理デバッグ', () => {
     container.innerHTML = `
       <table>
         <tbody data-each="users">
-          <tr><td>{{id}}</td><td>{{name}}</td><td>{{age}}</td></tr>
+          <tr>
+            <td>{{id}}</td>
+            <td>{{name}}</td>
+            <td>{{age}}</td>
+          </tr>
         </tbody>
       </table>
     `;
@@ -38,7 +42,8 @@ describe('data-each内部処理デバッグ', () => {
     await Queue.wait();
     // テンプレートtrがchildrenから除去されているか
     const children = fragment.getChildren();
-    const trCount = children.filter(c => c instanceof ElementFragment).length;
+    const filtered = children.filter(c => c instanceof ElementFragment);
+    const trCount = filtered.length;
     expect(trCount).toBe(2); // 2行生成されている
   });
 
@@ -46,7 +51,11 @@ describe('data-each内部処理デバッグ', () => {
     container.innerHTML = `
       <table>
         <tbody data-each="users">
-          <tr><td>{{id}}</td><td>{{name}}</td><td>{{age}}</td></tr>
+          <tr>
+            <td>{{id}}</td>
+            <td>{{name}}</td>
+            <td>{{age}}</td>
+          </tr>
         </tbody>
       </table>
     `;
@@ -65,7 +74,11 @@ describe('data-each内部処理デバッグ', () => {
     container.innerHTML = `
       <table>
         <tbody data-each="users">
-          <tr><td>{{id}}</td><td>{{name}}</td><td>{{age}}</td></tr>
+          <tr>
+            <td>{{id}}</td>
+            <td>{{name}}</td>
+            <td>{{age}}</td>
+          </tr>
         </tbody>
       </table>
     `;
@@ -75,15 +88,23 @@ describe('data-each内部処理デバッグ', () => {
     fragment.setMounted(true);
     // updateDiff内部のnewKeys数を確認
     let newKeysCount = 0;
-    const origUpdateDiff = (Core as any).updateDiff;
-    (Core as any).updateDiff = function(parent: ElementFragment, newList: any[]) {
+    const origUpdateDiff = (Core as unknown as Record<string, unknown>).updateDiff as
+      | undefined
+      | ((...args: unknown[]) => unknown);
+    (Core as unknown as Record<string, unknown>).updateDiff = function(
+      parent: ElementFragment,
+      newList: unknown[],
+    ) {
       newKeysCount = newList.length;
-      return origUpdateDiff.apply(this, arguments);
+      const fn = origUpdateDiff as (...args: unknown[]) => unknown;
+      return fn.apply(this, [parent, newList]);
     };
     await Core.evaluateEach(fragment);
     await Queue.wait();
     expect(newKeysCount).toBe(users.length);
-    (Core as any).updateDiff = origUpdateDiff;
+    (Core as unknown as Record<string, unknown>).updateDiff = origUpdateDiff as
+      | undefined
+      | ((...args: unknown[]) => unknown);
   });
 
   it('rowFragmentにバインディングデータが正しくセットされるか', async () => {

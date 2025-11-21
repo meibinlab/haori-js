@@ -55,4 +55,12 @@ export default tseslint.config(
       '@typescript-eslint/prefer-readonly': 'error',
     },
   },
+  // テストファイルは長い HTML テンプレートや多様な any の使用を許容するため一部ルールを緩和
+  {
+    files: ['tests/**'],
+    rules: {
+      'max-len': ['error', {code: 120}],
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
 );

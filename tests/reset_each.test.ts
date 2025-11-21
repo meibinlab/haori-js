@@ -176,10 +176,10 @@ describe('Form.reset と data-each 複製の境界ケース', () => {
     // middle 層のクローンは削除（DOM 上からも消える）
     expect(outer.querySelector('.m-clone1')).toBeNull();
     expect(outer.querySelector('.m-clone2')).toBeNull();
-  // inner 層は本体ごと削除され、クローンも DOM 上に存在しない
-  expect(outer.querySelector('article[data-each]')).toBeNull();
-  expect(outer.querySelector('.i-clone1')).toBeNull();
-  expect(outer.querySelector('.i-clone2')).toBeNull();
+    // inner 層は本体ごと削除され、クローンも DOM 上に存在しない
+    expect(outer.querySelector('article[data-each]')).toBeNull();
+    expect(outer.querySelector('.i-clone1')).toBeNull();
+    expect(outer.querySelector('.i-clone2')).toBeNull();
   });
 
   it('複数フォーム混在時に selector 指定の reset で対象フォームのみ each 複製が削除される', async () => {
