@@ -448,8 +448,11 @@ export default class Core {
     let template = fragment.getTemplate();
     if (template === null) {
       // テンプレートの作成
-      const unmountPromises: Promise<void>[] = [];
+      let found = false;
       fragment.getChildren().forEach(child => {
+        if (found) {
+          return;
+        }
         if (child instanceof ElementFragment) {
           if (
             child.hasAttribute(`${Env.prefix}each-before`) ||
@@ -457,38 +460,28 @@ export default class Core {
           ) {
             return;
           }
-          if (template === null) {
-            template = child;
-            // テンプレートを children から切り離し、DOM からも除去する
-            fragment.removeChild(child);
-            // 直接DOMから削除
-            const templateTarget = child.getTarget();
-            if (templateTarget.parentNode) {
-              unmountPromises.push(
-                Queue.enqueue(() => {
-                  if (templateTarget.parentNode) {
-                    templateTarget.parentNode.removeChild(templateTarget);
-                  }
-                  child.setMounted(false);
-                }) as Promise<void>,
-              );
-            }
-          } else {
-            Log.warn('[Haori]', 'Template must be a single child element.');
+          // 最初のElementFragmentをテンプレートとして採用
+          template = child.clone();
+          fragment.setTemplate(template);
+          found = true;
+          // 元のchildはchildrenから除外
+          fragment.removeChild(child);
+          // DOMからも必ず除去
+          const templateTarget = child.getTarget();
+          if (templateTarget.parentNode) {
+            templateTarget.parentNode.removeChild(templateTarget);
           }
+          child.setMounted(false);
         }
         // TextNodeやCommentNodeはテンプレートにならないので無視
       });
-      fragment.setTemplate(template);
       const data = fragment.getAttribute(`${Env.prefix}each`);
       if (!Array.isArray(data)) {
         Log.error('[Haori]', 'Invalid each attribute:', data);
         return Promise.reject(new Error('Invalid each attribute.'));
       }
-      // テンプレートの unmount 完了後に updateDiff を実行
-      return Promise.all(unmountPromises).then(() =>
-        this.updateDiff(fragment, data),
-      );
+      // テンプレートのunmount完了後にupdateDiffを実行
+      return this.updateDiff(fragment, data);
     }
     const data = fragment.getAttribute(`${Env.prefix}each`);
     if (!Array.isArray(data)) {
@@ -559,28 +552,47 @@ export default class Core {
     newKeys.forEach((newKey, loopIndex) => {
       const srcIndex = srcKeys.indexOf(newKey);
       const {item, itemIndex} = keyDataMap.get(newKey)!;
-      let child;
+      let child: ElementFragment;
       if (srcIndex !== -1) {
         // 既存の要素を再利用
         child = childElements[srcIndex];
+        // 既存要素にも必ずバインドデータを再セットし、キャッシュもクリア
+        Core.updateRowFragment(
+          child,
+          item,
+          indexKey as string | null,
+          itemIndex,
+          itemArg ? String(itemArg) : null,
+          newKey,
+        );
+        if (typeof child.clearBindingDataCache === 'function') {
+          child.clearBindingDataCache();
+        }
+        chain = chain.then(() => Core.evaluateAll(child));
       } else {
         // 新しい要素を追加
         child = template.clone();
+        Core.updateRowFragment(
+          child,
+          item,
+          indexKey as string | null,
+          itemIndex,
+          itemArg ? String(itemArg) : null,
+          newKey,
+        );
+        if (typeof child.clearBindingDataCache === 'function') {
+          child.clearBindingDataCache();
+        }
+        const currentInsertIndex = baseInsertIndex + loopIndex;
+        chain = chain.then(() =>
+          parent
+            .insertBefore(
+              child,
+              parent.getChildren()[currentInsertIndex] || null,
+            )
+            .then(() => Core.evaluateAll(child)),
+        );
       }
-      Core.updateRowFragment(
-        child,
-        item,
-        indexKey as string | null,
-        itemIndex,
-        itemArg ? String(itemArg) : null,
-        newKey,
-      );
-      const currentInsertIndex = baseInsertIndex + loopIndex;
-      chain = chain.then(() =>
-        parent
-          .insertBefore(child, parent.getChildren()[currentInsertIndex] || null)
-          .then(() => Core.evaluateAll(child)),
-      );
     });
     return Promise.all(removalPromises)
       .then(() => chain)
