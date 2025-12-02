@@ -12,11 +12,16 @@ import Log from './log';
  * 監視対象の要素を管理するためのクラスです。
  */
 export class Observer {
+  private static _initialized = false;
   /**
    * 初期化メソッド。
    * ドキュメントのheadとbodyを監視対象として設定します。
    */
   public static async init() {
+    if (Observer._initialized) {
+      return;
+    }
+    Observer._initialized = true;
     const results = await Promise.allSettled([
       Core.scan(document.head),
       Core.scan(document.body),
