@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Haori.js data-fetch デモ</title>
+  <!-- ローカルdistのHaori.jsを読み込む -->
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 2em;
+    }
+
+    table {
+      border-collapse: collapse;
+      margin-top: 1em;
+    }
+
+    th,
+    td {
+      border: 1px solid #ccc;
+      padding: 0.5em 1em;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>data-fetch 単純デモ</h1>
+  <!-- 仕様書準拠: data-fetch-argで配列名を明示し、バインド先でitemsとして参照 -->
+  <div data-fetch="/demo/data-fetch-demo.json" data-fetch-arg="items" data-fetch-bind="#result"></div>
+  <div id="result">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>名前</th>
+        </tr>
+      </thead>
+      <tbody data-each="items" data-each-key="id">
+        <tr>
+          <td>{{id}}</td>
+          <td>{{name}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <script src="../dist/haori.iife.js"></script>
+</body>
+
+</html>
