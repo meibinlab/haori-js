@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-form デモ</title>
+</head>
+<body>
+  <h2>data-form デモ</h2>
+  <form data-form>
+    <label>名前: <input name="username" value="山田太郎"></label>
+    <label>年齢: <input name="age" type="number" value="28"></label>
+  </form>
+  <div>
+    <p>入力値: <span data-bind="username"></span>（年齢: <span data-bind="age"></span>）</p>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

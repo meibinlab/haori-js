@@ -55,8 +55,10 @@
   "homepage": "https://github.com/meibinlab/haori-js#readme",
   "devDependencies": {
     "@eslint/js": "^9.31.0",
+    "@playwright/test": "^1.57.0",
     "@types/node": "^22.7.5",
     "eslint": "^9.31.0",
+    "http-server": "^14.1.1",
     "jsdom": "^26.1.0",
     "prettier": "^3.6.2",
     "typescript": "^5.6.3",

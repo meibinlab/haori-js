@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-click デモ</title>
+</head>
+<body>
+  <h2>data-click-click デモ</h2>
+  <div>下のボタンで上のボタンのクリックを間接的に発火します</div>
+  <button id="submitBtn" onclick="alert('送信されました')">送信</button>
+  <button data-click-click="#submitBtn">送信 (間接)</button>
+  <button data-click-fetch="./data-click-click-demo.json" data-click-bind="#result">クリック</button>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

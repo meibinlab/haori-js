@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-fetch-bind-params デモ</title>
+</head>
+<body>
+  <button data-fetch="./data-fetch-bind-params-demo.json" data-fetch-bind="#result" data-fetch-bind-params="name&age">データ取得</button>
+  <div id="result">
+    <p>名前: {{name}}</p>
+    <p>年齢: {{age}}</p>
+  </div>
+  <script>
+    window.haori = { name: "", age: "" };
+  </script>
+    <script>
+      window.age = 25;
+    </script>
+    <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

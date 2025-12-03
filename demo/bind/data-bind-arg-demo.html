@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-bind-arg デモ</title>
+</head>
+<body>
+  <h2>data-bind-arg デモ</h2>
+  <div>data-bind-arg属性で配列をバインドしてリスト表示します</div>
+  <!-- window.haoriは<head>で初期化済み -->
+  <div data-bind='{"items":[{"name":"りんご","price":100},{"name":"バナナ","price":200},{"name":"みかん","price":150}]}' >
+    <ul data-each="items">
+      <li>{{name}}: {{price}}円</li>
+    </ul>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

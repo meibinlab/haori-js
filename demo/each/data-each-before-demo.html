@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-each-before デモ</title>
+  <style>
+    .before { color: green; font-weight: bold; }
+    ul { padding-left: 1.5em; }
+  </style>
+</head>
+<body>
+  <h2>data-each-before デモ</h2>
+  <div data-bind='{"items":["りんご", "バナナ", "みかん"]}'>
+    <ul data-each="items" data-each-arg="item"><li><span data-each-before class="before">ここはループ前に表示されます</span>{{item}}</li></ul>
+  </div>
+</body>
+  <script src="../../dist/haori.iife.js"></script>
+</html>

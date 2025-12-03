@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-bind-arg/params デモ</title>
+</head>
+<body>
+  <h2>data-click-bind-params デモ</h2>
+  <div>パラメータを指定して取得し、userオブジェクトでバインド</div>
+  <button data-click-fetch="./data-click-bind-params-demo.json" data-click-bind="#result" data-click-bind-arg="user" data-click-bind-params="name&age">取得</button>
+  <div id="result" data-bind="haori" data-bind-arg="user">
+    <p>名前: {{user.name}}</p>
+    <p>年齢: {{user.age}}</p>
+  </div>
+  <script>
+    window.haori = { user: { name: "", age: "" } };
+  </script>
+    <script>
+      window.user = { name: '山田太郎', age: 28 };
+    </script>
+    <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

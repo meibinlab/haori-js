@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-if デモ</title>
+    <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+  <h2>data-if デモ</h2>
+  <div>showの値で表示/非表示が切り替わります</div>
+  <div data-bind='{"show":true}'>
+    <p data-if="show">これは表示されます</p>
+    <p data-if="!show">これは非表示です</p>
+  </div>
+</body>
+</html>

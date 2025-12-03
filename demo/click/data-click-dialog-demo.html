@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-open/close/dialog デモ</title>
+</head>
+<body>
+  <h2>data-click-dialog デモ</h2>
+  <div>ダイアログの開閉やメッセージ表示のデモ</div>
+  <dialog id="myDialog">
+    <p>ダイアログ内容</p>
+    <button data-click-close="#myDialog">閉じる</button>
+  </dialog>
+  <button data-click-open="#myDialog">開く</button>
+  <button data-click-dialog="メッセージ表示">メッセージ</button>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

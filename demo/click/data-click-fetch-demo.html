@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-fetch デモ</title>
+</head>
+<body>
+  <h2>data-click-fetch デモ</h2>
+  <div>ボタンを押すとJSONから名前を取得して表示します</div>
+  <button data-click-fetch="./data-click-fetch-demo.json" data-click-bind="#result">取得</button>
+  <div id="result">
+    <p>名前: {{name}}</p>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

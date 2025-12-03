@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-row デモ</title>
+  <style>
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 0.5em; }
+    .row-key { color: #888; font-size: 0.9em; }
+  </style>
+  <script>
+    window.haori = { items: ["A", "B", "C"] };
+    window.items = window.haori.items;
+  </script>
+</head>
+<body>
+  <h2>data-row デモ</h2>
+  <div>data-row属性でテーブル行を操作するデモ</div>
+  <div data-bind="haori">
+    <table>
+      <thead>
+        <tr><th>値</th><th>data-row キー</th></tr>
+      </thead>
+      <tbody data-each="items" data-each-arg="item">
+        <tr>
+          <td>{{item}}</td>
+          <td class="row-key">{{item}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

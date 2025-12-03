@@ -344,7 +344,27 @@
 
     </div>
 
-    <script type="module">
+        <script>
+                window.haori = {
+                    showMessage: false,
+                    count: 0,
+                    username: "",
+                    email: "",
+                    message: "",
+                    price: 0,
+                    quantity: 0,
+                    taxRate: 0.1
+                };
+                window.showMessage = window.haori.showMessage;
+                window.count = window.haori.count;
+                window.username = window.haori.username;
+                window.email = window.haori.email;
+                window.message = window.haori.message;
+                window.price = window.haori.price;
+                window.quantity = window.haori.quantity;
+                window.taxRate = window.haori.taxRate;
+        </script>
+        <script type="module">
         // Haoriモジュールをインポートすると自動的に初期化されます（observer.tsにより）
         import '../dist/haori.es.js';
 

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-confirm デモ</title>
+</head>
+<body>
+  <h2>data-click-confirm デモ</h2>
+  <div>削除ボタンを押すと確認ダイアログが表示されます</div>
+  <button data-click-confirm="本当に削除しますか?" data-click-fetch="./data-click-confirm-demo.json" data-click-bind="#result">削除</button>
+  <div id="result">
+    <p>結果: {{result}}</p>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

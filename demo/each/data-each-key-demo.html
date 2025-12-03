@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-each-key デモ</title>
+  </head>
+<body>
+  <h2>data-each-key デモ</h2>
+  <div>各要素のidをキーにしてループ</div>
+  <div data-bind='{"users":[{"id":1,"name":"Taro"},{"id":2,"name":"Hanako"}]}' >
+    <ul data-each="users" data-each-key="id"><li>{{name}}</li></ul>
+  </div>
+</body>
+  <script src="../../dist/haori.iife.js"></script>
+</html>

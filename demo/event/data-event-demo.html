@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-event デモ</title>
+</head>
+<body>
+  <h2>data-event デモ</h2>
+  <div>ボタンをクリックすると data-event でイベントが発火します</div>
+  <button data-event="click" data-event-arg="clicked">クリック</button>
+  <div id="result"></div>
+  <script>
+    document.addEventListener('clicked', function() {
+      document.getElementById('result').textContent = 'イベントが発火しました';
+    });
+  </script>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

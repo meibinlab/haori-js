@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-reset/refetch デモ</title>
+</head>
+<body>
+  <h2>data-click-reset/refetch デモ</h2>
+  <div>フォームのリセットとリストの再取得デモ</div>
+  <form id="myForm">
+    <input name="username" value="testuser">
+  </form>
+  <button data-click-reset="#myForm">リセット</button>
+  <div id="userList" data-fetch="./data-click-refetch-demo.json"></div>
+  <button data-click-refetch="#userList">再読み込み</button>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

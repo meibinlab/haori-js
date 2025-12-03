@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-each-before/after デモ</title>
+    <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+  <h2>data-each-before/after デモ</h2>
+  <div>各ループの前後に要素を挿入するデモ</div>
+  <div data-bind='{"items":[1,2,3]}'>
+    <div data-each="items" data-each-arg="item">
+      <p data-each-before>--- 開始 ---</p>
+      <span>{{item}}</span>
+      <p data-each-after>--- 終了 ---</p>
+    </div>
+  </div>
+  </body>
+</html>

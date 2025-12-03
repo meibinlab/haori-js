@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-url-param-arg デモ</title>
+  <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+  <h2>data-url-param-arg デモ</h2>
+  <div>URLパラメータ name, age をparamsとして取得</div>
+  <!-- URL例: ?name=太郎&age=25 -->
+  <div data-url-param data-url-arg="params">
+    <p>名前: {{params.name}}</p>
+    <p>年齢: {{params.age}}</p>
+  </div>
+  <script>
+    window.params = { name: "", age: "" };
+  </script>
+</body>
+</html>

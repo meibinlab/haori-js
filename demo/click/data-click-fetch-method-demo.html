@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-fetch-method/headers/content-type デモ</title>
+</head>
+<body>
+  <h2>data-click-fetch-method デモ</h2>
+  <div>POST送信のデモ。ヘッダーやContent-Typeも指定</div>
+  <button data-click-fetch="./data-click-fetch-method-demo.json" data-click-fetch-method="POST" data-click-fetch-headers='{"X-Test":"1"}' data-click-fetch-content-type="application/json" data-click-bind="#result">POST送信</button>
+  <div id="result">
+    <p>結果: {{result}}</p>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

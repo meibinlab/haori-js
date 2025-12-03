@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-fetch-arg デモ</title>
+</head>
+<body>
+  <h2>data-fetch-arg デモ</h2>
+  <div>data-fetch-arg属性でuser情報を取得するデモ</div>
+  <div data-fetch="./data-fetch-arg-demo.json" data-fetch-arg="user">
+    <p>{{user.user.name}}</p>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

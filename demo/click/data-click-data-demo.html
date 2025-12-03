@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-data デモ</title>
+</head>
+<body>
+  <h2>data-click-data デモ</h2>
+  <div>ボタンを押すとtypeパラメータを送信し、結果を表示します</div>
+  <button data-click-fetch="./data-click-data-demo.json" data-click-data='{"type":"user"}' data-click-bind="#result">送信</button>
+  <div id="result" data-bind="haori" data-bind-arg="type">
+    <p>タイプ: {{type}}</p>
+  </div>
+  <script>
+    window.haori = { type: "" };
+  </script>
+    <script>
+      window.type = 'info';
+    </script>
+    <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

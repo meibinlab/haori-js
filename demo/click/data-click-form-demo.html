@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-form デモ</title>
+</head>
+<body>
+  <h2>data-click-form デモ</h2>
+  <div>フォーム送信と結果表示のデモ</div>
+  <form id="userForm">
+    <input name="username" value="testuser">
+  </form>
+  <button data-click-fetch="./data-click-form-demo.json" data-click-form="#userForm" data-click-bind="#result">送信</button>
+  <div id="result" data-bind="haori" data-bind-arg="username">
+    <p>ユーザー名: {{username}}</p>
+  </div>
+  <script>
+    window.haori = { username: "" };
+  </script>
+    <script>
+      window.username = 'testuser';
+    </script>
+    <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

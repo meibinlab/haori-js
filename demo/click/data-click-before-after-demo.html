@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-before-run / after-run デモ</title>
+</head>
+<body>
+  <h2>data-click-before-run / after-run デモ</h2>
+  <div>送信前後にアラートを表示します</div>
+  <button data-click-fetch="./data-click-before-after-demo.json" data-click-before-run="alert('送信前'); return true" data-click-after-run="alert('送信後');" data-click-bind="#result">送信</button>
+  <div id="result">
+    <p>結果: {{result}}</p>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

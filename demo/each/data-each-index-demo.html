@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-each-index デモ</title>
+  </head>
+<body>
+  <h2>data-each-index デモ</h2>
+  <div>ループのインデックスをiで取得して表示</div>
+  <div data-bind='{"items":["A","B","C"]}'>
+    <ul data-each="items" data-each-arg="item" data-each-index="i"><li>{{i}}: {{item}}</li></ul>
+  </div>
+</body>
+  <script src="../../dist/haori.iife.js"></script>
+</html>

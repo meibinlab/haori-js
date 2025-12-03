@@ -82,50 +82,6 @@
         </form>
     </div>
 
-    <script type="module">
-        // Haoriモジュールをインポートすると自動的に初期化されます
-        import '../dist/haori.es.js';
-
-        // ログ表示用のヘルパー関数
-        function logEvent(eventName, detail) {
-            const log = document.getElementById('eventLog');
-            const timestamp = new Date().toLocaleTimeString();
-            const detailStr = detail ? JSON.stringify(detail, null, 2) : 'no detail';
-            log.innerHTML += `<div><strong>[${timestamp}] ${eventName}</strong><br><pre>${detailStr}</pre></div>`;
-            log.scrollTop = log.scrollHeight;
-        }
-
-        // イベントリスナーの設定
-        document.addEventListener('haori:ready', (e) => logEvent('haori:ready', e.detail));
-        document.addEventListener('haori:render', (e) => logEvent('haori:render', e.detail));
-        
-        document.addEventListener('haori:importstart', (e) => logEvent('haori:importstart', e.detail));
-        document.addEventListener('haori:importend', (e) => logEvent('haori:importend', e.detail));
-        document.addEventListener('haori:importerror', (e) => logEvent('haori:importerror', e.detail));
-        
-        document.addEventListener('haori:bindchange', (e) => logEvent('haori:bindchange', e.detail));
-        
-        document.addEventListener('haori:eachupdate', (e) => logEvent('haori:eachupdate', e.detail));
-        document.addEventListener('haori:rowadd', (e) => logEvent('haori:rowadd', e.detail));
-        document.addEventListener('haori:rowremove', (e) => logEvent('haori:rowremove', e.detail));
-        document.addEventListener('haori:rowmove', (e) => logEvent('haori:rowmove', e.detail));
-        
-        document.addEventListener('haori:show', (e) => logEvent('haori:show', e.detail));
-        document.addEventListener('haori:hide', (e) => logEvent('haori:hide', e.detail));
-        
-        document.addEventListener('haori:fetchstart', (e) => logEvent('haori:fetchstart', e.detail));
-        document.addEventListener('haori:fetchend', (e) => logEvent('haori:fetchend', e.detail));
-        document.addEventListener('haori:fetcherror', (e) => logEvent('haori:fetcherror', e.detail));
-
-        // ログクリア関数
-        window.clearLog = function() {
-            document.getElementById('eventLog').innerHTML = '';
-        };
-
-        // 初期ログ
-        setTimeout(() => {
-            logEvent('Page Loaded', { message: 'Event system test page loaded' });
-        }, 100);
-    </script>
+    <script src="../../dist/haori.iife.js"></script>
 </body>
 </html>

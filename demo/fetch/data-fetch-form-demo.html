@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-fetch-form デモ</title>
+    <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+  <form id="myForm">
+    <input name="username" value="testuser">
+    <input name="email" value="test@example.com">
+  </form>
+  <button data-fetch="./data-fetch-form-demo.json" data-fetch-form="#myForm" data-fetch-bind="#result">
+    送信
+  </button>
+  <div id="result">
+    <p>送信結果: {{status}}</p>
+    <p>ユーザー名: {{username}}</p>
+    <p>メール: {{email}}</p>
+      <script>
+        // Initialization removed to minimize JavaScript usage
+      </script>
+  <script>
+    window.haori = { username: "", email: "", status: "" };
+  </script>
+  </div>
+</body>
+</html>
+  

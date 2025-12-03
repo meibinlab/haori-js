@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-each デモ</title>
+  </head>
+<body>
+  <h2>data-each デモ</h2>
+  <div>items配列をループしてリスト表示します</div>
+  <div data-bind='{"items":["A","B","C"]}'>
+    <ul data-each="items" data-each-arg="item"><li>{{item}}</li></ul>
+  </div>
+</body>
+  <script src="../../dist/haori.iife.js"></script>
+</html>
