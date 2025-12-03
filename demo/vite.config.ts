@@ -16,7 +16,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),
-        'event-test': resolve(__dirname, 'event-test.html'),
+        'event-test': resolve(__dirname, 'event/event-test.html'),
       },
     },
   },
