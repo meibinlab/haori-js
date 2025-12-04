@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-bind URLパラメータ形式デモ</title>
+</head>
+<body>
+  <h2>data-bind URLパラメータ形式デモ</h2>
+  <div>data-bind属性にURLパラメータ形式（例: key1=value1&key2=value2）で値を設定するデモです。</div>
+  <div data-bind="message=Hello%20World&count=42">
+    <p>メッセージ: {{message}}</p>
+    <p>カウント: {{count}}</p>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>
