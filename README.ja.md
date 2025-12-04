@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.1.0
+バージョン: 0.1.1
 
 ---
 
@@ -41,7 +41,7 @@ npm install haori
 CDN:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/haori@0.1.0/dist/haori.iife.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/haori@0.1.1/dist/haori.iife.js"></script>
 ```
 
 ES Module:
@@ -62,7 +62,7 @@ HTML だけで簡単に使えます。以下は最小の例です。
 <head>
   <meta charset="utf-8">
   <title>Haori サンプル</title>
-  <script src="https://cdn.jsdelivr.net/npm/haori@0.1.0/dist/haori.iife.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/haori@0.1.1/dist/haori.iife.js"></script>
 </head>
 <body>
   <div data-bind='{"name":"太郎"}'>
