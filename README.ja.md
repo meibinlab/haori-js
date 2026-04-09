@@ -100,7 +100,7 @@ Haori.mount(document.body, { items: [ { name: 'りんご' }, { name: 'みかん'
 
 ## 公開・ビルド手順（パッケージ作成）
 
-開発環境でのビルドと公開の基本手順を示します。
+ローカル確認とリリース準備の基本手順を示します。
 
 1. 依存インストール
 
@@ -108,18 +108,17 @@ Haori.mount(document.body, { items: [ { name: 'りんご' }, { name: 'みかん'
 npm install
 ```
 
-2. 型チェックとビルド
+2. 型チェックとテスト
 
 ```bash
 npm run compile
-# または
-npm run build
+npm run test
 ```
 
-3. テスト
+3. 配布物のビルド
 
 ```bash
-npm run test
+npm run build
 ```
 
 4. バージョン更新
@@ -128,14 +127,22 @@ npm run test
 npm version patch
 ```
 
-5. npm ログインおよび公開
+5. 版数更新を push し、対象タグから GitHub Release を公開
 
-```bash
-npm login
-npm publish --access public
-```
+このリポジトリの npm 公開は GitHub Actions で行います。現在の workflow は `release.published` を契機に起動し、パッケージをビルドしたうえで `NPM_TOKEN` を使って npm へ公開し、あわせて `dist.zip` を GitHub Release のアーティファクトとして添付します。
 
-注意: `package.json` の `name`, `version`, `description`, `repository`, `license` が正しいことを確認してください。公開対象ファイルは `files` フィールドおよび `.npmignore` に従います。
+必要な前提条件:
+
+- GitHub リポジトリの Secrets に `NPM_TOKEN` が設定されていること
+- 対象バージョンのタグから Release を `published` 状態で公開すること
+
+公開前の推奨確認:
+
+- `npm run test`
+- `npm run build`
+- `npm pack --dry-run`
+
+注意: `package.json` の `name`, `version`, `description`, `repository`, `license` が正しいことを確認してください。公開対象ファイルは `files` フィールドに従います。
 
 ---
 

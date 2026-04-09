@@ -100,7 +100,7 @@ For detailed usage and many examples, see the official documentation.
 
 ## Build & publish (packaging)
 
-Basic build and publish steps in a development environment:
+Basic local verification and release preparation steps:
 
 1. Install dependencies
 
@@ -108,18 +108,17 @@ Basic build and publish steps in a development environment:
 npm install
 ```
 
-2. Type-check and build
+2. Type-check and test
 
 ```bash
 npm run compile
-# or
-npm run build
+npm run test
 ```
 
-3. Run tests
+3. Build release artifacts
 
 ```bash
-npm run test
+npm run build
 ```
 
 4. Bump version
@@ -128,14 +127,22 @@ npm run test
 npm version patch
 ```
 
-5. Login to npm and publish
+5. Push the version update and create a GitHub Release for the new tag
 
-```bash
-npm login
-npm publish --access public
-```
+Publishing to npm is handled by GitHub Actions when a GitHub Release is published. This repository currently uses release workflows that trigger on `release.published`, build the package, publish it to npm with `NPM_TOKEN`, and upload `dist.zip` to the release artifacts.
 
-Make sure `package.json` fields `name`, `version`, `description`, `repository` and `license` are correct. Files published to npm are controlled by the `files` field in `package.json` and `.npmignore`.
+Required repository setup:
+
+- `NPM_TOKEN` must be configured in GitHub repository secrets.
+- The release must be published from the target version tag.
+
+Recommended pre-release checks:
+
+- `npm run test`
+- `npm run build`
+- `npm pack --dry-run`
+
+Make sure `package.json` fields `name`, `version`, `description`, `repository` and `license` are correct. Files published to npm are controlled by the `files` field in `package.json`.
 
 ---
 
