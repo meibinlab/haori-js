@@ -2206,7 +2206,7 @@ export {
 export default Haori
 
 // バージョン
-export const version = '1.0.0'
+export const version = '0.1.1'
 ```
 
 ### Core クラス
@@ -2613,9 +2613,16 @@ MIT License
 
 ## バージョン履歴
 
-### 1.0.0 (2025-01-14)
+### 0.1.1 (2025-12-04)
 
-初回リリース
+- 全デモHTMLのhead/body構造を修正し、HTML構造を統一
+- fetch / bind / each 系デモを中心に構成を整理
+- 一部属性のテンプレート解釈・バインディング仕様を調整
+- 内部ロジックのリファクタリングと軽微なバグ修正
+
+### 0.1.0 (2025-11-21)
+
+初回公開リリース
 
 - HTML-First設計
 - 仮想DOM実装

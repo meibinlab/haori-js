@@ -4,6 +4,7 @@
  */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import HaoriEvent from '../src/event';
+import packageJson from '../package.json';
 
 describe('HaoriEvent', () => {
   let container: HTMLElement;
@@ -83,11 +84,11 @@ describe('HaoriEvent', () => {
       const handler = vi.fn();
       document.addEventListener('haori:ready', handler);
 
-      HaoriEvent.ready('0.1.0');
+      HaoriEvent.ready(packageJson.version);
 
       expect(handler).toHaveBeenCalledTimes(1);
       const event = handler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail).toEqual({version: '0.1.0'});
+      expect(event.detail).toEqual({version: packageJson.version});
 
       document.removeEventListener('haori:ready', handler);
     });

@@ -1,6 +1,9 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const configDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
   // デモ用の TypeScript ファイルは対象外（HTMLのみのデモを想定）
@@ -12,7 +15,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         project: ['./tsconfig.json'],
-        tsconfigRootDir: path.resolve(),
+        tsconfigRootDir: configDirectory,
       },
       globals: {
         document: 'readonly',
@@ -38,8 +41,8 @@ export default tseslint.config(
       'space-infix-ops': ['error'],
       'eol-last': ['error'],
       'no-trailing-spaces': ['error'],
-    'brace-style': ['error', '1tbs'],
-    curly: ['error', 'all'],
+      'brace-style': ['error', '1tbs'],
+      curly: ['error', 'all'],
       'no-var': 'error',
       'prefer-const': 'error',
       'prefer-arrow-callback': 'error',
