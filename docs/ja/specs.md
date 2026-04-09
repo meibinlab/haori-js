@@ -1,7 +1,7 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.1.0
-最終更新: 2025-01-14
+バージョン: 0.1.1
+最終更新: 2026-04-09
 
 ## 目次
 
@@ -74,7 +74,7 @@ Haori.jsは以下の設計原則に基づいて構築されています：
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                    Expression Engine                        │
-│  セキュアな式評価 (禁止識別子チェック + Function生成)         │
+│  セキュアな式評価 (許可構文検証 + Proxyラップ + Function生成) │
 └─────────────────────────────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -448,6 +448,9 @@ class Expression {
 
   static evaluate(expression: string, bindedValues: Record<string, unknown>): unknown
   protected static containsDangerousPatterns(expression: string): boolean
+  private static hasAllowedSyntax(expression: string): boolean
+  private static wrapBoundValues(bindedValues: Record<string, unknown>): Record<string, unknown>
+  private static withBlockedPropertyAccess<T>(callback: () => T): T
   protected static containsForbiddenKeys(obj: unknown): boolean
 }
 ```
@@ -461,7 +464,7 @@ private static readonly FORBIDDEN_NAMES = [
 
   // 危険な関数
   'Function', 'setTimeout', 'setInterval', 'requestAnimationFrame',
-  'alert', 'confirm', 'prompt', 'fetch', 'XMLHttpRequest',
+  'alert', 'confirm', 'prompt', 'fetch', 'XMLHttpRequest', 'Reflect',
 
   // プロトタイプチェーン
   'constructor', '__proto__', 'prototype', 'Object',
@@ -479,29 +482,27 @@ private static readonly STRICT_FORBIDDEN_NAMES = ['eval', 'arguments']
 
 ```typescript
 evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
-  // 1. 危険パターンチェック
-  if (this.containsDangerousPatterns(expression)) {
-    Log.warn(`Dangerous pattern detected: ${expression}`)
+  // 1. 空式と危険パターンをチェック
+  if (expression.trim() === '' || this.containsDangerousPatterns(expression)) {
     return null
   }
 
-  // 2. 禁止キーチェック
+  // 2. バインド値に禁止キーが含まれていないかチェック
   if (this.containsForbiddenKeys(bindedValues)) {
-    Log.warn('Forbidden keys in binding values')
     return null
   }
 
-  // 3. キャッシュキー生成
+  // 3. 禁止識別子を除外したバインドキーでキャッシュキーを作成
   const bindKeys = Object.keys(bindedValues)
     .filter(key => !FORBIDDEN_NAMES.includes(key))
     .sort()
   const cacheKey = `${expression}:${bindKeys.join(',')}`
 
-  // 4. キャッシュチェック
+  // 4. 評価関数をキャッシュまたは生成
   let evaluator = EXPRESSION_CACHE.get(cacheKey)
 
   if (!evaluator) {
-    // 5. 評価関数生成
+    // 5. strict mode と禁止識別子の無効化を入れた評価関数を生成
     const assignments = FORBIDDEN_NAMES
       .map(name => `const ${name} = undefined`)
       .join(';\n')
@@ -512,18 +513,20 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
     EXPRESSION_CACHE.set(cacheKey, evaluator)
   }
 
-  // 6. 実行
-  const argValues = bindKeys.map(key => bindedValues[key])
-  return evaluator(...argValues)
+  // 6. バインド値を Proxy でラップし、評価中のみ prototype 系アクセスを遮断して実行
+  const wrappedValues = this.wrapBoundValues(bindedValues)
+  const argValues = bindKeys.map(key => wrappedValues[key])
+  return this.withBlockedPropertyAccess(() => evaluator(...argValues))
 }
 ```
 
 **セキュリティレイヤー**:
-1. 正規表現で `eval()`, `arguments[]` を検出
-2. 禁止識別子を `undefined` で上書き
-3. strict モードで `eval`, `arguments` の使用を禁止
-4. バインドキーから禁止識別子名を除外
-5. ネストしたオブジェクトも再帰的にチェック
+1. トークン解析で許可された式構文かどうかを検証
+2. 正規表現で `eval()` や `arguments` 参照などの危険パターンを検出
+3. 禁止識別子を `undefined` で上書きし、strict モードで `eval` と `arguments` を抑止
+4. バインド値を再帰的にチェックし、禁止キーを含む入力を拒否
+5. plain object / array / function を Proxy でラップし、`constructor`、`__proto__`、`prototype` へのアクセスを遮断
+6. 評価中のみ prototype 系プロパティの生アクセスを一時的に遮断
 
 ### 4. Observer (observer.ts)
 
@@ -1820,6 +1823,8 @@ Content-Typeを指定します。
 // 配列アクセス
 {{ items[0] }}
 {{ items[index] }}
+{{ items[index + 1] }}
+{{ user["name"] }}
 
 // 算術演算
 {{ price * quantity }}
@@ -1840,14 +1845,21 @@ Content-Typeを指定します。
 {{ count > 0 ? 'あり' : 'なし' }}
 {{ isLoggedIn ? user.name : 'ゲスト' }}
 
+// optional chaining
+{{ user?.name }}
+{{ user?.[key] }}
+
 // メソッド呼び出し
 {{ text.toUpperCase() }}
 {{ price.toFixed(2) }}
 {{ items.join(', ') }}
+{{ when.getTime() }}
+{{ mapping.get("name") }}
 
 // 複雑な式
 {{ (price * 1.1).toFixed(2) }}
 {{ items.filter(item => item.active).length }}
+{{ items.map(x => x * 2) }}
 {{ Math.max(...scores) }}
 ```
 
@@ -1861,13 +1873,17 @@ eval()
 Function()
 setTimeout()
 setInterval()
+Reflect
 
 // グローバルオブジェクト
 window
 document
+globalThis
 location
 navigator
 localStorage
+sessionStorage
+fetch
 
 // プロトタイプチェーン
 constructor
@@ -1878,7 +1894,7 @@ prototype
 arguments (strict モードで禁止)
 ```
 
-禁止パターンを使用した場合、式は `null` を返します。
+直接参照は `undefined` になり、危険パターンや評価失敗時は `null` を返します。`constructor` はドット記法、ブラケット記法、変数経由の computed access、`Reflect` 経由の取得もブロックされます。
 
 ---
 

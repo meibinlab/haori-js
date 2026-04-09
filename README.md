@@ -92,6 +92,8 @@ Haori.mount(document.body, { items: [ { name: 'apple' }, { name: 'orange' } ] })
 - `data-import` — load external HTML and insert it
 - `data-url-param` — import URL query parameters into bindings
 
+Template expressions support safe JavaScript-like syntax such as property access, bracket access with dynamic indexes, optional chaining, ternary expressions, and method chains including array `map`/`filter` with arrow functions and spread calls. Access to global objects, `eval` or `arguments`, and prototype escape paths such as `constructor`, `__proto__`, `prototype`, or `Reflect` is blocked.
+
 For detailed usage and many examples, see the official documentation.
 
 ---

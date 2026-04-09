@@ -92,6 +92,8 @@ Haori.mount(document.body, { items: [ { name: 'りんご' }, { name: 'みかん'
 - `data-import` — 外部 HTML を読み込んで挿入
 - `data-url-param` — URL のクエリパラメータをバインディングに取り込む
 
+テンプレート式では、プロパティアクセス、動的インデックスを含むブラケットアクセス、optional chaining、三項演算子、配列 `map` / `filter` のアロー関数、spread を伴う呼び出しなどの安全な構文を利用できます。一方で、グローバルオブジェクト、`eval` や `arguments`、`constructor`、`__proto__`、`prototype`、`Reflect` などの脱出経路は使用できません。
+
 詳しい使い方や多数のサンプルについては、公式ドキュメントを参照してください。
 
 ---
