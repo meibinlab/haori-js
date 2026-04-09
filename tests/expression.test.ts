@@ -34,6 +34,44 @@ describe('Expression', () => {
       expect(result).toBe('a');
     });
 
+    it('文字列キーのブラケットアクセスを評価できる', () => {
+      const result = Expression.evaluate('user["name"]', {
+        user: {name: '田中'},
+      });
+      expect(result).toBe('田中');
+    });
+
+    it('動的インデックスのブラケットアクセスを評価できる', () => {
+      const result = Expression.evaluate('items[index]', {
+        items: ['a', 'b', 'c'],
+        index: 1,
+      });
+      expect(result).toBe('b');
+    });
+
+    it('式を含む動的インデックスを評価できる', () => {
+      const result = Expression.evaluate('items[index + 1]', {
+        items: ['a', 'b', 'c'],
+        index: 0,
+      });
+      expect(result).toBe('b');
+    });
+
+    it('optional chaining を評価できる', () => {
+      const result = Expression.evaluate('user?.name', {
+        user: {name: '田中'},
+      });
+      expect(result).toBe('田中');
+    });
+
+    it('optional chaining と動的キーを組み合わせて評価できる', () => {
+      const result = Expression.evaluate('user?.[key]', {
+        user: {name: '田中'},
+        key: 'name',
+      });
+      expect(result).toBe('田中');
+    });
+
     it('メソッド呼び出しを評価できる', () => {
       const result = Expression.evaluate('name.toUpperCase()', {
         name: 'hello',
@@ -314,6 +352,19 @@ describe('Expression', () => {
       expect(result).toBe(3);
     });
 
+    it('Date インスタンスのメソッド呼び出しを評価できる', () => {
+      const when = new Date('2024-01-02T03:04:05.000Z');
+      const result = Expression.evaluate('when.getTime()', {when});
+      expect(result).toBe(when.getTime());
+    });
+
+    it('Map インスタンスのメソッド呼び出しを評価できる', () => {
+      const result = Expression.evaluate('mapping.get("name")', {
+        mapping: new Map([['name', '田中']]),
+      });
+      expect(result).toBe('田中');
+    });
+
     it('配列のmapメソッドを使用できる', () => {
       const result = Expression.evaluate('items.map(x => x * 2)', {
         items: [1, 2, 3],
@@ -326,6 +377,77 @@ describe('Expression', () => {
         items: [1, 2, 3],
       });
       expect(result).toEqual([2, 3]);
+    });
+
+    it('スプレッド構文を含むメソッド呼び出しを評価できる', () => {
+      const result = Expression.evaluate('Math.max(...scores)', {
+        scores: [10, 3, 7],
+      });
+      expect(result).toBe(10);
+    });
+
+    it('配列メソッド内のアロー関数とプロパティアクセスを評価できる', () => {
+      const result = Expression.evaluate(
+        'items.filter(item => item.active).length',
+        {
+          items: [
+            {active: true},
+            {active: false},
+            {active: true},
+          ],
+        },
+      );
+      expect(result).toBe(2);
+    });
+  });
+
+  describe('セキュリティ: constructor 経由の脱出防止', () => {
+    it('ドット記法の constructor 呼び出しをブロックする', () => {
+      const result = Expression.evaluate('[].filter.constructor(\'return this\')()', {});
+      expect(result).toBeNull();
+    });
+
+    it('ブラケット記法の constructor 呼び出しをブロックする', () => {
+      const result = Expression.evaluate(
+        '[]["filter"]["constructor"]("return this")()',
+        {},
+      );
+      expect(result).toBeNull();
+    });
+
+    it('危険なプロトタイプアクセスをブロックする', () => {
+      expect(Expression.evaluate('user.constructor', {user: {name: '田中'}})).toBeNull();
+      expect(Expression.evaluate('user["__proto__"]', {user: {name: '田中'}})).toBeNull();
+    });
+
+    it('変数経由の computed constructor アクセスをブロックする', () => {
+      const result = Expression.evaluate(
+        'items.filter[key]("return this")()',
+        {
+          items: [1, 2, 3],
+          key: 'constructor',
+        },
+      );
+      expect(result).toBeNull();
+    });
+
+    it('Reflect 経由の constructor 取得をブロックする', () => {
+      const result = Expression.evaluate(
+        'Reflect.get(Reflect.get([], "filter"), "constructor")("return 7")()',
+        {},
+      );
+      expect(result).toBeNull();
+    });
+
+    it('関数戻り値経由の computed constructor アクセスをブロックする', () => {
+      const result = Expression.evaluate(
+        'fn()[key]("return 7")()',
+        {
+          fn: () => ({constructor: Function}),
+          key: 'constructor',
+        },
+      );
+      expect(result).toBeNull();
     });
   });
 });

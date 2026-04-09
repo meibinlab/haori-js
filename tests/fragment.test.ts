@@ -1,10 +1,11 @@
 /* @vitest-environment jsdom */
-import {describe, it, expect} from 'vitest';
+import {describe, it, expect, vi} from 'vitest';
 import Fragment, {
   ElementFragment,
   TextFragment,
   CommentFragment,
 } from '../src/fragment';
+import Log from '../src/log';
 
 // ヘルパー: DOM子要素のタグ名配列を取得
 const childTagNames = (el: Element) =>
@@ -142,6 +143,65 @@ describe('ElementFragment の insertBefore/insertAfter', () => {
       e => (e as HTMLElement).id,
     );
     expect(ids2).toEqual(['a', 'c', 'b', 'd']);
+  });
+
+  it('children 配列と DOM が一時的にずれても参照位置を DOM から解決できる', async () => {
+    const parent = document.createElement('div');
+    const a = document.createElement('span'); a.id = 'a';
+    const b = document.createElement('span'); b.id = 'b';
+    parent.append(a, b);
+
+    const parentFragment = new ElementFragment(parent);
+    const referenceChild = parentFragment.getChildElementFragments()[1];
+    parentFragment.removeChild(referenceChild);
+
+    const warnSpy = vi.spyOn(Log, 'warn').mockImplementation(() => {});
+    const c = document.createElement('span'); c.id = 'c';
+    const childFragment = Fragment.get(c)!;
+
+    await parentFragment.insertBefore(childFragment, referenceChild);
+
+    const ids = Array.from(parent.children).map(element => (element as HTMLElement).id);
+    expect(ids).toEqual(['a', 'c', 'b']);
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      '[Haori]',
+      'Reference child not found in children.',
+      referenceChild,
+    );
+  });
+
+  it('insertAfter で未追跡ノードが連続しても DOM 順を維持する', async () => {
+    const parent = document.createElement('div');
+    const a = document.createElement('span'); a.id = 'a';
+    const b = document.createElement('span'); b.id = 'b';
+    const c = document.createElement('span'); c.id = 'c';
+    const d = document.createElement('span'); d.id = 'd';
+    parent.append(a, b, c, d);
+
+    const parentFragment = new ElementFragment(parent);
+    const [aFragment, bFragment, cFragment] = parentFragment.getChildElementFragments();
+    const dFragment = parentFragment.getChildElementFragments()[3];
+    parentFragment.removeChild(bFragment);
+    parentFragment.removeChild(cFragment);
+
+    const warnSpy = vi.spyOn(Log, 'warn').mockImplementation(() => {});
+    const inserted = document.createElement('span'); inserted.id = 'n';
+    const insertedFragment = Fragment.get(inserted)!;
+
+    await parentFragment.insertAfter(insertedFragment, bFragment);
+
+    const ids = Array.from(parent.children).map(element => (element as HTMLElement).id);
+    expect(ids).toEqual(['a', 'b', 'n', 'c', 'd']);
+    expect(parentFragment.getChildElementFragments().map(fragment => fragment.getTarget().id)).toEqual([
+      aFragment.getTarget().id,
+      insertedFragment.getTarget().id,
+      dFragment.getTarget().id,
+    ]);
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      '[Haori]',
+      'Reference child not found in children.',
+      bFragment,
+    );
   });
 });
 

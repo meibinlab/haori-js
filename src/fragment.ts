@@ -716,6 +716,43 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * DOM上の順序から、参照フラグメントに対応する children 配列の挿入位置を推定します。
+   *
+   * @param referenceChild 参照フラグメント
+   * @param insertAfter 参照位置の後ろに挿入するかどうか
+   * @returns 挿入位置。解決できない場合はnull
+   */
+  private resolveInsertionPointFromDom(
+    referenceChild: Fragment,
+    insertAfter: boolean,
+  ): {index: number; referenceNode: Node | null} | null {
+    const referenceNode = referenceChild.getTarget();
+    if (referenceNode.parentNode !== this.target) {
+      return null;
+    }
+
+    const insertionReferenceNode = insertAfter
+      ? referenceNode.nextSibling
+      : referenceNode;
+
+    let nextTrackedNode = insertAfter
+      ? referenceNode.nextSibling
+      : referenceNode;
+    while (nextTrackedNode !== null) {
+      const childFragment = Fragment.get(nextTrackedNode);
+      if (childFragment !== null) {
+        const childIndex = this.children.indexOf(childFragment);
+        if (childIndex !== -1) {
+          return {index: childIndex, referenceNode: insertionReferenceNode};
+        }
+      }
+      nextTrackedNode = nextTrackedNode.nextSibling;
+    }
+
+    return {index: this.children.length, referenceNode: insertionReferenceNode};
+  }
+
+  /**
    * 子ノードを参照ノードの前に挿入します。
    * 参照ノードがnullの場合、親の最後に追加されます。
    *
@@ -726,6 +763,7 @@ export class ElementFragment extends Fragment {
   public insertBefore(
     newChild: Fragment,
     referenceChild: Fragment | null,
+    referenceNodeOverride?: Node | null,
   ): Promise<void> {
     if (this.skipMutationNodes) {
       return Promise.resolve();
@@ -767,6 +805,11 @@ export class ElementFragment extends Fragment {
       newChildParent.removeChild(newChild);
     }
 
+    let referenceNode: Node | null =
+      referenceNodeOverride === undefined
+        ? referenceChild?.getTarget() || null
+        : referenceNodeOverride;
+
     if (referenceChild === null) {
       this.children.push(newChild);
     } else {
@@ -784,12 +827,21 @@ export class ElementFragment extends Fragment {
       }
 
       if (index === -1) {
-        Log.warn(
-          '[Haori]',
-          'Reference child not found in children.',
+        const insertionPoint = this.resolveInsertionPointFromDom(
           referenceChild,
+          false,
         );
-        this.children.push(newChild);
+        if (insertionPoint === null) {
+          Log.warn(
+            '[Haori]',
+            'Reference child not found in children.',
+            referenceChild,
+          );
+          this.children.push(newChild);
+        } else {
+          this.children.splice(insertionPoint.index, 0, newChild);
+          referenceNode = insertionPoint.referenceNode;
+        }
       } else {
         this.children.splice(index, 0, newChild);
       }
@@ -801,10 +853,7 @@ export class ElementFragment extends Fragment {
     const prevSkip = this.skipMutationNodes;
     this.skipMutationNodes = true;
     return Queue.enqueue(() => {
-      this.target.insertBefore(
-        newChild.getTarget(),
-        referenceChild?.getTarget() || null,
-      );
+      this.target.insertBefore(newChild.getTarget(), referenceNode);
     }).finally(() => {
       this.skipMutationNodes = prevSkip;
     }) as Promise<void>;
@@ -826,12 +875,23 @@ export class ElementFragment extends Fragment {
     }
     const index = this.children.indexOf(referenceChild);
     if (index === -1) {
-      Log.warn(
-        '[Haori]',
-        'Reference child not found in children.',
+      const insertionPoint = this.resolveInsertionPointFromDom(
         referenceChild,
+        true,
       );
-      return this.insertBefore(newChild, null);
+      if (insertionPoint === null) {
+        Log.warn(
+          '[Haori]',
+          'Reference child not found in children.',
+          referenceChild,
+        );
+        return this.insertBefore(newChild, null);
+      }
+      return this.insertBefore(
+        newChild,
+        this.children[insertionPoint.index] || null,
+        insertionPoint.referenceNode,
+      );
     }
     return this.insertBefore(newChild, this.children[index + 1] || null);
   }

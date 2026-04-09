@@ -1,8 +1,7 @@
 /* @vitest-environment jsdom */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';
-import Queue from '../src/queue';
-// Fragment はこのテストで直接使用しないためインポートを削除
+import {waitForCondition, waitForDomSettled} from './helpers/async';
 
 describe('data-each with tbody element', () => {
   let container: HTMLElement;
@@ -41,33 +40,16 @@ describe('data-each with tbody element', () => {
 
     // markMountedは呼ばず、Core.scanのみ
     await Core.scan(root);
-    await Queue.wait();
-
-    // ポーリングで最終状態を確認
-    for (let i = 0; i < 10; i++) {
+    await waitForDomSettled();
+    await waitForCondition(() => {
       const tbody = container.querySelector('tbody');
-      const rows = tbody?.querySelectorAll('tr');
-      if (rows && rows.length === 2) {
-        break;
-      }
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
+      return tbody?.querySelectorAll('tr').length === 2;
+    }, {description: 'tbody rows'});
 
     const tbody = container.querySelector('tbody');
     expect(tbody).not.toBeNull();
 
-    // tbodyの子要素としてtrが生成されているか確認
     const rows = tbody?.querySelectorAll('tr');
-    console.log('Generated rows:', rows?.length);
-    console.log('tbody innerHTML:', tbody?.innerHTML);
-
-    if (rows && rows.length > 0) {
-      console.log('First row content:', rows[0].innerHTML);
-      if (rows.length > 1) {
-        console.log('Second row content:', rows[1].innerHTML);
-      }
-    }
-
     expect(rows?.length).toBe(2);
   });
 });

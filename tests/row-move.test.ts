@@ -2,9 +2,11 @@
 /**
  * @fileoverview 行移動機能のテスト
  */
-import {describe, it, expect, beforeEach, afterEach} from 'vitest';
+import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
+import Log from '../src/log';
+import {waitForDomSettled} from './helpers/async';
 
 describe('Row move functionality', () => {
   let container: HTMLElement;
@@ -42,7 +44,7 @@ describe('Row move functionality', () => {
     await Core.scan(container);
 
     // 少し待機してDOMが構築されるのを待つ
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     // 2番目の項目（Item 2）を上に移動
     const buttons = container.querySelectorAll('button[data-click-row-prev]');
@@ -53,7 +55,7 @@ describe('Row move functionality', () => {
     secondButton.click();
 
     // 少し待機して処理が完了するのを待つ
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     // 順序を確認
     const items = container.querySelectorAll('li span');
@@ -82,7 +84,7 @@ describe('Row move functionality', () => {
     await Core.scan(container);
 
     // 少し待機してDOMが構築されるのを待つ
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     // 1番目の項目（Item 1）を下に移動
     const buttons = container.querySelectorAll('button[data-click-row-next]');
@@ -93,7 +95,7 @@ describe('Row move functionality', () => {
     firstButton.click();
 
     // 少し待機して処理が完了するのを待つ
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     // 順序を確認
     const items = container.querySelectorAll('li span');
@@ -122,7 +124,7 @@ describe('Row move functionality', () => {
     await Core.scan(container);
 
     // 少し待機してDOMが構築されるのを待つ
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     // 1番目の項目（Item 1）を上に移動しようとする
     const buttons = container.querySelectorAll('button[data-click-row-prev]');
@@ -130,7 +132,7 @@ describe('Row move functionality', () => {
     firstButton.click();
 
     // 少し待機して処理が完了するのを待つ
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     // 順序が変わらないことを確認
     const items = container.querySelectorAll('li span');
@@ -159,7 +161,7 @@ describe('Row move functionality', () => {
     await Core.scan(container);
 
     // 少し待機してDOMが構築されるのを待つ
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     // 最後の項目（Item 3）を下に移動しようとする
     const buttons = container.querySelectorAll('button[data-click-row-next]');
@@ -167,7 +169,7 @@ describe('Row move functionality', () => {
     lastButton.click();
 
     // 少し待機して処理が完了するのを待つ
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     // 順序が変わらないことを確認
     const items = container.querySelectorAll('li span');
@@ -195,12 +197,12 @@ describe('Row move functionality', () => {
 
     // Haoriを初期化
     await Core.scan(container);
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     // D を上に移動 (A, B, C, D) -> (A, B, D, C)
     let buttons = container.querySelectorAll('button.up');
     (buttons[3] as HTMLButtonElement).click();
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     let items = container.querySelectorAll('li span');
     expect(items[0].textContent).toBe('A');
@@ -211,7 +213,7 @@ describe('Row move functionality', () => {
     // D をさらに上に移動 (A, B, D, C) -> (A, D, B, C)
     buttons = container.querySelectorAll('button.up');
     (buttons[2] as HTMLButtonElement).click();
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     items = container.querySelectorAll('li span');
     expect(items[0].textContent).toBe('A');
@@ -222,12 +224,42 @@ describe('Row move functionality', () => {
     // A を下に移動 (A, D, B, C) -> (D, A, B, C)
     buttons = container.querySelectorAll('button.down');
     (buttons[0] as HTMLButtonElement).click();
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitForDomSettled();
 
     items = container.querySelectorAll('li span');
     expect(items[0].textContent).toBe('D');
     expect(items[1].textContent).toBe('A');
     expect(items[2].textContent).toBe('B');
     expect(items[3].textContent).toBe('C');
+  });
+
+  it('row move の正常系で Reference child warning を出さない', async () => {
+    container.innerHTML = `
+      <div data-bind='{"items":[
+        {"name":"A"},{"name":"B"},{"name":"C"}
+      ]}'>
+        <ul data-each="items" data-each-key="name">
+          <li>
+            <span>{{name}}</span>
+            <button data-click-row-next>↓</button>
+          </li>
+        </ul>
+      </div>
+    `;
+
+    const warnSpy = vi.spyOn(Log, 'warn').mockImplementation(() => {});
+
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const buttons = container.querySelectorAll('button[data-click-row-next]');
+    (buttons[0] as HTMLButtonElement).click();
+    await waitForDomSettled();
+
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      '[Haori]',
+      'Reference child not found in children.',
+      expect.anything(),
+    );
   });
 });

@@ -6,6 +6,7 @@
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
+import {waitForDomSettled} from './helpers/async';
 
 describe('Row operations', () => {
   let container: HTMLElement;
@@ -37,14 +38,14 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       let items = container.querySelectorAll('li');
       expect(items.length).toBe(2);
 
       const buttons = container.querySelectorAll('button[data-click-row-add]');
       (buttons[0] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       items = container.querySelectorAll('li');
       expect(items.length).toBe(3);
@@ -63,7 +64,7 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       let items = container.querySelectorAll('li span');
       expect(items.length).toBe(3);
@@ -75,7 +76,7 @@ describe('Row operations', () => {
         'button[data-click-row-remove]'
       );
       (buttons[1] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       items = container.querySelectorAll('li span');
       expect(items.length).toBe(2);
@@ -96,11 +97,11 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       const buttons = container.querySelectorAll('button[data-click-row-prev]');
       (buttons[1] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       const items = container.querySelectorAll('li span');
       expect(items[0].textContent).toBe('B');
@@ -121,11 +122,11 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       const buttons = container.querySelectorAll('button[data-click-row-next]');
       (buttons[0] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       const items = container.querySelectorAll('li span');
       expect(items[0].textContent).toBe('B');
@@ -148,14 +149,14 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       let items = container.querySelectorAll('div[data-each] > div');
       expect(items.length).toBe(2);
 
       const buttons = container.querySelectorAll('button[data-click-row-add]');
       (buttons[0] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       items = container.querySelectorAll('div[data-each] > div');
       expect(items.length).toBe(3);
@@ -174,7 +175,7 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       let items = container.querySelectorAll('div[data-each] > div span');
       expect(items.length).toBe(3);
@@ -186,7 +187,7 @@ describe('Row operations', () => {
         'button[data-click-row-remove]'
       );
       (buttons[1] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       items = container.querySelectorAll('div[data-each] > div span');
       expect(items.length).toBe(2);
@@ -207,11 +208,11 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       const buttons = container.querySelectorAll('button[data-click-row-prev]');
       (buttons[2] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       const items = container.querySelectorAll('div[data-each] > div span');
       expect(items[0].textContent).toBe('A');
@@ -232,11 +233,11 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       const buttons = container.querySelectorAll('button[data-click-row-next]');
       (buttons[1] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       const items = container.querySelectorAll('div[data-each] > div span');
       expect(items[0].textContent).toBe('A');
@@ -260,12 +261,12 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       // 追加
       const addButtons = container.querySelectorAll('button[data-click-row-add]');
       (addButtons[0] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       let items = container.querySelectorAll('div[data-each] > div');
       expect(items.length).toBe(3);
@@ -275,14 +276,14 @@ describe('Row operations', () => {
         'button[data-click-row-prev]'
       );
       (prevButtons[2] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       // 削除
       const removeButtons = container.querySelectorAll(
         'button[data-click-row-remove]'
       );
       (removeButtons[0] as HTMLButtonElement).click();
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await waitForDomSettled();
 
       items = container.querySelectorAll('div[data-each] > div');
       expect(items.length).toBe(2);

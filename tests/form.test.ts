@@ -6,6 +6,7 @@ import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';
 import Form from '../src/form';
 import Fragment, {ElementFragment} from '../src/fragment';
+import {waitForDomSettled} from './helpers/async';
 
 describe('Form', () => {
   let container: HTMLElement;
@@ -30,7 +31,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -54,7 +55,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -83,7 +84,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -113,7 +114,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -147,7 +148,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -186,7 +187,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -239,7 +240,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -273,7 +274,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -283,7 +284,7 @@ describe('Form', () => {
         age: 30,
         email: 'yamada@example.com',
       });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const nameInput = container.querySelector(
         'input[name="name"]',
@@ -312,7 +313,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -324,7 +325,7 @@ describe('Form', () => {
           street: '北区2-2-2',
         },
       });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const nameInput = container.querySelector(
         'input[name="name"]',
@@ -357,7 +358,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -373,7 +374,7 @@ describe('Form', () => {
           },
         },
       });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const nameInput = container.querySelector(
         'input[name="name"]',
@@ -407,7 +408,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -418,7 +419,7 @@ describe('Form', () => {
           {name: '新商品B', price: 600},
         ],
       });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const nameInputs = container.querySelectorAll('input[name="name"]');
       const priceInputs = container.querySelectorAll('input[name="price"]');
@@ -445,7 +446,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -461,7 +462,7 @@ describe('Form', () => {
           },
         ],
       });
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const orderIdInput = container.querySelector(
         'input[name="orderId"]',
@@ -489,13 +490,13 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
 
       await Form.addErrorMessage(fragment, 'name', '名前は必須です');
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const nameInput = container.querySelector('input[name="name"]')!;
       const parentElement = nameInput.parentElement!;
@@ -513,7 +514,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -523,7 +524,7 @@ describe('Form', () => {
         'address.city',
         '市区町村は必須です',
       );
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const cityInput = container.querySelector('input[name="city"]')!;
       const parentElement = cityInput.parentElement!;
@@ -544,7 +545,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -554,7 +555,7 @@ describe('Form', () => {
         'company.location.country',
         '国名は必須です',
       );
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const countryInput = container.querySelector('input[name="country"]')!;
       const parentElement = countryInput.parentElement!;
@@ -579,7 +580,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -590,7 +591,7 @@ describe('Form', () => {
         'items[1].name',
         '2番目の項目名は必須です',
       );
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const rows = container.querySelectorAll('[data-row]');
       const secondRowInput = rows[1].querySelector('input[name="name"]')!;
@@ -619,7 +620,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -629,7 +630,7 @@ describe('Form', () => {
         'orders[1].customer.name',
         '顧客名は必須です',
       );
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const rows = container.querySelectorAll('[data-row]');
       const secondRowInput = rows[1].querySelector('input[name="name"]')!;
@@ -647,7 +648,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -657,7 +658,7 @@ describe('Form', () => {
         'nonexistent',
         'フォーム全体のエラー',
       );
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       expect(form.getAttribute('data-message')).toBe('フォーム全体のエラー');
     });
@@ -673,7 +674,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -681,11 +682,11 @@ describe('Form', () => {
       // エラーメッセージを追加
       await Form.addErrorMessage(fragment, 'name', 'エラー1');
       await Form.addErrorMessage(fragment, 'address.city', 'エラー2');
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       // メッセージをクリア
       await Form.clearMessages(fragment);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const messagesAfter = container.querySelectorAll('[data-message]');
       expect(messagesAfter.length).toBe(0);
@@ -726,7 +727,7 @@ describe('Form', () => {
       `;
 
       await Core.scan(container);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const form = container.querySelector('form')!;
       const fragment = Fragment.get(form) as ElementFragment;
@@ -750,7 +751,7 @@ describe('Form', () => {
       };
 
       await Form.setValues(fragment, originalData);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await waitForDomSettled();
 
       const retrievedData = Form.getValues(fragment);
 

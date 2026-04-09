@@ -5,6 +5,7 @@
 import {describe, it, expect, beforeEach, vi} from 'vitest';
 import Form from '../src/form';
 import Haori from '../src/haori';
+import {waitForCondition, waitForDomSettled} from './helpers/async';
 
 describe('Procedure action operations', () => {
   beforeEach(async () => {
@@ -30,9 +31,9 @@ describe('Procedure action operations', () => {
     btn.setAttribute('data-click-reset', '#to-reset');
     container.appendChild(btn);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
     btn.click();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
 
     expect(resetSpy).toHaveBeenCalled();
     container.remove();
@@ -60,9 +61,9 @@ describe('Procedure action operations', () => {
     btn.setAttribute('data-click-refetch', '#refetch-target');
     container.appendChild(btn);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
     btn.click();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
 
     expect(runSpy).toHaveBeenCalled();
     container.remove();
@@ -88,9 +89,9 @@ describe('Procedure action operations', () => {
     btn.setAttribute('data-click-click', '#click-target');
     container.appendChild(btn);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
     btn.click();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
 
     expect(clickSpy).toHaveBeenCalled();
     button.remove();
@@ -119,9 +120,9 @@ describe('Procedure action operations', () => {
     btn.setAttribute('data-click-close', '#dlg');
     container.appendChild(btn);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
     btn.click();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
 
     expect(openSpy).toHaveBeenCalled();
     expect(closeSpy).toHaveBeenCalled();
@@ -144,9 +145,11 @@ describe('Procedure action operations', () => {
     btn.setAttribute('data-click-redirect', url);
     container.appendChild(btn);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
     btn.click();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCondition(() => window.location.href.endsWith(url), {
+      description: 'redirect url',
+    });
 
     const redirected = window.location.href.endsWith(url);
     expect(redirected).toBeTruthy();
@@ -174,9 +177,12 @@ describe('Procedure action operations', () => {
     parent.appendChild(btn);
     btn.setAttribute('data-click-fetch', 'http://api.test/error');
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForDomSettled();
     btn.click();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCondition(
+      () => parent.getAttribute('data-message') === 'Server failed',
+      {description: 'error message'},
+    );
 
     // Haori.addErrorMessage sets data-message on parent element
     expect(parent.getAttribute('data-message')).toBe('Server failed');
