@@ -1,20 +1,21 @@
 /* @vitest-environment jsdom */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import Queue from '../src/queue';
 
 // fetchをモック
 const mockData = [
-  { id: 1, name: 'りんご' },
-  { id: 2, name: 'みかん' },
-  { id: 3, name: 'バナナ' }
+  {id: 1, name: 'りんご'},
+  {id: 2, name: 'みかん'},
+  {id: 3, name: 'バナナ'},
 ];
 
 globalThis.fetch = vi.fn(async () => ({
   ok: true,
   json: async () => mockData,
   headers: {
-    get: (name: string) => name === 'Content-Type' ? 'application/json' : undefined,
+    get: (name: string) =>
+      name === 'Content-Type' ? 'application/json' : undefined,
   },
 })) as any;
 
@@ -95,11 +96,23 @@ describe('data-fetch + data-each integration (tbody/tr)', () => {
     expect(frag2.getBindingData().name).toBe('バナナ');
 
     // textContentも全trでassert
-    expect((rows as NodeListOf<HTMLTableRowElement>)[0].textContent).toContain('1');
-    expect((rows as NodeListOf<HTMLTableRowElement>)[0].textContent).toContain('りんご');
-    expect((rows as NodeListOf<HTMLTableRowElement>)[1].textContent).toContain('2');
-    expect((rows as NodeListOf<HTMLTableRowElement>)[1].textContent).toContain('みかん');
-    expect((rows as NodeListOf<HTMLTableRowElement>)[2].textContent).toContain('3');
-    expect((rows as NodeListOf<HTMLTableRowElement>)[2].textContent).toContain('バナナ');
+    expect((rows as NodeListOf<HTMLTableRowElement>)[0].textContent).toContain(
+      '1',
+    );
+    expect((rows as NodeListOf<HTMLTableRowElement>)[0].textContent).toContain(
+      'りんご',
+    );
+    expect((rows as NodeListOf<HTMLTableRowElement>)[1].textContent).toContain(
+      '2',
+    );
+    expect((rows as NodeListOf<HTMLTableRowElement>)[1].textContent).toContain(
+      'みかん',
+    );
+    expect((rows as NodeListOf<HTMLTableRowElement>)[2].textContent).toContain(
+      '3',
+    );
+    expect((rows as NodeListOf<HTMLTableRowElement>)[2].textContent).toContain(
+      'バナナ',
+    );
   });
 });
