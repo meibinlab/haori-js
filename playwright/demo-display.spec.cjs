@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* global require, __dirname */
 // demo画面の正常表示を確認するPlaywrightテスト（CommonJS用）
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
