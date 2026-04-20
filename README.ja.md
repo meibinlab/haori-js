@@ -129,13 +129,20 @@ npm run build
 npm version patch
 ```
 
-5. 版数更新を push し、対象タグから GitHub Release を公開
+5. 版数更新のコミットとタグを push
 
-このリポジトリの npm 公開は GitHub Actions で行います。現在の workflow は `release.published` を契機に起動し、パッケージをビルドしたうえで `NPM_TOKEN` を使って npm へ公開し、あわせて `dist.zip` を GitHub Release のアーティファクトとして添付します。
+```bash
+git push origin main
+git push origin --tags
+```
+
+6. 新しいタグから GitHub Release を公開
+
+このリポジトリの npm 公開は GitHub Actions で行います。現在の workflow は `release.published` を契機に起動し、パッケージをビルドしたうえで、対象 version が未公開のときだけ `NPM_TOKEN` を使って npm へ公開し、あわせて `dist.zip` を GitHub Release のアセットとして添付します。
 
 必要な前提条件:
 
-- GitHub リポジトリの Secrets に `NPM_TOKEN` が設定されていること
+- GitHub Actions の repository secrets に `NPM_TOKEN` が設定されていること
 - 対象バージョンのタグから Release を `published` 状態で公開すること
 
 公開前の推奨確認:

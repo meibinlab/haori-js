@@ -129,13 +129,20 @@ npm run build
 npm version patch
 ```
 
-5. Push the version update and create a GitHub Release for the new tag
+5. Push the version update and tags
 
-Publishing to npm is handled by GitHub Actions when a GitHub Release is published. This repository currently uses release workflows that trigger on `release.published`, build the package, publish it to npm with `NPM_TOKEN`, and upload `dist.zip` to the release artifacts.
+```bash
+git push origin main
+git push origin --tags
+```
+
+6. Publish a GitHub Release from the new tag
+
+Publishing to npm is handled by GitHub Actions when a GitHub Release is published. This repository uses release workflows that trigger on `release.published`, build the package, publish it to npm with `NPM_TOKEN` if that package version is not already published, and upload `dist.zip` to the release assets.
 
 Required repository setup:
 
-- `NPM_TOKEN` must be configured in GitHub repository secrets.
+- `NPM_TOKEN` must be configured in GitHub Actions repository secrets.
 - The release must be published from the target version tag.
 
 Recommended pre-release checks:
