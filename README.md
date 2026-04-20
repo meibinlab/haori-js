@@ -41,8 +41,10 @@ npm install haori
 Via CDN:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/haori@0.1.2/dist/haori.iife.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
 ```
+
+This CDN URL follows the latest published npm release.
 
 ES Module import:
 
@@ -62,7 +64,7 @@ You can use Haori with plain HTML. Minimal example:
 <head>
 	<meta charset="utf-8">
 	<title>Haori Sample</title>
-	<script src="https://cdn.jsdelivr.net/npm/haori@0.1.2/dist/haori.iife.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
 </head>
 <body>
 	<div data-bind='{"name":"Taro"}'>

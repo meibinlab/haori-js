@@ -41,8 +41,10 @@ npm install haori
 CDN:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/haori@0.1.2/dist/haori.iife.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
 ```
+
+この CDN URL は npm に公開済みの最新バージョンを参照します。
 
 ES Module:
 
@@ -62,7 +64,7 @@ HTML だけで簡単に使えます。以下は最小の例です。
 <head>
   <meta charset="utf-8">
   <title>Haori サンプル</title>
-  <script src="https://cdn.jsdelivr.net/npm/haori@0.1.2/dist/haori.iife.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
 </head>
 <body>
   <div data-bind='{"name":"太郎"}'>
