@@ -104,6 +104,14 @@ Haori.mount(document.body, { items: [ { name: 'りんご' }, { name: 'みかん'
 
 ローカル確認とリリース準備の基本手順を示します。
 
+公開運用メモ:
+
+1. `npm run test`、`npm run build`、`npm pack --dry-run` を実行する
+2. `npm version patch` などで公開する版数に更新する
+3. `git push origin main` と `git push origin --tags` を実行する
+4. 新しい版数タグから GitHub Release を公開する
+5. npm、jsDelivr、GitHub Release の assets が新しい版数を指すことを確認する
+
 1. 依存インストール
 
 ```bash

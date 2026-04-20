@@ -104,6 +104,14 @@ For detailed usage and many examples, see the official documentation.
 
 Basic local verification and release preparation steps:
 
+Quick release memo:
+
+1. Run `npm run test`, `npm run build`, and `npm pack --dry-run`.
+2. Bump the package version with `npm version patch` or the intended version command.
+3. Push `main` and tags with `git push origin main` and `git push origin --tags`.
+4. Publish a GitHub Release from the new version tag.
+5. Confirm npm, jsDelivr, and the GitHub Release assets reflect the new version.
+
 1. Install dependencies
 
 ```bash
