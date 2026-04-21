@@ -195,7 +195,11 @@ export default class Expression {
       return null;
     }
     if (this.containsForbiddenBindingValues(bindedValues)) {
-      Log.warn('[Haori]', bindedValues, 'Binded values contain forbidden values');
+      Log.warn(
+        '[Haori]',
+        bindedValues,
+        'Binded values contain forbidden values',
+      );
       return null;
     }
 
@@ -831,7 +835,11 @@ export default class Expression {
 
     for (const value of Object.values(obj as Record<string, unknown>)) {
       if (typeof value === 'function') {
-        if (this.getForbiddenBindingValues().some(forbidden => forbidden === value)) {
+        if (
+          this.getForbiddenBindingValues().some(
+            forbidden => forbidden === value,
+          )
+        ) {
           return true;
         }
         continue;

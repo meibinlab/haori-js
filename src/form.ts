@@ -27,7 +27,10 @@ function resolveFormHaoriApi(): FormHaoriApi {
   };
   const candidate = scope.window?.Haori;
   const hasRequiredMethods = FORM_HAORI_METHOD_NAMES.every(
-    methodName => typeof (candidate as Record<string, unknown> | undefined)?.[methodName] === 'function',
+    methodName =>
+      typeof (candidate as Record<string, unknown> | undefined)?.[
+        methodName
+      ] === 'function',
   );
   return hasRequiredMethods ? (candidate as FormHaoriApi) : Haori;
 }
@@ -309,7 +312,9 @@ export default class Form {
    * @returns Promise（メッセージのクリアが完了したら解決される）
    */
   public static clearMessages(fragment: ElementFragment): Promise<void> {
-    return resolveFormHaoriApi().clearMessages(fragment.getTarget()) as Promise<void>;
+    return resolveFormHaoriApi().clearMessages(
+      fragment.getTarget(),
+    ) as Promise<void>;
   }
 
   /**
@@ -330,10 +335,14 @@ export default class Form {
     const activeHaori = resolveFormHaoriApi();
     const targetFragments = Form.findFragmentsByKey(fragment, key);
     targetFragments.forEach(targetFragment => {
-      promises.push(activeHaori.addErrorMessage(targetFragment.getTarget(), message));
+      promises.push(
+        activeHaori.addErrorMessage(targetFragment.getTarget(), message),
+      );
     });
     if (targetFragments.length === 0) {
-      promises.push(activeHaori.addErrorMessage(fragment.getTarget(), message));
+      promises.push(
+        activeHaori.addErrorMessage(fragment.getTarget(), message),
+      );
     }
     return Promise.all(promises).then(() => undefined);
   }

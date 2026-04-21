@@ -14,7 +14,12 @@ import HaoriEvent from './event';
 
 type ProcedureHaoriApi = Pick<
   typeof Haori,
-  'addErrorMessage' | 'closeDialog' | 'confirm' | 'dialog' | 'openDialog' | 'toast'
+  | 'addErrorMessage'
+  | 'closeDialog'
+  | 'confirm'
+  | 'dialog'
+  | 'openDialog'
+  | 'toast'
 >;
 
 const PROCEDURE_HAORI_METHOD_NAMES = [
@@ -38,7 +43,10 @@ function resolveProcedureHaoriApi(): ProcedureHaoriApi {
   };
   const candidate = scope.window?.Haori;
   const hasRequiredMethods = PROCEDURE_HAORI_METHOD_NAMES.every(
-    methodName => typeof (candidate as Record<string, unknown> | undefined)?.[methodName] === 'function',
+    methodName =>
+      typeof (candidate as Record<string, unknown> | undefined)?.[
+        methodName
+      ] === 'function',
   );
   return hasRequiredMethods ? (candidate as ProcedureHaoriApi) : Haori;
 }
