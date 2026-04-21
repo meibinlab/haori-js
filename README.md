@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.1.2
+Version: 0.1.3
 
 ---
 
@@ -41,8 +41,10 @@ npm install haori
 Via CDN:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/haori@0.1.2/dist/haori.iife.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
 ```
+
+This CDN URL follows the latest published npm release.
 
 ES Module import:
 
@@ -62,7 +64,7 @@ You can use Haori with plain HTML. Minimal example:
 <head>
 	<meta charset="utf-8">
 	<title>Haori Sample</title>
-	<script src="https://cdn.jsdelivr.net/npm/haori@0.1.2/dist/haori.iife.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
 </head>
 <body>
 	<div data-bind='{"name":"Taro"}'>
@@ -102,6 +104,14 @@ For detailed usage and many examples, see the official documentation.
 
 Basic local verification and release preparation steps:
 
+Quick release memo:
+
+1. Run `npm run test`, `npm run build`, and `npm pack --dry-run`.
+2. Bump the package version with `npm version patch` or the intended version command.
+3. Push `main` and tags with `git push origin main` and `git push origin --tags`.
+4. Publish a GitHub Release from the new version tag.
+5. Confirm npm, jsDelivr, and the GitHub Release assets reflect the new version.
+
 1. Install dependencies
 
 ```bash
@@ -127,13 +137,20 @@ npm run build
 npm version patch
 ```
 
-5. Push the version update and create a GitHub Release for the new tag
+5. Push the version update and tags
 
-Publishing to npm is handled by GitHub Actions when a GitHub Release is published. This repository currently uses release workflows that trigger on `release.published`, build the package, publish it to npm with `NPM_TOKEN`, and upload `dist.zip` to the release artifacts.
+```bash
+git push origin main
+git push origin --tags
+```
+
+6. Publish a GitHub Release from the new tag
+
+Publishing to npm is handled by GitHub Actions when a GitHub Release is published. This repository uses release workflows that trigger on `release.published`, build the package, publish it to npm with `NPM_TOKEN` if that package version is not already published, and upload `dist.zip` to the release assets.
 
 Required repository setup:
 
-- `NPM_TOKEN` must be configured in GitHub repository secrets.
+- `NPM_TOKEN` must be configured in GitHub Actions repository secrets.
 - The release must be published from the target version tag.
 
 Recommended pre-release checks:

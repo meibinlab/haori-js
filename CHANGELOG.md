@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [0.1.3] - 2026-04-21
+
+### Changed
+- `data-each` を `tbody` に付けた場合の描画と再描画を修正し、テンプレート行が残る問題を解消
+- Bootstrap モーダル連携時に `data-click-open` / `data-click-close` が `window.Haori` 経由でも正しく動作するよう改善
+
+### Library
+- Procedure と Form の Haori API 解決を見直し、`openDialog`、`closeDialog`、`addErrorMessage` の委譲先を差し替え可能に改善
+- `data-each` とモーダル連携まわりの回帰テストを追加し、`max-len` を含む lint 失敗を解消
+
 ## [0.1.2] - 2026-04-09
 
 ### Changed

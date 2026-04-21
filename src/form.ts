@@ -11,6 +11,30 @@ import Haori from './haori';
 import Log from './log';
 import Queue from './queue';
 
+type FormHaoriApi = Pick<typeof Haori, 'addErrorMessage' | 'clearMessages'>;
+
+const FORM_HAORI_METHOD_NAMES = ['addErrorMessage', 'clearMessages'] as const;
+
+/**
+ * Form から利用する Haori API を解決します。
+ * window.Haori が差し替えられている場合はそちらを優先します。
+ *
+ * @returns Form が使用する Haori API。
+ */
+function resolveFormHaoriApi(): FormHaoriApi {
+  const scope = globalThis as typeof globalThis & {
+    window?: Window & {Haori?: unknown};
+  };
+  const candidate = scope.window?.Haori;
+  const hasRequiredMethods = FORM_HAORI_METHOD_NAMES.every(
+    methodName =>
+      typeof (candidate as Record<string, unknown> | undefined)?.[
+        methodName
+      ] === 'function',
+  );
+  return hasRequiredMethods ? (candidate as FormHaoriApi) : Haori;
+}
+
 /**
  * Formクラスは、フォームの双方向バインディングを提供します。
  * 入力要素の値をフォームにバインドし、フォームのバインド値を入力要素に反映します。
@@ -288,7 +312,9 @@ export default class Form {
    * @returns Promise（メッセージのクリアが完了したら解決される）
    */
   public static clearMessages(fragment: ElementFragment): Promise<void> {
-    return Haori.clearMessages(fragment.getTarget()) as Promise<void>;
+    return resolveFormHaoriApi().clearMessages(
+      fragment.getTarget(),
+    ) as Promise<void>;
   }
 
   /**
@@ -306,12 +332,17 @@ export default class Form {
     message: string,
   ): Promise<void> {
     const promises: Promise<void>[] = [];
+    const activeHaori = resolveFormHaoriApi();
     const targetFragments = Form.findFragmentsByKey(fragment, key);
     targetFragments.forEach(targetFragment => {
-      promises.push(Haori.addErrorMessage(targetFragment.getTarget(), message));
+      promises.push(
+        activeHaori.addErrorMessage(targetFragment.getTarget(), message),
+      );
     });
     if (targetFragments.length === 0) {
-      promises.push(Haori.addErrorMessage(fragment.getTarget(), message));
+      promises.push(
+        activeHaori.addErrorMessage(fragment.getTarget(), message),
+      );
     }
     return Promise.all(promises).then(() => undefined);
   }

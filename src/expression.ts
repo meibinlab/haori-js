@@ -57,6 +57,58 @@ export default class Expression {
   /** strict モードで禁止される識別子 */
   private static readonly STRICT_FORBIDDEN_NAMES = ['eval', 'arguments'];
 
+  /** 明示バインド時のみ利用を許可する衝突名 */
+  private static readonly REBINDABLE_FORBIDDEN_NAMES = new Set(['location']);
+
+  /** バインド識別子としては拒否する名前 */
+  private static readonly FORBIDDEN_BINDING_NAMES = new Set([
+    ...Expression.FORBIDDEN_NAMES.filter(
+      name => !Expression.REBINDABLE_FORBIDDEN_NAMES.has(name),
+    ),
+    'constructor',
+    '__proto__',
+    'prototype',
+    ...Expression.STRICT_FORBIDDEN_NAMES,
+  ]);
+
+  /**
+   * 明示バインド内に持ち込まれてはならない危険値を返します。
+   *
+   * @returns 危険値の配列
+   */
+  private static getForbiddenBindingValues(): unknown[] {
+    const scope = globalThis as typeof globalThis & {
+      window?: Window;
+      document?: Document;
+      navigator?: Navigator;
+      history?: History;
+      localStorage?: Storage;
+      sessionStorage?: Storage;
+      fetch?: typeof fetch;
+    };
+    const candidates: unknown[] = [
+      scope,
+      scope.window,
+      scope.document,
+      scope.navigator,
+      scope.history,
+      scope.localStorage,
+      scope.sessionStorage,
+      scope.fetch,
+      scope.Function,
+      scope.setTimeout,
+      scope.setInterval,
+      scope.requestAnimationFrame,
+      scope.alert,
+      scope.confirm,
+      scope.prompt,
+    ];
+    if (scope.window?.location) {
+      candidates.push(scope.window.location);
+    }
+    return candidates.filter(value => value !== undefined && value !== null);
+  }
+
   /** プロパティアクセスで拒否する名前 */
   private static readonly FORBIDDEN_PROPERTY_NAMES = new Set([
     'constructor',
@@ -107,16 +159,17 @@ export default class Expression {
     (...args: unknown[]) => unknown
   >();
 
-  /** 評価関数の前に実行されるコード */
-  private static assignments: string;
-
-  static {
-    // static初期化ブロック
-    const lines: string[] = [];
-    this.FORBIDDEN_NAMES.forEach((name: string) => {
-      lines.push(`const ${name} = undefined`);
-    });
-    this.assignments = lines.join(';\n');
+  /**
+   * 現在のバインド識別子に含まれない禁止グローバルを遮断するコードを生成します。
+   *
+   * @param bindKeys 現在の式で利用するバインド識別子一覧
+   * @returns 評価前に挿入する初期化コード
+   */
+  private static buildAssignments(bindKeys: string[]): string {
+    const bindKeySet = new Set(bindKeys);
+    return this.FORBIDDEN_NAMES.filter(name => !bindKeySet.has(name))
+      .map(name => `const ${name} = undefined`)
+      .join(';\n');
   }
 
   /**
@@ -141,20 +194,26 @@ export default class Expression {
       Log.warn('[Haori]', bindedValues, 'Binded values contain forbidden keys');
       return null;
     }
+    if (this.containsForbiddenBindingValues(bindedValues)) {
+      Log.warn(
+        '[Haori]',
+        bindedValues,
+        'Binded values contain forbidden values',
+      );
+      return null;
+    }
 
     const bindKeys = Object.keys(bindedValues)
-      .filter(
-        key =>
-          !this.FORBIDDEN_NAMES.includes(key) &&
-          !this.STRICT_FORBIDDEN_NAMES.includes(key),
-      )
+      .filter(key => !this.FORBIDDEN_BINDING_NAMES.has(key))
       .sort();
     const cacheKey = `${expression}:${bindKeys.join(',')}`;
 
     let evaluator = this.EXPRESSION_CACHE.get(cacheKey);
     if (!evaluator) {
-      const body =
-        '"use strict";\n' + `${this.assignments};\nreturn (${expression});`;
+      const assignments = this.buildAssignments(bindKeys);
+      const body = assignments
+        ? '"use strict";\n' + `${assignments};\nreturn (${expression});`
+        : '"use strict";\n' + `return (${expression});`;
       try {
         evaluator = new Function(...bindKeys, body) as (
           ...args: unknown[]
@@ -730,26 +789,66 @@ export default class Expression {
   }
 
   /**
-   * valuesオブジェクトに禁止識別子が含まれていないか再帰的にチェックします。
+  * トップレベルのバインド識別子に拒否対象名が含まれていないかを判定します。
+  * ネストしたオブジェクトのプロパティ名は識別子として評価されないため、ここでは拒否しません。
    *
    * @param obj チェック対象のオブジェクト
    * @return 禁止識別子が含まれていればtrue
    */
   protected static containsForbiddenKeys(obj: unknown): boolean {
-    if (obj && typeof obj === 'object') {
-      for (const key of Object.keys(obj as object)) {
-        if (this.FORBIDDEN_NAMES.includes(key)) {
-          return true;
-        }
-        if (this.STRICT_FORBIDDEN_NAMES.includes(key)) {
-          return true;
-        }
-        // 再帰的にネストしたオブジェクトもチェック
-        if (this.containsForbiddenKeys((obj as Record<string, unknown>)[key])) {
-          return true;
-        }
+    if (!obj || typeof obj !== 'object') {
+      return false;
+    }
+
+    for (const key of Object.keys(obj as object)) {
+      if (this.FORBIDDEN_BINDING_NAMES.has(key)) {
+        return true;
       }
     }
+
+    return false;
+  }
+
+  /**
+   * バインド値に危険なホストオブジェクトやグローバル関数が含まれていないかを再帰的に判定します。
+   *
+   * @param obj チェック対象の値
+   * @param seen 循環参照検出用の訪問済み集合
+   * @return 危険値が含まれていればtrue
+   */
+  protected static containsForbiddenBindingValues(
+    obj: unknown,
+    seen: WeakSet<object> = new WeakSet<object>(),
+  ): boolean {
+    if (!obj || typeof obj !== 'object') {
+      return false;
+    }
+
+    if (seen.has(obj as object)) {
+      return false;
+    }
+    seen.add(obj as object);
+
+    if (this.getForbiddenBindingValues().some(value => value === obj)) {
+      return true;
+    }
+
+    for (const value of Object.values(obj as Record<string, unknown>)) {
+      if (typeof value === 'function') {
+        if (
+          this.getForbiddenBindingValues().some(
+            forbidden => forbidden === value,
+          )
+        ) {
+          return true;
+        }
+        continue;
+      }
+      if (this.containsForbiddenBindingValues(value, seen)) {
+        return true;
+      }
+    }
+
     return false;
   }
 }

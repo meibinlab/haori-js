@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.1.2
+バージョン: 0.1.3
 
 ---
 
@@ -41,8 +41,10 @@ npm install haori
 CDN:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/haori@0.1.2/dist/haori.iife.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
 ```
+
+この CDN URL は npm に公開済みの最新バージョンを参照します。
 
 ES Module:
 
@@ -62,7 +64,7 @@ HTML だけで簡単に使えます。以下は最小の例です。
 <head>
   <meta charset="utf-8">
   <title>Haori サンプル</title>
-  <script src="https://cdn.jsdelivr.net/npm/haori@0.1.2/dist/haori.iife.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
 </head>
 <body>
   <div data-bind='{"name":"太郎"}'>
@@ -102,6 +104,14 @@ Haori.mount(document.body, { items: [ { name: 'りんご' }, { name: 'みかん'
 
 ローカル確認とリリース準備の基本手順を示します。
 
+公開運用メモ:
+
+1. `npm run test`、`npm run build`、`npm pack --dry-run` を実行する
+2. `npm version patch` などで公開する版数に更新する
+3. `git push origin main` と `git push origin --tags` を実行する
+4. 新しい版数タグから GitHub Release を公開する
+5. npm、jsDelivr、GitHub Release の assets が新しい版数を指すことを確認する
+
 1. 依存インストール
 
 ```bash
@@ -127,13 +137,20 @@ npm run build
 npm version patch
 ```
 
-5. 版数更新を push し、対象タグから GitHub Release を公開
+5. 版数更新のコミットとタグを push
 
-このリポジトリの npm 公開は GitHub Actions で行います。現在の workflow は `release.published` を契機に起動し、パッケージをビルドしたうえで `NPM_TOKEN` を使って npm へ公開し、あわせて `dist.zip` を GitHub Release のアーティファクトとして添付します。
+```bash
+git push origin main
+git push origin --tags
+```
+
+6. 新しいタグから GitHub Release を公開
+
+このリポジトリの npm 公開は GitHub Actions で行います。現在の workflow は `release.published` を契機に起動し、パッケージをビルドしたうえで、対象 version が未公開のときだけ `NPM_TOKEN` を使って npm へ公開し、あわせて `dist.zip` を GitHub Release のアセットとして添付します。
 
 必要な前提条件:
 
-- GitHub リポジトリの Secrets に `NPM_TOKEN` が設定されていること
+- GitHub Actions の repository secrets に `NPM_TOKEN` が設定されていること
 - 対象バージョンのタグから Release を `published` 状態で公開すること
 
 公開前の推奨確認:
