@@ -12,6 +12,37 @@ import Haori from './haori';
 import Log from './log';
 import HaoriEvent from './event';
 
+type ProcedureHaoriApi = Pick<
+  typeof Haori,
+  'addErrorMessage' | 'closeDialog' | 'confirm' | 'dialog' | 'openDialog' | 'toast'
+>;
+
+const PROCEDURE_HAORI_METHOD_NAMES = [
+  'addErrorMessage',
+  'closeDialog',
+  'confirm',
+  'dialog',
+  'openDialog',
+  'toast',
+] as const;
+
+/**
+ * Procedure から利用する Haori API を解決します。
+ * window.Haori が差し替えられている場合はそちらを優先します。
+ *
+ * @returns Procedure が使用する Haori API。
+ */
+function resolveProcedureHaoriApi(): ProcedureHaoriApi {
+  const scope = globalThis as typeof globalThis & {
+    window?: Window & {Haori?: unknown};
+  };
+  const candidate = scope.window?.Haori;
+  const hasRequiredMethods = PROCEDURE_HAORI_METHOD_NAMES.every(
+    methodName => typeof (candidate as Record<string, unknown> | undefined)?.[methodName] === 'function',
+  );
+  return hasRequiredMethods ? (candidate as ProcedureHaoriApi) : Haori;
+}
+
 /**
  * フェッチ前実行スクリプト戻り値型。
  */
@@ -862,6 +893,7 @@ ${body}
     url?: string,
     startedAt?: number,
   ): Promise<void> {
+    const activeHaori = resolveProcedureHaoriApi();
     // エラー応答時は以後の処理を停止し、メッセージを伝播
     if (!response.ok) {
       if (this.options.targetFragment && url) {
@@ -934,20 +966,20 @@ ${body}
     if (this.options.openFragments && this.options.openFragments.length > 0) {
       this.options.openFragments.forEach(fragment => {
         const target = fragment.getTarget();
-        if (target instanceof HTMLDialogElement) {
-          promises.push(Haori.openDialog(target));
+        if (target instanceof HTMLElement) {
+          promises.push(activeHaori.openDialog(target));
         } else {
-          Log.error('Haori', 'Element is not a dialog: ', target);
+          Log.error('Haori', 'Element is not an HTML element: ', target);
         }
       });
     }
     if (this.options.closeFragments && this.options.closeFragments.length > 0) {
       this.options.closeFragments.forEach(fragment => {
         const target = fragment.getTarget();
-        if (target instanceof HTMLDialogElement) {
-          promises.push(Haori.closeDialog(target));
+        if (target instanceof HTMLElement) {
+          promises.push(activeHaori.closeDialog(target));
         } else {
-          Log.error('Haori', 'Element is not a dialog: ', target);
+          Log.error('Haori', 'Element is not an HTML element: ', target);
         }
       });
     }
@@ -956,13 +988,13 @@ ${body}
       .then(() => {
         // その後にダイアログ/トーストを表示
         if (this.options.dialogMessage) {
-          return Haori.dialog(this.options.dialogMessage);
+          return activeHaori.dialog(this.options.dialogMessage);
         }
         return Promise.resolve();
       })
       .then(() => {
         if (this.options.toastMessage) {
-          return Haori.toast(this.options.toastMessage, 'info');
+          return activeHaori.toast(this.options.toastMessage, 'info');
         }
         return Promise.resolve();
       })
@@ -990,7 +1022,7 @@ ${body}
 
     const addGeneralMessage = async (message: string) => {
       const targetEl = baseFragment ? baseFragment.getTarget() : document.body;
-      await Haori.addErrorMessage(targetEl, message);
+      await resolveProcedureHaoriApi().addErrorMessage(targetEl, message);
     };
 
     // コンテンツタイプに応じて解析
@@ -1124,7 +1156,7 @@ ${body}
     if (message === null || message === undefined) {
       return Promise.resolve(true);
     }
-    return Haori.confirm(message);
+    return resolveProcedureHaoriApi().confirm(message);
   }
 
   /**

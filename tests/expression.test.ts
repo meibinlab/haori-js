@@ -221,24 +221,35 @@ describe('Expression', () => {
       expect(result).toBeNull();
     });
 
-    it('ネストされたオブジェクト内の禁止キーも検出する', () => {
-      const result = Expression.evaluate('x', {
-        x: 1,
-        nested: {window: {}},
+    it('バインド値に constructor キーが含まれると null を返す', () => {
+      const result = Expression.evaluate('x', {x: 1, constructor: {}});
+      expect(result).toBeNull();
+    });
+
+    it('バインド値に location キーが含まれる場合は明示バインド値を利用できる', () => {
+      const result = Expression.evaluate('location', {
+        location: '東京都千代田区',
+      });
+      expect(result).toBe('東京都千代田区');
+    });
+
+    it('ネストした plain object の window キーは許可される', () => {
+      const result = Expression.evaluate('ctx.window.label', {
+        ctx: {window: {label: 'safe-window'}},
+      });
+      expect(result).toBe('safe-window');
+    });
+
+    it('ネストした window 実体は拒否する', () => {
+      const result = Expression.evaluate('ctx.window.location.href', {
+        ctx: {window},
       });
       expect(result).toBeNull();
     });
 
-    it('深くネストされたオブジェクト内の禁止キーも検出する', () => {
-      const result = Expression.evaluate('x', {
-        x: 1,
-        level1: {
-          level2: {
-            level3: {
-              document: {},
-            },
-          },
-        },
+    it('ネストした document 実体は拒否する', () => {
+      const result = Expression.evaluate('ctx.document.title', {
+        ctx: {document},
       });
       expect(result).toBeNull();
     });
@@ -248,6 +259,20 @@ describe('Expression', () => {
         user: {name: '田中', age: 30},
       });
       expect(result).toBe('田中');
+    });
+
+    it('ネストしたオブジェクトの location プロパティは評価できる', () => {
+      const result = Expression.evaluate('project.location', {
+        project: {location: '東京都千代田区'},
+      });
+      expect(result).toBe('東京都千代田区');
+    });
+
+    it('配列要素内の location プロパティも評価できる', () => {
+      const result = Expression.evaluate('content[0].location', {
+        content: [{location: '東京都港区'}],
+      });
+      expect(result).toBe('東京都港区');
     });
   });
 
@@ -297,13 +322,9 @@ describe('Expression', () => {
   });
 
   describe('禁止識別子のフィルタリング', () => {
-    it('バインド値に禁止識別子があっても式には使用できない', () => {
-      // windowキーを含むバインド値は事前にブロックされる
-      const result = Expression.evaluate('x', {
-        x: 1,
-        window: 'should be blocked',
-      });
-      expect(result).toBeNull();
+    it('location は明示バインドされていない場合は引き続きブロックされる', () => {
+      const result = Expression.evaluate('location', {});
+      expect(result).toBeUndefined();
     });
   });
 

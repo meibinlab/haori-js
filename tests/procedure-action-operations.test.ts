@@ -10,6 +10,7 @@ import {waitForCondition, waitForDomSettled} from './helpers/async';
 describe('Procedure action operations', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
+    (window as Window & typeof globalThis & {Haori?: unknown}).Haori = Haori;
     await import('../src/observer');
   });
 
@@ -130,6 +131,50 @@ describe('Procedure action operations', () => {
     container.remove();
   });
 
+  it('data-click-open delegates to window.Haori for Bootstrap modal targets', async () => {
+    const typedWindow = window as Window & typeof globalThis & {
+      Haori?: unknown;
+    };
+    const originalHaori = typedWindow.Haori;
+    const openSpy = vi.fn().mockResolvedValue(undefined as void);
+    const closeSpy = vi.fn().mockResolvedValue(undefined as void);
+    typedWindow.Haori = {
+      dialog: vi.fn().mockResolvedValue(undefined as void),
+      confirm: vi.fn().mockResolvedValue(true),
+      toast: vi.fn().mockResolvedValue(undefined as void),
+      openDialog: openSpy,
+      closeDialog: closeSpy,
+      addErrorMessage: vi.fn().mockResolvedValue(undefined as void),
+    };
+
+    const modal = document.createElement('div');
+    modal.id = 'user-modal';
+    modal.className = 'modal';
+    document.body.appendChild(modal);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-open', '#user-modal');
+    btn.setAttribute('data-click-close', '#user-modal');
+    container.appendChild(btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForDomSettled();
+
+    expect(openSpy).toHaveBeenCalledWith(modal);
+    expect(closeSpy).toHaveBeenCalledWith(modal);
+
+    if (originalHaori === undefined) {
+      Reflect.deleteProperty(window, 'Haori');
+    } else {
+      typedWindow.Haori = originalHaori;
+    }
+    modal.remove();
+    container.remove();
+  });
+
   it('redirectUrl sets window.location.href (attribute-driven)', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
       return Promise.resolve(
@@ -187,5 +232,64 @@ describe('Procedure action operations', () => {
     // Haori.addErrorMessage sets data-message on parent element
     expect(parent.getAttribute('data-message')).toBe('Server failed');
     parent.remove();
+  });
+
+  it('JSON field errors delegate to window.Haori.addErrorMessage', async () => {
+    const typedWindow = window as Window & typeof globalThis & {
+      Haori?: unknown;
+    };
+    const originalHaori = typedWindow.Haori;
+    const addErrorMessageSpy = vi
+      .fn()
+      .mockImplementation(async (target: HTMLElement, message: string) => {
+        target.setAttribute('data-test-message', message);
+      });
+    typedWindow.Haori = {
+      dialog: vi.fn().mockResolvedValue(undefined as void),
+      confirm: vi.fn().mockResolvedValue(true),
+      toast: vi.fn().mockResolvedValue(undefined as void),
+      openDialog: vi.fn().mockResolvedValue(undefined as void),
+      closeDialog: vi.fn().mockResolvedValue(undefined as void),
+      addErrorMessage: addErrorMessageSpy,
+      clearMessages: vi.fn().mockResolvedValue(undefined as void),
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response(JSON.stringify({errors: {email: 'メールアドレスが不正です'}}), {
+          status: 400,
+          statusText: 'Bad Request',
+          headers: {'Content-Type': 'application/json'},
+        }),
+      ) as unknown as Promise<Response>;
+    });
+
+    const form = document.createElement('form');
+    const emailInput = document.createElement('input');
+    emailInput.name = 'email';
+    form.appendChild(emailInput);
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '');
+    btn.setAttribute('data-click-fetch', 'http://api.test/json-error');
+    form.appendChild(btn);
+    document.body.appendChild(form);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => addErrorMessageSpy.mock.calls.length > 0, {
+      description: 'json field error delegation',
+    });
+
+    expect(addErrorMessageSpy).toHaveBeenCalledWith(
+      emailInput,
+      'メールアドレスが不正です',
+    );
+
+    if (originalHaori === undefined) {
+      Reflect.deleteProperty(window, 'Haori');
+    } else {
+      typedWindow.Haori = originalHaori;
+    }
+    form.remove();
   });
 });
