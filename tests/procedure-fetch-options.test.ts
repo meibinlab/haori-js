@@ -69,6 +69,88 @@ describe('Procedure fetch options and hooks', () => {
     container.remove();
   });
 
+  it('evaluates template expressions in data-fetch-data', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    container.setAttribute('data-bind', '{"page":2,"q":"term"}');
+    document.body.appendChild(container);
+
+    const src = document.createElement('div');
+    src.setAttribute('data-fetch', 'http://api.test/list');
+    src.setAttribute('data-fetch-method', 'POST');
+    src.setAttribute('data-fetch-data', 'page={{page + 1}}&q={{q}}');
+    container.appendChild(src);
+
+    await Core.scan(container);
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(fetchSpy).toHaveBeenCalled();
+    const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
+    const options = called[1] as RequestInit | undefined;
+    expect(options?.body).toBe(JSON.stringify({page: '3', q: 'term'}));
+
+    container.remove();
+  });
+
+  it('preserves special characters in parameter-style data-fetch-data templates', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    container.setAttribute('data-bind', '{"page":2,"q":"A&B=C"}');
+    document.body.appendChild(container);
+
+    const src = document.createElement('div');
+    src.setAttribute('data-fetch', 'http://api.test/list');
+    src.setAttribute('data-fetch-method', 'POST');
+    src.setAttribute('data-fetch-data', 'page={{page + 1}}&q={{q}}');
+    container.appendChild(src);
+
+    await Core.scan(container);
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
+    const options = called[1] as RequestInit | undefined;
+    expect(options?.body).toBe(JSON.stringify({page: '3', q: 'A&B=C'}));
+
+    container.remove();
+  });
+
+  it('preserves false in parameter-style data-fetch-data templates', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    container.setAttribute('data-bind', '{"enabled":false}');
+    document.body.appendChild(container);
+
+    const src = document.createElement('div');
+    src.setAttribute('data-fetch', 'http://api.test/list');
+    src.setAttribute('data-fetch-method', 'POST');
+    src.setAttribute('data-fetch-data', 'flag={{enabled}}');
+    container.appendChild(src);
+
+    await Core.scan(container);
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
+    const options = called[1] as RequestInit | undefined;
+    expect(options?.body).toBe(JSON.stringify({flag: 'false'}));
+
+    container.remove();
+  });
+
   it('bindArg binds response under key', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
       return Promise.resolve(

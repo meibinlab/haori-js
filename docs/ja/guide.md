@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.1.3
+バージョン: 0.1.4
 
 ## 目次
 
@@ -754,6 +754,14 @@ import Haori from 'haori'
   data-fetch="/api/create"
   data-fetch-method="POST"
   data-fetch-data="name=田中&age=25"
+></div>
+
+<!-- テンプレート式で既存バインディングを参照 -->
+<div
+  data-bind='{"page":2,"q":"検索語"}'
+  data-fetch="/api/search"
+  data-fetch-method="POST"
+  data-fetch-data="page={{page + 1}}&q={{q}}"
 ></div>
 ```
 

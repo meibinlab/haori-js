@@ -1,4 +1,5 @@
 import {describe, it, beforeEach, expect, vi, afterEach} from 'vitest';
+import Core from '../src/core';
 import Procedure from '../src/procedure';
 import Fragment, {ElementFragment} from '../src/fragment';
 import Haori from '../src/haori';
@@ -115,6 +116,100 @@ describe('イベント属性: before-run / after-run', () => {
     expect(String(calls[0][0] as RequestInfo)).toBe(
       'https://example.com/override',
     );
+  });
+
+  it('data-click-data のテンプレート式が評価された payload を送信する', async () => {
+    const host = document.createElement('div');
+    host.setAttribute('data-bind', '{"status":"active","priority":3}');
+    container.appendChild(host);
+
+    const button = document.createElement('button');
+    button.setAttribute('data-click-fetch', 'https://example.com/update');
+    button.setAttribute('data-click-fetch-method', 'POST');
+    button.setAttribute(
+      'data-click-data',
+      '{"status":"{{status}}","priority":"{{priority}}"}',
+    );
+    host.appendChild(button);
+
+    await Core.scan(host);
+
+    const frag = Fragment.get(button) as ElementFragment;
+    const fetchMock = (global.fetch = vi.fn().mockResolvedValue(
+      new Response('{}', {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    ) as unknown as typeof fetch);
+
+    const proc = new Procedure(frag, 'click');
+    await expect(proc.run()).resolves.toBeUndefined();
+
+    const calls = (fetchMock as unknown as {mock: {calls: unknown[][]}}).mock
+      .calls;
+    expect(calls.length).toBe(1);
+
+    const options = calls[0][1] as RequestInit;
+    expect(options.body).toBe(
+      JSON.stringify({status: 'active', priority: '3'}),
+    );
+  });
+
+  it('data-click-data の JSON 形式で引用符を含む値を壊さず payload に送信する', async () => {
+    const host = document.createElement('div');
+    host.setAttribute('data-bind', '{"q":"a\\"b"}');
+    container.appendChild(host);
+
+    const button = document.createElement('button');
+    button.setAttribute('data-click-fetch', 'https://example.com/update');
+    button.setAttribute('data-click-fetch-method', 'POST');
+    button.setAttribute('data-click-data', '{"q":"{{q}}"}');
+    host.appendChild(button);
+
+    await Core.scan(host);
+
+    const frag = Fragment.get(button) as ElementFragment;
+    const fetchMock = (global.fetch = vi.fn().mockResolvedValue(
+      new Response('{}', {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    ) as unknown as typeof fetch);
+
+    const proc = new Procedure(frag, 'click');
+    await expect(proc.run()).resolves.toBeUndefined();
+
+    const calls = (fetchMock as unknown as {mock: {calls: unknown[][]}}).mock
+      .calls;
+    const options = calls[0][1] as RequestInit;
+    expect(options.body).toBe(JSON.stringify({q: 'a"b'}));
+  });
+
+  it('data-click-data で単一式が object を返すと object payload を送信する', async () => {
+    const host = document.createElement('div');
+    host.setAttribute('data-bind', '{"payload":{"page":4,"q":"term"}}');
+    container.appendChild(host);
+
+    const button = document.createElement('button');
+    button.setAttribute('data-click-fetch', 'https://example.com/update');
+    button.setAttribute('data-click-fetch-method', 'POST');
+    button.setAttribute('data-click-data', '{{payload}}');
+    host.appendChild(button);
+
+    await Core.scan(host);
+
+    const frag = Fragment.get(button) as ElementFragment;
+    const fetchMock = (global.fetch = vi.fn().mockResolvedValue(
+      new Response('{}', {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    ) as unknown as typeof fetch);
+
+    const proc = new Procedure(frag, 'click');
+    await expect(proc.run()).resolves.toBeUndefined();
+
+    const calls = (fetchMock as unknown as {mock: {calls: unknown[][]}}).mock
+      .calls;
+    const options = calls[0][1] as RequestInit;
+    expect(options.body).toBe(JSON.stringify({page: 4, q: 'term'}));
   });
 });
 

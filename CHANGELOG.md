@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [0.1.4] - 2026-04-22
+
+### Changed
+- `data-click-data` と `data-fetch-data` でテンプレート式を評価できるようにし、ページネーションなどで既存バインディングから送信値を組み立てられるよう改善
+- JSON 形式の `data-*-data` で引用符を含む値が壊れないようにし、parameter 形式の `false` も空文字にせず送信できるよう改善
+
+### Library
+- `data` 属性解釈を event / non-event で共通化し、`&` や `=` を含むテンプレート値、JSON 文字列中の引用符、object 直返し、`false` 値の回帰テストを追加
+
 ## [0.1.3] - 2026-04-21
 
 ### Changed

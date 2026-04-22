@@ -1,7 +1,7 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.1.3
-最終更新: 2026-04-21
+バージョン: 0.1.4
+最終更新: 2026-04-22
 
 ## 目次
 
@@ -1303,6 +1303,15 @@ data-fetch="url"
 >
 </div>
 
+<!-- テンプレート式で既存バインディングを参照 -->
+<div
+  data-bind='{"page":2,"q":"term"}'
+  data-fetch="/api/search"
+  data-fetch-method="POST"
+  data-fetch-data="page={{page + 1}}&q={{q}}"
+>
+</div>
+
 <!-- フォームデータを送信 -->
 <form id="myForm">
   <input name="username">
@@ -2206,7 +2215,7 @@ export {
 export default Haori
 
 // バージョン
-export const version = '0.1.3'
+export const version = '0.1.4'
 ```
 
 ### Core クラス
@@ -2612,6 +2621,11 @@ MIT License
 ---
 
 ## バージョン履歴
+
+### 0.1.4 (2026-04-22)
+
+- data-click-data / data-fetch-data のテンプレート式評価を改善
+- data 属性解釈を event / non-event で共通化し、テンプレート式と object 直返しの扱いを改善
 
 ### 0.1.3 (2026-04-21)
 

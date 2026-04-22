@@ -6,6 +6,7 @@
 
 import Core from './core';
 import Env from './env';
+import Expression from './expression';
 import Form from './form';
 import Fragment, {ElementFragment} from './fragment';
 import Haori from './haori';
@@ -168,6 +169,14 @@ export interface ProcedureOptions {
  * 手続き的処理管理クラスです。
  */
 export default class Procedure {
+  /** data 属性内のテンプレート式検出用正規表現 */
+  private static readonly DATA_PLACEHOLDER_REGEX =
+    /\{\{\{([\s\S]+?)\}\}\}|\{\{([\s\S]+?)\}\}/g;
+
+  /** 属性全体が単一テンプレート式かを判定する正規表現 */
+  private static readonly SINGLE_PLACEHOLDER_REGEX =
+    /^(\{\{\{[\s\S]+?\}\}\}|\{\{[\s\S]+?\}\})$/;
+
   /**
    * イベント属性名を正しく生成します。
    * 例: ("click", "fetch") => "data-click-fetch"
@@ -186,6 +195,168 @@ export default class Procedure {
     return hasFetchFallback
       ? `${Env.prefix}fetch-${key}`
       : `${Env.prefix}${key}`;
+  }
+
+  /**
+   * data 属性のテンプレート式評価結果を URLSearchParams 向けに組み立てます。
+   *
+   * @param rawAttribute 生の属性値
+   * @param bindingValues バインディング値
+   * @returns パラメータ形式として扱える文字列
+   */
+  private static resolveDataParamString(
+    rawAttribute: string,
+    bindingValues: Record<string, unknown>,
+  ): string {
+    return rawAttribute.replace(
+      Procedure.DATA_PLACEHOLDER_REGEX,
+      (
+        _matched: string,
+        rawExpression: string | undefined,
+        expression: string | undefined,
+      ): string => {
+        const result = Expression.evaluate(
+          rawExpression ?? expression ?? '',
+          bindingValues,
+        );
+        if (result === null || result === undefined || Number.isNaN(result)) {
+          return '';
+        }
+        if (typeof result === 'object') {
+          return encodeURIComponent(JSON.stringify(result));
+        }
+        return encodeURIComponent(String(result));
+      },
+    );
+  }
+
+  /**
+   * JSON 文字列中のテンプレート式かどうかを判定します。
+   *
+   * @param source 生の属性値
+   * @param offset プレースホルダ開始位置
+   * @returns JSON 文字列中なら true
+   */
+  private static isJsonStringContext(source: string, offset: number): boolean {
+    let inString = false;
+    let escaped = false;
+    for (let index = 0; index < offset; index += 1) {
+      const char = source[index];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+      }
+    }
+    return inString;
+  }
+
+  /**
+   * JSON 値コンテキスト向けにテンプレート式の評価結果を直列化します。
+   *
+   * @param result テンプレート式の評価結果
+   * @returns JSON 値として埋め込める文字列
+   */
+  private static stringifyJsonTemplateValue(result: unknown): string {
+    if (result === undefined || Number.isNaN(result)) {
+      return 'null';
+    }
+    try {
+      const serialized = JSON.stringify(result);
+      return serialized ?? JSON.stringify(String(result));
+    } catch {
+      return JSON.stringify(String(result));
+    }
+  }
+
+  /**
+   * JSON 文字列コンテキスト向けにテンプレート式の評価結果を直列化します。
+   *
+   * @param result テンプレート式の評価結果
+   * @returns JSON 文字列へ安全に埋め込める文字列
+   */
+  private static stringifyJsonTemplateStringContent(result: unknown): string {
+    if (result === null || result === undefined || Number.isNaN(result)) {
+      return '';
+    }
+    const value =
+      typeof result === 'object'
+        ? Procedure.stringifyJsonTemplateValue(result)
+        : String(result);
+    return JSON.stringify(value).slice(1, -1);
+  }
+
+  /**
+   * JSON 形式 data 属性内のテンプレート式を安全に解決します。
+   *
+   * @param rawAttribute 生の属性値
+   * @param bindingValues バインディング値
+   * @returns JSON として解釈可能な文字列
+   */
+  private static resolveDataJsonString(
+    rawAttribute: string,
+    bindingValues: Record<string, unknown>,
+  ): string {
+    return rawAttribute.replace(
+      Procedure.DATA_PLACEHOLDER_REGEX,
+      (
+        _matched: string,
+        rawExpression: string | undefined,
+        expression: string | undefined,
+        offset: number,
+      ): string => {
+        const result = Expression.evaluate(
+          rawExpression ?? expression ?? '',
+          bindingValues,
+        );
+        return Procedure.isJsonStringContext(rawAttribute, offset)
+          ? Procedure.stringifyJsonTemplateStringContent(result)
+          : Procedure.stringifyJsonTemplateValue(result);
+      },
+    );
+  }
+
+  /**
+   * data 属性を評価済みの値として取得します。
+   *
+   * @param fragment フラグメント
+   * @param attrName 属性名
+   * @returns 送信データ
+   */
+  private static resolveDataAttribute(
+    fragment: ElementFragment,
+    attrName: string,
+  ): Record<string, unknown> | null {
+    const rawAttribute = fragment.getRawAttribute(attrName);
+    const dataAttribute = fragment.getAttribute(attrName);
+    if (
+      dataAttribute &&
+      typeof dataAttribute === 'object' &&
+      !Array.isArray(dataAttribute)
+    ) {
+      return dataAttribute as Record<string, unknown>;
+    }
+    if (typeof dataAttribute !== 'string' || rawAttribute === null) {
+      return null;
+    }
+    const trimmed = rawAttribute.trim();
+    if (Procedure.SINGLE_PLACEHOLDER_REGEX.test(trimmed)) {
+      return Core.parseDataBind(dataAttribute);
+    }
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      return Core.parseDataBind(
+        Procedure.resolveDataJsonString(rawAttribute, fragment.getBindingData()),
+      );
+    }
+    return Core.parseDataBind(
+      Procedure.resolveDataParamString(rawAttribute, fragment.getBindingData()),
+    );
   }
 
   /**
@@ -215,8 +386,9 @@ export default class Procedure {
       }
       // data（イベント）
       if (fragment.hasAttribute(Procedure.attrName(event, 'data'))) {
-        options.data = Core.parseDataBind(
-          fragment.getRawAttribute(Procedure.attrName(event, 'data')) as string,
+        options.data = Procedure.resolveDataAttribute(
+          fragment,
+          Procedure.attrName(event, 'data'),
         );
       }
       // form（イベント）
@@ -610,10 +782,10 @@ ${body}
     // 非イベントの data / form（data-fetch-data / data-fetch-form）も取り込む
     if (!event) {
       if (fragment.hasAttribute(Procedure.attrName(null, 'data', true))) {
-        const raw = fragment.getRawAttribute(
+        options.data = Procedure.resolveDataAttribute(
+          fragment,
           Procedure.attrName(null, 'data', true),
-        ) as string;
-        options.data = Core.parseDataBind(raw);
+        );
       }
       if (fragment.hasAttribute(Procedure.attrName(null, 'form', true))) {
         const formSelector = fragment.getRawAttribute(
