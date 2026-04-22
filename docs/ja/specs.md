@@ -1,7 +1,7 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.1.4
-最終更新: 2026-04-22
+バージョン: 0.1.5
+最終更新: 2026-04-23
 
 ## 目次
 
@@ -2215,7 +2215,7 @@ export {
 export default Haori
 
 // バージョン
-export const version = '0.1.4'
+export const version = '0.1.5'
 ```
 
 ### Core クラス
@@ -2621,6 +2621,14 @@ MIT License
 ---
 
 ## バージョン履歴
+
+### 0.1.5 (2026-04-23)
+
+### Changed
+- `data-bind` 更新や `data-each` 再利用時に、{{...}} を含む通常属性も再評価されるよう改善
+
+### Library
+- `evaluateAll` の通常属性再評価と、false / null 評価時の属性削除を確認する回帰テストを追加
 
 ### 0.1.4 (2026-04-22)
 

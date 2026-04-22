@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [0.1.5] - 2026-04-23
+
+### Changed
+- `evaluateAll` で `{{...}}` を含む通常属性も再評価するよう改善し、`data-bind` 更新や `data-each` 再利用時の DOM 反映を揃えた
+
+### Library
+- `evaluateAll` の通常属性再評価と、false / null 評価時の属性削除を確認する回帰テストを追加
+
 ## [0.1.4] - 2026-04-22
 
 ### Changed
