@@ -205,5 +205,110 @@ describe('Core', () => {
       expect(parentInput).toBeTruthy();
       expect(childInput).toBeTruthy();
     });
+
+    test('setBindingData で {{...}} を含む通常属性が再評価される', async () => {
+      container.innerHTML = `
+        <div data-bind='{"state":"before"}'>
+          <span class="{{state}}">label</span>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const target = root.querySelector('span') as HTMLSpanElement;
+
+      await Core.scan(root);
+
+      // 初回評価で通常属性が DOM に反映されること。
+      expect(target.getAttribute('class')).toBe('before');
+
+      await Core.setBindingData(root, {state: 'after'});
+
+      // 再評価でも属性キャッシュと DOM が同じ値に更新されること。
+      expect(target.getAttribute('class')).toBe('after');
+    });
+
+    test('data-each 配下でも {{...}} を含む通常属性が再評価される', async () => {
+      container.innerHTML = `
+        <div
+          data-bind='{"items":[{"state":"hot"},{"state":"cold"}]}'
+        >
+          <ul data-each="items" data-each-arg="item">
+            <li class="{{item.state}}">{{item.state}}</li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+
+      await Core.scan(root);
+
+      // 初回の行生成で通常属性が各行に反映されること。
+      expect(
+        Array.from(list.querySelectorAll('li')).map(item => item.className),
+      ).toEqual(['hot', 'cold']);
+
+      await Core.setBindingData(root, {
+        items: [{state: 'warm'}, {state: 'cool'}],
+      });
+
+      // 既存行の再利用時も通常属性が再評価されること。
+      expect(
+        Array.from(list.querySelectorAll('li')).map(item => item.className),
+      ).toEqual(['warm', 'cool']);
+    });
+
+    test('setBindingData で false になった通常属性は削除される', async () => {
+      container.innerHTML = `
+        <div data-bind='{"enabled":true}'>
+          <span class="{{enabled && 'active'}}">label</span>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const target = root.querySelector('span') as HTMLSpanElement;
+
+      await Core.scan(root);
+
+      // 初回評価では属性が付与されること。
+      expect(target.getAttribute('class')).toBe('active');
+
+      await Core.setBindingData(root, {enabled: false});
+
+      // false 評価では通常属性が DOM から削除されること。
+      expect(target.hasAttribute('class')).toBe(false);
+    });
+
+    test('data-each の再利用行でも null になった通常属性は削除される', async () => {
+      container.innerHTML = `
+        <div
+          data-bind='{"items":[{"label":"A"},{"label":"B"}]}'
+        >
+          <ul data-each="items" data-each-arg="item">
+            <li title="{{item.label}}">{{item.label ?? '-'}}</li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+
+      await Core.scan(root);
+
+      // 初回の行生成では通常属性が各行に反映されること。
+      expect(
+        Array.from(list.querySelectorAll('li')).map(item => item.getAttribute('title')),
+      ).toEqual(['A', 'B']);
+
+      await Core.setBindingData(root, {
+        items: [{label: null}, {label: 'B2'}],
+      });
+
+      const items = Array.from(list.querySelectorAll('li'));
+
+      // 再利用行でも null 評価の属性だけが削除されること。
+      expect(items[0].hasAttribute('title')).toBe(false);
+      expect(items[1].getAttribute('title')).toBe('B2');
+    });
   });
 });

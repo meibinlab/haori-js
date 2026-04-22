@@ -25,6 +25,20 @@ export default class Core {
   /** 遅延処理する属性のサフィックス */
   private static readonly DEFERRED_ATTRIBUTE_SUFFIXES = ['fetch', 'url-param'];
 
+  /** evaluateAll で再評価対象から除外する特殊属性のサフィックス */
+  private static readonly EVALUATE_ALL_EXCLUDED_ATTRIBUTE_SUFFIXES = [
+    'bind',
+    'if',
+    'each',
+    'fetch',
+    'import',
+    'url-param',
+  ];
+
+  /** 属性内プレースホルダ検出用の正規表現 */
+  private static readonly ATTRIBUTE_PLACEHOLDER_REGEX =
+    /\{\{\{[\s\S]+?\}\}\}|\{\{[\s\S]+?\}\}/;
+
   /**
    * 遅延属性かどうか（完全名で判定）を判定します。
    *
@@ -35,6 +49,57 @@ export default class Core {
     return Core.DEFERRED_ATTRIBUTE_SUFFIXES.some(
       suffix => name === `${Env.prefix}${suffix}`,
     );
+  }
+
+  /**
+   * evaluateAll で再評価対象から除外する特殊属性かどうかを判定します。
+   *
+   * @param name 属性名
+   * @returns 除外対象かどうか
+   */
+  private static isEvaluateAllExcludedAttributeName(name: string): boolean {
+    return Core.EVALUATE_ALL_EXCLUDED_ATTRIBUTE_SUFFIXES.some(
+      suffix => name === `${Env.prefix}${suffix}`,
+    );
+  }
+
+  /**
+   * evaluateAll で通常属性を再評価すべきかを判定します。
+   *
+   * @param name 属性名
+   * @param value 属性の生値
+   * @returns 再評価する場合は true
+   */
+  private static shouldReevaluateAttribute(
+    name: string,
+    value: string | null,
+  ): boolean {
+    return (
+      value !== null &&
+      !Core.isEvaluateAllExcludedAttributeName(name) &&
+      Core.ATTRIBUTE_PLACEHOLDER_REGEX.test(value)
+    );
+  }
+
+  /**
+   * プレースホルダを含む通常属性を再評価します。
+   * 内部状態の更新は同期的に行い、DOM 反映は fragment 側の非同期更新に委ねます。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 再評価完了の Promise
+   */
+  private static reevaluateInterpolatedAttributes(
+    fragment: ElementFragment,
+  ): Promise<void> {
+    let chain = Promise.resolve();
+    for (const name of fragment.getAttributeNames()) {
+      const rawValue = fragment.getRawAttribute(name);
+      if (!Core.shouldReevaluateAttribute(name, rawValue)) {
+        continue;
+      }
+      chain = chain.then(() => fragment.setAttribute(name, rawValue));
+    }
+    return chain.then(() => undefined);
   }
 
   /**
@@ -373,6 +438,7 @@ export default class Core {
    */
   public static evaluateAll(fragment: ElementFragment): Promise<void> {
     const promises: Promise<void>[] = [];
+    promises.push(Core.reevaluateInterpolatedAttributes(fragment));
     if (fragment.hasAttribute(`${Env.prefix}if`)) {
       promises.push(Core.evaluateIf(fragment));
     }
@@ -557,40 +623,36 @@ export default class Core {
         // 既存の要素を再利用
         child = childElements[srcIndex];
         // 既存要素にも必ずバインドデータを再セットし、キャッシュもクリア
-        Core.updateRowFragment(
-          child,
-          item,
-          indexKey as string | null,
-          itemIndex,
-          itemArg ? String(itemArg) : null,
-          newKey,
+        chain = chain.then(() =>
+          Core.updateRowFragment(
+            child,
+            item,
+            indexKey as string | null,
+            itemIndex,
+            itemArg ? String(itemArg) : null,
+            newKey,
+          ).then(() => Core.evaluateAll(child)),
         );
-        if (typeof child.clearBindingDataCache === 'function') {
-          child.clearBindingDataCache();
-        }
-        chain = chain.then(() => Core.evaluateAll(child));
       } else {
         // 新しい要素を追加
         child = template.clone();
-        Core.updateRowFragment(
-          child,
-          item,
-          indexKey as string | null,
-          itemIndex,
-          itemArg ? String(itemArg) : null,
-          newKey,
-        );
-        if (typeof child.clearBindingDataCache === 'function') {
-          child.clearBindingDataCache();
-        }
         const currentInsertIndex = baseInsertIndex + loopIndex;
         chain = chain.then(() =>
-          parent
-            .insertBefore(
-              child,
-              parent.getChildren()[currentInsertIndex] || null,
+          Core.updateRowFragment(
+            child,
+            item,
+            indexKey as string | null,
+            itemIndex,
+            itemArg ? String(itemArg) : null,
+            newKey,
+          ).then(() =>
+            parent
+              .insertBefore(
+                child,
+                parent.getChildren()[currentInsertIndex] || null,
+              )
+              .then(() => Core.evaluateAll(child)),
             )
-            .then(() => Core.evaluateAll(child)),
         );
       }
     });
@@ -663,6 +725,7 @@ export default class Core {
    * @param index インデックス番号
    * @param arg バインドデータパラメータ名
    * @param listKey リストキー
+   * @returns 行メタデータの更新完了 Promise
    */
   private static updateRowFragment(
     rowFragment: ElementFragment,
@@ -671,7 +734,7 @@ export default class Core {
     index: number,
     arg: string | null,
     listKey: string,
-  ): void {
+  ): Promise<void> {
     let bindingData = data;
     if (typeof data === 'object' && data !== null) {
       bindingData = {...data};
@@ -696,11 +759,11 @@ export default class Core {
           '[Haori]',
           `Primitive value requires '${Env.prefix}each-arg' attribute: ${data}`,
         );
-        return;
+        return Promise.resolve();
       }
     }
     rowFragment.setListKey(listKey);
-    rowFragment.setAttribute(`${Env.prefix}row`, listKey);
     rowFragment.setBindingData(bindingData as Record<string, unknown>);
+    return rowFragment.setAttribute(`${Env.prefix}row`, listKey);
   }
 }
