@@ -351,7 +351,10 @@ export default class Procedure {
     }
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
       return Core.parseDataBind(
-        Procedure.resolveDataJsonString(rawAttribute, fragment.getBindingData()),
+        Procedure.resolveDataJsonString(
+          rawAttribute,
+          fragment.getBindingData(),
+        ),
       );
     }
     return Core.parseDataBind(
