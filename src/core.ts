@@ -652,7 +652,7 @@ export default class Core {
                 parent.getChildren()[currentInsertIndex] || null,
               )
               .then(() => Core.evaluateAll(child)),
-            )
+          )
         );
       }
     });
