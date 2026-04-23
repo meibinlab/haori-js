@@ -17,6 +17,7 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, 'index.html'),
         'event-test': resolve(__dirname, 'event/event-test.html'),
+        'fetch/data-fetch-runtime-demo': resolve(__dirname, 'fetch/data-fetch-runtime-demo.html'),
       },
     },
   },

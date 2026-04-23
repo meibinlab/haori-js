@@ -16,6 +16,7 @@ import './observer';
 
 // メインクラスとユーティリティをエクスポート
 export {Core, Env, Fragment, Form, Haori, Log, Queue};
+export type {HaoriRuntime} from './env';
 
 // デフォルトエクスポート（Haoriをメインとして提供）
 export default Haori;

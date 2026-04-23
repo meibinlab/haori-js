@@ -4,6 +4,7 @@
  */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import HaoriEvent from '../src/event';
+import type {HaoriRuntime} from '../src/env';
 import packageJson from '../package.json';
 
 describe('HaoriEvent', () => {
@@ -309,12 +310,26 @@ describe('HaoriEvent', () => {
       container.addEventListener('haori:fetchstart', handler);
       const options = {method: 'POST'};
       const payload = {data: 'test'};
+      const metadata: {
+        runtime: HaoriRuntime;
+        requestedMethod: string;
+        effectiveMethod: string;
+        transportMode: string;
+        queryString: string;
+      } = {
+        runtime: 'demo',
+        requestedMethod: 'POST',
+        effectiveMethod: 'GET',
+        transportMode: 'query-get',
+        queryString: '?data=test',
+      };
 
       HaoriEvent.fetchStart(
         container,
         'https://example.com/api',
         options,
         payload,
+        metadata,
       );
 
       expect(handler).toHaveBeenCalledTimes(1);
@@ -323,6 +338,11 @@ describe('HaoriEvent', () => {
       expect(event.detail.options).toEqual(options);
       expect(event.detail.payload).toEqual(payload);
       expect(event.detail.startedAt).toBeDefined();
+      expect(event.detail.runtime).toBe('demo');
+      expect(event.detail.requestedMethod).toBe('POST');
+      expect(event.detail.effectiveMethod).toBe('GET');
+      expect(event.detail.transportMode).toBe('query-get');
+      expect(event.detail.queryString).toBe('?data=test');
     });
 
     it('オプションなしでも動作する', () => {

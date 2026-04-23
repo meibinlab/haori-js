@@ -52,6 +52,65 @@ function resolveProcedureHaoriApi(): ProcedureHaoriApi {
   return hasRequiredMethods ? (candidate as ProcedureHaoriApi) : Haori;
 }
 
+const QUERY_TRANSPORT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * URL クエリ化の対象メソッドかどうかを判定します。
+ *
+ * @param method 判定対象の HTTP メソッド。
+ * @return クエリ送信対象なら true。
+ */
+function isQueryTransportMethod(method: string): boolean {
+  return QUERY_TRANSPORT_METHODS.has(method.toUpperCase());
+}
+
+/**
+ * 送信データを URLSearchParams に追加します。
+ *
+ * @param params 追加先の URLSearchParams。
+ * @param payload 追加対象の送信データ。
+ * @return 戻り値はありません。
+ */
+function appendPayloadToSearchParams(
+  params: URLSearchParams,
+  payload: Record<string, unknown>,
+): void {
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (value === null) {
+      params.append(key, '');
+    } else if (Array.isArray(value)) {
+      value.forEach(item => {
+        params.append(key, String(item));
+      });
+    } else if (typeof value === 'object' || typeof value === 'function') {
+      params.append(key, JSON.stringify(value));
+    } else {
+      params.append(key, String(value));
+    }
+  }
+}
+
+/**
+ * 送信データをクエリ文字列へ付加した URL を返します。
+ *
+ * @param fetchUrl 元のフェッチ URL。
+ * @param payload 追加対象の送信データ。
+ * @return クエリ文字列を付加した URL。
+ */
+function appendPayloadToUrl(
+  fetchUrl: string,
+  payload: Record<string, unknown>,
+): string {
+  const url = new URL(fetchUrl, window.location.href);
+  const params = new URLSearchParams(url.search);
+  appendPayloadToSearchParams(params, payload);
+  url.search = params.toString();
+  return url.toString();
+}
+
 /**
  * フェッチ前実行スクリプト戻り値型。
  */
@@ -1007,30 +1066,16 @@ ${body}
       const headers = new Headers(
         (finalOptions.headers as HeadersInit | undefined) || undefined,
       );
-      const method = (finalOptions.method || 'GET').toUpperCase();
+      const requestedMethod = (finalOptions.method || 'GET').toUpperCase();
+      const isDemoQueryNormalization =
+        Env.runtime === 'demo' && !isQueryTransportMethod(requestedMethod);
+      const method = isDemoQueryNormalization ? 'GET' : requestedMethod;
+
+      finalOptions.method = method;
 
       if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
         if (hasPayload) {
-          const url = new URL(fetchUrl!, window.location.href);
-          const params = new URLSearchParams(url.search);
-          for (const [k, v] of Object.entries(payload)) {
-            if (v === undefined) {
-              continue;
-            }
-            if (v === null) {
-              params.append(k, '');
-            } else if (Array.isArray(v)) {
-              v.forEach(item => {
-                params.append(k, String(item));
-              });
-            } else if (typeof v === 'object' || typeof v === 'function') {
-              params.append(k, JSON.stringify(v));
-            } else {
-              params.append(k, String(v));
-            }
-          }
-          url.search = params.toString();
-          fetchUrl = url.toString();
+          fetchUrl = appendPayloadToUrl(fetchUrl!, payload);
         }
       } else if (hasPayload) {
         const contentType = headers.get('Content-Type') || '';
@@ -1075,15 +1120,41 @@ ${body}
       }
 
       finalOptions.headers = headers;
+      let queryString: string | undefined;
+
+      if (isDemoQueryNormalization) {
+        queryString = fetchUrl
+          ? new URL(fetchUrl, window.location.href).search || undefined
+          : undefined;
+        headers.delete('Content-Type');
+        Log.info('Haori demo fetch normalization', {
+          runtime: Env.runtime,
+          requestedMethod,
+          effectiveMethod: method,
+          transportMode: 'query-get',
+          url: fetchUrl,
+          payload: hasPayload ? payload : undefined,
+          queryString,
+        });
+      }
 
       // fetchstartイベントを発火
       if (this.options.targetFragment && fetchUrl) {
         const startedAt = performance.now();
+        const fetchStartMetadata = {
+          runtime: Env.runtime,
+          requestedMethod,
+          effectiveMethod: method,
+          transportMode: isDemoQueryNormalization ? 'query-get' : 'http',
+          ...(isDemoQueryNormalization ? {queryString} : {}),
+        };
+
         HaoriEvent.fetchStart(
           this.options.targetFragment.getTarget(),
           fetchUrl,
           finalOptions,
           hasPayload ? payload : undefined,
+          fetchStartMetadata,
         );
 
         return fetch(fetchUrl, finalOptions)

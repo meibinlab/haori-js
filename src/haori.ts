@@ -1,4 +1,5 @@
 import Log from './log';
+import Env from './env';
 import Queue from './queue';
 
 /**
@@ -6,6 +7,25 @@ import Queue from './queue';
  * 挙動を変更する場合は必要に応じてオーバライドしてください。
  */
 export default class Haori {
+  /**
+   * 実行モードを取得します。
+   *
+   * @return 実行モード。
+   */
+  public static get runtime(): 'embedded' | 'demo' {
+    return Env.runtime;
+  }
+
+  /**
+   * 実行モードを設定します。
+   *
+   * @param runtime 設定する実行モード。
+   * @return 戻り値はありません。
+   */
+  public static setRuntime(runtime: string): void {
+    Env.setRuntime(runtime);
+  }
+
   /**
    * 通知ダイアログを表示します。
    *

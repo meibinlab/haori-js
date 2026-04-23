@@ -30,6 +30,8 @@ Contents
   - HTML imports via `data-import`
   - Zero runtime dependencies (uses browser-native APIs)
 
+Runtime mode can be distinguished with `data-runtime` and `Env.runtime` when you need different behavior for embedded use and browser demos.
+
 ## Installation
 
 Install from npm:

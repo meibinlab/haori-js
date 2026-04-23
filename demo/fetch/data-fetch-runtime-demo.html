@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Haori.js runtime demo</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+    }
+    .demo-card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      background: #fafafa;
+    }
+    .event-log {
+      white-space: pre-wrap;
+      background: #111827;
+      color: #d1fae5;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 140px;
+      overflow: auto;
+    }
+    .runtime-badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      background: #dcfce7;
+      color: #166534;
+      font-weight: bold;
+    }
+    button {
+      padding: 8px 14px;
+      border: 0;
+      border-radius: 6px;
+      background: #0d6efd;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0b5ed7;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>data-runtime="demo" デモ</h1>
+  <p>
+    このページでは <span class="runtime-badge" id="runtimeBadge">確認中</span>
+    の実行モードで、<code>POST</code> 指定が <code>GET</code> に正規化されることを確認します。
+  </p>
+
+  <div class="demo-card">
+    <p id="runtimeStatus">初期化中...</p>
+    <button
+      id="runtimeFetchButton"
+      data-click-fetch-method="POST"
+      data-click-data='{"page":2,"q":"term"}'
+      data-click-bind="#runtime-result"
+      type="button"
+    >
+      POST 指定の fetch を実行
+    </button>
+    <script>
+      const runtimeFetchButton = document.getElementById('runtimeFetchButton');
+      if (runtimeFetchButton) {
+        runtimeFetchButton.setAttribute(
+          'data-click-fetch',
+          './data-fetch-runtime-demo.json',
+        );
+      }
+    </script>
+    <div
+      id="runtime-result"
+      class="demo-card"
+      data-bind='{"message":"(未取得)","page":"-","query":"-"}'
+    >
+      <p><strong>message:</strong> {{message}}</p>
+      <p><strong>page:</strong> {{page}}</p>
+      <p><strong>query:</strong> {{query}}</p>
+    </div>
+  </div>
+
+  <div class="demo-card">
+    <h2>イベントログ</h2>
+    <div class="event-log" id="eventLog"></div>
+  </div>
+
+  <div class="demo-card">
+    <h2>マークアップ例</h2>
+    <pre><code>&lt;button
+  data-click-fetch="./data-fetch-runtime-demo.json"
+  data-click-fetch-method="POST"
+  data-click-data='{"page":2,"q":"term"}'
+  data-click-bind="#runtime-result"
+&gt;
+  POST 指定の fetch を実行
+&lt;/button&gt;</code></pre>
+  </div>
+
+  <script type="module" src="./data-fetch-runtime-demo.js"></script>
+  <script src="../../dist/haori.iife.js" data-runtime="demo" defer></script>
+</body>
+</html>

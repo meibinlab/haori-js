@@ -4,9 +4,24 @@
  * Haoriライブラリが発火するカスタムイベントの統一的な発火機能を提供します。
  */
 
+import type {HaoriRuntime} from './env';
+
 /**
  * Haoriイベントを発火するユーティリティクラス
  */
+export interface FetchStartMetadata {
+  /** 実行モード。 */
+  runtime?: HaoriRuntime;
+  /** 属性で指定された元の HTTP メソッド。 */
+  requestedMethod?: string;
+  /** 実際の通信に使う HTTP メソッド。 */
+  effectiveMethod?: string;
+  /** 通信方式。 */
+  transportMode?: string;
+  /** クエリ化後の検索文字列。 */
+  queryString?: string;
+}
+
 export default class HaoriEvent {
   /**
    * カスタムイベントを発火します。
@@ -236,18 +251,22 @@ export default class HaoriEvent {
    * @param url フェッチURL
    * @param options フェッチオプション
    * @param payload 送信データ
+    * @param metadata runtime とメソッド変換情報。
+    * @return 戻り値はありません。
    */
   public static fetchStart(
     target: HTMLElement,
     url: string,
     options?: RequestInit,
     payload?: Record<string, unknown>,
+    metadata?: FetchStartMetadata,
   ): void {
     HaoriEvent.dispatch(target, 'fetchstart', {
       url,
       options: options || {},
       payload,
       startedAt: performance.now(),
+      ...metadata,
     });
   }
 

@@ -4,10 +4,14 @@
  */
 import {describe, it, expect, beforeEach, vi} from 'vitest';
 import Core from '../src/core';
+import Dev from '../src/dev';
+import Env from '../src/env';
 
 describe('Procedure fetch options and hooks', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
+    Dev.set(false);
+    Env.setRuntime('embedded');
     await import('../src/observer');
   });
 
@@ -35,6 +39,79 @@ describe('Procedure fetch options and hooks', () => {
     if (options) {
       expect(String(options.method).toUpperCase()).toBe('POST');
     }
+    container.remove();
+  });
+
+  it('reports http transport mode for regular GET requests', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const handler = vi.fn();
+    document.addEventListener('haori:fetchstart', handler);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const src = document.createElement('div');
+    src.setAttribute('data-fetch', 'http://api.test/get');
+    container.appendChild(src);
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(handler).toHaveBeenCalled();
+    for (const call of handler.mock.calls) {
+      const event = call[0] as CustomEvent;
+      expect(event.detail.requestedMethod).toBe('GET');
+      expect(event.detail.effectiveMethod).toBe('GET');
+      expect(event.detail.transportMode).toBe('http');
+      expect(event.detail.queryString).toBeUndefined();
+    }
+
+    document.removeEventListener('haori:fetchstart', handler);
+    container.remove();
+  });
+
+  it('normalizes non-GET requests to query GET in demo runtime', async () => {
+    Dev.set(true);
+    Env.setRuntime('demo');
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const src = document.createElement('div');
+    src.setAttribute('data-fetch', 'http://api.test/post');
+    src.setAttribute('data-fetch-method', 'POST');
+    src.setAttribute('data-fetch-data', 'x=1&y=two');
+    container.appendChild(src);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(fetchSpy).toHaveBeenCalled();
+    const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
+    expect(String(called[0] as RequestInfo)).toContain('http://api.test/post?');
+    expect(String(called[0] as RequestInfo)).toContain('x=1');
+    expect(String(called[0] as RequestInfo)).toContain('y=two');
+
+    const options = called[1] as RequestInit | undefined;
+    if (options) {
+      expect(String(options.method).toUpperCase()).toBe('GET');
+      expect(options.body).toBeUndefined();
+      const headers = new Headers((options.headers as HeadersInit) || undefined);
+      expect(headers.get('Content-Type')).toBeNull();
+    }
+
+    expect(logSpy).toHaveBeenCalled();
+
     container.remove();
   });
 

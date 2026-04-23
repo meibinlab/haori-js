@@ -1,14 +1,48 @@
 import Dev from '../src/dev';
 import Env from '../src/env';
+import Haori from '../src/haori';
 
 describe('環境から開発モードを検出します', () => {
   beforeEach(() => {
     Dev.set(false);
+    Env.setRuntime('embedded');
     document.querySelectorAll('script').forEach(script => script.remove());
     Object.defineProperty(window, 'location', {
       value: new URL('http://test.com'),
       writable: true,
     });
+  });
+
+  it('runtime の既定値は embedded です', () => {
+    expect(Env.runtime).toBe('embedded');
+  });
+
+  it('runtime を demo に設定できます', () => {
+    Env.setRuntime('demo');
+    expect(Env.runtime).toBe('demo');
+  });
+
+  it('Haori.runtime は Env.runtime を参照します', () => {
+    Env.setRuntime('demo');
+    expect(Haori.runtime).toBe('demo');
+  });
+
+  it('Haori.setRuntime で Env.runtime を更新できます', () => {
+    Haori.setRuntime('demo');
+    expect(Env.runtime).toBe('demo');
+  });
+
+  it('data-runtime="demo"属性がある場合', () => {
+    mockScriptWithAttribute('data-runtime', 'haori.js', 'demo');
+    Env.detect();
+    expect(Env.runtime).toBe('demo');
+  });
+
+  it('無効な data-runtime 属性は embedded に正規化される', () => {
+    Env.setRuntime('demo');
+    mockScriptWithAttribute('data-runtime', 'haori.js', 'invalid');
+    Env.detect();
+    expect(Env.runtime).toBe('embedded');
   });
 
   /**

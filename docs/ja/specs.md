@@ -2239,6 +2239,9 @@ element.addEventListener('haori:fetchstart', (event) => {
   console.log('URL:', event.detail.url)
   console.log('オプション:', event.detail.options)
   console.log('ペイロード:', event.detail.payload)
+  console.log('実行モード:', event.detail.runtime)
+  console.log('要求メソッド:', event.detail.requestedMethod)
+  console.log('実行メソッド:', event.detail.effectiveMethod)
 })
 ```
 
@@ -2248,6 +2251,11 @@ element.addEventListener('haori:fetchstart', (event) => {
   url: string
   options?: RequestInit
   payload?: Record<string, unknown>
+  runtime?: 'embedded' | 'demo'
+  requestedMethod?: string
+  effectiveMethod?: string
+  transportMode?: 'http' | 'query-get'
+  queryString?: string
 }
 ```
 
@@ -2524,6 +2532,8 @@ class Log {
 ```typescript
 class Env {
   static detect(): void
+  static get runtime(): 'embedded' | 'demo'
+  static setRuntime(runtime: string): void
   static get prefix(): string  // デフォルト: 'data-'
 }
 ```
@@ -2750,6 +2760,9 @@ const isDev = devMode ||
 ```html
 <!-- プレフィックスをカスタマイズ -->
 <script src="haori.js" data-prefix="haori-"></script>
+
+<!-- デモ表示時の挙動を明示 -->
+<script src="haori.js" data-runtime="demo"></script>
 
 <!-- 開発モードを強制 -->
 <script src="haori.js" data-dev></script>
