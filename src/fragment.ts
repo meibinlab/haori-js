@@ -350,6 +350,12 @@ export class ElementFragment extends Fragment {
     const clone = new ElementFragment(
       this.target.cloneNode(false) as HTMLElement,
     );
+    // DOM attributes hold evaluated values (e.g. "page-item "), not raw template
+    // expressions (e.g. "page-item {{page === number ? 'active' : ''}}").
+    // Copy attributeMap directly so template expressions are preserved in clones.
+    this.attributeMap.forEach((contents, name) => {
+      clone.attributeMap.set(name, contents);
+    });
     this.children.forEach(child => {
       const childClone = child.clone();
       clone.getTarget().appendChild(childClone.getTarget());
@@ -431,6 +437,16 @@ export class ElementFragment extends Fragment {
    */
   public setBindingData(data: Record<string, unknown>): void {
     this.bindingData = data;
+    this.clearBindingDataCache();
+  }
+
+  /**
+   * 親フラグメントを設定します。バインドデータキャッシュをクリアします。
+   *
+   * @param parent 親フラグメント
+   */
+  public override setParent(parent: ElementFragment | null): void {
+    this.parent = parent;
     this.clearBindingDataCache();
   }
 
