@@ -1,0 +1,31 @@
+{
+  "items": [
+    {
+      "id": 1,
+      "title": "記事 1",
+      "description": "監視要素が表示領域に入ると最初のページが読み込まれます。"
+    },
+    {
+      "id": 2,
+      "title": "記事 2",
+      "description": "items は data-intersect-bind-append によって追記されます。"
+    },
+    {
+      "id": 3,
+      "title": "記事 3",
+      "description": "cursor は更新されますが、items はそのまま増えていきます。"
+    },
+    {
+      "id": 4,
+      "title": "記事 4",
+      "description": "このデモではスクロールコンテナを監視 root にしています。"
+    },
+    {
+      "id": 5,
+      "title": "記事 5",
+      "description": "さらに下までスクロールすると次のページを取得します。"
+    }
+  ],
+  "cursor": "page2",
+  "hasMore": true
+}

@@ -6,6 +6,7 @@
  */
 import Core from './core';
 import EventDispatcher from './event_dispatcher';
+import IntersectObserver from './intersect';
 import Log from './log';
 
 /**
@@ -36,6 +37,7 @@ export class Observer {
     Observer.observe(document.head);
     Observer.observe(document.body);
     new EventDispatcher().start();
+    IntersectObserver.syncTree(document.body);
   }
 
   /**
@@ -62,6 +64,7 @@ export class Observer {
                 mutation.attributeName!,
                 element.getAttribute(mutation.attributeName!),
               );
+              IntersectObserver.syncElement(element);
               break;
             }
             case 'childList': {
@@ -73,6 +76,7 @@ export class Observer {
                 Array.from(mutation.addedNodes).map(node => node.nodeName),
               );
               Array.from(mutation.removedNodes).forEach(node => {
+                IntersectObserver.cleanupTree(node);
                 Core.removeNode(node);
               });
               Array.from(mutation.addedNodes).forEach(node => {
@@ -80,6 +84,7 @@ export class Observer {
                   return;
                 }
                 Core.addNode(node.parentElement, node);
+                IntersectObserver.syncTree(node);
               });
               break;
             }

@@ -837,6 +837,27 @@ import Haori from 'haori'
 </div>
 ```
 
+#### `data-fetch-bind-append`: 指定した配列プロパティを追記
+
+```html
+<div
+  data-fetch="/api/posts?cursor={{cursor}}"
+  data-fetch-bind="#feed"
+  data-fetch-bind-params="items&cursor&hasMore"
+  data-fetch-bind-append="items"
+></div>
+
+<div id="feed" data-bind='{"items":[],"cursor":null,"hasMore":true}'>
+  <ul data-each="items" data-each-key="id">
+    <li>{{title}}</li>
+  </ul>
+</div>
+```
+
+`data-fetch-bind-append` は `&` 区切りで指定したキーについて、レスポンス値が配列であれば既存の配列へ追記します。無限スクロールのように `items` だけを追加し、`cursor` や `hasMore` は通常どおり上書きしたい場合に使用します。
+
+`data-click-bind-append`、`data-change-bind-append`、`data-load-bind-append`、`data-intersect-bind-append` も同じ意味で使えます。
+
 ### 組み合わせ例
 
 ```html
@@ -856,11 +877,122 @@ import Haori from 'haori'
 
 ---
 
+## 画面位置で処理を実行する（`data-intersect-*`）
+
+`data-intersect-*` 属性を使うと、要素がビューポートまたは指定したスクロールコンテナに入ったときに処理を実行できます。内部的には `IntersectionObserver` を使う想定で、無限スクロールや遅延読み込みに向いています。
+
+### 基本的な使い方
+
+```html
+<div id="feed" data-bind='{"items":[],"cursor":null,"hasMore":true}'>
+  <ul data-each="items" data-each-key="id">
+    <li>{{title}}</li>
+  </ul>
+
+  <div
+    data-if="hasMore"
+    data-intersect-fetch="/api/posts?cursor={{cursor}}"
+    data-intersect-bind="#feed"
+    data-intersect-bind-params="items&cursor&hasMore"
+    data-intersect-bind-append="items"
+    data-intersect-root-margin="300px"
+    data-intersect-threshold="0"
+    data-intersect-disabled="{{!hasMore}}"
+  ></div>
+</div>
+```
+
+この例では、末尾の要素が監視領域に入ると次ページを取得し、`items` は追記、`cursor` と `hasMore` は上書きされます。
+
+### `data-intersect-*` の関連属性
+
+#### `data-intersect-fetch`: 交差時にフェッチを実行
+
+```html
+<div data-intersect-fetch="/api/posts"></div>
+```
+
+要素が交差したタイミングで `data-fetch` 系と同様の通信処理を開始します。
+
+#### `data-intersect-root`: 監視するスクロールコンテナ
+
+```html
+<div class="list-wrapper">
+  <div
+    data-intersect-fetch="/api/posts"
+    data-intersect-root=".list-wrapper"
+  ></div>
+</div>
+```
+
+省略した場合はビューポートを監視対象にします。
+
+#### `data-intersect-root-margin`: 手前で先読みするための余白
+
+```html
+<div
+  data-intersect-fetch="/api/posts"
+  data-intersect-root-margin="0px 0px 300px 0px"
+></div>
+```
+
+監視領域の外側に余白を追加します。下方向に正の値を指定すると、実際に見える少し手前でフェッチできるため、無限スクロールの先読みに向いています。
+
+#### `data-intersect-threshold`: どの程度見えたら発火するか
+
+```html
+<div
+  data-intersect-fetch="/api/posts"
+  data-intersect-threshold="0.5"
+></div>
+```
+
+`0` なら 1px でも交差した時点で発火し、`1` なら要素全体が監視領域に入った時点で発火します。大きなローディング領域やカード自体を監視するときに有効です。
+
+#### `data-intersect-disabled`: 一時的に停止
+
+```html
+<div
+  data-intersect-fetch="/api/posts"
+  data-intersect-disabled="{{loading || !hasMore}}"
+></div>
+```
+
+真と評価されたときは、交差しても処理を実行しません。
+
+#### `data-intersect-once`: 1回だけ実行
+
+```html
+<div
+  data-intersect-fetch="/api/hero"
+  data-intersect-once
+></div>
+```
+
+初回の成功後に監視を終了したい場合に使います。
+
+#### `data-intersect-bind` / `data-intersect-bind-arg` / `data-intersect-bind-params` / `data-intersect-bind-append`
+
+```html
+<div
+  data-intersect-fetch="/api/posts"
+  data-intersect-bind="#feed"
+  data-intersect-bind-params="items&cursor&hasMore"
+  data-intersect-bind-append="items"
+></div>
+```
+
+交差時の処理でも、`data-click-*` や `data-fetch-*` と同じ考え方でバインド先と反映方法を指定できます。
+
+また、必要に応じて `data-intersect-fetch-method`、`data-intersect-fetch-headers`、`data-intersect-fetch-data`、`data-intersect-fetch-form`、`data-intersect-before-run`、`data-intersect-after-run` も併用できます。
+
+---
+
 ## ボタンクリックで処理を実行する
 
 `data-click-*`属性を使うと、ボタンクリック時の処理を定義できます。
 
-**注意**: `data-click-*`の代わりに`data-change-*`（フォーム要素の変更時）、`data-load-*`（要素のロード時）も使えます。
+**注意**: `data-click-*`の代わりに`data-change-*`（フォーム要素の変更時）、`data-load-*`（要素のロード時）も使えます。画面への到達をきっかけにしたい場合は、この節とは別に `data-intersect-*` を使います。
 
 ### 処理の実行順序
 

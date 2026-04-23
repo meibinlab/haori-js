@@ -208,7 +208,9 @@ export default class Core {
         promises.push(Core.evaluateEach(fragment));
         break;
       case `${Env.prefix}fetch`:
-        promises.push(new Procedure(fragment, null).run());
+        promises.push(
+          new Procedure(fragment, null).run().then(() => undefined),
+        );
         break;
       case `${Env.prefix}import`: {
         if (typeof value === 'string') {

@@ -1,0 +1,31 @@
+{
+  "items": [
+    {
+      "id": 6,
+      "title": "記事 6",
+      "description": "2 ページ目は監視要素が完全に見える前に取得されます。"
+    },
+    {
+      "id": 7,
+      "title": "記事 7",
+      "description": "root-margin は下方向に 120px を設定しています。"
+    },
+    {
+      "id": 8,
+      "title": "記事 8",
+      "description": "threshold は 0.25 で、少し遅めに発火します。"
+    },
+    {
+      "id": 9,
+      "title": "記事 9",
+      "description": "既存の一覧を残したまま、新しい要素だけが追加されます。"
+    },
+    {
+      "id": 10,
+      "title": "記事 10",
+      "description": "このあとに最後のページが 1 回だけ残っています。"
+    }
+  ],
+  "cursor": "page3",
+  "hasMore": true
+}

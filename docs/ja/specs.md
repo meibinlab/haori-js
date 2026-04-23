@@ -1481,6 +1481,86 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 15. `data-{event}-history`: 履歴 pushState 実行
 16. `data-{event}-redirect`: リダイレクト実行
 
+#### 交差監視トリガー (`data-intersect-*`)
+
+`data-intersect-*` は `IntersectionObserver` によって発火する専用トリガー属性です。`click` / `change` / `load` の DOM イベントとは別に、要素が監視領域へ入ったことをきっかけに Procedure を実行します。主な用途は無限スクロール、一覧の先読み、遅延読み込みです。
+
+`data-intersect-*` では次の属性を使用します。
+
+1. `data-intersect-fetch`: 交差時に HTTP 通信を開始
+2. `data-intersect-fetch-method`: HTTP メソッドを指定
+3. `data-intersect-fetch-headers`: リクエストヘッダーを指定
+4. `data-intersect-fetch-content-type`: Content-Type を指定
+5. `data-intersect-fetch-data` / `data-intersect-fetch-form`: 送信データを構築
+6. `data-intersect-before-run`: 実行前コールバック
+7. `data-intersect-after-run`: 実行後コールバック
+8. `data-intersect-bind`: バインド先要素を指定
+9. `data-intersect-bind-arg`: レスポンスをネストしてバインド
+10. `data-intersect-bind-params`: レスポンスの一部だけをバインド
+11. `data-intersect-bind-append`: 指定した配列キーだけを追記
+12. `data-intersect-root`: 監視対象のスクロールコンテナを指定
+13. `data-intersect-root-margin`: 監視領域の余白を指定
+14. `data-intersect-threshold`: 発火に必要な可視率を指定
+15. `data-intersect-disabled`: 真の間は実行を抑止
+16. `data-intersect-once`: 初回成功後に監視を解除
+
+##### `data-intersect-fetch`
+
+監視対象の要素が `root` と交差し、かつ `threshold` を満たした時点で通信処理を開始します。
+
+```html
+<div data-intersect-fetch="/api/posts"></div>
+```
+
+##### `data-intersect-root`
+
+監視に使うスクロールコンテナを CSS セレクタで指定します。省略時はビューポートを使用します。
+
+```html
+<div class="panel">
+  <div data-intersect-fetch="/api/posts" data-intersect-root=".panel"></div>
+</div>
+```
+
+##### `data-intersect-root-margin`
+
+`IntersectionObserverInit.rootMargin` に相当する値です。既定値は `0px` です。無限スクロールでは下方向に正の値を指定して、画面に入る前に先読みする用途を想定します。
+
+```html
+<div data-intersect-fetch="/api/posts" data-intersect-root-margin="0px 0px 300px 0px"></div>
+```
+
+##### `data-intersect-threshold`
+
+`0` から `1` の数値で、ターゲット要素がどの程度監視領域内に入ったら発火するかを表します。既定値は `0` です。
+
+- `0`: 1px でも交差した時点で発火
+- `0.5`: 要素の半分以上が見えた時点で発火
+- `1`: 要素全体が見えた時点で発火
+
+```html
+<div data-intersect-fetch="/api/posts" data-intersect-threshold="0.5"></div>
+```
+
+##### `data-intersect-disabled`
+
+真と評価された間は、交差しても Procedure を開始しません。`loading` 中の多重実行抑止や `hasMore === false` の停止に使用します。
+
+```html
+<div
+  data-intersect-fetch="/api/posts"
+  data-intersect-disabled="{{loading || !hasMore}}"
+></div>
+```
+
+##### `data-intersect-once`
+
+初回の成功後に監視を解除します。1 回だけ読み込みたいセクションに使用します。
+
+```html
+<div data-intersect-fetch="/api/hero" data-intersect-once></div>
+```
+
 #### バリデーションと確認
 
 ##### `data-{event}-validate`
@@ -1657,6 +1737,23 @@ Content-Typeを指定します。
 </button>
 <!-- レスポンス全体ではなく name と age のみバインド -->
 ```
+
+##### `data-fetch-bind-append` / `data-{event}-bind-append` / `data-intersect-bind-append`
+
+指定したキーの値が配列である場合、既存の配列に追記してからバインドします。`&` 区切りで複数指定できます。指定されていないキーは通常どおり上書きします。
+
+無限スクロールでは `items` のみを追加し、`cursor` や `hasMore` は更新する、という用途を想定します。
+
+```html
+<div
+  data-intersect-fetch="/api/posts?cursor={{cursor}}"
+  data-intersect-bind="#feed"
+  data-intersect-bind-params="items&cursor&hasMore"
+  data-intersect-bind-append="items"
+></div>
+```
+
+追記対象キーについて、既存値と新規値の両方が配列である場合は `existing.concat(incoming)` 相当で結合します。いずれかが配列でない場合は新規値で上書きします。
 
 #### その他のアクション
 

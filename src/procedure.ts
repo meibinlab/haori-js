@@ -114,6 +114,9 @@ export interface ProcedureOptions {
   /** レスポンスデータから抽出するパラメータ名のリスト */
   bindParams?: string[] | null;
 
+  /** レスポンスデータのうち既存配列へ追記するパラメータ名のリスト */
+  bindAppendParams?: string[] | null;
+
   /** レスポンスデータをバインドする際のキー名 */
   bindArg?: string | null;
 
@@ -660,6 +663,16 @@ ${body}
       const paramsString = fragment.getRawAttribute(bindParamsAttr) as string;
       options.bindParams = paramsString.split('&').map(p => p.trim());
     }
+    const bindAppendAttr = event
+      ? Procedure.attrName(event, 'bind-append')
+      : Procedure.attrName(null, 'bind-append', true);
+    if (fragment.hasAttribute(bindAppendAttr)) {
+      const paramsString = fragment.getRawAttribute(bindAppendAttr) as string;
+      options.bindAppendParams = paramsString
+        .split('&')
+        .map(p => p.trim())
+        .filter(Boolean);
+    }
     if (event) {
       if (fragment.hasAttribute(Procedure.attrName(event, 'adjust'))) {
         const adjustSelector = fragment.getRawAttribute(
@@ -924,201 +937,198 @@ ${body}
    *
    * @returns 実行結果のPromise
    */
-  run(): Promise<void> {
+  async run(): Promise<boolean> {
     if (Object.keys(this.options).length === 0) {
-      return Promise.resolve();
+      return false;
     }
     if (
       this.options.formFragment &&
       this.validate(this.options.formFragment) === false
     ) {
-      return Promise.resolve();
+      return false;
     }
-    return this.confirm().then(confirmed => {
-      if (!confirmed) {
-        return Promise.resolve();
-      }
-      let fetchUrl = this.options.fetchUrl;
-      let fetchOptions = this.options.fetchOptions;
-      if (this.options.beforeCallback) {
-        const result = this.options.beforeCallback(
-          fetchUrl || null,
-          fetchOptions || null,
-        );
-        if (result !== undefined && result !== null) {
-          if (result === false || (typeof result === 'object' && result.stop)) {
-            return Promise.resolve();
-          }
-          if (typeof result === 'object') {
-            fetchUrl = ('fetchUrl' in result ? result.fetchUrl : fetchUrl) as
-              | string
-              | null;
-            fetchOptions = (
-              'fetchOptions' in result ? result.fetchOptions : fetchOptions
-            ) as RequestInit | null;
-          }
+    const confirmed = await this.confirm();
+    if (!confirmed) {
+      return false;
+    }
+    let fetchUrl = this.options.fetchUrl;
+    let fetchOptions = this.options.fetchOptions;
+    if (this.options.beforeCallback) {
+      const result = this.options.beforeCallback(
+        fetchUrl || null,
+        fetchOptions || null,
+      );
+      if (result !== undefined && result !== null) {
+        if (result === false || (typeof result === 'object' && result.stop)) {
+          return false;
+        }
+        if (typeof result === 'object') {
+          fetchUrl = ('fetchUrl' in result ? result.fetchUrl : fetchUrl) as
+            | string
+            | null;
+          fetchOptions = (
+            'fetchOptions' in result ? result.fetchOptions : fetchOptions
+          ) as RequestInit | null;
         }
       }
+    }
 
-      // フォーム値と data を統合してペイロードを作成
-      const payload: Record<string, unknown> = {};
-      if (this.options.formFragment) {
-        const formValues = Form.getValues(this.options.formFragment);
-        Object.assign(payload, formValues);
-      }
-      if (this.options.data && typeof this.options.data === 'object') {
-        Object.assign(payload, this.options.data);
-      }
+    // フォーム値と data を統合してペイロードを作成
+    const payload: Record<string, unknown> = {};
+    if (this.options.formFragment) {
+      const formValues = Form.getValues(this.options.formFragment);
+      Object.assign(payload, formValues);
+    }
+    if (this.options.data && typeof this.options.data === 'object') {
+      Object.assign(payload, this.options.data);
+    }
 
-      const hasPayload = Object.keys(payload).length > 0;
-      if (fetchUrl) {
-        const finalOptions: RequestInit = {...(fetchOptions || {})};
-        const headers = new Headers(
-          (finalOptions.headers as HeadersInit | undefined) || undefined,
-        );
-        const method = (finalOptions.method || 'GET').toUpperCase();
+    const hasPayload = Object.keys(payload).length > 0;
+    if (fetchUrl) {
+      const finalOptions: RequestInit = {...(fetchOptions || {})};
+      const headers = new Headers(
+        (finalOptions.headers as HeadersInit | undefined) || undefined,
+      );
+      const method = (finalOptions.method || 'GET').toUpperCase();
 
-        if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-          if (hasPayload) {
-            const url = new URL(fetchUrl!, window.location.href);
-            const params = new URLSearchParams(url.search);
-            for (const [k, v] of Object.entries(payload)) {
-              if (v === undefined) {
-                continue;
-              }
-              if (v === null) {
-                params.append(k, '');
-              } else if (Array.isArray(v)) {
-                v.forEach(item => {
-                  params.append(k, String(item));
-                });
-              } else if (typeof v === 'object' || typeof v === 'function') {
-                params.append(k, JSON.stringify(v));
-              } else {
-                params.append(k, String(v));
-              }
+      if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+        if (hasPayload) {
+          const url = new URL(fetchUrl!, window.location.href);
+          const params = new URLSearchParams(url.search);
+          for (const [k, v] of Object.entries(payload)) {
+            if (v === undefined) {
+              continue;
             }
-            url.search = params.toString();
-            fetchUrl = url.toString();
+            if (v === null) {
+              params.append(k, '');
+            } else if (Array.isArray(v)) {
+              v.forEach(item => {
+                params.append(k, String(item));
+              });
+            } else if (typeof v === 'object' || typeof v === 'function') {
+              params.append(k, JSON.stringify(v));
+            } else {
+              params.append(k, String(v));
+            }
           }
-        } else if (hasPayload) {
-          const contentType = headers.get('Content-Type') || '';
-          if (/multipart\/form-data/i.test(contentType)) {
-            headers.delete('Content-Type');
-            const formData = new FormData();
-            for (const [k, v] of Object.entries(payload)) {
-              if (v === undefined || v === null) {
-                formData.append(k, '');
-              } else if (v instanceof Blob) {
-                formData.append(k, v);
-              } else if (Array.isArray(v)) {
-                v.forEach(item => formData.append(k, String(item)));
-              } else if (typeof v === 'object') {
-                formData.append(k, JSON.stringify(v));
-              } else {
-                formData.append(k, String(v));
-              }
-            }
-            finalOptions.body = formData;
-          } else if (/application\/x-www-form-urlencoded/i.test(contentType)) {
-            const params = new URLSearchParams();
-            for (const [k, v] of Object.entries(payload)) {
-              if (v === undefined) {
-                continue;
-              }
-              if (v === null) {
-                params.append(k, '');
-              } else if (Array.isArray(v)) {
-                v.forEach(item => params.append(k, String(item)));
-              } else if (typeof v === 'object') {
-                params.append(k, JSON.stringify(v));
-              } else {
-                params.append(k, String(v));
-              }
-            }
-            finalOptions.body = params;
-          } else {
-            headers.set('Content-Type', 'application/json');
-            finalOptions.body = JSON.stringify(payload);
-          }
+          url.search = params.toString();
+          fetchUrl = url.toString();
         }
-
-        finalOptions.headers = headers;
-
-        // fetchstartイベントを発火
-        if (this.options.targetFragment && fetchUrl) {
-          const startedAt = performance.now();
-          HaoriEvent.fetchStart(
-            this.options.targetFragment.getTarget(),
-            fetchUrl,
-            finalOptions,
-            hasPayload ? payload : undefined,
-          );
-
-          return fetch(fetchUrl, finalOptions)
-            .then(response => {
-              return this.handleFetchResult(
-                response,
-                fetchUrl || undefined,
-                startedAt,
-              );
-            })
-            .catch(error => {
-              if (fetchUrl) {
-                HaoriEvent.fetchError(
-                  this.options.targetFragment!.getTarget(),
-                  fetchUrl,
-                  error,
-                );
-              }
-              throw error;
-            });
-        } else if (fetchUrl) {
-          return fetch(fetchUrl, finalOptions).then(response => {
-            return this.handleFetchResult(response, fetchUrl || undefined);
-          });
+      } else if (hasPayload) {
+        const contentType = headers.get('Content-Type') || '';
+        if (/multipart\/form-data/i.test(contentType)) {
+          headers.delete('Content-Type');
+          const formData = new FormData();
+          for (const [k, v] of Object.entries(payload)) {
+            if (v === undefined || v === null) {
+              formData.append(k, '');
+            } else if (v instanceof Blob) {
+              formData.append(k, v);
+            } else if (Array.isArray(v)) {
+              v.forEach(item => formData.append(k, String(item)));
+            } else if (typeof v === 'object') {
+              formData.append(k, JSON.stringify(v));
+            } else {
+              formData.append(k, String(v));
+            }
+          }
+          finalOptions.body = formData;
+        } else if (/application\/x-www-form-urlencoded/i.test(contentType)) {
+          const params = new URLSearchParams();
+          for (const [k, v] of Object.entries(payload)) {
+            if (v === undefined) {
+              continue;
+            }
+            if (v === null) {
+              params.append(k, '');
+            } else if (Array.isArray(v)) {
+              v.forEach(item => params.append(k, String(item)));
+            } else if (typeof v === 'object') {
+              params.append(k, JSON.stringify(v));
+            } else {
+              params.append(k, String(v));
+            }
+          }
+          finalOptions.body = params;
         } else {
-          return Promise.resolve();
+          headers.set('Content-Type', 'application/json');
+          finalOptions.body = JSON.stringify(payload);
         }
-      } else {
-        // fetchUrlが無い場合(changeイベント等)、bindFragmentsが無ければformFragmentにバインド
-        if (
-          (!this.options.bindFragments ||
-            this.options.bindFragments.length === 0) &&
-          this.options.formFragment &&
-          hasPayload
-        ) {
-          // 双方向バインディング: フォーム値を自動的にバインディングデータに反映
-          const formFragment = this.options.formFragment;
-          const formElement = formFragment.getTarget();
-
-          formElement.setAttribute(
-            `${Env.prefix}bind`,
-            JSON.stringify(payload),
-          );
-
-          const bindingData = formFragment.getBindingData();
-          Object.assign(bindingData, payload);
-          return Core.setBindingData(formElement, bindingData);
-        }
-
-        const merged = hasPayload ? payload : {};
-        const response = new Response(JSON.stringify(merged), {
-          headers: {'Content-Type': 'application/json'},
-        });
-        return this.handleFetchResult(response);
       }
+
+      finalOptions.headers = headers;
+
+      // fetchstartイベントを発火
+      if (this.options.targetFragment && fetchUrl) {
+        const startedAt = performance.now();
+        HaoriEvent.fetchStart(
+          this.options.targetFragment.getTarget(),
+          fetchUrl,
+          finalOptions,
+          hasPayload ? payload : undefined,
+        );
+
+        return fetch(fetchUrl, finalOptions)
+          .then(response => {
+            return this.handleFetchResult(
+              response,
+              fetchUrl || undefined,
+              startedAt,
+            );
+          })
+          .catch(error => {
+            if (fetchUrl) {
+              HaoriEvent.fetchError(
+                this.options.targetFragment!.getTarget(),
+                fetchUrl,
+                error,
+              );
+            }
+            throw error;
+          });
+      }
+      return fetch(fetchUrl, finalOptions).then(response => {
+        return this.handleFetchResult(response, fetchUrl || undefined);
+      });
+    }
+
+    // fetchUrlが無い場合(changeイベント等)、bindFragmentsが無ければformFragmentにバインド
+    if (
+      (!this.options.bindFragments ||
+        this.options.bindFragments.length === 0) &&
+      this.options.formFragment &&
+      hasPayload
+    ) {
+      // 双方向バインディング: フォーム値を自動的にバインディングデータに反映
+      const formFragment = this.options.formFragment;
+      const formElement = formFragment.getTarget();
+
+      formElement.setAttribute(
+        `${Env.prefix}bind`,
+        JSON.stringify(payload),
+      );
+
+      const bindingData = formFragment.getBindingData();
+      Object.assign(bindingData, payload);
+      await Core.setBindingData(formElement, bindingData);
+      return true;
+    }
+
+    const merged = hasPayload ? payload : {};
+    const response = new Response(JSON.stringify(merged), {
+      headers: {'Content-Type': 'application/json'},
     });
+    return this.handleFetchResult(response);
   }
 
   /**
    * フェッチ後の処理を実行します。
    */
-  private handleFetchResult(
+  private async handleFetchResult(
     response: Response,
     url?: string,
     startedAt?: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const activeHaori = resolveProcedureHaoriApi();
     // エラー応答時は以後の処理を停止し、メッセージを伝播
     if (!response.ok) {
@@ -1131,7 +1141,8 @@ ${body}
           startedAt,
         );
       }
-      return this.handleFetchError(response);
+      await this.handleFetchError(response);
+      return false;
     }
 
     // fetchendイベントを発火
@@ -1148,7 +1159,7 @@ ${body}
       const result = this.options.afterCallback(response);
       if (result !== undefined && result !== null) {
         if (result === false || (typeof result === 'object' && result.stop)) {
-          return Promise.resolve();
+          return false;
         }
         if (typeof result === 'object' && 'response' in result) {
           response = (
@@ -1157,7 +1168,7 @@ ${body}
         }
       }
     }
-    const promises: Promise<void>[] = [];
+    const promises: Promise<unknown>[] = [];
     promises.push(this.bindResult(response));
     promises.push(this.adjust());
     promises.push(this.addRow());
@@ -1174,7 +1185,9 @@ ${body}
       this.options.refetchFragments.length > 0
     ) {
       this.options.refetchFragments.forEach(fragment => {
-        promises.push(new Procedure(fragment, null).run());
+        promises.push(
+          new Procedure(fragment, null).run().then(() => undefined),
+        );
       });
     }
     if (this.options.clickFragments && this.options.clickFragments.length > 0) {
@@ -1210,30 +1223,19 @@ ${body}
       });
     }
     // 仕様順序: 先に各種操作（bind/adjust/row/reset/refetch/click/open/close）を完了
-    return Promise.all(promises)
-      .then(() => {
-        // その後にダイアログ/トーストを表示
-        if (this.options.dialogMessage) {
-          return activeHaori.dialog(this.options.dialogMessage);
-        }
-        return Promise.resolve();
-      })
-      .then(() => {
-        if (this.options.toastMessage) {
-          return activeHaori.toast(this.options.toastMessage, 'info');
-        }
-        return Promise.resolve();
-      })
-      .then(() => {
-        this.pushHistory();
-        return Promise.resolve();
-      })
-      .then(() => {
-        if (this.options.redirectUrl) {
-          window.location.href = this.options.redirectUrl;
-        }
-        return Promise.resolve();
-      });
+    await Promise.all(promises);
+    // その後にダイアログ/トーストを表示
+    if (this.options.dialogMessage) {
+      await activeHaori.dialog(this.options.dialogMessage);
+    }
+    if (this.options.toastMessage) {
+      await activeHaori.toast(this.options.toastMessage, 'info');
+    }
+    this.pushHistory();
+    if (this.options.redirectUrl) {
+      window.location.href = this.options.redirectUrl;
+    }
+    return true;
   }
 
   /**
@@ -1309,7 +1311,7 @@ ${body}
   /**
    * フェッチエラー応答のメッセージを適切な要素へ伝播します。
    */
-  private async handleFetchError(response: Response): Promise<void> {
+  private async handleFetchError(response: Response): Promise<boolean> {
     // ベースとなるフォーム/フラグメントを決定
     let baseFragment: ElementFragment | null = null;
     if (this.options.formFragment) {
@@ -1371,7 +1373,7 @@ ${body}
         if (entries.length === 0) {
           // 汎用メッセージ
           await addGeneralMessage(`${response.status} ${response.statusText}`);
-          return;
+          return false;
         }
         // メッセージを反映
         for (const e of entries) {
@@ -1381,7 +1383,7 @@ ${body}
             await addGeneralMessage(e.message);
           }
         }
-        return;
+        return false;
       } catch {
         // JSON 解析失敗時はテキストにフォールバック
       }
@@ -1397,6 +1399,7 @@ ${body}
     } catch {
       await addGeneralMessage(`${response.status} ${response.statusText}`);
     }
+    return false;
   }
 
   /**
@@ -1486,11 +1489,31 @@ ${body}
         });
         data = newData;
       }
-      const promises: Promise<void>[] = [];
+      const promises: Promise<unknown>[] = [];
       if (this.options.bindArg) {
         this.options.bindFragments!.forEach(fragment => {
           const bindingData = fragment.getBindingData();
-          bindingData[this.options.bindArg as string] = data;
+          const bindArg = this.options.bindArg as string;
+          if (
+            data &&
+            typeof data === 'object' &&
+            !Array.isArray(data)
+          ) {
+            const currentValue = bindingData[bindArg];
+            const currentObject =
+              currentValue &&
+              typeof currentValue === 'object' &&
+              !Array.isArray(currentValue)
+                ? (currentValue as Record<string, unknown>)
+                : {};
+            bindingData[bindArg] = this.mergeAppendBindingData(
+              fragment,
+              data as Record<string, unknown>,
+              currentObject,
+            );
+          } else {
+            bindingData[bindArg] = data;
+          }
           promises.push(Core.setBindingData(fragment.getTarget(), bindingData));
         });
       } else if (typeof data === 'string') {
@@ -1500,16 +1523,47 @@ ${body}
         );
       } else {
         this.options.bindFragments!.forEach(fragment => {
+          const resolvedData = this.mergeAppendBindingData(
+            fragment,
+            data as Record<string, unknown>,
+          );
           promises.push(
             Core.setBindingData(
               fragment.getTarget(),
-              data as Record<string, unknown>,
+              resolvedData,
             ),
           );
         });
       }
       return Promise.all(promises).then(() => undefined);
     });
+  }
+
+  /**
+   * bind-append 指定があるキーについて、既存配列と結合したデータを返します。
+   */
+  private mergeAppendBindingData(
+    fragment: ElementFragment,
+    data: Record<string, unknown>,
+    currentData: Record<string, unknown> = fragment.getBindingData(),
+  ): Record<string, unknown> {
+    if (
+      !this.options.bindAppendParams ||
+      this.options.bindAppendParams.length === 0
+    ) {
+      return data;
+    }
+
+    const merged = {...data};
+    const current = currentData;
+    for (const key of this.options.bindAppendParams) {
+      const incoming = merged[key];
+      const existing = current[key];
+      if (Array.isArray(existing) && Array.isArray(incoming)) {
+        merged[key] = existing.concat(incoming);
+      }
+    }
+    return merged;
   }
 
   /**

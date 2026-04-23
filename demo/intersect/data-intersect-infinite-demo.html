@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-intersect 無限スクロール デモ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      line-height: 1.6;
+    }
+
+    .viewport {
+      height: 360px;
+      overflow-y: auto;
+      padding: 16px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    .meta {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #475569;
+    }
+
+    .meta code {
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #eef2ff;
+      color: #4338ca;
+    }
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      margin-bottom: 12px;
+      padding: 14px 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    .title {
+      margin: 0 0 6px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .desc {
+      margin: 0;
+      font-size: 14px;
+      color: #64748b;
+    }
+
+    .sentinel,
+    .done {
+      padding: 16px;
+      text-align: center;
+      font-size: 14px;
+      color: #475569;
+    }
+
+    .sentinel {
+      border: 1px dashed #94a3b8;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>data-intersect 無限スクロール デモ</h1>
+    <p>下までスクロールすると次の JSON を読み込み、<code>items</code> は追記され、<code>cursor</code> と <code>hasMore</code> は更新されます。</p>
+
+    <div id="feedViewport" class="viewport">
+      <div id="feed" data-bind='{"items":[],"cursor":"page1","hasMore":true}'>
+        <div class="meta">
+          <span>cursor: <code>{{cursor || "end"}}</code></span>
+          <span>hasMore: <code>{{hasMore}}</code></span>
+          <span>items: <code>{{items.length}}</code></span>
+        </div>
+
+        <ul data-each="items" data-each-key="id">
+          <li>
+            <p class="title">{{title}}</p>
+            <p class="desc">{{description}}</p>
+          </li>
+        </ul>
+
+        <div
+          class="sentinel"
+          data-if="hasMore"
+          data-intersect-fetch="./data-intersect-infinite-demo-{{cursor}}.json"
+          data-intersect-root="#feedViewport"
+          data-intersect-root-margin="0px 0px 120px 0px"
+          data-intersect-threshold="0.25"
+          data-intersect-bind="#feed"
+          data-intersect-bind-params="items&cursor&hasMore"
+          data-intersect-bind-append="items"
+        >
+          続きを読み込み中...
+        </div>
+
+        <div class="done" data-if="!hasMore">
+          すべて読み込みました。
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

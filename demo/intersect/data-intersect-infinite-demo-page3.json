@@ -1,0 +1,31 @@
+{
+  "items": [
+    {
+      "id": 11,
+      "title": "記事 11",
+      "description": "最後のページでも items は追記されます。"
+    },
+    {
+      "id": 12,
+      "title": "記事 12",
+      "description": "このレスポンスのあとで hasMore は false になります。"
+    },
+    {
+      "id": 13,
+      "title": "記事 13",
+      "description": "次ページがなくなると sentinel は data-if で非表示になります。"
+    },
+    {
+      "id": 14,
+      "title": "記事 14",
+      "description": "ページ側に追加の JavaScript は書いていません。"
+    },
+    {
+      "id": 15,
+      "title": "記事 15",
+      "description": "これがこのデモの最後の項目です。"
+    }
+  ],
+  "cursor": null,
+  "hasMore": false
+}
