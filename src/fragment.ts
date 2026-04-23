@@ -445,6 +445,9 @@ export class ElementFragment extends Fragment {
    * @param parent 親フラグメント
    */
   public override setParent(parent: ElementFragment | null): void {
+    if (this.parent === parent) {
+      return;
+    }
     this.parent = parent;
     this.clearBindingDataCache();
   }

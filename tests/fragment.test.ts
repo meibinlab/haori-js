@@ -246,6 +246,21 @@ describe('ElementFragment の属性操作', () => {
     await ef.setAttribute('data-y', 'abc');
     expect(el.getAttribute('data-y')).toBe('abc');
   });
+
+  it('clone() は DOM が評価済みでも attributeMap のテンプレート式を引き継ぐ', () => {
+    const el = document.createElement('li');
+    el.setAttribute('class', 'page-item {{active}}');
+    const ef = new ElementFragment(el);
+
+    // DOM属性を評価済みの値に変更（reevaluateInterpolatedAttributes 後の状態を模倣）
+    el.setAttribute('class', 'page-item ');
+
+    const clone = ef.clone();
+
+    // DOM は評価済み値だが、clone の attributeMap には元のテンプレート式が残る
+    expect(clone.getRawAttribute('class')).toBe('page-item {{active}}');
+  });
+
 });
 
 describe('TextFragment と CommentFragment', () => {
