@@ -161,6 +161,15 @@ export interface ProcedureOptions {
   /** トーストメッセージ */
   toastMessage?: string | null;
 
+  /** history.pushState で追加する URL */
+  historyUrl?: string | null;
+
+  /** history.pushState の URL に追記するクエリパラメータ */
+  historyData?: Record<string, unknown> | null;
+
+  /** history.pushState の URL に追記するフォームフラグメント */
+  historyFormFragment?: ElementFragment | null;
+
   /** リダイレクトURL */
   redirectUrl?: string | null;
 }
@@ -729,6 +738,40 @@ ${body}
           Procedure.attrName(event, 'redirect'),
         ) as string;
       }
+      // history（data-{event}-history / history-data / history-form）
+      if (fragment.hasAttribute(Procedure.attrName(event, 'history'))) {
+        options.historyUrl = fragment.getAttribute(
+          Procedure.attrName(event, 'history'),
+        ) as string | null;
+      }
+      if (fragment.hasAttribute(Procedure.attrName(event, 'history-data'))) {
+        options.historyData = Procedure.resolveDataAttribute(
+          fragment,
+          Procedure.attrName(event, 'history-data'),
+        );
+      }
+      if (fragment.hasAttribute(Procedure.attrName(event, 'history-form'))) {
+        const historyFormSelector = fragment.getRawAttribute(
+          Procedure.attrName(event, 'history-form'),
+        ) as string | null;
+        if (historyFormSelector) {
+          const historyFormElement =
+            document.body.querySelector(historyFormSelector);
+          if (historyFormElement !== null) {
+            options.historyFormFragment = Form.getFormFragment(
+              Fragment.get(historyFormElement) as ElementFragment,
+            );
+          } else {
+            Log.error(
+              'Haori',
+              `Form element not found: ${historyFormSelector}` +
+                ` (${Procedure.attrName(event, 'history-form')})`,
+            );
+          }
+        } else {
+          options.historyFormFragment = Form.getFormFragment(fragment);
+        }
+      }
 
       // reset/refetch/click/open/close（イベント、CSSセレクタ）
       const selectorAttrs = [
@@ -1182,11 +1225,82 @@ ${body}
         return Promise.resolve();
       })
       .then(() => {
+        this.pushHistory();
+        return Promise.resolve();
+      })
+      .then(() => {
         if (this.options.redirectUrl) {
           window.location.href = this.options.redirectUrl;
         }
         return Promise.resolve();
       });
+  }
+
+  /**
+   * history.pushState を実行します。
+   *
+   * `historyUrl` / `historyData` / `historyFormFragment` の内容を基に URL を組み立て、
+   * `history.pushState()` を呼び出します。いずれも未指定の場合は何もしません。
+   * 不正 URL・オリジン違反・例外は `Log.error` でログ出力してスキップし、後続処理は継続します。
+   */
+  private pushHistory(): void {
+    const hasHistoryUrl =
+      this.options.historyUrl !== undefined && this.options.historyUrl !== null;
+    const hasHistoryData =
+      this.options.historyData !== undefined &&
+      this.options.historyData !== null;
+    const hasHistoryForm =
+      this.options.historyFormFragment !== undefined &&
+      this.options.historyFormFragment !== null;
+
+    if (!hasHistoryUrl && !hasHistoryData && !hasHistoryForm) {
+      return;
+    }
+
+    try {
+      const baseUrlString = hasHistoryUrl
+        ? (this.options.historyUrl as string)
+        : window.location.pathname;
+      const url = new URL(baseUrlString, window.location.href);
+
+      if (url.origin !== window.location.origin) {
+        Log.error(
+          'Haori',
+          `history.pushState: cross-origin URL is not allowed: ${url.toString()}`,
+        );
+        return;
+      }
+
+      const appendParams = (values: Record<string, unknown>): void => {
+        for (const [k, v] of Object.entries(values)) {
+          if (v === undefined || v === null) {
+            continue;
+          }
+          if (Array.isArray(v)) {
+            v.forEach(item => url.searchParams.append(k, String(item)));
+          } else if (typeof v === 'object') {
+            url.searchParams.set(k, JSON.stringify(v));
+          } else {
+            url.searchParams.set(k, String(v));
+          }
+        }
+      };
+
+      if (hasHistoryData) {
+        appendParams(this.options.historyData as Record<string, unknown>);
+      }
+      if (hasHistoryForm) {
+        appendParams(
+          Form.getValues(
+            this.options.historyFormFragment as ElementFragment,
+          ),
+        );
+      }
+
+      history.pushState({}, '', url.toString());
+    } catch (e) {
+      Log.error('Haori', `history.pushState failed: ${e}`);
+    }
   }
 
   /**

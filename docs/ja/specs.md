@@ -607,6 +607,9 @@ interface ProcedureOptions {
   closeFragments?: ElementFragment[] | null  // ダイアログクローズ対象
   dialogMessage?: string | null              // ダイアログメッセージ
   toastMessage?: string | null               // トーストメッセージ
+  historyUrl?: string | null                 // history pushState URL
+  historyData?: Record<string, unknown> | null // history pushState クエリパラメータ
+  historyFormFragment?: ElementFragment | null // history pushState フォーム
   redirectUrl?: string | null                // リダイレクトURL
 }
 ```
@@ -1475,7 +1478,8 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 12. `data-{event}-click`: クリック実行
 13. `data-{event}-open` / `data-{event}-close`: ダイアログ操作
 14. `data-{event}-dialog` / `data-{event}-toast`: メッセージ表示
-15. `data-{event}-redirect`: リダイレクト実行
+15. `data-{event}-history`: 履歴 pushState 実行
+16. `data-{event}-redirect`: リダイレクト実行
 
 #### バリデーションと確認
 
@@ -1775,6 +1779,66 @@ Content-Typeを指定します。
   保存
 </button>
 ```
+
+##### `data-{event}-history`
+
+`history.pushState()` を実行してブラウザの履歴を追加します。
+
+**構文**:
+```html
+data-{event}-history="url"
+data-{event}-history-data="param=value&..."  <!-- オプション: クエリに追記するパラメータ -->
+data-{event}-history-form="#selector"        <!-- オプション: フォームの入力値をクエリに追記 -->
+```
+
+**URL 組み立て規則**:
+- `data-{event}-history` が指定されている場合、その値をベース URL にする（相対パス可）
+- 省略時は現在の `window.location.pathname` をベースにする
+- `data-{event}-history-data` / `data-{event}-history-form` の値をクエリパラメータとして追記する
+- `data-{event}-history-data` と `data-{event}-history-form` は独立して動作し、`data-{event}-fetch-form` / `data-{event}-data` とは別に指定する
+
+**エラー時の挙動**:
+- 不正 URL / 異なるオリジン / `pushState` 例外（SecurityError 等）は `Log.error('Haori', ...)` でログ出力してスキップし、後続処理（`redirect` 等）は継続する
+
+**例**:
+
+```html
+<!-- URL だけ更新 -->
+<button data-click-history="/search">検索ページへ</button>
+
+<!-- クエリパラメータ付き -->
+<button
+  data-click-fetch="/api/search"
+  data-click-bind="#result"
+  data-click-history="/search"
+  data-click-history-data="keyword={{keyword}}&page=1"
+>
+  検索
+</button>
+
+<!-- history-url 省略、クエリだけ更新 -->
+<button data-click-history-data="tab=list">一覧タブ</button>
+<!-- → pushState({}, '', '/current/path?tab=list') -->
+
+<!-- フォームの入力値をクエリに追記 -->
+<button
+  data-click-fetch="/api/search"
+  data-click-history="/search"
+  data-click-history-form="#searchForm"
+>
+  検索
+</button>
+
+<!-- redirect と併用（history → redirect の順で実行） -->
+<button
+  data-click-history="/checkout/confirm"
+  data-click-redirect="/checkout/complete"
+>
+  注文確定
+</button>
+```
+
+---
 
 ##### `data-{event}-redirect`
 
