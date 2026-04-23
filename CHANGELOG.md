@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [0.4.0] - 2026-04-24
+
+### Changed
+
+- `data-runtime` を追加し、embedded / demo の実行モードで Procedure の挙動を切り替えられるようにした
+- demo runtime では非 GET の `data-fetch` / `data-click-fetch` を GET + query に正規化し、`haori:fetchstart` の detail に runtime / requestedMethod / effectiveMethod / transportMode / queryString を追加した
+- `data-click-history` のデモを追加し、`history.pushState` の URL 生成と履歴更新を画面上で確認できるようにした
+- README、README.ja.md、docs/ja/specs.md を runtime / demo 仕様に合わせて更新した
+
+### Library
+
+- runtime / fetch 正規化 / history 更新の回帰テストを追加した
+- runtime demo と history demo を追加した
+
 ## [0.3.0] - 2026-04-24
 
 ### Changed
