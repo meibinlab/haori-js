@@ -21,4 +21,4 @@ export {Core, Env, Fragment, Form, Haori, Log, Queue};
 export default Haori;
 
 // バージョン情報
-export const version = '0.1.5';
+export const version = '0.2.0';

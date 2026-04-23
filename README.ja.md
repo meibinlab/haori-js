@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.1.5
+バージョン: 0.2.0
 
 ---
 
@@ -49,7 +49,7 @@ CDN:
 ES Module:
 
 ```js
-import Haori from 'haori'
+import Haori from 'haori';
 ```
 
 ---
@@ -61,25 +61,25 @@ HTML だけで簡単に使えます。以下は最小の例です。
 ```html
 <!DOCTYPE html>
 <html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <title>Haori サンプル</title>
-  <script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
-</head>
-<body>
-  <div data-bind='{"name":"太郎"}'>
-    <p>こんにちは、{{name}} さん</p>
-  </div>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <title>Haori サンプル</title>
+    <script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
+  </head>
+  <body>
+    <div data-bind='{"name":"太郎"}'>
+      <p>こんにちは、{{name}} さん</p>
+    </div>
+  </body>
 </html>
 ```
 
 JavaScript からマウントする例:
 
 ```js
-import Haori from 'haori'
+import Haori from 'haori';
 
-Haori.mount(document.body, { items: [ { name: 'りんご' }, { name: 'みかん' } ] })
+Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 ```
 
 ---
@@ -112,7 +112,7 @@ Haori.mount(document.body, { items: [ { name: 'りんご' }, { name: 'みかん'
 4. 新しい版数タグから GitHub Release を公開する
 5. npm、jsDelivr、GitHub Release の assets が新しい版数を指すことを確認する
 
-1. 依存インストール
+6. 依存インストール
 
 ```bash
 npm install

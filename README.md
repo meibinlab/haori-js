@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.1.5
+Version: 0.2.0
 
 ---
 
@@ -22,13 +22,13 @@ Contents
 
 - Design principle: HTML-first — declare UI behavior with HTML attributes
 - Key features:
-	- Data binding via `data-bind`
-	- Conditional rendering via `data-if`
-	- List rendering via `data-each`
-	- Two-way form binding (automatic binding based on `name` attributes)
-	- Server fetches via `data-fetch`
-	- HTML imports via `data-import`
-	- Zero runtime dependencies (uses browser-native APIs)
+  - Data binding via `data-bind`
+  - Conditional rendering via `data-if`
+  - List rendering via `data-each`
+  - Two-way form binding (automatic binding based on `name` attributes)
+  - Server fetches via `data-fetch`
+  - HTML imports via `data-import`
+  - Zero runtime dependencies (uses browser-native APIs)
 
 ## Installation
 
@@ -49,7 +49,7 @@ This CDN URL follows the latest published npm release.
 ES Module import:
 
 ```js
-import Haori from 'haori'
+import Haori from 'haori';
 ```
 
 ---
@@ -61,25 +61,25 @@ You can use Haori with plain HTML. Minimal example:
 ```html
 <!DOCTYPE html>
 <html lang="en">
-<head>
-	<meta charset="utf-8">
-	<title>Haori Sample</title>
-	<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
-</head>
-<body>
-	<div data-bind='{"name":"Taro"}'>
-		<p>Hello, {{name}}</p>
-	</div>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <title>Haori Sample</title>
+    <script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js"></script>
+  </head>
+  <body>
+    <div data-bind='{"name":"Taro"}'>
+      <p>Hello, {{name}}</p>
+    </div>
+  </body>
 </html>
 ```
 
 Mounting from JavaScript:
 
 ```js
-import Haori from 'haori'
+import Haori from 'haori';
 
-Haori.mount(document.body, { items: [ { name: 'apple' }, { name: 'orange' } ] })
+Haori.mount(document.body, {items: [{name: 'apple'}, {name: 'orange'}]});
 ```
 
 ---
@@ -112,7 +112,7 @@ Quick release memo:
 4. Publish a GitHub Release from the new version tag.
 5. Confirm npm, jsDelivr, and the GitHub Release assets reflect the new version.
 
-1. Install dependencies
+6. Install dependencies
 
 ```bash
 npm install
@@ -181,4 +181,3 @@ For more detailed usage, attribute specs, and internal design, see:
 ---
 
 If you would like additional sections (API reference, diagrams, more examples), tell me what to include and I will expand the README.
-
