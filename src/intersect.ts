@@ -97,7 +97,7 @@ export default class IntersectObserver {
           }
           current.running = true;
           void new Procedure(current.fragment, 'intersect')
-            .run()
+            .runWithResult()
             .then(success => {
               if (success && current.once) {
                 current.observer.disconnect();

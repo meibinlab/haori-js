@@ -937,7 +937,25 @@ ${body}
    *
    * @returns 実行結果のPromise
    */
-  async run(): Promise<boolean> {
+  run(): Promise<void> {
+    return this.runWithResult().then(() => undefined);
+  }
+
+  /**
+   * 一連の処理を実行し、成功したかどうかを返します。
+   *
+   * @returns 成功した場合は true、途中停止や失敗時は false
+   */
+  runWithResult(): Promise<boolean> {
+    return this.execute();
+  }
+
+  /**
+   * 一連の処理を実行します。成功結果を内部で扱うための実体です。
+   *
+   * @returns 実行成功時は true、停止や失敗時は false
+   */
+  private async execute(): Promise<boolean> {
     if (Object.keys(this.options).length === 0) {
       return false;
     }
@@ -1185,9 +1203,7 @@ ${body}
       this.options.refetchFragments.length > 0
     ) {
       this.options.refetchFragments.forEach(fragment => {
-        promises.push(
-          new Procedure(fragment, null).run().then(() => undefined),
-        );
+        promises.push(new Procedure(fragment, null).run());
       });
     }
     if (this.options.clickFragments && this.options.clickFragments.length > 0) {
