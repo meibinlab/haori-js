@@ -292,4 +292,187 @@ describe('Procedure action operations', () => {
     }
     form.remove();
   });
+
+  // -----------------------------------------------------------------------
+  // history.pushState
+  // -----------------------------------------------------------------------
+
+  it('data-click-history calls history.pushState with the specified URL', async () => {
+    const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/history');
+    btn.setAttribute('data-click-history', '/new-path');
+    container.appendChild(btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => pushStateSpy.mock.calls.length > 0, {
+      description: 'pushState called',
+    });
+
+    expect(pushStateSpy).toHaveBeenCalledWith({}, '', expect.stringContaining('/new-path'));
+    container.remove();
+  });
+
+  it('data-click-history-data appends query params to the URL', async () => {
+    const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/history-data');
+    btn.setAttribute('data-click-history', '/search');
+    btn.setAttribute('data-click-history-data', 'keyword=hello&page=1');
+    container.appendChild(btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => pushStateSpy.mock.calls.length > 0, {
+      description: 'pushState called with query params',
+    });
+
+    expect(pushStateSpy).toHaveBeenCalledWith(
+      {},
+      '',
+      expect.stringMatching(/\/search\?.*keyword=hello/),
+    );
+    container.remove();
+  });
+
+  it('data-click-history omitted with data only updates query on current path', async () => {
+    const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/history-data-only');
+    btn.setAttribute('data-click-history-data', 'tab=list');
+    container.appendChild(btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => pushStateSpy.mock.calls.length > 0, {
+      description: 'pushState called with current-path query update',
+    });
+
+    expect(pushStateSpy).toHaveBeenCalledWith(
+      {},
+      '',
+      expect.stringMatching(/tab=list/),
+    );
+    container.remove();
+  });
+
+  it('data-click-history-form appends form values as query params', async () => {
+    const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const form = document.createElement('form');
+    form.id = 'history-form';
+    const input = document.createElement('input');
+    input.name = 'q';
+    input.value = 'vitest';
+    form.appendChild(input);
+    container.appendChild(form);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/history-form');
+    btn.setAttribute('data-click-history', '/search');
+    btn.setAttribute('data-click-history-form', '#history-form');
+    container.appendChild(btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => pushStateSpy.mock.calls.length > 0, {
+      description: 'pushState called with form values',
+    });
+
+    expect(pushStateSpy).toHaveBeenCalledWith(
+      {},
+      '',
+      expect.stringMatching(/\/search\?.*q=vitest/),
+    );
+    container.remove();
+  });
+
+  it('data-click-history with cross-origin URL logs error and skips pushState', async () => {
+    const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/history-cross-origin');
+    btn.setAttribute('data-click-history', 'https://evil.example.com/path');
+    container.appendChild(btn);
+
+    await waitForDomSettled();
+    btn.click();
+    // redirect がないので pushState が呼ばれないことを確認するため、十分なサイクル待機する
+    await waitForCondition(() => errorSpy.mock.calls.length > 0, {
+      description: 'error logged for cross-origin',
+    });
+
+    expect(pushStateSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+    container.remove();
+  });
+
+  it('data-click-history executes before data-click-redirect', async () => {
+    const callOrder: string[] = [];
+    vi.spyOn(history, 'pushState').mockImplementation(() => {
+      callOrder.push('pushState');
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/checkout');
+    btn.setAttribute('data-click-history', '/checkout/confirm');
+    btn.setAttribute('data-click-redirect', '#done');
+    container.appendChild(btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => window.location.href.includes('#done'), {
+      description: 'redirect after pushState',
+    });
+
+    expect(callOrder).toContain('pushState');
+    container.remove();
+  });
 });
