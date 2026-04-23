@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-click-history デモ</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      margin: 20px;
+    }
+    .demo-card {
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      background: #fafafa;
+    }
+    .current-url {
+      font-family: Consolas, Monaco, monospace;
+      background: #111827;
+      color: #f9fafb;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      word-break: break-all;
+    }
+    .log {
+      white-space: pre-wrap;
+      font-family: Consolas, Monaco, monospace;
+      background: #f3f4f6;
+      padding: 0.75rem;
+      border-radius: 6px;
+      min-height: 4rem;
+    }
+    button {
+      margin-right: 0.5rem;
+      margin-top: 0.5rem;
+      padding: 0.55rem 0.9rem;
+      border: 0;
+      border-radius: 6px;
+      background: #2563eb;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    label {
+      display: block;
+      margin-top: 0.5rem;
+    }
+    input {
+      padding: 0.4rem 0.5rem;
+      margin-left: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <h2>data-click-history デモ</h2>
+  <div>ボタンを押すと fetch と同時に history.pushState で URL を更新します。</div>
+
+  <div class="demo-card">
+    <div>現在のURL</div>
+    <div id="currentUrl" class="current-url"></div>
+  </div>
+
+  <div class="demo-card">
+    <h3>検索条件から URL を更新</h3>
+    <form id="historyForm" data-bind='{"keyword":"haori","page":1}'>
+      <label>
+        keyword
+        <input name="keyword" value="haori">
+      </label>
+      <label>
+        page
+        <input name="page" value="1">
+      </label>
+    </form>
+    <button
+      data-click-fetch="./data-click-history-demo.json"
+      data-click-bind="#result"
+      data-click-history-form="#historyForm"
+    >
+      フォーム値を現在のURLへ反映
+    </button>
+    <button
+      data-click-fetch="./data-click-history-demo.json"
+      data-click-bind="#result"
+      data-click-history="/demo/click/data-click-history-demo.html"
+      data-click-history-data="mode=fixed"
+    >
+      固定パス + クエリを反映
+    </button>
+  </div>
+
+  <div class="demo-card">
+    <h3>fetch 結果</h3>
+    <div id="result" data-bind='{"message":"未実行"}'>
+      <p>message: {{message}}</p>
+    </div>
+  </div>
+
+  <div class="demo-card">
+    <h3>更新ログ</h3>
+    <div id="log" class="log"></div>
+  </div>
+
+  <script>
+    const currentUrlElement = document.getElementById('currentUrl');
+    const logElement = document.getElementById('log');
+
+    function syncCurrentUrl() {
+      if (currentUrlElement) {
+        currentUrlElement.textContent = `${location.pathname}${location.search}`;
+      }
+    }
+
+    function appendLog(message) {
+      if (!logElement) {
+        return;
+      }
+
+      const current = logElement.textContent || '';
+      logElement.textContent = `${current}${current ? '\n' : ''}${message}`;
+    }
+
+    document.addEventListener('DOMContentLoaded', syncCurrentUrl);
+    window.addEventListener('popstate', syncCurrentUrl);
+    document.addEventListener('haori:fetchend', () => {
+      setTimeout(() => {
+        syncCurrentUrl();
+        appendLog('history.pushState が反映されました');
+      }, 0);
+    });
+  </script>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>
