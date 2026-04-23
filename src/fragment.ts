@@ -350,8 +350,8 @@ export class ElementFragment extends Fragment {
     const clone = new ElementFragment(
       this.target.cloneNode(false) as HTMLElement,
     );
-    // DOM attributes hold evaluated values, not raw template expressions.
-    // Copy attributeMap so template expressions are preserved in clones.
+    // DOM 属性は評価後の値になっているため、
+    // クローンでは attributeMap をコピーしてテンプレート式を保持します。
     this.attributeMap.forEach((contents, name) => {
       clone.attributeMap.set(name, contents);
     });
