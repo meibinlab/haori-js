@@ -350,6 +350,11 @@ export class ElementFragment extends Fragment {
     const clone = new ElementFragment(
       this.target.cloneNode(false) as HTMLElement,
     );
+    // DOM 属性は評価後の値になっているため、
+    // クローンでは attributeMap をコピーしてテンプレート式を保持します。
+    this.attributeMap.forEach((contents, name) => {
+      clone.attributeMap.set(name, contents);
+    });
     this.children.forEach(child => {
       const childClone = child.clone();
       clone.getTarget().appendChild(childClone.getTarget());
@@ -431,6 +436,19 @@ export class ElementFragment extends Fragment {
    */
   public setBindingData(data: Record<string, unknown>): void {
     this.bindingData = data;
+    this.clearBindingDataCache();
+  }
+
+  /**
+   * 親フラグメントを設定します。バインドデータキャッシュをクリアします。
+   *
+   * @param parent 親フラグメント
+   */
+  public override setParent(parent: ElementFragment | null): void {
+    if (this.parent === parent) {
+      return;
+    }
+    this.parent = parent;
     this.clearBindingDataCache();
   }
 

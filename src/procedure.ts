@@ -1264,9 +1264,12 @@ ${body}
       const url = new URL(baseUrlString, window.location.href);
 
       if (url.origin !== window.location.origin) {
+        const errorMessage =
+          'history.pushState: cross-origin URL is not allowed: ' +
+          url.toString();
         Log.error(
           'Haori',
-          `history.pushState: cross-origin URL is not allowed: ${url.toString()}`,
+          errorMessage,
         );
         return;
       }
