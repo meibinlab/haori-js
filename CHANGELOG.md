@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [0.3.0] - 2026-04-24
+
+### Changed
+
+- `data-intersect-*` による交差監視トリガーを追加し、無限スクロールや遅延読み込みに対応した
+- `data-*-bind-append` を追加し、配列プロパティを既存データへ追記できるようにした
+- `data-intersect-once` は実際に成功した場合のみ監視解除するように調整した
+
+### Library
+
+- `data-intersect-*` の動作確認テストを追加した
+- `data-*-bind-append` の回帰テストを追加した
+
 ## [0.2.0] - 2026-04-23
 
 ### Changed
