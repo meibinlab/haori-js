@@ -659,12 +659,12 @@ export class ElementFragment extends Fragment {
         // テキスト系フォーム入力には element.value も反映してバインディング変更を確実に適用する。
         if (
           name === 'value' &&
-          element.value !== string &&
           ((element instanceof HTMLInputElement &&
             element.type !== 'checkbox' &&
             element.type !== 'radio') ||
             element instanceof HTMLTextAreaElement ||
-            element instanceof HTMLSelectElement)
+            element instanceof HTMLSelectElement) &&
+          element.value !== string
         ) {
           element.value = string;
           this.value = string;
