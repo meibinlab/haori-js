@@ -188,6 +188,35 @@ import Haori from 'haori'
 
 一方で、安全のため `window` や `document` などのグローバルオブジェクト、`eval`、`arguments`、`constructor`、`__proto__`、`prototype`、`Reflect` は使えません。危険な式や構文エラーを含む式は正しく評価されません。詳しい制約は技術仕様書を参照してください。
 
+### グローバル関数を使った値の整形
+
+`{{ ... }}` 内はJavaScriptの式として評価されるため、グローバルスコープに定義した関数やオブジェクトを式の中で呼び出すことができます。
+
+たとえば、ISO 8601形式の日時文字列を読みやすい形式に整形したい場合は、次のようなユーティリティオブジェクトをあらかじめ定義しておくと便利です。
+
+```js
+window.Dates = {
+  format(iso, locale = 'ja-JP', options) {
+    return new Intl.DateTimeFormat(locale, options).format(new Date(iso));
+  }
+};
+```
+
+```html
+<script src="dates.js"></script>
+
+<div data-bind='{"createdAt":"2024-01-15T10:30:00Z"}'>
+  <p>作成日時: {{Dates.format(createdAt, 'ja-JP', {dateStyle:'long',timeStyle:'short'})}}</p>
+</div>
+```
+
+**ブラウザでの表示結果**:
+```
+作成日時: 2024年1月15日 19:30
+```
+
+同様に、数値のフォーマットや文字列の変換など、用途に合わせたユーティリティを定義して式内で利用できます。
+
 ### データの継承
 
 親要素のデータは子要素でも使えます：
