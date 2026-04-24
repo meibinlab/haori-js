@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [0.4.1] - 2026-04-25
+
+### Changed
+
+- `data-fetch` / `data-bind` 経由で `value="{{...}}"` を更新した際に、text input / textarea / select の `element.value` と内部値がずれないよう修正した
+- フォーム入力バインディングの回帰テストを追加し、textarea / checkbox / `Form.getValues()` の経路を確認した
+
+### Library
+
+- 入力値同期の修正とフォーム回帰テストを追加した
+
 ## [0.4.0] - 2026-04-24
 
 ### Changed
