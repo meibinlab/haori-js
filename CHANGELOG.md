@@ -1,13 +1,23 @@
 # CHANGELOG
 
+## [0.4.2] - 2026-04-25
+
+### Changed
+
+- form 自身の `data-bind` / `Core.setBindingData()` 更新時に、フォーム配下の入力要素へ無イベントで逆方向同期するよう改善した
+- `value="true"` を持つ checkbox を boolean モードとして扱い、未チェック時は `false` を返すよう改善した
+- checkbox を含む `data-fetch-arg` デモを更新し、フォーム双方向バインディングの挙動を確認できるようにした
+
+### Library
+
+- フォーム逆方向同期、boolean checkbox、無限ループ防止の回帰テストを追加した
+
 ## [0.4.1] - 2026-04-25
 
 ### Changed
 
 - `data-fetch` / `data-bind` 経由で `value="{{...}}"` を更新した際に、text input / textarea / select の `element.value` と内部値がずれないよう修正した
 - フォーム入力バインディングの回帰テストを追加し、textarea / checkbox / `Form.getValues()` の経路を確認した
-- form 自身の `data-bind` / `Core.setBindingData()` 更新時に、フォーム配下の入力要素へ無イベントで逆方向同期するよう改善した
-- `value="true"` を持つ checkbox を boolean モードとして扱い、未チェック時は `false` を返すよう改善した
 
 ### Library
 
