@@ -125,6 +125,95 @@ describe('data-fetch form input binding', () => {
     expect(selectEl.value).toBe('ADMIN');
   });
 
+  it('form 自身の bindingData 更新で checkbox が無イベント同期される', async () => {
+    container.innerHTML = `
+      <form id="ssl-form" data-bind='{"mailImapSsl":false}'>
+        <input
+          id="mail-imap-ssl"
+          type="checkbox"
+          name="mailImapSsl"
+          value="true"
+        />
+      </form>
+    `;
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const form = container.querySelector('#ssl-form') as HTMLFormElement;
+    const formFragment = Fragment.get(form) as ElementFragment;
+    const checkbox = container.querySelector(
+      '#mail-imap-ssl',
+    ) as HTMLInputElement;
+    const changeSpy = vi.fn();
+    checkbox.addEventListener('change', changeSpy);
+
+    await Core.setBindingData(form, {mailImapSsl: true});
+    await waitForDomSettled();
+
+    expect(checkbox.checked).toBe(true);
+    expect(changeSpy).not.toHaveBeenCalled();
+    expect(Form.getValues(formFragment)).toEqual({mailImapSsl: true});
+
+    await Core.setBindingData(form, {mailImapSsl: false});
+    await waitForDomSettled();
+
+    expect(checkbox.checked).toBe(false);
+    expect(changeSpy).not.toHaveBeenCalled();
+    expect(Form.getValues(formFragment)).toEqual({mailImapSsl: false});
+  });
+
+  it('data-form-arg を持つ form でも該当データだけを無イベント同期する', async () => {
+    container.innerHTML = `
+      <form id="arg-form" data-bind='{"settings":{"enabled":false}}' data-form-arg="settings">
+        <input id="enabled" type="checkbox" name="enabled" value="true" />
+      </form>
+    `;
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const form = container.querySelector('#arg-form') as HTMLFormElement;
+    const checkbox = container.querySelector('#enabled') as HTMLInputElement;
+
+    await Core.setBindingData(form, {
+      settings: {
+        enabled: true,
+      },
+    });
+    await waitForDomSettled();
+
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it('form 自身の bindingData 更新で bindchange が再帰発火しない', async () => {
+    container.innerHTML = `
+      <form id="loop-form" data-bind='{"mailImapSsl":false}'>
+        <input type="checkbox" name="mailImapSsl" value="true" />
+      </form>
+    `;
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const form = container.querySelector('#loop-form') as HTMLFormElement;
+    const bindChangeSpy = vi.fn();
+    form.addEventListener('haori:bindchange', bindChangeSpy);
+
+    await Core.setBindingData(form, {mailImapSsl: true});
+    await waitForDomSettled();
+
+    expect(bindChangeSpy).toHaveBeenCalledTimes(1);
+    expect(bindChangeSpy.mock.calls[0]?.[0]).toMatchObject({
+      detail: {
+        reason: 'manual',
+        changedKeys: ['mailImapSsl'],
+      },
+    });
+
+    await Core.setBindingData(form, {mailImapSsl: false});
+    await waitForDomSettled();
+
+    expect(bindChangeSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('Form.getValues で設定した値を取得できる', async () => {
     container.innerHTML = `
       <div id="fv-container" data-bind='{"name":"","email":""}'>

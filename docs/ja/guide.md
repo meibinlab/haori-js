@@ -482,6 +482,8 @@ window.Dates = {
 </form>
 ```
 
+フォーム自身に `data-bind` を設定して `Core.setBindingData()` や `data-fetch` で値を更新した場合も、フォーム内の入力要素へ無イベントで同期されます。text input / textarea / select は `value`、checkbox / radio は既存の `Form.setValues()` と同じ規則で反映されます。
+
 ### チェックボックスとラジオボタン
 
 ```html
@@ -511,7 +513,18 @@ window.Dates = {
 </form>
 ```
 
-**注意**: チェックボックスで`true`/`false`の真偽値を扱う場合は、`value="true"`属性を追加してください。
+**注意**: チェックボックスで`true`/`false`の真偽値を扱う場合は、`value="true"`属性を追加してください。`value="true"` を持つ checkbox は boolean モードとして扱われ、チェック時は `true`、未チェック時は `false` を返します。
+
+```html
+<form data-bind='{"mailImapSsl": true}'>
+  <label>
+    <input type="checkbox" name="mailImapSsl" value="true">
+    IMAP over SSL
+  </label>
+</form>
+```
+
+上の例では、`data-bind` や `data-fetch` によってフォームのバインディングデータが `{ mailImapSsl: true }` へ更新されるとチェックが入り、`{ mailImapSsl: false }` へ更新されるとチェックが外れます。
 
 ### セレクトボックス
 
@@ -1675,6 +1688,9 @@ await Form.setValues(formFragment, {
   username: '佐藤',
   email: 'sato@example.com'
 })
+
+// checkbox の boolean モード（value="true"）
+// 例: { mailImapSsl: true } / { mailImapSsl: false }
 
 // リセット
 await Form.reset(formFragment)

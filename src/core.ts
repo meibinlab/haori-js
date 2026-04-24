@@ -270,13 +270,26 @@ export default class Core {
     element: HTMLElement,
     data: Record<string, unknown>,
   ): Promise<void> {
-    const fragment = Fragment.get(element);
+    const fragment = Fragment.get(element) as ElementFragment;
     const previous = fragment.getRawBindingData();
     fragment.setBindingData(data);
     const promises: Promise<void>[] = [];
     promises.push(
       fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(data)),
     );
+    if (element.tagName === 'FORM') {
+      const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
+      const formValues =
+        arg &&
+        data[String(arg)] &&
+        typeof data[String(arg)] === 'object' &&
+        !Array.isArray(data[String(arg)])
+          ? (data[String(arg)] as Record<string, unknown>)
+          : arg
+            ? {}
+            : data;
+      promises.push(Form.syncValues(fragment, formValues));
+    }
     promises.push(Core.evaluateAll(fragment));
 
     // bindchangeイベントを発火

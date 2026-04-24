@@ -829,6 +829,8 @@ async handleError(response: Response): Promise<void> {
 
 これにより、`data-bind`属性を明示的に記述しなくても、フォーム要素内の入力変更が自動的にバインディングデータとして反映され、リアクティブな更新が実現されます。
 
+また、フォーム要素自身に対して `Core.setBindingData()` や `data-fetch` が実行された場合は、フォーム配下の入力要素へ無イベントで逆方向同期します。このとき text input / textarea / select は `value` を更新し、checkbox / radio は `Form.setValues()` と同じ規則で checked 状態を反映します。
+
 **処理フロー**:
 ```
 ユーザー入力 (change event)
@@ -844,6 +846,13 @@ Core.setBindingData() → DOM更新
 data-if / data-each / {{variable}} などが自動更新
 ```
 
+`value="true"` を持つ checkbox は boolean モードとして扱います。
+
+- checked: `true`
+- unchecked: `false`
+
+それ以外の checkbox は従来どおり `value` 属性の文字列値を返し、未チェック時は `null` を返します。
+
 #### 主要メソッド
 
 ```typescript
@@ -853,6 +862,9 @@ class Form {
 
   // 値の設定
   static setValues(form: ElementFragment, values: Record<string, unknown>, force?: boolean): Promise<void>
+
+  // bindingData からの無イベント同期
+  static syncValues(form: ElementFragment, values: Record<string, unknown>, force?: boolean): Promise<void>
 
   // リセット
   static reset(fragment: ElementFragment): Promise<void>

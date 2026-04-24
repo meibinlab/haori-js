@@ -228,7 +228,7 @@ describe('ElementFragment の setValue', () => {
 
     await ef.setValue(false);
     expect(input.checked).toBe(false);
-    expect(ef.getValue()).toBeNull();
+    expect(ef.getValue()).toBe(false);
   });
 });
 

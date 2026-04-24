@@ -137,7 +137,42 @@ export default class Form {
     values: Record<string, unknown>,
     force: boolean = false,
   ): Promise<void> {
-    return Form.setPartValues(form, values, null, force);
+    return Form.setPartValues(form, values, null, force, true);
+  }
+
+  /**
+   * フォーム内にある入力エレメントに値をイベントなしで設定します。
+   * フォーム bindingData からの内部同期に利用します。
+   *
+   * @param form フォームのElementFragment
+   * @param values フォームに設定する値のオブジェクト
+   * @param force data-form-detach属性があるエレメントにも値を反映するかどうか
+   * @returns Promise（DOMの更新が完了したら解決される）
+   */
+  public static syncValues(
+    form: ElementFragment,
+    values: Record<string, unknown>,
+    force: boolean = false,
+  ): Promise<void> {
+    return Form.setPartValues(form, values, null, force, false);
+  }
+
+  /**
+   * 単一フラグメントへ値を設定します。
+   *
+   * @param fragment 対象フラグメント
+   * @param value 設定する値
+   * @param emitEvents input/change イベントを発火するかどうか
+   * @returns Promise（DOMの更新が完了したら解決される）
+   */
+  private static applyFragmentValue(
+    fragment: ElementFragment,
+    value: string | number | boolean | null,
+    emitEvents: boolean,
+  ): Promise<void> {
+    return emitEvents
+      ? fragment.setValue(value)
+      : fragment.syncBindingValue(value);
   }
 
   /**
@@ -154,6 +189,7 @@ export default class Form {
     values: Record<string, unknown>,
     index: number | null = null,
     force: boolean = false,
+    emitEvents: boolean = true,
   ): Promise<void> {
     const promises: Promise<void>[] = [];
     const name = fragment.getAttribute('name');
@@ -164,16 +200,20 @@ export default class Form {
       if (!detach || force) {
         const value = values[String(name)];
         if (listName && Array.isArray(value) && index !== null) {
-          promises.push(fragment.setValue(value[index]));
+          promises.push(
+            Form.applyFragmentValue(fragment, value[index] ?? null, emitEvents),
+          );
         } else if (
           typeof value === 'string' ||
           typeof value === 'number' ||
           typeof value === 'boolean' ||
           value === null
         ) {
-          promises.push(fragment.setValue(value));
+          promises.push(Form.applyFragmentValue(fragment, value, emitEvents));
         } else {
-          promises.push(fragment.setValue(String(value)));
+          promises.push(
+            Form.applyFragmentValue(fragment, String(value), emitEvents),
+          );
         }
       }
     } else if (objectName) {
@@ -186,6 +226,7 @@ export default class Form {
               childValues as Record<string, unknown>,
               null,
               force,
+              emitEvents,
             ),
           );
         }
@@ -203,16 +244,19 @@ export default class Form {
                 childList[i] as Record<string, unknown>,
                 i,
                 force,
+                emitEvents,
               ),
             );
           } else {
-            promises.push(Form.setPartValues(child, {}, i, force));
+            promises.push(Form.setPartValues(child, {}, i, force, emitEvents));
           }
         }
       }
     } else {
       for (const child of fragment.getChildElementFragments()) {
-        promises.push(Form.setPartValues(child, values, null, force));
+        promises.push(
+          Form.setPartValues(child, values, null, force, emitEvents),
+        );
       }
     }
     return Promise.all(promises).then(() => undefined);

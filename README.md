@@ -26,6 +26,7 @@ Contents
   - Conditional rendering via `data-if`
   - List rendering via `data-each`
   - Two-way form binding (automatic binding based on `name` attributes)
+  - Boolean checkbox support with `value="true"` (`true` when checked, `false` when unchecked)
   - Server fetches via `data-fetch`
   - HTML imports via `data-import`
   - Zero runtime dependencies (uses browser-native APIs)

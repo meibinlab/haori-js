@@ -3,13 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <title>data-fetch-arg デモ</title>
+  <script src="../../dist/haori.iife.js"></script>
 </head>
 <body>
   <h2>data-fetch-arg デモ</h2>
-  <div>data-fetch-arg属性でuser情報を取得するデモ</div>
-  <div data-fetch="./data-fetch-arg-demo.json" data-fetch-arg="user">
-    <p>{{user.user.name}}</p>
-  </div>
-  <script src="../../dist/haori.iife.js"></script>
+  <p>data-fetch-arg で取得したレスポンスを <code>user</code> に束ね、form 自身のバインディング更新で入力欄とチェックボックスへ反映するデモです。</p>
+
+  <form
+    id="user-form"
+    data-bind='{"user":{"name":"","mailImapSsl":false}}'
+    data-form-arg="user"
+    data-fetch="./data-fetch-arg-demo.json"
+    data-fetch-arg="user"
+  >
+    <p>
+      <label>
+        名前
+        <input id="user-name" type="text" name="name">
+      </label>
+    </p>
+    <p>
+      <label>
+        <input id="user-ssl" type="checkbox" name="mailImapSsl" value="true">
+        IMAP over SSL
+      </label>
+    </p>
+    <p>現在の名前: {{user.name}}</p>
+    <p>SSL設定: {{user.mailImapSsl ? 'ON' : 'OFF'}}</p>
+  </form>
 </body>
 </html>

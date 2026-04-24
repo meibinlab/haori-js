@@ -508,6 +508,34 @@ export class ElementFragment extends Fragment {
    * @returns エレメントの更新のPromise
    */
   public setValue(value: string | number | boolean | null): Promise<void> {
+    return this.applyValue(value, true);
+  }
+
+  /**
+   * 入力エレメントに値をイベントなしで設定します。
+   * フォームの bindingData 反映時に内部同期として利用します。
+   *
+   * @param value 値
+   * @returns エレメントの更新のPromise
+   */
+  public syncBindingValue(
+    value: string | number | boolean | null,
+  ): Promise<void> {
+    return this.applyValue(value, false);
+  }
+
+  /**
+   * 入力エレメントに値を設定します。
+   * 必要に応じて入力系イベントも発火します。
+   *
+   * @param value 値
+   * @param dispatchEvents input/change イベントを発火するかどうか
+   * @returns エレメントの更新のPromise
+   */
+  private applyValue(
+    value: string | number | boolean | null,
+    dispatchEvents: boolean,
+  ): Promise<void> {
     if (this.skipChangeValue) {
       return Promise.resolve();
     }
@@ -520,22 +548,30 @@ export class ElementFragment extends Fragment {
       (element.type === 'checkbox' || element.type === 'radio')
     ) {
       const result = this.getAttribute('value');
+      const isBooleanCheckbox =
+        element.type === 'checkbox' && result === 'true';
       let newChecked: boolean;
-      if (result === 'true') {
-        newChecked = value === true;
+      if (isBooleanCheckbox) {
+        newChecked = value === true || value === 'true';
       } else if (result === 'false') {
         newChecked = value === false;
       } else {
         newChecked = result === String(value);
       }
-      this.value = newChecked ? value : null;
+      this.value = isBooleanCheckbox
+        ? newChecked
+        : newChecked
+          ? value
+          : null;
       if (element.checked === newChecked) {
         return Promise.resolve();
       }
       this.skipChangeValue = true;
       return Queue.enqueue(() => {
         element.checked = newChecked;
-        element.dispatchEvent(new Event('change', {bubbles: true}));
+        if (dispatchEvents) {
+          element.dispatchEvent(new Event('change', {bubbles: true}));
+        }
       }).finally(() => {
         this.skipChangeValue = false;
       }) as Promise<void>;
@@ -548,14 +584,16 @@ export class ElementFragment extends Fragment {
       this.skipChangeValue = true;
       return Queue.enqueue(() => {
         element.value = value === null ? '' : String(value);
-        if (
-          (element instanceof HTMLInputElement &&
-            this.INPUT_EVENT_TYPES.includes(element.type)) ||
-          element instanceof HTMLTextAreaElement
-        ) {
-          element.dispatchEvent(new Event('input', {bubbles: true}));
+        if (dispatchEvents) {
+          if (
+            (element instanceof HTMLInputElement &&
+              this.INPUT_EVENT_TYPES.includes(element.type)) ||
+            element instanceof HTMLTextAreaElement
+          ) {
+            element.dispatchEvent(new Event('input', {bubbles: true}));
+          }
+          element.dispatchEvent(new Event('change', {bubbles: true}));
         }
-        element.dispatchEvent(new Event('change', {bubbles: true}));
       }).finally(() => {
         this.skipChangeValue = false;
       }) as Promise<void>;
@@ -594,9 +632,11 @@ export class ElementFragment extends Fragment {
     const element = this.getTarget();
     if (element instanceof HTMLInputElement) {
       if (element.type === 'checkbox' || element.type === 'radio') {
+        const isBooleanCheckbox =
+          element.type === 'checkbox' && element.value === 'true';
         if (element.checked) {
           const value = element.value;
-          if (value === 'true') {
+          if (isBooleanCheckbox) {
             this.value = true;
           } else if (value === 'false') {
             this.value = false;
@@ -606,7 +646,7 @@ export class ElementFragment extends Fragment {
         } else {
           // チェックボックスがOFFの場合
           const value = element.value;
-          if (value === 'true') {
+          if (isBooleanCheckbox) {
             this.value = false;
           } else if (value === 'false') {
             this.value = true;
