@@ -655,6 +655,20 @@ export class ElementFragment extends Fragment {
         if (element.getAttribute(name) !== string) {
           element.setAttribute(name, string);
         }
+        // element.setAttribute('value', ...) は defaultValue のみ更新するため、
+        // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
+        if (
+          name === 'value' &&
+          ((element instanceof HTMLInputElement &&
+            this.INPUT_EVENT_TYPES.includes(element.type)) ||
+            element instanceof HTMLTextAreaElement ||
+            element instanceof HTMLSelectElement)
+        ) {
+          this.value = string;
+          if (element.value !== string) {
+            element.value = string;
+          }
+        }
       }
     }).finally(() => {
       this.skipMutationAttributes = false;
