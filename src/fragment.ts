@@ -656,18 +656,18 @@ export class ElementFragment extends Fragment {
           element.setAttribute(name, string);
         }
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、
-        // テキスト系フォーム入力には element.value も反映してバインディング変更を確実に適用する。
+        // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
         if (
           name === 'value' &&
           ((element instanceof HTMLInputElement &&
-            element.type !== 'checkbox' &&
-            element.type !== 'radio') ||
+            this.INPUT_EVENT_TYPES.includes(element.type)) ||
             element instanceof HTMLTextAreaElement ||
-            element instanceof HTMLSelectElement) &&
-          element.value !== string
+            element instanceof HTMLSelectElement)
         ) {
-          element.value = string;
           this.value = string;
+          if (element.value !== string) {
+            element.value = string;
+          }
         }
       }
     }).finally(() => {

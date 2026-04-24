@@ -10,6 +10,7 @@
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';
 import Fragment, {ElementFragment} from '../src/fragment';
+import Form from '../src/form';
 import {waitForDomSettled} from './helpers/async';
 
 describe('data-fetch form input binding', () => {
@@ -58,7 +59,7 @@ describe('data-fetch form input binding', () => {
     expect(usernameInput.value).toBe('user@example.com');
   });
 
-  it('Core.setBindingData 後に element.value が反映される', async () => {
+  it('Core.setBindingData で input と textarea の value が反映される', async () => {
     container.innerHTML = `
       <div id="form-container" data-bind='{"title":"","description":""}'>
         <form>
@@ -75,14 +76,18 @@ describe('data-fetch form input binding', () => {
     await waitForDomSettled();
 
     const titleInput = container.querySelector('#title') as HTMLInputElement;
+    const descriptionInput = container.querySelector(
+      '#description',
+    ) as HTMLTextAreaElement;
     expect(titleInput.value).toBe('新しいタイトル');
+    expect(descriptionInput.value).toBe('説明文');
   });
 
-  it('checkbox は element.checked が変化しない（value 属性の直接バインドは対象外）', async () => {
+  it('checkbox は value 属性を更新しても checked は変化しない', async () => {
     container.innerHTML = `
       <div id="cb-container" data-bind='{"enabled":true}'>
         <form>
-          <input id="ssl" name="ssl" type="checkbox" value="true" />
+          <input id="ssl" name="ssl" type="checkbox" value="{{enabled}}" />
         </form>
       </div>
     `;
@@ -94,9 +99,8 @@ describe('data-fetch form input binding', () => {
     await waitForDomSettled();
 
     const checkbox = container.querySelector('#ssl') as HTMLInputElement;
-    // checkbox は value="true" (静的) なので element.setAttribute('value', ...) の対象外
-    // checked 状態はバインドデータと直接連動しない（data-bind + setValue 経由が正規の方法）
     expect(checkbox.value).toBe('true');
+    expect(checkbox.checked).toBe(false);
   });
 
   it('select 要素の value も正しく更新される', async () => {
@@ -121,7 +125,7 @@ describe('data-fetch form input binding', () => {
     expect(selectEl.value).toBe('ADMIN');
   });
 
-  it('fragment.setValue で設定した値は Form.getValues で取得できる', async () => {
+  it('Form.getValues で設定した値を取得できる', async () => {
     container.innerHTML = `
       <div id="fv-container" data-bind='{"name":"","email":""}'>
         <form id="fv-form">
@@ -139,12 +143,13 @@ describe('data-fetch form input binding', () => {
 
     const form = container.querySelector('#fv-form') as HTMLFormElement;
     const formFragment = Fragment.get(form) as ElementFragment;
+    const formValues = Form.getValues(formFragment);
 
     const nameInput = container.querySelector('#fv-name') as HTMLInputElement;
     const emailInput = container.querySelector('#fv-email') as HTMLInputElement;
 
     expect(nameInput.value).toBe('山田太郎');
     expect(emailInput.value).toBe('yamada@example.com');
-    expect(formFragment.getAttribute('name')).toBeNull();
+    expect(formValues).toEqual({name: '山田太郎', email: 'yamada@example.com'});
   });
 });
