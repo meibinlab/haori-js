@@ -674,31 +674,100 @@ export class ElementFragment extends Fragment {
    * @returns 属性の更新のPromise
    */
   public setAttribute(name: string, value: string | null): Promise<void> {
+    return this.setAttributeInternal(name, name, value, true);
+  }
+
+  /**
+   * data-attr-* の生値を保持しつつ、別名の属性へ評価結果を反映します。
+   *
+   * @param rawName 生の属性名
+   * @param targetName 反映先の属性名
+   * @param value 生の属性値
+   * @returns 属性更新の Promise
+   */
+  public setAliasedAttribute(
+    rawName: string,
+    targetName: string,
+    value: string | null,
+  ): Promise<void> {
+    return this.setAttributeInternal(rawName, targetName, value, false);
+  }
+
+  /**
+   * data-attr-* の生属性と反映先属性を同時に削除します。
+   *
+   * @param rawName 生の属性名
+   * @param targetName 反映先の属性名
+   * @returns 属性削除の Promise
+   */
+  public removeAliasedAttribute(
+    rawName: string,
+    targetName: string,
+  ): Promise<void> {
+    if (this.skipMutationAttributes) {
+      return Promise.resolve();
+    }
+    this.attributeMap.delete(rawName);
+    this.skipMutationAttributes = true;
+    const element = this.getTarget();
+    return Queue.enqueue(() => {
+      element.removeAttribute(rawName);
+      if (targetName !== rawName) {
+        element.removeAttribute(targetName);
+      }
+    }).finally(() => {
+      this.skipMutationAttributes = false;
+    }) as Promise<void>;
+  }
+
+  /**
+   * 生の属性値を保持しつつ、必要に応じて別名属性へ評価結果を反映します。
+   *
+   * @param rawName 生の属性名
+   * @param targetName 反映先の属性名
+   * @param value 生の属性値
+   * @param syncValueProperty value 属性更新時に DOM property も同期するかどうか
+   * @returns 属性更新の Promise
+   */
+  private setAttributeInternal(
+    rawName: string,
+    targetName: string,
+    value: string | null,
+    syncValueProperty: boolean,
+  ): Promise<void> {
     if (this.skipMutationAttributes) {
       return Promise.resolve();
     }
     if (value === null) {
-      return this.removeAttribute(name);
+      if (rawName === targetName) {
+        return this.removeAttribute(rawName);
+      }
+      return this.removeAliasedAttribute(rawName, targetName);
     }
-    const contents = new AttributeContents(name, value);
-    this.attributeMap.set(name, contents);
+    const contents = new AttributeContents(rawName, value);
+    this.attributeMap.set(rawName, contents);
     this.skipMutationAttributes = true;
     const element = this.getTarget();
     const result = contents.isForceEvaluation()
       ? value
-      : this.getAttribute(name);
+      : this.getAttribute(rawName);
     return Queue.enqueue(() => {
+      if (element.getAttribute(rawName) !== value) {
+        element.setAttribute(rawName, value);
+      }
       if (result === null || result === false) {
-        element.removeAttribute(name);
+        element.removeAttribute(targetName);
       } else {
         const string = String(result);
-        if (element.getAttribute(name) !== string) {
-          element.setAttribute(name, string);
+        if (element.getAttribute(targetName) !== string) {
+          element.setAttribute(targetName, string);
         }
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、
         // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
         if (
-          name === 'value' &&
+          syncValueProperty &&
+          contents.isEvaluate &&
+          targetName === 'value' &&
           ((element instanceof HTMLInputElement &&
             this.INPUT_EVENT_TYPES.includes(element.type)) ||
             element instanceof HTMLTextAreaElement ||

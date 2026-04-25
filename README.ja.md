@@ -93,11 +93,14 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `{{ ... }}` — テンプレート式（式評価により挿入）
 - `data-if` — 条件に応じて要素を表示 / 非表示
 - `data-each` — 配列を繰り返し表示（`data-each-key`, `data-each-arg`, `data-each-index` など）
+- `data-attr-xxx` — ブラウザが先に解釈する属性を安全に更新（`src`, `value` など）
 - `data-fetch` — サーバーからデータを取得してバインド
 - `data-import` — 外部 HTML を読み込んで挿入
 - `data-url-param` — URL のクエリパラメータをバインディングに取り込む
 
 テンプレート式では、プロパティアクセス、動的インデックスを含むブラケットアクセス、optional chaining、三項演算子、配列 `map` / `filter` のアロー関数、spread を伴う呼び出しなどの安全な構文を利用できます。一方で、グローバルオブジェクト、`eval` や `arguments`、`constructor`、`__proto__`、`prototype`、`Reflect` などの脱出経路は使用できません。
+
+`src` や `type="number"` の `value` のように、ブラウザが HTML 解析時に先に解釈する属性へテンプレート式を直接書くと、初期表示時に警告や不要なアクセスが発生することがあります。こうした属性は `data-attr-*` を使ってください。`data-attr-xxx` は対応する `xxx` 属性だけを更新し、`input.value` のような DOM property 同期は行いません。
 
 詳しい使い方や多数のサンプルについては、公式ドキュメントを参照してください。
 

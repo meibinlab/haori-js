@@ -19,6 +19,9 @@ import HaoriEvent from './event';
  * Fragment の初期化、属性変化の処理、条件分岐・繰り返し処理を管理します。
  */
 export default class Core {
+  /** 属性エイリアスのサフィックス */
+  private static readonly ATTRIBUTE_ALIAS_SUFFIX = 'attr-';
+
   /** 優先処理する属性のサフィックス（処理順序で定義） */
   private static readonly PRIORITY_ATTRIBUTE_SUFFIXES = ['bind', 'if', 'each'];
 
@@ -82,6 +85,40 @@ export default class Core {
   }
 
   /**
+   * data-attr-* 形式の属性名から実際に更新する属性名を取得します。
+   *
+   * @param name 属性名
+   * @returns 実際の属性名。data-attr-* でない場合は null
+   */
+  private static getAliasedAttributeName(name: string): string | null {
+    const aliasPrefix = `${Env.prefix}${Core.ATTRIBUTE_ALIAS_SUFFIX}`;
+    if (!name.startsWith(aliasPrefix) || name.length <= aliasPrefix.length) {
+      return null;
+    }
+    return name.slice(aliasPrefix.length);
+  }
+
+  /**
+   * 実属性の変更が data-attr-* の内部反映かどうかを判定します。
+   *
+   * @param element 対象要素
+   * @param name 変更された属性名
+   * @returns data-attr-* の内部反映なら true
+   */
+  public static isAliasedAttributeReflection(
+    element: HTMLElement,
+    name: string,
+  ): boolean {
+    const fragment = Fragment.get(element);
+    if (!(fragment instanceof ElementFragment)) {
+      return false;
+    }
+    return fragment.hasAttribute(
+      `${Env.prefix}${Core.ATTRIBUTE_ALIAS_SUFFIX}${name}`,
+    );
+  }
+
+  /**
    * プレースホルダを含む通常属性を再評価します。
    * 内部状態の更新は同期的に行い、DOM 反映は fragment 側の非同期更新に委ねます。
    *
@@ -97,7 +134,9 @@ export default class Core {
       if (!Core.shouldReevaluateAttribute(name, rawValue)) {
         continue;
       }
-      chain = chain.then(() => fragment.setAttribute(name, rawValue));
+      chain = chain.then(() =>
+        Core.setAttribute(fragment.getTarget(), name, rawValue),
+      );
     }
     return chain.then(() => undefined);
   }
@@ -125,13 +164,13 @@ export default class Core {
         fragment.setMounted(false);
       }
     }
-    const promises: Promise<void>[] = [];
+    let attributeChain = Promise.resolve();
     const processedAttributes = new Set<string>();
     for (const suffix of Core.PRIORITY_ATTRIBUTE_SUFFIXES) {
       // 優先属性の処理
       const name = Env.prefix + suffix;
       if (fragment.hasAttribute(name)) {
-        promises.push(
+        attributeChain = attributeChain.then(() =>
           Core.setAttribute(
             fragment.getTarget(),
             name,
@@ -148,14 +187,16 @@ export default class Core {
       }
       const value = fragment.getRawAttribute(name);
       if (value !== null) {
-        promises.push(Core.setAttribute(fragment.getTarget(), name, value));
+        attributeChain = attributeChain.then(() =>
+          Core.setAttribute(fragment.getTarget(), name, value),
+        );
       }
     }
     for (const suffix of Core.DEFERRED_ATTRIBUTE_SUFFIXES) {
       // 遅延属性の処理
       const name = Env.prefix + suffix;
       if (fragment.hasAttribute(name)) {
-        promises.push(
+        attributeChain = attributeChain.then(() =>
           Core.setAttribute(
             fragment.getTarget(),
             name,
@@ -165,14 +206,19 @@ export default class Core {
         processedAttributes.add(name);
       }
     }
-    fragment.getChildren().forEach(child => {
-      if (child instanceof ElementFragment) {
-        promises.push(Core.scan(child.getTarget()));
-      } else if (child instanceof TextFragment) {
-        promises.push(Core.evaluateText(child));
-      }
-    });
-    return Promise.all(promises).then(() => undefined);
+    return attributeChain
+      .then(() => {
+        const childPromises: Promise<void>[] = [];
+        fragment.getChildren().forEach(child => {
+          if (child instanceof ElementFragment) {
+            childPromises.push(Core.scan(child.getTarget()));
+          } else if (child instanceof TextFragment) {
+            childPromises.push(Core.evaluateText(child));
+          }
+        });
+        return Promise.all(childPromises).then(() => undefined);
+      })
+      .then(() => undefined);
   }
 
   /**
@@ -190,6 +236,13 @@ export default class Core {
     value: string | null,
   ): Promise<void> {
     const fragment = Fragment.get(element);
+    const aliasedAttributeName = Core.getAliasedAttributeName(name);
+    if (aliasedAttributeName !== null) {
+      if (value === null) {
+        return fragment.removeAliasedAttribute(name, aliasedAttributeName);
+      }
+      return fragment.setAliasedAttribute(name, aliasedAttributeName, value);
+    }
     const promises: Promise<void>[] = [];
     switch (name) {
       case `${Env.prefix}bind`: {
@@ -241,11 +294,11 @@ export default class Core {
         const arg = fragment.getAttribute(`${Env.prefix}url-arg`);
         const params = Url.readParams();
         if (arg === null) {
-          Core.setBindingData(element, params);
+          promises.push(Core.setBindingData(element, params));
         } else {
           const data = fragment.getRawBindingData() || {};
           data[String(arg)] = params;
-          Core.setBindingData(element, data);
+          promises.push(Core.setBindingData(element, data));
         }
         break;
       }
@@ -273,10 +326,7 @@ export default class Core {
     const fragment = Fragment.get(element) as ElementFragment;
     const previous = fragment.getRawBindingData();
     fragment.setBindingData(data);
-    const promises: Promise<void>[] = [];
-    promises.push(
-      fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(data)),
-    );
+    let chain = fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(data));
     if (element.tagName === 'FORM') {
       const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
       const formValues =
@@ -288,14 +338,14 @@ export default class Core {
           : arg
             ? {}
             : data;
-      promises.push(Form.syncValues(fragment, formValues));
+        chain = chain.then(() => Form.syncValues(fragment, formValues));
     }
-    promises.push(Core.evaluateAll(fragment));
+      chain = chain.then(() => Core.evaluateAll(fragment));
 
     // bindchangeイベントを発火
     HaoriEvent.bindChange(element, previous, data, 'manual');
 
-    return Promise.all(promises).then(() => undefined);
+      return chain.then(() => undefined);
   }
 
   /**
@@ -458,7 +508,19 @@ export default class Core {
       promises.push(Core.evaluateIf(fragment));
     }
     if (fragment.hasAttribute(`${Env.prefix}each`)) {
-      promises.push(Core.evaluateEach(fragment));
+      return Promise.all(promises)
+        .then(() => Core.evaluateEach(fragment))
+        .then(() => {
+          const childPromises: Promise<void>[] = [];
+          fragment.getChildren().forEach(child => {
+            if (child instanceof ElementFragment) {
+              childPromises.push(Core.evaluateAll(child));
+            } else if (child instanceof TextFragment) {
+              childPromises.push(Core.evaluateText(child));
+            }
+          });
+          return Promise.all(childPromises).then(() => undefined);
+        });
     }
     fragment.getChildren().forEach(child => {
       if (child instanceof ElementFragment) {

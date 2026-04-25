@@ -3,16 +3,16 @@
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
 const config = {
   webServer: {
-    command: 'npx http-server . -p 4173',
-    port: 4173,
-    reuseExistingServer: true
+    command: 'npm run build && npx http-server . -p 4273',
+    port: 4273,
+    reuseExistingServer: false
   },
   testDir: './playwright',
   timeout: 30000,
   retries: 0,
   use: {
     headless: true,
-    baseURL: 'http://localhost:4173',
+    baseURL: 'http://localhost:4273',
   },
 };
 export default config;

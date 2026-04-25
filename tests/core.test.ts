@@ -4,6 +4,7 @@
 
 import Core from '../src/core';
 import {ElementFragment} from '../src/fragment';
+import {waitForDomSettled} from './helpers/async';
 
 describe('Core', () => {
   let container: HTMLElement;
@@ -256,6 +257,58 @@ describe('Core', () => {
       expect(
         Array.from(list.querySelectorAll('li')).map(item => item.className),
       ).toEqual(['warm', 'cool']);
+    });
+
+    test('data-attr-src が生値を維持したまま実属性を再評価する', async () => {
+      container.innerHTML = `
+        <img
+          data-bind='{"id":"before"}'
+          data-attr-src="img/{{id}}.jpg"
+          alt="preview"
+        >
+      `;
+
+      const image = container.querySelector('img') as HTMLImageElement;
+
+      await Core.scan(image);
+      await waitForDomSettled();
+
+      // data-attr-* の生値は保持したまま、実属性へ評価結果を反映すること。
+      expect(image.getAttribute('data-attr-src')).toBe('img/{{id}}.jpg');
+      expect(image.getAttribute('src')).toBe('img/before.jpg');
+
+      await Core.setBindingData(image, {id: 'after'});
+      await waitForDomSettled();
+
+      // バインディング変更時も生値を維持したまま実属性だけ更新されること。
+      expect(image.getAttribute('data-attr-src')).toBe('img/{{id}}.jpg');
+      expect(image.getAttribute('src')).toBe('img/after.jpg');
+    });
+
+    test('data-attr-value は value 属性だけを更新し現在値は上書きしない', async () => {
+      container.innerHTML = `
+        <div data-bind='{"count":"1"}'>
+          <input type="text" data-attr-value="{{count}}">
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const input = root.querySelector('input') as HTMLInputElement;
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      // 初回評価では value 属性へ反映されること。
+      expect(input.getAttribute('value')).toBe('1');
+
+      input.value = 'manual';
+
+      await Core.setBindingData(root, {count: '2'});
+      await waitForDomSettled();
+
+      // 再評価では value 属性だけ更新し、現在値 property は維持すること。
+      expect(input.getAttribute('value')).toBe('2');
+      expect(input.value).toBe('manual');
     });
 
     test('setBindingData で false になった通常属性は削除される', async () => {

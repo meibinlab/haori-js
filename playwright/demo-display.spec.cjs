@@ -54,9 +54,9 @@ demoFiles.forEach(file => {
       }
       // 1秒待って描画安定
       await page.waitForTimeout(1000);
-        // JSエラー・console.errorが出てもテスト合格とする
-        // expect(errors, `JS errors: ${errors.join('\n')}`).toEqual([]);
-        // expect(consoleErrors, `Console errors: ${consoleErrors.join('\n')}`).toEqual([]);
+      // JSエラー・console.error が発生しないこと。
+      expect(errors, `JS errors: ${errors.join('\n')}`).toEqual([]);
+      expect(consoleErrors, `Console errors: ${consoleErrors.join('\n')}`).toEqual([]);
     });
   });
 });

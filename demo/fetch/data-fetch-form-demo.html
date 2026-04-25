@@ -13,16 +13,10 @@
   <button data-fetch="./data-fetch-form-demo.json" data-fetch-form="#myForm" data-fetch-bind="#result">
     送信
   </button>
-  <div id="result">
+  <div id="result" data-bind='{"status":"","username":"","email":""}'>
     <p>送信結果: {{status}}</p>
     <p>ユーザー名: {{username}}</p>
     <p>メール: {{email}}</p>
-      <script>
-        // Initialization removed to minimize JavaScript usage
-      </script>
-  <script>
-    window.haori = { username: "", email: "", status: "" };
-  </script>
   </div>
 </body>
 </html>

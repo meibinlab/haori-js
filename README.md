@@ -93,11 +93,14 @@ Haori.mount(document.body, {items: [{name: 'apple'}, {name: 'orange'}]});
 - `{{ ... }}` — template expressions (evaluated and inserted)
 - `data-if` — show/hide an element based on a condition
 - `data-each` — repeat an element for items in an array (`data-each-key`, `data-each-arg`, `data-each-index`)
+- `data-attr-xxx` — safely update browser-interpreted attributes such as `src` and `value`
 - `data-fetch` — fetch data from a server and bind the result
 - `data-import` — load external HTML and insert it
 - `data-url-param` — import URL query parameters into bindings
 
 Template expressions support safe JavaScript-like syntax such as property access, bracket access with dynamic indexes, optional chaining, ternary expressions, and method chains including array `map`/`filter` with arrow functions and spread calls. Access to global objects, `eval` or `arguments`, and prototype escape paths such as `constructor`, `__proto__`, `prototype`, or `Reflect` is blocked.
+
+When the browser interprets an attribute during HTML parsing, such as `src` or `value` on `input type="number"`, writing template expressions directly in that attribute can cause warnings or unwanted requests before Haori runs. Use `data-attr-*` for those cases. `data-attr-xxx` updates only the matching `xxx` attribute and does not synchronize DOM properties such as `input.value`.
 
 For detailed usage and many examples, see the official documentation.
 

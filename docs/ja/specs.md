@@ -1158,6 +1158,28 @@ data-bind="{JSON | URLSearchParams形式}"
 
 **イベント**: `haori:bindchange` (バインディングデータ変更時)
 
+#### `data-attr-*`
+
+ブラウザが HTML 解析時に先に解釈する通常属性を、安全に更新するための属性です。`data-attr-src` は `src` 属性、`data-attr-value` は `value` 属性のように、`data-attr-` の後ろに付けた属性名へ評価結果を反映します。
+
+**構文**:
+```html
+data-attr-{attributeName}="template string"
+```
+
+**例**:
+```html
+<div data-bind='{"id":42,"pageId":"help","count":3}'>
+  <img data-attr-src="img/{{id}}.jpg" alt="商品画像">
+  <iframe data-attr-src="/preview/{{pageId}}"></iframe>
+  <input type="number" data-attr-value="{{count}}" readonly>
+</div>
+```
+
+`src` や `type="number"` の `value` のように、ブラウザが Haori より先に読む属性へ `{{...}}` を直接書くと、警告や不要なアクセスが発生することがあります。そのような属性では `data-attr-*` を使います。
+
+`data-attr-*` は対応する HTML 属性だけを更新します。`data-attr-value` は `value` 属性を変更しますが、`input.value` や `checked` などの DOM property 同期は行いません。
+
 ---
 
 ### 条件分岐

@@ -16,7 +16,7 @@
 <body>
   <h2>data-fetch デモ</h2>
   <div>data-fetch属性でJSONを取得し、テーブルに表示</div>
-  <div data-fetch="./data-fetch-demo.json">
+  <div data-bind='{"items":[],"item":{"id":"","name":""}}' data-fetch="./data-fetch-demo.json">
     <table>
       <thead>
         <tr>
@@ -24,10 +24,10 @@
           <th>名前</th>
         </tr>
       </thead>
-      <tbody data-each="items" data-each-key="id">
+      <tbody data-each="items" data-each-key="'id'" data-each-arg="item">
         <tr>
-          <td>{{id}}</td>
-          <td>{{name}}</td>
+          <td>{{typeof item === 'undefined' ? '' : item.id}}</td>
+          <td>{{typeof item === 'undefined' ? '' : item.name}}</td>
         </tr>
       </tbody>
     </table>

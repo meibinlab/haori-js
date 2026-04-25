@@ -158,6 +158,23 @@
         .demo-link:hover {
             background: #45a049;
         }
+        .attr-preview-layout {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: flex-start;
+        }
+        .attr-preview-image {
+            width: 240px;
+            max-width: 100%;
+            border: 1px solid #d7e7d8;
+            border-radius: 8px;
+            background: white;
+        }
+        .attr-preview-meta {
+            flex: 1;
+            min-width: 240px;
+        }
     </style>
 </head>
 <body>
@@ -179,10 +196,35 @@
             <div id="dom-demo1" class="dom-viewer" style="display:none;"></div>
         </div>
 
+        <h2>1.1. 安全な属性更新 (data-attr-*)</h2>
+        <div class="demo-section" id="demo1attr">
+            <div data-bind='{"previews":{"green":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22240%22 height=%22120%22 viewBox=%220 0 240 120%22%3E%3Crect width=%22240%22 height=%22120%22 rx=%2216%22 fill=%22%23e8f5e9%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-family=%22sans-serif%22 font-size=%2228%22 fill=%22%232e7d32%22%3EGREEN%3C/text%3E%3C/svg%3E","orange":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22240%22 height=%22120%22 viewBox=%220 0 240 120%22%3E%3Crect width=%22240%22 height=%22120%22 rx=%2216%22 fill=%22%23fff3e0%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-family=%22sans-serif%22 font-size=%2228%22 fill=%22%23ef6c00%22%3EORANGE%3C/text%3E%3C/svg%3E"}}'>
+                <form data-bind='{"currentPreview":"green","previewCount":12}'>
+                    <label for="previewSelector">画像キー:</label>
+                    <select id="previewSelector" name="currentPreview">
+                        <option value="green">green</option>
+                        <option value="orange">orange</option>
+                    </select>
+
+                    <div class="output attr-preview-layout">
+                        <img class="attr-preview-image" data-attr-src="{{previews[currentPreview]}}" alt="選択中の data-attr-src プレビュー">
+                        <div class="attr-preview-meta">
+                            <p><strong>選択中の画像キー:</strong> {{currentPreview}}</p>
+                            <p><strong>data-attr-value の反映先:</strong> {{previewCount}} / 20</p>
+                            <progress data-attr-value="{{previewCount}}" max="20"></progress>
+                            <p>この progress は value 属性だけを更新する例です。現在値 property の同期は行いません。</p>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <button class="show-dom-btn" data-demo-id="demo1attr">DOMを表示</button>
+            <div id="dom-demo1attr" class="dom-viewer" style="display:none;"></div>
+        </div>
+
         <!-- 2. 条件分岐 -->
         <h2>2. 条件分岐 (data-if)</h2>
         <div class="demo-section" id="demo2">
-            <form>
+            <form data-bind='{"showMessage":false,"count":0}'>
                 <label>
                     <input type="checkbox" name="showMessage" value="true">
                     メッセージを表示
@@ -190,7 +232,7 @@
 
                 <label>
                     カウント値:
-                    <input type="number" name="count" value="{{count}}" style="max-width: 100px;">
+                    <input type="number" name="count" data-attr-value="{{count}}" style="max-width: 100px;">
                 </label>
 
                 <div class="output">
@@ -282,7 +324,7 @@
                 <div class="output">
                     <p style="font-size: 24px;"><strong>カウント:</strong> {{counter}}</p>
                 </div>
-                <input type="number" id="counter" name="counter" value="{{counter}}" readonly>
+                <input type="number" id="counter" name="counter" data-attr-value="{{counter}}" readonly>
                 <div>
                     <button data-click-adjust="#counter" data-click-adjust-value="1">+1</button>
                     <button data-click-adjust="#counter" data-click-adjust-value="5">+5</button>
@@ -315,12 +357,12 @@
         <!-- 8. 計算式 -->
         <h2>8. 計算式</h2>
         <div class="demo-section" id="demo8">
-            <form>
+            <form data-bind='{"price":0,"quantity":0,"taxRate":0.1}'>
                 <label>単価:</label>
-                <input type="number" name="price" value="{{price}}">
+                <input type="number" name="price" data-attr-value="{{price}}">
 
                 <label>数量:</label>
-                <input type="number" name="quantity" value="{{quantity}}">
+                <input type="number" name="quantity" data-attr-value="{{quantity}}">
 
                 <label>消費税率:</label>
                 <select name="taxRate">

@@ -59,6 +59,15 @@ export class Observer {
                 mutation.attributeName,
               );
               const element = mutation.target as HTMLElement;
+              if (
+                mutation.attributeName &&
+                Core.isAliasedAttributeReflection(
+                  element,
+                  mutation.attributeName,
+                )
+              ) {
+                break;
+              }
               Core.setAttribute(
                 element,
                 mutation.attributeName!,
