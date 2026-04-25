@@ -203,6 +203,8 @@ export default class Form {
           promises.push(
             Form.applyFragmentValue(fragment, value[index] ?? null, emitEvents),
           );
+        } else if (typeof value === 'undefined') {
+          // 未指定のキーは既存の入力値を維持する。
         } else if (
           typeof value === 'string' ||
           typeof value === 'number' ||

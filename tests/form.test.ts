@@ -10,14 +10,23 @@ import {waitForDomSettled} from './helpers/async';
 
 describe('Form', () => {
   let container: HTMLElement;
+  const originalLocation = window.location;
 
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
+    Object.defineProperty(window, 'location', {
+      value: {...originalLocation, search: ''},
+      writable: true,
+    });
   });
 
   afterEach(() => {
     document.body.removeChild(container);
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      writable: true,
+    });
   });
 
   describe('getValues', () => {
@@ -477,6 +486,32 @@ describe('Form', () => {
       expect(orderIdInput.value).toBe('ORD-001');
       expect(nameInput.value).toBe('高橋');
       expect(phoneInput.value).toBe('090-1234-5678');
+    });
+
+    it('should skip missing URL params when data-url-param syncs a form', async () => {
+      Object.defineProperty(window, 'location', {
+        value: {...originalLocation, search: '?page=2'},
+        writable: true,
+      });
+      container.innerHTML = `
+        <form data-url-param>
+          <input type="text" name="q" value="">
+          <input type="text" name="page" value="">
+        </form>
+      `;
+
+      await Core.scan(container);
+      await waitForDomSettled();
+
+      const qInput = container.querySelector(
+        'input[name="q"]',
+      ) as HTMLInputElement;
+      const pageInput = container.querySelector(
+        'input[name="page"]',
+      ) as HTMLInputElement;
+
+      expect(qInput.value).toBe('');
+      expect(pageInput.value).toBe('2');
     });
   });
 
