@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [0.4.3] - 2026-04-25
+
+### Changed
+
+- `data-{event}-copy` と `data-{event}-copy-params` を追加し、イベント種別に依存しないバインディング値のコピーを扱えるようにした
+- `reset` の後に `copy` を実行するようにし、フォームリセット後の値をコピーできるよう改善した
+- `docs/ja/specs.md` と `docs/ja/guide.md` をコピー仕様に合わせて更新した
+- `data-url-param` で URL に存在しないクエリパラメータをフォームへ書き戻さず、既存値を維持するよう修正した
+
+### Library
+
+- `data-{event}-copy`、`copy-params`、`reset` 後のコピー順序を確認する回帰テストを追加した
+- `data-url-param` の未存在キーをスキップする回帰テストを追加した
+
 ## [0.4.2] - 2026-04-25
 
 ### Changed

@@ -738,9 +738,12 @@ ${body}
         .map(p => p.trim())
         .filter(Boolean);
     }
-    if (event && fragment.hasAttribute(Procedure.attrName(event, 'copy-params'))) {
+    const copyParamsAttr = event
+      ? Procedure.attrName(event, 'copy-params')
+      : null;
+    if (copyParamsAttr && fragment.hasAttribute(copyParamsAttr)) {
       const paramsString = fragment.getRawAttribute(
-        Procedure.attrName(event, 'copy-params'),
+        copyParamsAttr,
       ) as string;
       options.copyParams = paramsString
         .split('&')
@@ -1681,7 +1684,10 @@ ${body}
    * 指定されたフラグメントへバインディングデータをコピーします。
    */
   private copy(): Promise<void> {
-    if (!this.options.copyFragments || this.options.copyFragments.length === 0) {
+    if (
+      !this.options.copyFragments ||
+      this.options.copyFragments.length === 0
+    ) {
       return Promise.resolve();
     }
 
