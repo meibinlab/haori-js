@@ -9,6 +9,7 @@ import Queue from '../../src/queue';
 export async function waitForDomSettled(cycles = 3): Promise<void> {
   for (let index = 0; index < cycles; index += 1) {
     await Promise.resolve();
+    await new Promise(resolve => setTimeout(resolve, 0));
     await Queue.wait();
   }
 }

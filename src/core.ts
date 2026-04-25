@@ -326,7 +326,10 @@ export default class Core {
     const fragment = Fragment.get(element) as ElementFragment;
     const previous = fragment.getRawBindingData();
     fragment.setBindingData(data);
-    let chain = fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(data));
+    let chain = fragment.setAttribute(
+      `${Env.prefix}bind`,
+      JSON.stringify(data),
+    );
     if (element.tagName === 'FORM') {
       const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
       const formValues =
@@ -338,14 +341,14 @@ export default class Core {
           : arg
             ? {}
             : data;
-        chain = chain.then(() => Form.syncValues(fragment, formValues));
+      chain = chain.then(() => Form.syncValues(fragment, formValues));
     }
-      chain = chain.then(() => Core.evaluateAll(fragment));
+    chain = chain.then(() => Core.evaluateAll(fragment));
 
     // bindchangeイベントを発火
     HaoriEvent.bindChange(element, previous, data, 'manual');
 
-      return chain.then(() => undefined);
+    return chain.then(() => undefined);
   }
 
   /**
