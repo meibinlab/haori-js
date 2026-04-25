@@ -481,6 +481,7 @@ describe('Procedure action operations', () => {
     emailInput.name = 'email';
     form.appendChild(emailInput);
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.setAttribute('data-click-form', '');
     btn.setAttribute('data-click-fetch', 'http://api.test/json-error');
     form.appendChild(btn);
