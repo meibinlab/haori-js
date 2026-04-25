@@ -34,7 +34,9 @@ describe('Procedure action operations', () => {
 
     await waitForDomSettled();
     btn.click();
-    await waitForDomSettled();
+    await waitForCondition(() => resetSpy.mock.calls.length > 0, {
+      description: 'reset action',
+    });
 
     expect(resetSpy).toHaveBeenCalled();
     container.remove();
@@ -92,10 +94,217 @@ describe('Procedure action operations', () => {
 
     await waitForDomSettled();
     btn.click();
-    await waitForDomSettled();
+    await waitForCondition(() => clickSpy.mock.calls.length > 0, {
+      description: 'click action',
+    });
 
     expect(clickSpy).toHaveBeenCalled();
     button.remove();
+    container.remove();
+  });
+
+  it('data-click-copy copies form values to another form without fetch', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const sourceForm = document.createElement('form');
+    sourceForm.id = 'search-form';
+    const keywordInput = document.createElement('input');
+    keywordInput.name = 'keyword';
+    keywordInput.value = 'haori';
+    const pageInput = document.createElement('input');
+    pageInput.name = 'page';
+    pageInput.value = '3';
+    sourceForm.append(keywordInput, pageInput);
+
+    const targetForm = document.createElement('form');
+    targetForm.id = 'search-committed';
+    const committedKeywordInput = document.createElement('input');
+    committedKeywordInput.name = 'keyword';
+    const committedPageInput = document.createElement('input');
+    committedPageInput.name = 'page';
+    targetForm.append(committedKeywordInput, committedPageInput);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '#search-form');
+    btn.setAttribute('data-click-copy', '#search-committed');
+
+    container.append(sourceForm, targetForm, btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(
+      () =>
+        committedKeywordInput.value === 'haori' &&
+        committedPageInput.value === '3',
+      {description: 'copy to target form'},
+    );
+
+    expect(committedKeywordInput.value).toBe('haori');
+    expect(committedPageInput.value).toBe('3');
+    container.remove();
+  });
+
+  it('data-click-copy copies source bindingData when data-click-form is omitted', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const source = document.createElement('button');
+    source.textContent = 'copy';
+    source.setAttribute('data-bind', '{"keyword":"binding","page":"7"}');
+    source.setAttribute('data-click-copy', '#binding-target');
+
+    const target = document.createElement('div');
+    target.id = 'binding-target';
+    target.setAttribute('data-bind', '{"keyword":"old","keep":"yes"}');
+
+    container.append(source, target);
+
+    await waitForDomSettled();
+    source.click();
+    await waitForCondition(
+      () => {
+        const bind = target.getAttribute('data-bind');
+        return bind !== null && bind.includes('"keyword":"binding"');
+      },
+      {description: 'copy from source bindingData'},
+    );
+
+    const copied = JSON.parse(target.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({
+      keyword: 'binding',
+      page: '7',
+      keep: 'yes',
+    });
+    container.remove();
+  });
+
+  it('data-click-copy logs an error and skips copy when the selector does not match', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const source = document.createElement('button');
+    source.textContent = 'copy';
+    source.setAttribute('data-bind', '{"keyword":"binding"}');
+    source.setAttribute('data-click-copy', '#missing-target');
+
+    const target = document.createElement('div');
+    target.id = 'existing-target';
+    target.setAttribute('data-bind', '{"keyword":"old","keep":"yes"}');
+
+    container.append(source, target);
+
+    await waitForDomSettled();
+    source.click();
+
+    await waitForCondition(
+      () =>
+        errorSpy.mock.calls.some(call =>
+          call.some(
+            arg =>
+              typeof arg === 'string' &&
+              arg.includes('Element not found: #missing-target'),
+          ),
+        ),
+      {description: 'missing copy target error'},
+    );
+
+    const copied = JSON.parse(target.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({
+      keyword: 'old',
+      keep: 'yes',
+    });
+    errorSpy.mockRestore();
+    container.remove();
+  });
+
+  it('data-click-copy-params copies only selected keys and preserves target data', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const sourceForm = document.createElement('form');
+    sourceForm.id = 'copy-source-form';
+    const keywordInput = document.createElement('input');
+    keywordInput.name = 'keyword';
+    keywordInput.value = 'next';
+    const pageInput = document.createElement('input');
+    pageInput.name = 'page';
+    pageInput.value = '2';
+    sourceForm.append(keywordInput, pageInput);
+
+    const target = document.createElement('div');
+    target.id = 'copy-target';
+    target.setAttribute('data-bind', '{"keyword":"old","keep":"yes"}');
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '#copy-source-form');
+    btn.setAttribute('data-click-copy', '#copy-target');
+    btn.setAttribute('data-click-copy-params', 'page');
+
+    container.append(sourceForm, target, btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => {
+      const bind = target.getAttribute('data-bind');
+      return bind !== null && bind.includes('"page":"2"');
+    }, {description: 'copy selected params'});
+
+    const copied = JSON.parse(target.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({
+      keyword: 'old',
+      keep: 'yes',
+      page: '2',
+    });
+    container.remove();
+  });
+
+  it('data-click-reset executes before data-click-copy', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const sourceForm = document.createElement('form');
+    sourceForm.id = 'reset-source-form';
+    const keywordInput = document.createElement('input');
+    keywordInput.name = 'keyword';
+    sourceForm.appendChild(keywordInput);
+    keywordInput.value = 'dirty';
+
+    const targetForm = document.createElement('form');
+    targetForm.id = 'reset-copy-target';
+    const committedKeywordInput = document.createElement('input');
+    committedKeywordInput.name = 'keyword';
+    committedKeywordInput.value = 'stale';
+    targetForm.appendChild(committedKeywordInput);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '#reset-source-form');
+    btn.setAttribute('data-click-reset', '#reset-source-form');
+    btn.setAttribute('data-click-copy', '#reset-copy-target');
+
+    container.append(sourceForm, targetForm, btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(
+      () =>
+        keywordInput.value === '' && committedKeywordInput.value === '',
+      {description: 'reset before copy'},
+    );
+
+    expect(keywordInput.value).toBe('');
+    expect(committedKeywordInput.value).toBe('');
     container.remove();
   });
 
@@ -123,7 +332,10 @@ describe('Procedure action operations', () => {
 
     await waitForDomSettled();
     btn.click();
-    await waitForDomSettled();
+    await waitForCondition(
+      () => openSpy.mock.calls.length > 0 && closeSpy.mock.calls.length > 0,
+      {description: 'open and close actions'},
+    );
 
     expect(openSpy).toHaveBeenCalled();
     expect(closeSpy).toHaveBeenCalled();

@@ -1,7 +1,7 @@
 # Haori.js 技術仕様書
 
 バージョン: 0.1.5
-最終更新: 2026-04-23
+最終更新: 2026-04-25
 
 ## 目次
 
@@ -601,6 +601,8 @@ interface ProcedureOptions {
   rowMovePrev?: boolean | null              // 前の行へ移動
   rowMoveNext?: boolean | null              // 次の行へ移動
   resetFragments?: ElementFragment[] | null // リセット対象
+  copyFragments?: ElementFragment[] | null  // コピー先
+  copyParams?: string[] | null              // コピー対象パラメータ
   refetchFragments?: ElementFragment[] | null // 再フェッチ対象
   clickFragments?: ElementFragment[] | null  // クリック対象
   openFragments?: ElementFragment[] | null   // ダイアログオープン対象
@@ -691,14 +693,21 @@ async run(): Promise<void> {
     this.removeRow(),
     this.movePrev(),
     this.moveNext(),
-    this.reset(),
+    this.reset()
+  ])
+
+  // 9. コピー
+  await this.copy()
+
+  // 10. 後続アクション
+  await Promise.all([
     this.refetch(),
     this.click(),
     this.openDialogs(),
     this.closeDialogs()
   ])
 
-  // 9. UI表示
+  // 11. UI表示
   if (this.dialogMessage) {
     await Haori.dialog(this.dialogMessage)
   }
@@ -706,7 +715,7 @@ async run(): Promise<void> {
     await Haori.toast(this.toastMessage, 'info')
   }
 
-  // 10. リダイレクト
+  // 12. リダイレクト
   if (this.redirectUrl) {
     window.location.href = this.redirectUrl
   }
@@ -1486,12 +1495,13 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 8. `data-{event}-adjust`: 値調整実行
 9. `data-{event}-row-add` / `data-{event}-row-remove` / `data-{event}-row-prev` / `data-{event}-row-next`: 行データの変更
 10. `data-{event}-reset`: リセット処理実行
-11. `data-{event}-refetch`: 再フェッチ実行
-12. `data-{event}-click`: クリック実行
-13. `data-{event}-open` / `data-{event}-close`: ダイアログ操作
-14. `data-{event}-dialog` / `data-{event}-toast`: メッセージ表示
-15. `data-{event}-history`: 履歴 pushState 実行
-16. `data-{event}-redirect`: リダイレクト実行
+11. `data-{event}-copy` / `data-{event}-copy-params`: 別要素へバインディング値をコピー
+12. `data-{event}-refetch`: 再フェッチ実行
+13. `data-{event}-click`: クリック実行
+14. `data-{event}-open` / `data-{event}-close`: ダイアログ操作
+15. `data-{event}-dialog` / `data-{event}-toast`: メッセージ表示
+16. `data-{event}-history`: 履歴 pushState 実行
+17. `data-{event}-redirect`: リダイレクト実行
 
 #### 交差監視トリガー (`data-intersect-*`)
 
@@ -1510,11 +1520,13 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 9. `data-intersect-bind-arg`: レスポンスをネストしてバインド
 10. `data-intersect-bind-params`: レスポンスの一部だけをバインド
 11. `data-intersect-bind-append`: 指定した配列キーだけを追記
-12. `data-intersect-root`: 監視対象のスクロールコンテナを指定
-13. `data-intersect-root-margin`: 監視領域の余白を指定
-14. `data-intersect-threshold`: 発火に必要な可視率を指定
-15. `data-intersect-disabled`: 真の間は実行を抑止
-16. `data-intersect-once`: 初回成功後に監視を解除
+12. `data-intersect-copy`: 別要素へバインディング値をコピー
+13. `data-intersect-copy-params`: コピー対象キーを絞り込む
+14. `data-intersect-root`: 監視対象のスクロールコンテナを指定
+15. `data-intersect-root-margin`: 監視領域の余白を指定
+16. `data-intersect-threshold`: 発火に必要な可視率を指定
+17. `data-intersect-disabled`: 真の間は実行を抑止
+18. `data-intersect-once`: 初回成功後に監視を解除
 
 ##### `data-intersect-fetch`
 
@@ -1822,11 +1834,54 @@ Content-Typeを指定します。
 
 対象要素をリセットします (値の初期化、複製削除、メッセージ除去)。
 
+`data-{event}-copy` と併用した場合、コピー元がフォームならリセット後の値をコピーします。
+
 ```html
 <form id="myForm">
   <input name="username">
 </form>
 <button data-click-reset="#myForm">リセット</button>
+```
+
+##### `data-{event}-copy`
+
+指定した要素へバインディング値をコピーします。
+
+- `data-{event}-form` が指定されている場合は、そのフォームの現在値をコピー元に使用
+- `data-{event}-form` がない場合は、イベント発火元要素の `data-bind` / 継承済み bindingData をコピー元に使用
+- コピー先の既存バインディング値は保持しつつ、同名キーだけを上書き
+- コピー先が `<form>` の場合は `data-bind` 更新後に入力要素へも同期
+- `data-{event}-copy-params` で指定したキーがコピー元に存在しない場合も、コピー先の既存値は保持
+
+```html
+<button
+  data-click-form="#search-form"
+  data-click-copy="#search-committed"
+>
+  検索
+</button>
+
+<form id="search-form">
+  <input name="keyword" value="haori">
+</form>
+
+<form id="search-committed">
+  <input name="keyword">
+</form>
+```
+
+##### `data-{event}-copy-params`
+
+`data-{event}-copy` で転送するキーを `&` 区切りで指定します。指定されていないキーはコピー先の既存値を保持し、コピー元に存在しない指定キーもそのまま維持します。
+
+```html
+<button
+  data-click-form="#search-form"
+  data-click-copy="#search-state"
+  data-click-copy-params="keyword&page"
+>
+  検索条件を確定
+</button>
 ```
 
 ##### `data-{event}-refetch`

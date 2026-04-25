@@ -217,6 +217,12 @@ export interface ProcedureOptions {
   /** ダイアログを閉じるフラグメント */
   closeFragments?: ElementFragment[] | null;
 
+  /** コピー先フラグメント */
+  copyFragments?: ElementFragment[] | null;
+
+  /** コピー対象パラメータ名のリスト */
+  copyParams?: string[] | null;
+
   /** ダイアログメッセージ */
   dialogMessage?: string | null;
 
@@ -732,6 +738,15 @@ ${body}
         .map(p => p.trim())
         .filter(Boolean);
     }
+    if (event && fragment.hasAttribute(Procedure.attrName(event, 'copy-params'))) {
+      const paramsString = fragment.getRawAttribute(
+        Procedure.attrName(event, 'copy-params'),
+      ) as string;
+      options.copyParams = paramsString
+        .split('&')
+        .map(param => param.trim())
+        .filter(Boolean);
+    }
     if (event) {
       if (fragment.hasAttribute(Procedure.attrName(event, 'adjust'))) {
         const adjustSelector = fragment.getRawAttribute(
@@ -850,6 +865,7 @@ ${body}
         'reset',
         'refetch',
         'click',
+        'copy',
         'open',
         'close',
       ] as const;
@@ -885,6 +901,9 @@ ${body}
               break;
             case 'click':
               options.clickFragments = list;
+              break;
+            case 'copy':
+              options.copyFragments = list;
               break;
             case 'open':
               options.openFragments = list;
@@ -1200,7 +1219,6 @@ ${body}
       const bindingData = formFragment.getBindingData();
       Object.assign(bindingData, payload);
       await Core.setBindingData(formElement, bindingData);
-      return true;
     }
 
     const merged = hasPayload ? payload : {};
@@ -1264,17 +1282,23 @@ ${body}
     promises.push(this.removeRow());
     promises.push(this.movePrevRow());
     promises.push(this.moveNextRow());
+    await Promise.all(promises);
+
     if (this.options.resetFragments && this.options.resetFragments.length > 0) {
-      this.options.resetFragments.forEach(fragment => {
-        promises.push(Form.reset(fragment));
-      });
+      await Promise.all(
+        this.options.resetFragments.map(fragment => Form.reset(fragment)),
+      );
     }
+
+    await this.copy();
+
+    const deferredPromises: Promise<unknown>[] = [];
     if (
       this.options.refetchFragments &&
       this.options.refetchFragments.length > 0
     ) {
       this.options.refetchFragments.forEach(fragment => {
-        promises.push(new Procedure(fragment, null).run());
+        deferredPromises.push(new Procedure(fragment, null).run());
       });
     }
     if (this.options.clickFragments && this.options.clickFragments.length > 0) {
@@ -1293,7 +1317,7 @@ ${body}
       this.options.openFragments.forEach(fragment => {
         const target = fragment.getTarget();
         if (target instanceof HTMLElement) {
-          promises.push(activeHaori.openDialog(target));
+          deferredPromises.push(activeHaori.openDialog(target));
         } else {
           Log.error('Haori', 'Element is not an HTML element: ', target);
         }
@@ -1303,14 +1327,14 @@ ${body}
       this.options.closeFragments.forEach(fragment => {
         const target = fragment.getTarget();
         if (target instanceof HTMLElement) {
-          promises.push(activeHaori.closeDialog(target));
+          deferredPromises.push(activeHaori.closeDialog(target));
         } else {
           Log.error('Haori', 'Element is not an HTML element: ', target);
         }
       });
     }
     // 仕様順序: 先に各種操作（bind/adjust/row/reset/refetch/click/open/close）を完了
-    await Promise.all(promises);
+    await Promise.all(deferredPromises);
     // その後にダイアログ/トーストを表示
     if (this.options.dialogMessage) {
       await activeHaori.dialog(this.options.dialogMessage);
@@ -1651,6 +1675,58 @@ ${body}
       }
     }
     return merged;
+  }
+
+  /**
+   * 指定されたフラグメントへバインディングデータをコピーします。
+   */
+  private copy(): Promise<void> {
+    if (!this.options.copyFragments || this.options.copyFragments.length === 0) {
+      return Promise.resolve();
+    }
+
+    const sourceData = this.resolveCopySourceData();
+    const copyData = this.pickCopyData(sourceData);
+    const promises = this.options.copyFragments.map(fragment => {
+      const bindingData = {
+        ...fragment.getBindingData(),
+        ...copyData,
+      };
+      return Core.setBindingData(fragment.getTarget(), bindingData);
+    });
+    return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * copy のコピー元データを取得します。
+   */
+  private resolveCopySourceData(): Record<string, unknown> {
+    if (this.options.formFragment) {
+      return Form.getValues(this.options.formFragment);
+    }
+    if (this.options.targetFragment) {
+      return {...this.options.targetFragment.getBindingData()};
+    }
+    return {};
+  }
+
+  /**
+   * copy-params が指定されている場合は対象キーだけ抽出します。
+   */
+  private pickCopyData(
+    sourceData: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!this.options.copyParams || this.options.copyParams.length === 0) {
+      return sourceData;
+    }
+
+    const filtered: Record<string, unknown> = {};
+    this.options.copyParams.forEach(param => {
+      if (param in sourceData) {
+        filtered[param] = sourceData[param];
+      }
+    });
+    return filtered;
   }
 
   /**
