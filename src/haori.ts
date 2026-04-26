@@ -42,19 +42,19 @@ export default class Haori {
    * 通知トーストを表示します。
    *
    * @param message 表示メッセージ
-   * @param level メッセージのレベル（'info' | 'warning' | 'error'）
+   * @param level メッセージのレベル（省略時は 'info'）
    * @return 通知が表示されると解決されるPromise
    */
   public static async toast(
     message: string,
-    level: 'info' | 'warning' | 'error',
+    level: 'info' | 'warning' | 'error' | 'success' = 'info',
   ): Promise<void> {
     const toast = document.createElement('div');
     toast.className = `haori-toast haori-toast-${level}`;
     toast.textContent = message;
     toast.setAttribute('popover', 'manual');
     toast.setAttribute('role', 'status');
-    toast.setAttribute('aria-live', 'polite');
+    toast.setAttribute('aria-live', level === 'error' ? 'assertive' : 'polite');
     document.body.appendChild(toast);
     toast.showPopover();
     setTimeout(() => {
