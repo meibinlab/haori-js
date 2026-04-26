@@ -229,6 +229,9 @@ export interface ProcedureOptions {
   /** トーストメッセージ */
   toastMessage?: string | null;
 
+  /** トーストレベル */
+  toastLevel?: 'info' | 'warning' | 'error' | 'success' | null;
+
   /** history.pushState で追加する URL */
   historyUrl?: string | null;
 
@@ -822,6 +825,13 @@ ${body}
         options.toastMessage = fragment.getAttribute(
           Procedure.attrName(event, 'toast'),
         ) as string;
+        const rawLevel = fragment.getRawAttribute(
+          Procedure.attrName(event, 'toast-level'),
+        );
+        const validLevels = ['info', 'warning', 'error', 'success'] as const;
+        options.toastLevel = validLevels.includes(rawLevel as (typeof validLevels)[number])
+          ? (rawLevel as (typeof validLevels)[number])
+          : null;
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'redirect'))) {
         options.redirectUrl = fragment.getAttribute(
@@ -1343,7 +1353,10 @@ ${body}
       await activeHaori.dialog(this.options.dialogMessage);
     }
     if (this.options.toastMessage) {
-      await activeHaori.toast(this.options.toastMessage, 'info');
+      await activeHaori.toast(
+        this.options.toastMessage,
+        this.options.toastLevel ?? 'info',
+      );
     }
     this.pushHistory();
     if (this.options.redirectUrl) {
