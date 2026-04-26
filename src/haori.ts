@@ -28,13 +28,14 @@ export default class Haori {
 
   /**
    * 通知ダイアログを表示します。
+   * メッセージ中のリテラル `\n` は改行として正規化されます。
    *
    * @param message 表示メッセージ
    * @returns 通知が閉じられると解決されるPromise
    */
   public static dialog(message: string): Promise<void> {
     return Queue.enqueue(() => {
-      window.alert(message);
+      window.alert(message.replace(/\\n/g, '\n'));
     }, true) as Promise<void>;
   }
 
@@ -68,13 +69,14 @@ export default class Haori {
 
   /**
    * 確認ダイアログを表示します。
+   * メッセージ中のリテラル `\n` は改行として正規化されます。
    *
    * @param message 確認メッセージ
    * @returns ユーザーがOKをクリックした場合はtrue、キャンセルした場合はfalseが解決されるPromise
    */
   public static confirm(message: string): Promise<boolean> {
     return Queue.enqueue(() => {
-      return window.confirm(message);
+      return window.confirm(message.replace(/\\n/g, '\n'));
     }, true) as Promise<boolean>;
   }
 
