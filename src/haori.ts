@@ -47,7 +47,7 @@ export default class Haori {
    */
   public static async toast(
     message: string,
-    level: 'info' | 'warning' | 'error',
+    level: 'info' | 'warning' | 'error' | 'success',
   ): Promise<void> {
     const toast = document.createElement('div');
     toast.className = `haori-toast haori-toast-${level}`;
