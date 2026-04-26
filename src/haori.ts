@@ -118,18 +118,33 @@ export default class Haori {
     target: HTMLElement | HTMLFormElement,
     message: string,
   ): Promise<void> {
+    return Haori.addMessage(target, message, 'error');
+  }
+
+  /**
+   * メッセージをレベル付きで追加します。
+   *
+   * @param target メッセージを表示する要素
+   * @param message メッセージ
+   * @param level メッセージのレベル（省略可能）
+   */
+  public static addMessage(
+    target: HTMLElement | HTMLFormElement,
+    message: string,
+    level?: 'info' | 'warning' | 'error' | 'success',
+  ): Promise<void> {
     return Queue.enqueue(() => {
       // 仕様: 入力要素の場合は親要素に、フォーム要素の場合はフォーム自身に data-message を付与する。
-      if (target instanceof HTMLFormElement) {
-        target.setAttribute('data-message', message);
-        return;
+      const recipient =
+        target instanceof HTMLFormElement
+          ? target
+          : (target.parentElement ?? target);
+      recipient.setAttribute('data-message', message);
+      if (level !== undefined) {
+        recipient.setAttribute('data-message-level', level);
+      } else {
+        recipient.removeAttribute('data-message-level');
       }
-      if (target.parentElement) {
-        target.parentElement.setAttribute('data-message', message);
-        return;
-      }
-      // 親が無い場合は当該要素に付与（フォールバック）
-      target.setAttribute('data-message', message);
     }, true) as Promise<void>;
   }
 
@@ -141,8 +156,10 @@ export default class Haori {
   public static clearMessages(parent: HTMLElement): Promise<void> {
     return Queue.enqueue(() => {
       parent.removeAttribute('data-message');
+      parent.removeAttribute('data-message-level');
       parent.querySelectorAll('[data-message]').forEach(element => {
         element.removeAttribute('data-message');
+        element.removeAttribute('data-message-level');
       });
     }, true) as Promise<void>;
   }
