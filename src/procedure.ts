@@ -829,9 +829,9 @@ ${body}
           Procedure.attrName(event, 'toast-level'),
         );
         const validLevels = ['info', 'warning', 'error', 'success'] as const;
-        options.toastLevel = validLevels.includes(rawLevel as (typeof validLevels)[number])
-          ? (rawLevel as (typeof validLevels)[number])
-          : null;
+        type ToastLevel = (typeof validLevels)[number];
+        const isValidLevel = validLevels.includes(rawLevel as ToastLevel);
+        options.toastLevel = isValidLevel ? (rawLevel as ToastLevel) : null;
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'redirect'))) {
         options.redirectUrl = fragment.getAttribute(
