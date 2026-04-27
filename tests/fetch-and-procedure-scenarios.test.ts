@@ -143,6 +143,44 @@ describe('Fetch and Procedure scenarios', () => {
     btn.remove();
   });
 
+  it('data-click-toast-level でトーストレベルを指定できる', async () => {
+    const Haori = await import('../src/haori');
+    const toastSpy = vi
+      .spyOn(Haori.default, 'toast')
+      .mockResolvedValue(undefined as void);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-toast', '保存しました');
+    btn.setAttribute('data-click-toast-level', 'success');
+    document.body.appendChild(btn);
+
+    btn.click();
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(toastSpy).toHaveBeenCalledWith('保存しました', 'success');
+
+    btn.remove();
+  });
+
+  it('data-click-toast-level に不正な値を指定すると info にフォールバックする', async () => {
+    const Haori = await import('../src/haori');
+    const toastSpy = vi
+      .spyOn(Haori.default, 'toast')
+      .mockResolvedValue(undefined as void);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-toast', 'msg');
+    btn.setAttribute('data-click-toast-level', 'invalid');
+    document.body.appendChild(btn);
+
+    btn.click();
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(toastSpy).toHaveBeenCalledWith('msg', 'info');
+
+    btn.remove();
+  });
+
   it('POST sends JSON body when payload exists', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
