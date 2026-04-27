@@ -688,6 +688,42 @@ describe('Procedure action operations', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
       form.remove();
     });
+
+    it('バリデーション失敗（複数 invalid）: scrollIntoView は先頭の invalid 要素に 1 回だけ呼ばれる', async () => {
+      // reportValidity をスタブして両 input を確実に invalid にする
+      vi.spyOn(HTMLInputElement.prototype, 'reportValidity').mockReturnValue(
+        false,
+      );
+
+      const form = document.createElement('form');
+      const inputA = document.createElement('input'); // DOM 上で先頭
+      inputA.name = 'name';
+      form.appendChild(inputA);
+      const inputB = document.createElement('input'); // DOM 上で 2 番目
+      inputB.name = 'email';
+      form.appendChild(inputB);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/multi-validate');
+      btn.setAttribute('data-click-form', '');
+      btn.setAttribute('data-click-validate', '');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => scrollIntoViewSpy.mock.calls.length > 0,
+        {description: 'scrollIntoView called once on first invalid'},
+      );
+
+      // 1 回だけ呼ばれる
+      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(1);
+      // 先頭の invalid 要素（inputA）に対して呼ばれる
+      expect(scrollIntoViewSpy.mock.instances[0]).toBe(inputA);
+      form.remove();
+    });
   });
 
   // -----------------------------------------------------------------------

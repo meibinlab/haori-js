@@ -1561,22 +1561,39 @@ ${body}
     if (this.options.valid !== true) {
       return true;
     }
-    const target = fragment.getTarget();
-    let result = this.validateOne(fragment);
-    if (!result) {
-      target.focus();
-      if (this.options.scrollOnError) {
-        target.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    const firstInvalid = this.findFirstInvalid(fragment);
+    if (firstInvalid === null) {
+      return true;
+    }
+    firstInvalid.focus();
+    if (this.options.scrollOnError) {
+      firstInvalid.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
+    return false;
+  }
+
+  /**
+   * 対象フラグメント以下で DOM 順の最上部にある invalid 要素を返します。
+   * 全フラグメントのバリデーションを実行した上で検出のみを行います。
+   *
+   * @param fragment 対象のフラグメント
+   * @returns 最初の invalid 要素、なければ null
+   */
+  private findFirstInvalid(fragment: ElementFragment): HTMLElement | null {
+    // 子要素を逆順に処理することで、DOM 順の先頭要素が最後に found を上書きし、
+    // 最終的に最上部の invalid 要素が返る
+    let found: HTMLElement | null = null;
+    for (const child of fragment.getChildElementFragments().reverse()) {
+      const result = this.findFirstInvalid(child);
+      if (result !== null) {
+        found = result;
       }
     }
-    // エラー要素のフォーカスを最上部に移動するため、子要素は逆順で処理
-    fragment
-      .getChildElementFragments()
-      .reverse()
-      .forEach(child => {
-        result &&= this.validate(child);
-      });
-    return result;
+    // 自身は子より DOM 上位にあるため、invalid なら子の結果を上書きする
+    if (!this.validateOne(fragment)) {
+      return fragment.getTarget();
+    }
+    return found;
   }
 
   /**
