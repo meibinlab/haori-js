@@ -243,6 +243,9 @@ export interface ProcedureOptions {
 
   /** リダイレクトURL */
   redirectUrl?: string | null;
+
+  /** エラー時に最初のエラー要素へスクロールするかどうか */
+  scrollOnError?: boolean | null;
 }
 
 /**
@@ -837,6 +840,9 @@ ${body}
         options.redirectUrl = fragment.getAttribute(
           Procedure.attrName(event, 'redirect'),
         ) as string;
+      }
+      if (fragment.hasAttribute(Procedure.attrName(event, 'scroll-error'))) {
+        options.scrollOnError = true;
       }
       // history（data-{event}-history / history-data / history-form）
       if (fragment.hasAttribute(Procedure.attrName(event, 'history'))) {
@@ -1510,6 +1516,14 @@ ${body}
             await addGeneralMessage(e.message);
           }
         }
+        if (this.options.scrollOnError) {
+          const root = baseFragment ? baseFragment.getTarget() : document.body;
+          const firstError =
+            root.getAttribute('data-message-level') === 'error'
+              ? root
+              : root.querySelector<HTMLElement>('[data-message-level="error"]');
+          firstError?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        }
         return false;
       } catch {
         // JSON 解析失敗時はテキストにフォールバック
@@ -1544,6 +1558,9 @@ ${body}
     let result = this.validateOne(fragment);
     if (!result) {
       target.focus();
+      if (this.options.scrollOnError) {
+        target.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+      }
     }
     // エラー要素のフォーカスを最上部に移動するため、子要素は逆順で処理
     fragment
