@@ -521,6 +521,13 @@ describe('Procedure action operations', () => {
         .mockImplementation(() => {});
     });
 
+    afterEach(() => {
+      // vi.restoreAllMocks() は直接代入した () => {} へ戻すだけなので、
+      // afterEach でプロパティ自体を削除して jsdom の元の状態（未定義）に戻す
+      delete (Element.prototype as unknown as Record<string, unknown>)
+        .scrollIntoView;
+    });
+
     it('JSON フィールドエラー: エラー要素の scrollIntoView が呼ばれる', async () => {
       vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
         Promise.resolve(
