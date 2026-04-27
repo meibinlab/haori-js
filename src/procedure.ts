@@ -243,6 +243,9 @@ export interface ProcedureOptions {
 
   /** リダイレクトURL */
   redirectUrl?: string | null;
+
+  /** エラー時に最初のエラー要素へスクロールするかどうか */
+  scrollOnError?: boolean | null;
 }
 
 /**
@@ -837,6 +840,9 @@ ${body}
         options.redirectUrl = fragment.getAttribute(
           Procedure.attrName(event, 'redirect'),
         ) as string;
+      }
+      if (fragment.hasAttribute(Procedure.attrName(event, 'scroll-error'))) {
+        options.scrollOnError = true;
       }
       // history（data-{event}-history / history-data / history-form）
       if (fragment.hasAttribute(Procedure.attrName(event, 'history'))) {
@@ -1454,6 +1460,22 @@ ${body}
       await resolveProcedureHaoriApi().addErrorMessage(targetEl, message);
     };
 
+    const scrollToFirstError = () => {
+      if (!this.options.scrollOnError) {
+        return;
+      }
+      const root = baseFragment ? baseFragment.getTarget() : document.body;
+      // addErrorMessage はフォーム以外の target に対して parentElement へエラーを付与するため、
+      // root 自身・parentElement・root 配下の順で探索する
+      const errorTarget =
+        root.getAttribute('data-message-level') === 'error'
+          ? root
+          : root.parentElement?.getAttribute('data-message-level') === 'error'
+            ? root.parentElement
+            : root.querySelector<HTMLElement>('[data-message-level="error"]');
+      errorTarget?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    };
+
     // コンテンツタイプに応じて解析
     const contentType = response.headers.get('Content-Type') || '';
     if (contentType.includes('application/json')) {
@@ -1500,6 +1522,7 @@ ${body}
         if (entries.length === 0) {
           // 汎用メッセージ
           await addGeneralMessage(`${response.status} ${response.statusText}`);
+          scrollToFirstError();
           return false;
         }
         // メッセージを反映
@@ -1510,6 +1533,7 @@ ${body}
             await addGeneralMessage(e.message);
           }
         }
+        scrollToFirstError();
         return false;
       } catch {
         // JSON 解析失敗時はテキストにフォールバック
@@ -1526,6 +1550,7 @@ ${body}
     } catch {
       await addGeneralMessage(`${response.status} ${response.statusText}`);
     }
+    scrollToFirstError();
     return false;
   }
 
@@ -1540,19 +1565,39 @@ ${body}
     if (this.options.valid !== true) {
       return true;
     }
-    const target = fragment.getTarget();
-    let result = this.validateOne(fragment);
-    if (!result) {
-      target.focus();
+    const firstInvalid = this.findFirstInvalid(fragment);
+    if (firstInvalid === null) {
+      return true;
     }
-    // エラー要素のフォーカスを最上部に移動するため、子要素は逆順で処理
-    fragment
-      .getChildElementFragments()
-      .reverse()
-      .forEach(child => {
-        result &&= this.validate(child);
-      });
-    return result;
+    firstInvalid.focus();
+    if (this.options.scrollOnError) {
+      firstInvalid.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
+    return false;
+  }
+
+  /**
+   * 対象フラグメント以下で DOM 順の最上部にある invalid 要素を返します。
+   * 全フラグメントのバリデーションを実行した上で検出のみを行います。
+   *
+   * @param fragment 対象のフラグメント
+   * @returns 最初の invalid 要素、なければ null
+   */
+  private findFirstInvalid(fragment: ElementFragment): HTMLElement | null {
+    // 子要素を逆順に処理することで、DOM 順の先頭要素が最後に found を上書きし、
+    // 最終的に最上部の invalid 要素が返る
+    let found: HTMLElement | null = null;
+    for (const child of fragment.getChildElementFragments().reverse()) {
+      const result = this.findFirstInvalid(child);
+      if (result !== null) {
+        found = result;
+      }
+    }
+    // 自身は子より DOM 上位にあるため、invalid なら子の結果を上書きする
+    if (!this.validateOne(fragment)) {
+      return fragment.getTarget();
+    }
+    return found;
   }
 
   /**
