@@ -1465,11 +1465,15 @@ ${body}
         return;
       }
       const root = baseFragment ? baseFragment.getTarget() : document.body;
-      const firstError =
+      // addErrorMessage はフォーム以外の target に対して parentElement へエラーを付与するため、
+      // root 自身・parentElement・root 配下の順で探索する
+      const errorTarget =
         root.getAttribute('data-message-level') === 'error'
           ? root
-          : root.querySelector<HTMLElement>('[data-message-level="error"]');
-      firstError?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+          : root.parentElement?.getAttribute('data-message-level') === 'error'
+            ? root.parentElement
+            : root.querySelector<HTMLElement>('[data-message-level="error"]');
+      errorTarget?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
     };
 
     // コンテンツタイプに応じて解析

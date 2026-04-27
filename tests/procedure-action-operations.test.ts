@@ -628,6 +628,39 @@ describe('Procedure action operations', () => {
       form.remove();
     });
 
+    it('non-form target: addErrorMessage が parentElement に付与したエラー要素へ scrollIntoView が呼ばれる', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('Server Error', {
+            status: 500,
+            headers: {'Content-Type': 'text/plain'},
+          }),
+        ) as unknown as Promise<Response>,
+      );
+
+      // フォームではなく div の中にボタンを置く
+      const container = document.createElement('div');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/non-form-error');
+      btn.setAttribute('data-click-scroll-error', '');
+      container.appendChild(btn);
+      document.body.appendChild(container);
+
+      await waitForDomSettled();
+      btn.click();
+      // addErrorMessage は非フォーム target の parentElement にエラーを付与する
+      await waitForCondition(
+        () => container.getAttribute('data-message-level') === 'error',
+        {description: 'error set on parentElement (container)'},
+      );
+
+      // container（btn.parentElement）に対して scrollIntoView が 1 回呼ばれる
+      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(1);
+      expect(scrollIntoViewSpy.mock.instances[0]).toBe(container);
+      container.remove();
+    });
+
     it('data-click-scroll-error がない場合は scrollIntoView が呼ばれない', async () => {
       vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
         Promise.resolve(
