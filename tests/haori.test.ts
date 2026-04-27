@@ -44,3 +44,109 @@ describe('Haori.toast', () => {
     expect(document.querySelector('.haori-toast')).toBeNull();
   });
 });
+
+describe('Haori.addMessage', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('入力要素の場合は親要素に data-message を付与する', async () => {
+    const parent = document.createElement('div');
+    const input = document.createElement('input');
+    parent.appendChild(input);
+    document.body.appendChild(parent);
+
+    await Haori.addMessage(input, 'エラー');
+
+    expect(parent.getAttribute('data-message')).toBe('エラー');
+    expect(parent.hasAttribute('data-message-level')).toBe(false);
+  });
+
+  it('level を指定すると data-message-level が付与される', async () => {
+    const parent = document.createElement('div');
+    const input = document.createElement('input');
+    parent.appendChild(input);
+    document.body.appendChild(parent);
+
+    await Haori.addMessage(input, '確認', 'info');
+
+    expect(parent.getAttribute('data-message')).toBe('確認');
+    expect(parent.getAttribute('data-message-level')).toBe('info');
+  });
+
+  it.each(['info', 'warning', 'error', 'success'] as const)(
+    'level "%s" を data-message-level に設定できる',
+    async (level) => {
+      const parent = document.createElement('div');
+      const input = document.createElement('input');
+      parent.appendChild(input);
+      document.body.appendChild(parent);
+
+      await Haori.addMessage(input, 'msg', level);
+
+      expect(parent.getAttribute('data-message-level')).toBe(level);
+    },
+  );
+
+  it('フォーム要素の場合はフォーム自身に付与する', async () => {
+    const form = document.createElement('form');
+    document.body.appendChild(form);
+
+    await Haori.addMessage(form, 'フォームエラー', 'error');
+
+    expect(form.getAttribute('data-message')).toBe('フォームエラー');
+    expect(form.getAttribute('data-message-level')).toBe('error');
+  });
+});
+
+describe('Haori.clearMessages', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('data-message と data-message-level を両方除去する', async () => {
+    const parent = document.createElement('div');
+    const input = document.createElement('input');
+    parent.appendChild(input);
+    document.body.appendChild(parent);
+
+    await Haori.addMessage(input, 'エラー', 'error');
+    expect(parent.hasAttribute('data-message-level')).toBe(true);
+
+    await Haori.clearMessages(parent);
+
+    expect(parent.hasAttribute('data-message')).toBe(false);
+    expect(parent.hasAttribute('data-message-level')).toBe(false);
+  });
+
+  it('子要素の data-message-level も除去する', async () => {
+    const form = document.createElement('form');
+    document.body.appendChild(form);
+
+    await Haori.addMessage(form, 'エラー', 'warning');
+    expect(form.getAttribute('data-message-level')).toBe('warning');
+
+    await Haori.clearMessages(form);
+
+    expect(form.hasAttribute('data-message')).toBe(false);
+    expect(form.hasAttribute('data-message-level')).toBe(false);
+  });
+});
+
+describe('Haori.addErrorMessage', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('addMessage("error") に委譲する', async () => {
+    const parent = document.createElement('div');
+    const input = document.createElement('input');
+    parent.appendChild(input);
+    document.body.appendChild(parent);
+
+    await Haori.addErrorMessage(input, 'エラー');
+
+    expect(parent.getAttribute('data-message')).toBe('エラー');
+    expect(parent.getAttribute('data-message-level')).toBe('error');
+  });
+});

@@ -369,7 +369,7 @@ export default class Form {
    *
    * @param fragment 対象フラグメント
    * @param key キー（ドット区切りの文字列）
-   * @param message 追加するエラーメッセージ]
+   * @param message 追加するエラーメッセージ
    * @return Promise（メッセージの追加が完了したら解決される）
    */
   public static addErrorMessage(
@@ -377,18 +377,41 @@ export default class Form {
     key: string,
     message: string,
   ): Promise<void> {
+    return Form.addMessage(fragment, key, message, 'error');
+  }
+
+  /**
+   * キーに一致するフラグメントにレベル付きメッセージを追加します。
+   * キーに一致するフラグメントが見つからない場合は、指定されたフラグメントにメッセージを追加します。
+   *
+   * @param fragment 対象フラグメント
+   * @param key キー（ドット区切りの文字列）
+   * @param message 追加するメッセージ
+   * @param level メッセージのレベル（省略可能）
+   * @return Promise（メッセージの追加が完了したら解決される）
+   */
+  public static addMessage(
+    fragment: ElementFragment,
+    key: string,
+    message: string,
+    level?: 'info' | 'warning' | 'error' | 'success',
+  ): Promise<void> {
     const promises: Promise<void>[] = [];
     const activeHaori = resolveFormHaoriApi();
+    const addMsgFn = (
+      activeHaori as {addMessage?: typeof Haori.addMessage}
+    ).addMessage;
+    const doAdd = (target: HTMLElement): Promise<void> =>
+      typeof addMsgFn === 'function'
+        ? (addMsgFn.call(activeHaori, target, message, level) as Promise<void>)
+        : (activeHaori.addErrorMessage(target, message) as Promise<void>);
+
     const targetFragments = Form.findFragmentsByKey(fragment, key);
     targetFragments.forEach(targetFragment => {
-      promises.push(
-        activeHaori.addErrorMessage(targetFragment.getTarget(), message),
-      );
+      promises.push(doAdd(targetFragment.getTarget() as HTMLElement));
     });
     if (targetFragments.length === 0) {
-      promises.push(
-        activeHaori.addErrorMessage(fragment.getTarget(), message),
-      );
+      promises.push(doAdd(fragment.getTarget() as HTMLElement));
     }
     return Promise.all(promises).then(() => undefined);
   }
