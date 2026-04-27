@@ -1461,7 +1461,9 @@ ${body}
     };
 
     const scrollToFirstError = () => {
-      if (!this.options.scrollOnError) return;
+      if (!this.options.scrollOnError) {
+        return;
+      }
       const root = baseFragment ? baseFragment.getTarget() : document.body;
       const firstError =
         root.getAttribute('data-message-level') === 'error'
