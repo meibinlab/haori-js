@@ -1460,6 +1460,16 @@ ${body}
       await resolveProcedureHaoriApi().addErrorMessage(targetEl, message);
     };
 
+    const scrollToFirstError = () => {
+      if (!this.options.scrollOnError) return;
+      const root = baseFragment ? baseFragment.getTarget() : document.body;
+      const firstError =
+        root.getAttribute('data-message-level') === 'error'
+          ? root
+          : root.querySelector<HTMLElement>('[data-message-level="error"]');
+      firstError?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    };
+
     // コンテンツタイプに応じて解析
     const contentType = response.headers.get('Content-Type') || '';
     if (contentType.includes('application/json')) {
@@ -1506,6 +1516,7 @@ ${body}
         if (entries.length === 0) {
           // 汎用メッセージ
           await addGeneralMessage(`${response.status} ${response.statusText}`);
+          scrollToFirstError();
           return false;
         }
         // メッセージを反映
@@ -1516,14 +1527,7 @@ ${body}
             await addGeneralMessage(e.message);
           }
         }
-        if (this.options.scrollOnError) {
-          const root = baseFragment ? baseFragment.getTarget() : document.body;
-          const firstError =
-            root.getAttribute('data-message-level') === 'error'
-              ? root
-              : root.querySelector<HTMLElement>('[data-message-level="error"]');
-          firstError?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
-        }
+        scrollToFirstError();
         return false;
       } catch {
         // JSON 解析失敗時はテキストにフォールバック
@@ -1540,6 +1544,7 @@ ${body}
     } catch {
       await addGeneralMessage(`${response.status} ${response.statusText}`);
     }
+    scrollToFirstError();
     return false;
   }
 
