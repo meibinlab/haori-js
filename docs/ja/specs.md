@@ -1064,7 +1064,7 @@ class Haori {
   static async dialog(message: string): Promise<void>
 
   // トースト (Popover API使用)
-  static async toast(message: string, level: 'info' | 'warning' | 'error'): Promise<void>
+  static async toast(message: string, level?: 'info' | 'warning' | 'error' | 'success'): Promise<void>
 
   // 確認ダイアログ
   static async confirm(message: string): Promise<boolean>
@@ -1073,8 +1073,9 @@ class Haori {
   static async openDialog(element: HTMLElement): Promise<void>
   static async closeDialog(element: HTMLElement): Promise<void>
 
-  // エラーメッセージ
+  // メッセージ
   static async addErrorMessage(target: HTMLElement | HTMLFormElement, message: string): Promise<void>
+  static async addMessage(target: HTMLElement | HTMLFormElement, message: string, level?: 'info' | 'warning' | 'error' | 'success'): Promise<void>
   static async clearMessages(parent: HTMLElement): Promise<void>
 }
 ```
@@ -1082,37 +1083,59 @@ class Haori {
 #### 実装例
 
 ```typescript
-// トースト (3秒表示)
-static async toast(message: string, level: 'info' | 'warning' | 'error' = 'info'): Promise<void> {
-  return Queue.enqueue(() => {
-    const toast = document.createElement('div')
-    toast.textContent = message
-    toast.className = `haori-toast haori-toast-${level}`
-    toast.setAttribute('popover', 'manual')
+// トースト (3秒表示。level 省略時は 'info'。error は aria-live="assertive")
+static async toast(message: string, level: 'info' | 'warning' | 'error' | 'success' = 'info'): Promise<void> {
+  const toast = document.createElement('div')
+  toast.textContent = message
+  toast.className = `haori-toast haori-toast-${level}`
+  toast.setAttribute('popover', 'manual')
+  toast.setAttribute('role', 'status')
+  toast.setAttribute('aria-live', level === 'error' ? 'assertive' : 'polite')
 
-    document.body.appendChild(toast)
-    toast.showPopover()
+  document.body.appendChild(toast)
+  toast.showPopover()
 
-    setTimeout(() => {
+  setTimeout(() => {
+    try {
       toast.hidePopover()
+    } finally {
       toast.remove()
-    }, 3000)
-  })
+    }
+  }, 3000)
 }
 
-// エラーメッセージ設定
-static async addErrorMessage(target: HTMLElement, message: string): Promise<void> {
+// レベル付きメッセージ設定
+static async addMessage(
+  target: HTMLElement | HTMLFormElement,
+  message: string,
+  level?: 'info' | 'warning' | 'error' | 'success',
+): Promise<void> {
   return Queue.enqueue(() => {
-    target.setAttribute('data-message', message)
+    // 入力要素は親要素に、フォームはフォーム自身に付与する
+    const recipient =
+      target instanceof HTMLFormElement ? target : (target.parentElement ?? target)
+    recipient.setAttribute('data-message', message)
+    if (level !== undefined) {
+      recipient.setAttribute('data-message-level', level)
+    } else {
+      recipient.removeAttribute('data-message-level')
+    }
   })
 }
 
-// メッセージクリア (再帰的)
+// エラーメッセージ設定 (addMessage('error') への委譲)
+static async addErrorMessage(target: HTMLElement | HTMLFormElement, message: string): Promise<void> {
+  return Haori.addMessage(target, message, 'error')
+}
+
+// メッセージクリア (再帰的。data-message-level も削除する)
 static async clearMessages(parent: HTMLElement): Promise<void> {
   return Queue.enqueue(() => {
     parent.removeAttribute('data-message')
+    parent.removeAttribute('data-message-level')
     parent.querySelectorAll('[data-message]').forEach(el => {
       el.removeAttribute('data-message')
+      el.removeAttribute('data-message-level')
     })
   })
 }
@@ -1481,14 +1504,15 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 <!-- バインディングデータ: { formData: { username: "..." } } -->
 ```
 
-#### `data-message`
+#### `data-message` / `data-message-level`
 
-エラーメッセージを表示します。フェッチエラー時に自動設定されます。
+メッセージを表示します。フェッチエラー時に自動設定されます。
+`data-message-level` でメッセージのレベルを表します（CSS でのスタイリングに使用）。
 
 ```html
 <input name="email">
 <!-- エラー時に親要素に自動設定: -->
-<div data-message="メールアドレスが不正です">
+<div data-message="メールアドレスが不正です" data-message-level="error">
   <input name="email">
 </div>
 ```
@@ -2577,6 +2601,7 @@ class Form {
   static setValues(form: ElementFragment, values: Record<string, unknown>, force?: boolean): Promise<void>
   static reset(fragment: ElementFragment): Promise<void>
   static addErrorMessage(fragment: ElementFragment, key: string, message: string): Promise<void>
+  static addMessage(fragment: ElementFragment, key: string, message: string, level?: 'info' | 'warning' | 'error' | 'success'): Promise<void>
   static clearMessages(fragment: ElementFragment): Promise<void>
   static findFragmentsByKey(fragment: ElementFragment, key: string): ElementFragment[]
   static getFormFragment(fragment: ElementFragment): ElementFragment | null
@@ -2588,11 +2613,12 @@ class Form {
 ```typescript
 class Haori {
   static dialog(message: string): Promise<void>
-  static toast(message: string, level?: 'info' | 'warning' | 'error'): Promise<void>
+  static toast(message: string, level?: 'info' | 'warning' | 'error' | 'success'): Promise<void>
   static confirm(message: string): Promise<boolean>
   static openDialog(element: HTMLElement): Promise<void>
   static closeDialog(element: HTMLElement): Promise<void>
-  static addErrorMessage(target: HTMLElement, message: string): Promise<void>
+  static addErrorMessage(target: HTMLElement | HTMLFormElement, message: string): Promise<void>
+  static addMessage(target: HTMLElement | HTMLFormElement, message: string, level?: 'info' | 'warning' | 'error' | 'success'): Promise<void>
   static clearMessages(parent: HTMLElement): Promise<void>
 }
 ```
