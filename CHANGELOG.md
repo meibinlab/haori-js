@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Changed
+
+- `Haori.toast` で `success` レベルを扱えるようにし、`aria-live` をレベルに応じて切り替えるようにした
+- `data-{event}-toast-level` を追加し、イベント属性からトーストレベルを指定できるようにした
+- `Form.addMessage` / `Haori.addMessage` を追加し、`data-message-level` を使ったメッセージ表示に対応した
+- `clearMessages` で `data-message-level` も削除するようにした
+- `Haori.dialog` / `confirm` のリテラル `\n` 正規化を Procedure 経路に限定した
+- `data-fetch-bind-arg` を `data-fetch-arg` の別名として扱い、仕様書とガイドで優先順位を整理した
+
+### Library
+
+- `toast` レベル、`data-{event}-toast-level`、`addMessage` / `clearMessages`、`dialog` / `confirm` の改行正規化、`data-fetch-bind-arg` の回帰テストを追加した
+
 ## [0.4.3] - 2026-04-25
 
 ### Changed
