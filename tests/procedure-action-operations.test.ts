@@ -507,6 +507,180 @@ describe('Procedure action operations', () => {
   });
 
   // -----------------------------------------------------------------------
+  // data-click-scroll-error
+  // -----------------------------------------------------------------------
+
+  describe('data-click-scroll-error', () => {
+    let scrollIntoViewSpy: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      scrollIntoViewSpy = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoViewSpy;
+    });
+
+    it('JSON フィールドエラー: エラー要素の scrollIntoView が呼ばれる', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({errors: {email: 'メールアドレスが不正です'}}),
+            {status: 422, headers: {'Content-Type': 'application/json'}},
+          ),
+        ) as unknown as Promise<Response>,
+      );
+
+      const form = document.createElement('form');
+      const emailWrapper = document.createElement('div');
+      const emailInput = document.createElement('input');
+      emailInput.name = 'email';
+      emailWrapper.appendChild(emailInput);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/json-field-error');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.append(emailWrapper, btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => emailWrapper.getAttribute('data-message-level') === 'error',
+        {description: 'field error message set'},
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      form.remove();
+    });
+
+    it('JSON entries が空（汎用メッセージ）: scrollIntoView が呼ばれる', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('{}', {
+            status: 500,
+            headers: {'Content-Type': 'application/json'},
+          }),
+        ) as unknown as Promise<Response>,
+      );
+
+      const form = document.createElement('form');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/json-empty-error');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => form.getAttribute('data-message-level') === 'error',
+        {description: 'general error message set (json empty)'},
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      form.remove();
+    });
+
+    it('text/plain フォールバック: scrollIntoView が呼ばれる', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('Internal Server Error', {
+            status: 500,
+            headers: {'Content-Type': 'text/plain'},
+          }),
+        ) as unknown as Promise<Response>,
+      );
+
+      const form = document.createElement('form');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/text-error');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => form.getAttribute('data-message-level') === 'error',
+        {description: 'text fallback error message set'},
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      form.remove();
+    });
+
+    it('data-click-scroll-error がない場合は scrollIntoView が呼ばれない', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('Error', {
+            status: 500,
+            headers: {'Content-Type': 'text/plain'},
+          }),
+        ) as unknown as Promise<Response>,
+      );
+
+      const form = document.createElement('form');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/no-scroll');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => form.getAttribute('data-message-level') === 'error',
+        {description: 'error message set without scroll-error attr'},
+      );
+
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+      form.remove();
+    });
+
+    it('バリデーション失敗: scrollIntoView が呼ばれる', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+      const form = document.createElement('form');
+      const input = document.createElement('input');
+      input.name = 'name';
+      input.required = true;
+      input.value = '';
+      form.appendChild(input);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/validate');
+      btn.setAttribute('data-click-form', '');
+      btn.setAttribute('data-click-validate', '');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => scrollIntoViewSpy.mock.calls.length > 0,
+        {description: 'scrollIntoView called on validation error'},
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      form.remove();
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // history.pushState
   // -----------------------------------------------------------------------
 
