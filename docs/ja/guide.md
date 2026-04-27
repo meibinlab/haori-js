@@ -863,7 +863,11 @@ window.Dates = {
 </div>
 ```
 
-#### `data-fetch-arg`: データをネストするキー名を指定
+#### `data-fetch-arg` / `data-fetch-bind-arg`: データをネストするキー名を指定
+
+レスポンスデータを指定したキー名の下に格納してバインドします。
+`data-fetch-arg` と `data-fetch-bind-arg` は同義で、`data-fetch-arg` が優先されます。
+イベント属性版は `data-{event}-bind-arg` を使用します。
 
 ```html
 <div data-fetch="/api/user" data-fetch-arg="user">
@@ -871,6 +875,11 @@ window.Dates = {
   <!-- user.name, user.email としてアクセスできる -->
   <p>{{user.name}}</p>
   <p>{{user.email}}</p>
+</div>
+
+<!-- data-fetch-bind-arg も同じ意味 -->
+<div data-fetch="/api/user" data-fetch-bind-arg="user">
+  <p>{{user.name}}</p>
 </div>
 ```
 

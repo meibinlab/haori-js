@@ -1342,7 +1342,8 @@ data-fetch="url"
 - `data-fetch-data`: 送信データ
 - `data-fetch-form`: フォーム要素のセレクタ
 - `data-fetch-bind`: バインド先セレクタ (デフォルト: 自要素)
-- `data-fetch-arg`: バインドキー名
+- `data-fetch-arg`: バインドキー名（`data-fetch-bind-arg` と同義。こちらが優先）
+- `data-fetch-bind-arg`: バインドキー名（`data-fetch-arg` の別名。`data-fetch-arg` が無い場合に参照）
 - `data-fetch-bind-params`: 抽出パラメータ (&区切り)
 
 **例**:
