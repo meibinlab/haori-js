@@ -1,6 +1,52 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Haori from '../src/haori';
 
+describe('Haori.dialog', () => {
+  beforeEach(() => {
+    vi.spyOn(window, 'alert').mockImplementation(() => {});
+  });
+
+  it('メッセージをそのまま alert に渡す', async () => {
+    await Haori.dialog('こんにちは');
+    expect(window.alert).toHaveBeenCalledWith('こんにちは');
+  });
+
+  it('実改行を含む文字列をそのまま渡す（変質させない）', async () => {
+    await Haori.dialog('Hello\nWorld');
+    expect(window.alert).toHaveBeenCalledWith('Hello\nWorld');
+  });
+
+  it('リテラル \\n を正規化しない（Procedure 経路でのみ正規化）', async () => {
+    await Haori.dialog('Hello\\nWorld');
+    expect(window.alert).toHaveBeenCalledWith('Hello\\nWorld');
+  });
+});
+
+describe('Haori.confirm', () => {
+  beforeEach(() => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  });
+
+  it('メッセージをそのまま confirm に渡す', async () => {
+    await Haori.confirm('続けますか？');
+    expect(window.confirm).toHaveBeenCalledWith('続けますか？');
+  });
+
+  it('実改行を含む文字列をそのまま渡す（変質させない）', async () => {
+    await Haori.confirm('続けますか？\nこの操作は取り消せません。');
+    expect(window.confirm).toHaveBeenCalledWith(
+      '続けますか？\nこの操作は取り消せません。',
+    );
+  });
+
+  it('リテラル \\n を正規化しない（Procedure 経路でのみ正規化）', async () => {
+    await Haori.confirm('続けますか？\\nこの操作は取り消せません。');
+    expect(window.confirm).toHaveBeenCalledWith(
+      '続けますか？\\nこの操作は取り消せません。',
+    );
+  });
+});
+
 describe('Haori.toast', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -36,7 +82,8 @@ describe('Haori.toast', () => {
   });
 
   it('3秒後にトーストを非表示にして DOM から削除する', () => {
-    const hidePopoverSpy = HTMLElement.prototype.hidePopover as ReturnType<typeof vi.fn>;
+    const hidePopoverSpy =
+      HTMLElement.prototype.hidePopover as ReturnType<typeof vi.fn>;
     Haori.toast('hello', 'info');
     expect(document.querySelector('.haori-toast')).not.toBeNull();
     vi.advanceTimersByTime(3000);
