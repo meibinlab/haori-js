@@ -463,9 +463,9 @@ export default class Procedure {
       }
       // confirm
       if (fragment.hasAttribute(Procedure.attrName(event, 'confirm'))) {
-        options.confirmMessage = fragment.getAttribute(
+        options.confirmMessage = (fragment.getAttribute(
           Procedure.attrName(event, 'confirm'),
-        ) as string;
+        ) as string).replace(/\\n/g, '\n');
       }
       // data（イベント）
       if (fragment.hasAttribute(Procedure.attrName(event, 'data'))) {
@@ -817,9 +817,9 @@ ${body}
         }
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'dialog'))) {
-        options.dialogMessage = fragment.getAttribute(
+        options.dialogMessage = (fragment.getAttribute(
           Procedure.attrName(event, 'dialog'),
-        ) as string;
+        ) as string).replace(/\\n/g, '\n');
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'toast'))) {
         options.toastMessage = fragment.getAttribute(

@@ -11,9 +11,14 @@ describe('Haori.dialog', () => {
     expect(window.alert).toHaveBeenCalledWith('こんにちは');
   });
 
-  it('リテラル \\n を改行に正規化する', async () => {
-    await Haori.dialog('Hello\\nWorld');
+  it('実改行を含む文字列をそのまま渡す（変質させない）', async () => {
+    await Haori.dialog('Hello\nWorld');
     expect(window.alert).toHaveBeenCalledWith('Hello\nWorld');
+  });
+
+  it('リテラル \\n を正規化しない（Procedure 経路でのみ正規化）', async () => {
+    await Haori.dialog('Hello\\nWorld');
+    expect(window.alert).toHaveBeenCalledWith('Hello\\nWorld');
   });
 });
 
@@ -27,10 +32,17 @@ describe('Haori.confirm', () => {
     expect(window.confirm).toHaveBeenCalledWith('続けますか？');
   });
 
-  it('リテラル \\n を改行に正規化する', async () => {
-    await Haori.confirm('続けますか？\\nこの操作は取り消せません。');
+  it('実改行を含む文字列をそのまま渡す（変質させない）', async () => {
+    await Haori.confirm('続けますか？\nこの操作は取り消せません。');
     expect(window.confirm).toHaveBeenCalledWith(
       '続けますか？\nこの操作は取り消せません。',
+    );
+  });
+
+  it('リテラル \\n を正規化しない（Procedure 経路でのみ正規化）', async () => {
+    await Haori.confirm('続けますか？\\nこの操作は取り消せません。');
+    expect(window.confirm).toHaveBeenCalledWith(
+      '続けますか？\\nこの操作は取り消せません。',
     );
   });
 });
