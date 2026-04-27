@@ -208,4 +208,40 @@ describe('Fetch and Procedure scenarios', () => {
 
     container.remove();
   });
+
+  it('data-click-dialog のリテラル \\n を Procedure 経路で改行に正規化する', async () => {
+    const Haori = await import('../src/haori');
+    const dialogSpy = vi
+      .spyOn(Haori.default, 'dialog')
+      .mockResolvedValue(undefined as void);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-dialog', 'Line1\\nLine2');
+    document.body.appendChild(btn);
+
+    btn.click();
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(dialogSpy).toHaveBeenCalledWith('Line1\nLine2');
+
+    btn.remove();
+  });
+
+  it('data-click-confirm のリテラル \\n を Procedure 経路で改行に正規化する', async () => {
+    const Haori = await import('../src/haori');
+    const confirmSpy = vi
+      .spyOn(Haori.default, 'confirm')
+      .mockResolvedValue(true);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-confirm', 'よろしいですか？\\n取り消せません。');
+    document.body.appendChild(btn);
+
+    btn.click();
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(confirmSpy).toHaveBeenCalledWith('よろしいですか？\n取り消せません。');
+
+    btn.remove();
+  });
 });
