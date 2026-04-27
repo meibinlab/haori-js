@@ -246,6 +246,9 @@ export interface ProcedureOptions {
 
   /** エラー時に最初のエラー要素へスクロールするかどうか */
   scrollOnError?: boolean | null;
+
+  /** 成功時にスクロールする要素のCSSセレクター */
+  scrollTarget?: string | null;
 }
 
 /**
@@ -844,6 +847,11 @@ ${body}
       if (fragment.hasAttribute(Procedure.attrName(event, 'scroll-error'))) {
         options.scrollOnError = true;
       }
+      if (fragment.hasAttribute(Procedure.attrName(event, 'scroll'))) {
+        options.scrollTarget = fragment.getAttribute(
+          Procedure.attrName(event, 'scroll'),
+        ) as string;
+      }
       // history（data-{event}-history / history-data / history-form）
       if (fragment.hasAttribute(Procedure.attrName(event, 'history'))) {
         options.historyUrl = fragment.getAttribute(
@@ -1365,6 +1373,10 @@ ${body}
       );
     }
     this.pushHistory();
+    if (this.options.scrollTarget) {
+      const el = document.querySelector<HTMLElement>(this.options.scrollTarget);
+      el?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
     if (this.options.redirectUrl) {
       window.location.href = this.options.redirectUrl;
     }
