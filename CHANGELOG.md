@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-04-27
+
 ### Changed
 
 - `Haori.toast` で `success` レベルを扱えるようにし、`aria-live` をレベルに応じて切り替えるようにした
