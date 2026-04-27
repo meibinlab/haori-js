@@ -722,11 +722,15 @@ describe('Procedure action operations', () => {
       form.remove();
     });
 
-    it('バリデーション失敗（複数 invalid）: scrollIntoView は先頭の invalid 要素に 1 回だけ呼ばれる', async () => {
-      // reportValidity をスタブして両 input を確実に invalid にする
-      vi.spyOn(HTMLInputElement.prototype, 'reportValidity').mockReturnValue(
+    it('バリデーション失敗（複数 invalid）: scrollIntoView は先頭の invalid 要素に 1 回だけ呼ばれ、reportValidity も先頭要素に 1 回だけ呼ばれる', async () => {
+      // 検出フェーズは checkValidity で行われるため、checkValidity をスタブして両 input を invalid にする
+      vi.spyOn(HTMLInputElement.prototype, 'checkValidity').mockReturnValue(
         false,
       );
+      // reportValidity は先頭 1 要素にだけ呼ばれることを確認するためスパイを立てる
+      const reportValiditySpy = vi
+        .spyOn(HTMLInputElement.prototype, 'reportValidity')
+        .mockReturnValue(false);
 
       const form = document.createElement('form');
       const inputA = document.createElement('input'); // DOM 上で先頭
@@ -751,10 +755,12 @@ describe('Procedure action operations', () => {
         {description: 'scrollIntoView called once on first invalid'},
       );
 
-      // 1 回だけ呼ばれる
+      // scrollIntoView は 1 回だけ、先頭の invalid 要素（inputA）に対して呼ばれる
       expect(scrollIntoViewSpy).toHaveBeenCalledTimes(1);
-      // 先頭の invalid 要素（inputA）に対して呼ばれる
       expect(scrollIntoViewSpy.mock.instances[0]).toBe(inputA);
+      // reportValidity も先頭要素にだけ呼ばれる（複数の native UI が出ない）
+      expect(reportValiditySpy).toHaveBeenCalledTimes(1);
+      expect(reportValiditySpy.mock.instances[0]).toBe(inputA);
       form.remove();
     });
   });
