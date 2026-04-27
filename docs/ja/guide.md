@@ -1765,10 +1765,11 @@ import Haori from 'haori'
 // ダイアログ表示
 await Haori.dialog('処理が完了しました')
 
-// トースト通知（3秒表示）
+// トースト通知（3秒表示。level 省略時は 'info'）
 await Haori.toast('保存しました', 'info')     // info（青）
 await Haori.toast('警告メッセージ', 'warning') // warning（黄）
 await Haori.toast('エラー発生', 'error')       // error（赤）
+await Haori.toast('成功しました', 'success')   // success（緑）
 
 // 確認ダイアログ
 const result = await Haori.confirm('削除しますか？')
@@ -1784,6 +1785,9 @@ await Haori.closeDialog(dialog)
 // エラーメッセージの設定
 const input = document.querySelector('input[name="email"]')
 await Haori.addErrorMessage(input, 'メールアドレスが不正です')
+
+// レベル付きメッセージの設定
+await Haori.addMessage(input, '入力を確認してください', 'warning')
 
 // メッセージのクリア
 const form = document.getElementById('myForm')
