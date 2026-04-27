@@ -99,6 +99,40 @@ describe('Haori.addMessage', () => {
   });
 });
 
+describe('Haori.clearMessages', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('data-message と data-message-level を両方除去する', async () => {
+    const parent = document.createElement('div');
+    const input = document.createElement('input');
+    parent.appendChild(input);
+    document.body.appendChild(parent);
+
+    await Haori.addMessage(input, 'エラー', 'error');
+    expect(parent.hasAttribute('data-message-level')).toBe(true);
+
+    await Haori.clearMessages(parent);
+
+    expect(parent.hasAttribute('data-message')).toBe(false);
+    expect(parent.hasAttribute('data-message-level')).toBe(false);
+  });
+
+  it('子要素の data-message-level も除去する', async () => {
+    const form = document.createElement('form');
+    document.body.appendChild(form);
+
+    await Haori.addMessage(form, 'エラー', 'warning');
+    expect(form.getAttribute('data-message-level')).toBe('warning');
+
+    await Haori.clearMessages(form);
+
+    expect(form.hasAttribute('data-message')).toBe(false);
+    expect(form.hasAttribute('data-message-level')).toBe(false);
+  });
+});
+
 describe('Haori.addErrorMessage', () => {
   beforeEach(() => {
     document.body.innerHTML = '';

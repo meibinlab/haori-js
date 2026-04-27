@@ -156,8 +156,10 @@ export default class Haori {
   public static clearMessages(parent: HTMLElement): Promise<void> {
     return Queue.enqueue(() => {
       parent.removeAttribute('data-message');
+      parent.removeAttribute('data-message-level');
       parent.querySelectorAll('[data-message]').forEach(element => {
         element.removeAttribute('data-message');
+        element.removeAttribute('data-message-level');
       });
     }, true) as Promise<void>;
   }
