@@ -511,11 +511,14 @@ describe('Procedure action operations', () => {
   // -----------------------------------------------------------------------
 
   describe('data-click-scroll-error', () => {
-    let scrollIntoViewSpy: ReturnType<typeof vi.fn>;
+    let scrollIntoViewSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-      scrollIntoViewSpy = vi.fn();
-      Element.prototype.scrollIntoView = scrollIntoViewSpy;
+      // jsdom は scrollIntoView を実装していないため先に定義してからスパイする
+      Element.prototype.scrollIntoView = () => {};
+      scrollIntoViewSpy = vi
+        .spyOn(Element.prototype, 'scrollIntoView')
+        .mockImplementation(() => {});
     });
 
     it('JSON フィールドエラー: エラー要素の scrollIntoView が呼ばれる', async () => {
