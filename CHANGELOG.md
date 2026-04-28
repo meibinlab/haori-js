@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-04-28
+
+### Changed
+
+- `data-{event}-scroll-error` を追加し、バリデーション失敗やエラー発生時に最初のエラー要素へスクロールできるようにした
+- non-form target のエラー表示でも `data-message-level="error"` を起点にスクロールするようにした
+- `validate` で最初の不正入力要素へフォーカスし、スクロールを 1 回だけ行うようにした
+- `history.state` を使って Haori 管理の履歴だけを `popstate` リロード対象にし、外部の履歴遷移では `location.reload()` しないようにした
+
+### Library
+
+- `data-{event}-scroll-error` と non-form target / 複数 invalid の回帰テストを追加した
+- `popstate` の state 判定と `start()` / `stop()` によるリスナー登録・解除の回帰テストを追加した
+
 ## [0.4.4] - 2026-04-27
 
 ### Changed
