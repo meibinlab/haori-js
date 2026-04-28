@@ -269,6 +269,7 @@ export default class Core {
         if (typeof value === 'string') {
           const target = fragment.getTarget();
           const startedAt = performance.now();
+          target.setAttribute(`${Env.prefix}importing`, '');
           HaoriEvent.importStart(target, value);
 
           promises.push(
@@ -279,10 +280,12 @@ export default class Core {
                 return Queue.enqueue(() => {
                   target.innerHTML = html;
                 }).then(() => {
+                  target.removeAttribute(`${Env.prefix}importing`);
                   HaoriEvent.importEnd(target, value, bytes, startedAt);
                 });
               })
               .catch(error => {
+                target.removeAttribute(`${Env.prefix}importing`);
                 HaoriEvent.importError(target, value, error);
                 Log.error('[Haori]', 'Failed to import HTML:', value, error);
               }) as unknown as Promise<void>,
