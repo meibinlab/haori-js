@@ -689,3 +689,13 @@ describe('Procedure action operations', () => {
     container.remove();
   });
 });
+
+describe('popstate auto-reload', () => {
+  it('popstate イベント発火時に location.reload() を呼び出す', async () => {
+    const mockReload = vi.fn();
+    vi.stubGlobal('location', {reload: mockReload});
+    window.dispatchEvent(new PopStateEvent('popstate', {state: {}}));
+    expect(mockReload).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+});

@@ -1,7 +1,7 @@
 /**
  * @fileoverview イベント振り分け機能
  *
- * クリック/変更/ロードイベントを検出し Procedure に委譲します。
+ * クリック/変更/ロード/ポップステートイベントを検出し Procedure に委譲します。
  */
 
 import Fragment, {ElementFragment} from './fragment';
@@ -35,6 +35,11 @@ export default class EventDispatcher {
     }
   };
 
+  /** popstate デリゲータ（ブラウザの戻る・進む操作時にページをリロード） */
+  private readonly onPopstate = () => {
+    location.reload();
+  };
+
   /**
    * コンストラクタ。
    *
@@ -46,7 +51,7 @@ export default class EventDispatcher {
 
   /**
    * イベントリスナーの登録を開始します。
-   * クリック、変更、ロードイベントを監視し、対応するProcedureを実行します。
+   * クリック、変更、ロード、popstate イベントを監視し、対応するProcedureを実行します。
    */
   start(): void {
     this.root.addEventListener('click', this.onClick);
@@ -55,6 +60,8 @@ export default class EventDispatcher {
     this.root.addEventListener('load', this.onLoadCapture, true);
     // ページ全体のロード
     window.addEventListener('load', this.onWindowLoad, {once: true});
+    // ブラウザの戻る・進む操作
+    window.addEventListener('popstate', this.onPopstate);
   }
 
   /**
@@ -65,6 +72,7 @@ export default class EventDispatcher {
     this.root.removeEventListener('change', this.onChange);
     this.root.removeEventListener('load', this.onLoadCapture, true);
     window.removeEventListener('load', this.onWindowLoad);
+    window.removeEventListener('popstate', this.onPopstate);
   }
 
   /**
