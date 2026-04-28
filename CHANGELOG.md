@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-04-28
+
+### Changed
+
+- 式評価で object literal を含む安全な式を扱えるようにし、ページネーションなどの表示モデル生成をテンプレート式で記述できるようにした
+- object literal の key 位置でも `constructor`、`__proto__`、`prototype` を拒否し、getter / setter / async method / Unicode escape を使った危険キーの迂回を防止した
+
+### Library
+
+- object literal を返す `map()` と、ページネーション向けの `reduce()` 連鎖を評価する回帰テストを追加した
+- object literal の危険キー拒否に関する回帰テストを追加した
+
 ## [0.4.5] - 2026-04-28
 
 ### Changed
