@@ -30,6 +30,7 @@ describe('Procedureクラス', () => {
   it('バリデーションに失敗した場合は即resolveされる', async () => {
     const fragment = new MockFragment();
     const input = document.createElement('input') as HTMLInputElement;
+    vi.spyOn(input, 'checkValidity').mockReturnValue(false);
     vi.spyOn(input, 'reportValidity').mockReturnValue(false);
     vi.spyOn(input, 'focus').mockImplementation(() => {});
     fragment.setTarget(input);
@@ -142,11 +143,11 @@ describe('Procedureクラス', () => {
     expect(fragment.setValue).toHaveBeenCalledWith('15');
   });
 
-  it('validateOneは非input要素でtrueを返す', () => {
+  it('checkOneは非input要素でtrueを返す', () => {
     const fragment = new MockFragment();
     fragment.setTarget(document.createElement('div'));
     const proc = new Procedure({});
-    expect(proc['validateOne'](fragment as unknown as ElementFragment)).toBe(
+    expect(proc['checkOne'](fragment as unknown as ElementFragment)).toBe(
       true,
     );
   });

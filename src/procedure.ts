@@ -246,6 +246,9 @@ export interface ProcedureOptions {
 
   /** エラー時に最初のエラー要素へスクロールするかどうか */
   scrollOnError?: boolean | null;
+
+  /** 成功時にスクロールする要素のCSSセレクター */
+  scrollTarget?: string | null;
 }
 
 /**
@@ -844,6 +847,11 @@ ${body}
       if (fragment.hasAttribute(Procedure.attrName(event, 'scroll-error'))) {
         options.scrollOnError = true;
       }
+      if (fragment.hasAttribute(Procedure.attrName(event, 'scroll'))) {
+        options.scrollTarget = fragment.getAttribute(
+          Procedure.attrName(event, 'scroll'),
+        ) as string;
+      }
       // history（data-{event}-history / history-data / history-form）
       if (fragment.hasAttribute(Procedure.attrName(event, 'history'))) {
         options.historyUrl = fragment.getAttribute(
@@ -1365,6 +1373,10 @@ ${body}
       );
     }
     this.pushHistory();
+    if (this.options.scrollTarget) {
+      const el = document.querySelector<HTMLElement>(this.options.scrollTarget);
+      el?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
     if (this.options.redirectUrl) {
       window.location.href = this.options.redirectUrl;
     }
@@ -1569,6 +1581,14 @@ ${body}
     if (firstInvalid === null) {
       return true;
     }
+    // 検出フェーズ（findFirstInvalid）は checkValidity で副作用なく走査済み。
+    // reportValidity と focus は確定した 1 要素にだけ呼び出す。
+    (
+      firstInvalid as
+        | HTMLInputElement
+        | HTMLSelectElement
+        | HTMLTextAreaElement
+    ).reportValidity();
     firstInvalid.focus();
     if (this.options.scrollOnError) {
       firstInvalid.scrollIntoView({behavior: 'smooth', block: 'nearest'});
@@ -1578,7 +1598,7 @@ ${body}
 
   /**
    * 対象フラグメント以下で DOM 順の最上部にある invalid 要素を返します。
-   * 全フラグメントのバリデーションを実行した上で検出のみを行います。
+   * 副作用のない checkValidity のみを使用し、検出のみを行います。
    *
    * @param fragment 対象のフラグメント
    * @returns 最初の invalid 要素、なければ null
@@ -1594,28 +1614,27 @@ ${body}
       }
     }
     // 自身は子より DOM 上位にあるため、invalid なら子の結果を上書きする
-    if (!this.validateOne(fragment)) {
+    if (!this.checkOne(fragment)) {
       return fragment.getTarget();
     }
     return found;
   }
 
   /**
-   * 対象のフラグメントに対してバリデーションを実行します。
+   * 対象のフラグメントに対して、副作用なく有効性を検査します。
+   * reportValidity は使わず checkValidity のみ呼び出します。
    *
    * @param fragment 対象のフラグメント
-   * @returns バリデーション結果（true: 成功, false: 失敗）
+   * @returns 有効なら true、無効なら false
    */
-  private validateOne(fragment: ElementFragment): boolean {
+  private checkOne(fragment: ElementFragment): boolean {
     const target = fragment.getTarget();
-    if (target instanceof HTMLInputElement) {
-      return target.reportValidity();
-    }
-    if (target instanceof HTMLSelectElement) {
-      return target.reportValidity();
-    }
-    if (target instanceof HTMLTextAreaElement) {
-      return target.reportValidity();
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement
+    ) {
+      return target.checkValidity();
     }
     return true;
   }
