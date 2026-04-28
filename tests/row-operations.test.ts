@@ -3,7 +3,7 @@
  * @fileoverview 行操作機能（追加・削除・移動）のテスト
  * formの中とformの外の両方のケースをテスト
  */
-import {describe, it, expect, beforeEach, afterEach} from 'vitest';
+import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
 import {waitForDomSettled} from './helpers/async';
@@ -22,6 +22,37 @@ describe('Row operations', () => {
   afterEach(() => {
     eventDispatcher.stop();
     document.body.removeChild(container);
+  });
+
+  it('popstate は start/stop で登録・解除される', () => {
+    const mockReload = vi.fn();
+    vi.stubGlobal('location', {reload: mockReload});
+
+    eventDispatcher.stop();
+    window.dispatchEvent(
+      new PopStateEvent('popstate', {
+        state: {__haoriHistoryState__: true},
+      }),
+    );
+    expect(mockReload).not.toHaveBeenCalled();
+
+    eventDispatcher.start();
+    window.dispatchEvent(
+      new PopStateEvent('popstate', {
+        state: {__haoriHistoryState__: true},
+      }),
+    );
+    expect(mockReload).toHaveBeenCalledTimes(1);
+
+    eventDispatcher.stop();
+    window.dispatchEvent(
+      new PopStateEvent('popstate', {
+        state: {__haoriHistoryState__: true},
+      }),
+    );
+    expect(mockReload).toHaveBeenCalledTimes(1);
+
+    vi.unstubAllGlobals();
   });
 
   describe('Outside form', () => {

@@ -1,7 +1,7 @@
 /**
  * @fileoverview イベント振り分け機能
  *
- * クリック/変更/ロードイベントを検出し Procedure に委譲します。
+ * クリック/変更/ロード/ポップステートイベントを検出し Procedure に委譲します。
  */
 
 import Fragment, {ElementFragment} from './fragment';
@@ -12,6 +12,9 @@ import Log from './log';
  * イベントの振り分けを行うクラスです。
  */
 export default class EventDispatcher {
+  /** Haori が history.state に埋め込む状態キー */
+  private static readonly HISTORY_STATE_KEY = '__haoriHistoryState__';
+
   /** ルート要素 */
   private readonly root: Document | HTMLElement;
 
@@ -36,6 +39,19 @@ export default class EventDispatcher {
   };
 
   /**
+   * popstate デリゲータ（Haori が管理する履歴に戻った場合だけページをリロード）。
+   *
+   * @param event popstate イベント
+   */
+  private readonly onPopstate = (event: PopStateEvent) => {
+    const state = event.state as Record<string, unknown> | null;
+    if (!state || state[EventDispatcher.HISTORY_STATE_KEY] !== true) {
+      return;
+    }
+    location.reload();
+  };
+
+  /**
    * コンストラクタ。
    *
    * @param root 監視対象のルート要素（デフォルトは document ）
@@ -46,7 +62,7 @@ export default class EventDispatcher {
 
   /**
    * イベントリスナーの登録を開始します。
-   * クリック、変更、ロードイベントを監視し、対応するProcedureを実行します。
+   * クリック、変更、ロード、popstate イベントを監視し、対応するProcedureを実行します。
    */
   start(): void {
     this.root.addEventListener('click', this.onClick);
@@ -55,6 +71,8 @@ export default class EventDispatcher {
     this.root.addEventListener('load', this.onLoadCapture, true);
     // ページ全体のロード
     window.addEventListener('load', this.onWindowLoad, {once: true});
+    // ブラウザの戻る・進む操作
+    window.addEventListener('popstate', this.onPopstate);
   }
 
   /**
@@ -65,6 +83,7 @@ export default class EventDispatcher {
     this.root.removeEventListener('change', this.onChange);
     this.root.removeEventListener('load', this.onLoadCapture, true);
     window.removeEventListener('load', this.onWindowLoad);
+    window.removeEventListener('popstate', this.onPopstate);
   }
 
   /**
