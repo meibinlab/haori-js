@@ -32,6 +32,8 @@ const PROCEDURE_HAORI_METHOD_NAMES = [
   'toast',
 ] as const;
 
+const PROCEDURE_HISTORY_STATE_KEY = '__haoriHistoryState__';
+
 /**
  * Procedure から利用する Haori API を解決します。
  * window.Haori が差し替えられている場合はそちらを優先します。
@@ -1447,7 +1449,11 @@ ${body}
         );
       }
 
-      history.pushState({}, '', url.toString());
+      history.pushState(
+        {[PROCEDURE_HISTORY_STATE_KEY]: true},
+        '',
+        url.toString(),
+      );
     } catch (e) {
       Log.error('Haori', `history.pushState failed: ${e}`);
     }

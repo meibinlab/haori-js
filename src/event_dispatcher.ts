@@ -12,6 +12,9 @@ import Log from './log';
  * イベントの振り分けを行うクラスです。
  */
 export default class EventDispatcher {
+  /** Haori が history.state に埋め込む状態キー */
+  private static readonly HISTORY_STATE_KEY = '__haoriHistoryState__';
+
   /** ルート要素 */
   private readonly root: Document | HTMLElement;
 
@@ -35,8 +38,16 @@ export default class EventDispatcher {
     }
   };
 
-  /** popstate デリゲータ（ブラウザの戻る・進む操作時にページをリロード） */
-  private readonly onPopstate = () => {
+  /**
+   * popstate デリゲータ（Haori が管理する履歴に戻った場合だけページをリロード）。
+   *
+   * @param event popstate イベント
+   */
+  private readonly onPopstate = (event: PopStateEvent) => {
+    const state = event.state as Record<string, unknown> | null;
+    if (!state || state[EventDispatcher.HISTORY_STATE_KEY] !== true) {
+      return;
+    }
     location.reload();
   };
 

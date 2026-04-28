@@ -900,7 +900,11 @@ describe('Procedure action operations', () => {
       description: 'pushState called',
     });
 
-    expect(pushStateSpy).toHaveBeenCalledWith({}, '', expect.stringContaining('/new-path'));
+    expect(pushStateSpy).toHaveBeenCalledWith(
+      {__haoriHistoryState__: true},
+      '',
+      expect.stringContaining('/new-path'),
+    );
     container.remove();
   });
 
@@ -927,7 +931,7 @@ describe('Procedure action operations', () => {
     });
 
     expect(pushStateSpy).toHaveBeenCalledWith(
-      {},
+      {__haoriHistoryState__: true},
       '',
       expect.stringMatching(/\/search\?.*keyword=hello/),
     );
@@ -956,7 +960,7 @@ describe('Procedure action operations', () => {
     });
 
     expect(pushStateSpy).toHaveBeenCalledWith(
-      {},
+      {__haoriHistoryState__: true},
       '',
       expect.stringMatching(/tab=list/),
     );
@@ -994,7 +998,7 @@ describe('Procedure action operations', () => {
     });
 
     expect(pushStateSpy).toHaveBeenCalledWith(
-      {},
+      {__haoriHistoryState__: true},
       '',
       expect.stringMatching(/\/search\?.*q=vitest/),
     );
@@ -1064,6 +1068,12 @@ describe('popstate auto-reload', () => {
     const mockReload = vi.fn();
     vi.stubGlobal('location', {reload: mockReload});
     window.dispatchEvent(new PopStateEvent('popstate', {state: {}}));
+    expect(mockReload).not.toHaveBeenCalled();
+    window.dispatchEvent(
+      new PopStateEvent('popstate', {
+        state: {__haoriHistoryState__: true},
+      }),
+    );
     expect(mockReload).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
