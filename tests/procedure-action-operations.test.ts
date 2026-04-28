@@ -507,6 +507,375 @@ describe('Procedure action operations', () => {
   });
 
   // -----------------------------------------------------------------------
+  // data-click-scroll-error
+  // -----------------------------------------------------------------------
+
+  describe('data-click-scroll-error', () => {
+    let scrollIntoViewSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      // jsdom は scrollIntoView を実装していないため先に定義してからスパイする
+      Element.prototype.scrollIntoView = () => {};
+      scrollIntoViewSpy = vi
+        .spyOn(Element.prototype, 'scrollIntoView')
+        .mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      // vi.restoreAllMocks() は直接代入した () => {} へ戻すだけなので、
+      // afterEach でプロパティ自体を削除して jsdom の元の状態（未定義）に戻す
+      delete (Element.prototype as unknown as Record<string, unknown>)
+        .scrollIntoView;
+    });
+
+    it('JSON フィールドエラー: エラー要素の scrollIntoView が呼ばれる', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({errors: {email: 'メールアドレスが不正です'}}),
+            {status: 422, headers: {'Content-Type': 'application/json'}},
+          ),
+        ) as unknown as Promise<Response>,
+      );
+
+      const form = document.createElement('form');
+      const emailWrapper = document.createElement('div');
+      const emailInput = document.createElement('input');
+      emailInput.name = 'email';
+      emailWrapper.appendChild(emailInput);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/json-field-error');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.append(emailWrapper, btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => emailWrapper.getAttribute('data-message-level') === 'error',
+        {description: 'field error message set'},
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      form.remove();
+    });
+
+    it('JSON entries が空（汎用メッセージ）: scrollIntoView が呼ばれる', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('{}', {
+            status: 500,
+            headers: {'Content-Type': 'application/json'},
+          }),
+        ) as unknown as Promise<Response>,
+      );
+
+      const form = document.createElement('form');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/json-empty-error');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => form.getAttribute('data-message-level') === 'error',
+        {description: 'general error message set (json empty)'},
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      form.remove();
+    });
+
+    it('text/plain フォールバック: scrollIntoView が呼ばれる', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('Internal Server Error', {
+            status: 500,
+            headers: {'Content-Type': 'text/plain'},
+          }),
+        ) as unknown as Promise<Response>,
+      );
+
+      const form = document.createElement('form');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/text-error');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => form.getAttribute('data-message-level') === 'error',
+        {description: 'text fallback error message set'},
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      form.remove();
+    });
+
+    it('non-form target: addErrorMessage が parentElement に付与したエラー要素へ scrollIntoView が呼ばれる', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('Server Error', {
+            status: 500,
+            headers: {'Content-Type': 'text/plain'},
+          }),
+        ) as unknown as Promise<Response>,
+      );
+
+      // フォームではなく div の中にボタンを置く
+      const container = document.createElement('div');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/non-form-error');
+      btn.setAttribute('data-click-scroll-error', '');
+      container.appendChild(btn);
+      document.body.appendChild(container);
+
+      await waitForDomSettled();
+      btn.click();
+      // addErrorMessage は非フォーム target の parentElement にエラーを付与する
+      await waitForCondition(
+        () => container.getAttribute('data-message-level') === 'error',
+        {description: 'error set on parentElement (container)'},
+      );
+
+      // container（btn.parentElement）に対して scrollIntoView が 1 回呼ばれる
+      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(1);
+      expect(scrollIntoViewSpy.mock.instances[0]).toBe(container);
+      container.remove();
+    });
+
+    it('data-click-scroll-error がない場合は scrollIntoView が呼ばれない', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('Error', {
+            status: 500,
+            headers: {'Content-Type': 'text/plain'},
+          }),
+        ) as unknown as Promise<Response>,
+      );
+
+      const form = document.createElement('form');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/no-scroll');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => form.getAttribute('data-message-level') === 'error',
+        {description: 'error message set without scroll-error attr'},
+      );
+
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+      form.remove();
+    });
+
+    it('バリデーション失敗: scrollIntoView が呼ばれる', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+      const form = document.createElement('form');
+      const input = document.createElement('input');
+      input.name = 'name';
+      input.required = true;
+      input.value = '';
+      form.appendChild(input);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/validate');
+      btn.setAttribute('data-click-form', '');
+      btn.setAttribute('data-click-validate', '');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => scrollIntoViewSpy.mock.calls.length > 0,
+        {description: 'scrollIntoView called on validation error'},
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      form.remove();
+    });
+
+    it('バリデーション失敗（複数 invalid）: scrollIntoView は先頭の invalid 要素に 1 回だけ呼ばれ、reportValidity も先頭要素に 1 回だけ呼ばれる', async () => {
+      // 検出フェーズは checkValidity で行われるため、checkValidity をスタブして両 input を invalid にする
+      vi.spyOn(HTMLInputElement.prototype, 'checkValidity').mockReturnValue(
+        false,
+      );
+      // reportValidity は先頭 1 要素にだけ呼ばれることを確認するためスパイを立てる
+      const reportValiditySpy = vi
+        .spyOn(HTMLInputElement.prototype, 'reportValidity')
+        .mockReturnValue(false);
+
+      const form = document.createElement('form');
+      const inputA = document.createElement('input'); // DOM 上で先頭
+      inputA.name = 'name';
+      form.appendChild(inputA);
+      const inputB = document.createElement('input'); // DOM 上で 2 番目
+      inputB.name = 'email';
+      form.appendChild(inputB);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/multi-validate');
+      btn.setAttribute('data-click-form', '');
+      btn.setAttribute('data-click-validate', '');
+      btn.setAttribute('data-click-scroll-error', '');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => scrollIntoViewSpy.mock.calls.length > 0,
+        {description: 'scrollIntoView called once on first invalid'},
+      );
+
+      // scrollIntoView は 1 回だけ、先頭の invalid 要素（inputA）に対して呼ばれる
+      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(1);
+      expect(scrollIntoViewSpy.mock.instances[0]).toBe(inputA);
+      // reportValidity も先頭要素にだけ呼ばれる（複数の native UI が出ない）
+      expect(reportValiditySpy).toHaveBeenCalledTimes(1);
+      expect(reportValiditySpy.mock.instances[0]).toBe(inputA);
+      form.remove();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // data-click-scroll
+  // -----------------------------------------------------------------------
+
+  describe('data-click-scroll', () => {
+    let scrollIntoViewSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      Element.prototype.scrollIntoView = () => {};
+      scrollIntoViewSpy = vi
+        .spyOn(Element.prototype, 'scrollIntoView')
+        .mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      delete (Element.prototype as unknown as Record<string, unknown>)
+        .scrollIntoView;
+    });
+
+    it('成功時にセレクターで指定した要素へ scrollIntoView が呼ばれる', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+        ) as unknown as Promise<Response>,
+      );
+
+      const target = document.createElement('div');
+      target.id = 'scroll-target';
+      document.body.appendChild(target);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/success');
+      btn.setAttribute('data-click-scroll', '#scroll-target');
+      document.body.appendChild(btn);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => scrollIntoViewSpy.mock.calls.length > 0,
+        {description: 'scrollIntoView called on success'},
+      );
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledTimes(1);
+      expect(scrollIntoViewSpy.mock.instances[0]).toBe(target);
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      target.remove();
+      btn.remove();
+    });
+
+    it('フェッチエラー時は scrollIntoView が呼ばれない', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('Error', {
+            status: 500,
+            headers: {'Content-Type': 'text/plain'},
+          }),
+        ) as unknown as Promise<Response>,
+      );
+
+      const target = document.createElement('div');
+      target.id = 'scroll-target-error';
+      document.body.appendChild(target);
+
+      const form = document.createElement('form');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/fail');
+      btn.setAttribute('data-click-scroll', '#scroll-target-error');
+      form.appendChild(btn);
+      document.body.appendChild(form);
+
+      await waitForDomSettled();
+      btn.click();
+      await waitForCondition(
+        () => form.getAttribute('data-message-level') === 'error',
+        {description: 'error message set'},
+      );
+
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+      target.remove();
+      form.remove();
+    });
+
+    it('セレクターにマッチする要素がない場合は scrollIntoView が呼ばれない', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(
+          new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+        ) as unknown as Promise<Response>,
+      );
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-click-fetch', 'http://api.test/success-no-target');
+      btn.setAttribute('data-click-scroll', '#nonexistent');
+      document.body.appendChild(btn);
+
+      await waitForDomSettled();
+      btn.click();
+      // fetch 完了を待つ（scrollIntoView は呼ばれないのでタイムアウト前に別の条件で判断）
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+      btn.remove();
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // history.pushState
   // -----------------------------------------------------------------------
 

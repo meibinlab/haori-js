@@ -613,6 +613,8 @@ interface ProcedureOptions {
   historyData?: Record<string, unknown> | null // history pushState クエリパラメータ
   historyFormFragment?: ElementFragment | null // history pushState フォーム
   redirectUrl?: string | null                // リダイレクトURL
+  scrollOnError?: boolean | null             // エラー時に最初のエラー要素へスクロール
+  scrollTarget?: string | null               // 成功時にスクロールする要素のCSSセレクター
 }
 ```
 
@@ -715,7 +717,12 @@ async run(): Promise<void> {
     await Haori.toast(this.toastMessage, 'info')
   }
 
-  // 12. リダイレクト
+  // 12. スクロール（成功時）
+  if (this.scrollTarget) {
+    document.querySelector(this.scrollTarget)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+
+  // 13. リダイレクト
   if (this.redirectUrl) {
     window.location.href = this.redirectUrl
   }

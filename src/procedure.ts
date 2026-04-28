@@ -243,6 +243,12 @@ export interface ProcedureOptions {
 
   /** リダイレクトURL */
   redirectUrl?: string | null;
+
+  /** エラー時に最初のエラー要素へスクロールするかどうか */
+  scrollOnError?: boolean | null;
+
+  /** 成功時にスクロールする要素のCSSセレクター */
+  scrollTarget?: string | null;
 }
 
 /**
@@ -838,6 +844,14 @@ ${body}
           Procedure.attrName(event, 'redirect'),
         ) as string;
       }
+      if (fragment.hasAttribute(Procedure.attrName(event, 'scroll-error'))) {
+        options.scrollOnError = true;
+      }
+      if (fragment.hasAttribute(Procedure.attrName(event, 'scroll'))) {
+        options.scrollTarget = fragment.getAttribute(
+          Procedure.attrName(event, 'scroll'),
+        ) as string;
+      }
       // history（data-{event}-history / history-data / history-form）
       if (fragment.hasAttribute(Procedure.attrName(event, 'history'))) {
         options.historyUrl = fragment.getAttribute(
@@ -1359,6 +1373,10 @@ ${body}
       );
     }
     this.pushHistory();
+    if (this.options.scrollTarget) {
+      const el = document.querySelector<HTMLElement>(this.options.scrollTarget);
+      el?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
     if (this.options.redirectUrl) {
       window.location.href = this.options.redirectUrl;
     }
@@ -1454,6 +1472,22 @@ ${body}
       await resolveProcedureHaoriApi().addErrorMessage(targetEl, message);
     };
 
+    const scrollToFirstError = () => {
+      if (!this.options.scrollOnError) {
+        return;
+      }
+      const root = baseFragment ? baseFragment.getTarget() : document.body;
+      // addErrorMessage はフォーム以外の target に対して parentElement へエラーを付与するため、
+      // root 自身・parentElement・root 配下の順で探索する
+      const errorTarget =
+        root.getAttribute('data-message-level') === 'error'
+          ? root
+          : root.parentElement?.getAttribute('data-message-level') === 'error'
+            ? root.parentElement
+            : root.querySelector<HTMLElement>('[data-message-level="error"]');
+      errorTarget?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    };
+
     // コンテンツタイプに応じて解析
     const contentType = response.headers.get('Content-Type') || '';
     if (contentType.includes('application/json')) {
@@ -1500,6 +1534,7 @@ ${body}
         if (entries.length === 0) {
           // 汎用メッセージ
           await addGeneralMessage(`${response.status} ${response.statusText}`);
+          scrollToFirstError();
           return false;
         }
         // メッセージを反映
@@ -1510,6 +1545,7 @@ ${body}
             await addGeneralMessage(e.message);
           }
         }
+        scrollToFirstError();
         return false;
       } catch {
         // JSON 解析失敗時はテキストにフォールバック
@@ -1526,6 +1562,7 @@ ${body}
     } catch {
       await addGeneralMessage(`${response.status} ${response.statusText}`);
     }
+    scrollToFirstError();
     return false;
   }
 
@@ -1540,37 +1577,64 @@ ${body}
     if (this.options.valid !== true) {
       return true;
     }
-    const target = fragment.getTarget();
-    let result = this.validateOne(fragment);
-    if (!result) {
-      target.focus();
+    const firstInvalid = this.findFirstInvalid(fragment);
+    if (firstInvalid === null) {
+      return true;
     }
-    // エラー要素のフォーカスを最上部に移動するため、子要素は逆順で処理
-    fragment
-      .getChildElementFragments()
-      .reverse()
-      .forEach(child => {
-        result &&= this.validate(child);
-      });
-    return result;
+    // 検出フェーズ（findFirstInvalid）は checkValidity で副作用なく走査済み。
+    // reportValidity と focus は確定した 1 要素にだけ呼び出す。
+    (
+      firstInvalid as
+        | HTMLInputElement
+        | HTMLSelectElement
+        | HTMLTextAreaElement
+    ).reportValidity();
+    firstInvalid.focus();
+    if (this.options.scrollOnError) {
+      firstInvalid.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
+    return false;
   }
 
   /**
-   * 対象のフラグメントに対してバリデーションを実行します。
+   * 対象フラグメント以下で DOM 順の最上部にある invalid 要素を返します。
+   * 副作用のない checkValidity のみを使用し、検出のみを行います。
    *
    * @param fragment 対象のフラグメント
-   * @returns バリデーション結果（true: 成功, false: 失敗）
+   * @returns 最初の invalid 要素、なければ null
    */
-  private validateOne(fragment: ElementFragment): boolean {
+  private findFirstInvalid(fragment: ElementFragment): HTMLElement | null {
+    // 子要素を逆順に処理することで、DOM 順の先頭要素が最後に found を上書きし、
+    // 最終的に最上部の invalid 要素が返る
+    let found: HTMLElement | null = null;
+    for (const child of fragment.getChildElementFragments().reverse()) {
+      const result = this.findFirstInvalid(child);
+      if (result !== null) {
+        found = result;
+      }
+    }
+    // 自身は子より DOM 上位にあるため、invalid なら子の結果を上書きする
+    if (!this.checkOne(fragment)) {
+      return fragment.getTarget();
+    }
+    return found;
+  }
+
+  /**
+   * 対象のフラグメントに対して、副作用なく有効性を検査します。
+   * reportValidity は使わず checkValidity のみ呼び出します。
+   *
+   * @param fragment 対象のフラグメント
+   * @returns 有効なら true、無効なら false
+   */
+  private checkOne(fragment: ElementFragment): boolean {
     const target = fragment.getTarget();
-    if (target instanceof HTMLInputElement) {
-      return target.reportValidity();
-    }
-    if (target instanceof HTMLSelectElement) {
-      return target.reportValidity();
-    }
-    if (target instanceof HTMLTextAreaElement) {
-      return target.reportValidity();
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement
+    ) {
+      return target.checkValidity();
     }
     return true;
   }
