@@ -1420,6 +1420,17 @@ data-import="url"
 <div data-import="/components/header.html"></div>
 ```
 
+**読み込み中の属性**:
+
+読み込みが進行中の間、対象要素に `data-importing` 属性が付与されます。読み込み完了（成功・失敗いずれも）後に除去されます。これを利用して、読み込み中のレイアウト崩れを防ぐことができます。
+
+```css
+/* 読み込み完了まで非表示にする */
+[data-importing] {
+  visibility: hidden;
+}
+```
+
 ---
 
 ### URLパラメータ
