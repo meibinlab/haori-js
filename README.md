@@ -21,6 +21,7 @@ Contents
 ## Overview
 
 - Design principle: HTML-first — declare UI behavior with HTML attributes
+- Keep internal state authoritative; let the rendered DOM follow asynchronously
 - Key features:
   - Data binding via `data-bind`
   - Conditional rendering via `data-if`

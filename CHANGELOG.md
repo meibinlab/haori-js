@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-04-29
+
+### Changed
+
+- `data-each` 配下の `data-if` と通常属性の再評価順を見直し、ページネーションのような再利用行でも表示が崩れないようにした
+- clone 時の runtime 表示状態を整理し、テンプレート由来の `hidden` が次の行へ持ち越されないようにした
+
+### Library
+
+- fetch / Procedure の統合テストを安定化し、`afterCallback` と `data-fetch-bind-params` の回帰を確認できるようにした
+
 ## [0.4.6] - 2026-04-28
 
 ### Changed

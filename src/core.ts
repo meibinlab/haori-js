@@ -564,22 +564,26 @@ export default class Core {
       condition === null ||
       Number.isNaN(condition)
     ) {
-      if (fragment.isVisible()) {
-        promises.push(
-          fragment.hide().then(() => {
-            HaoriEvent.hide(fragment.getTarget());
-          }),
-        );
-      }
+      promises.push(
+        fragment.hide().then(() => {
+          HaoriEvent.hide(fragment.getTarget());
+        }),
+      );
     } else {
-      if (!fragment.isVisible()) {
-        promises.push(
-          fragment.show().then(() => {
-            HaoriEvent.show(fragment.getTarget());
-          }),
-        );
-        promises.push(Core.evaluateAll(fragment));
-      }
+      const childPromises: Promise<void>[] = [];
+      fragment.getChildren().forEach(child => {
+        if (child instanceof ElementFragment) {
+          childPromises.push(Core.evaluateAll(child));
+        } else if (child instanceof TextFragment) {
+          childPromises.push(Core.evaluateText(child));
+        }
+      });
+      promises.push(
+        fragment.show().then(() => {
+          HaoriEvent.show(fragment.getTarget());
+        }),
+      );
+      promises.push(Promise.all(childPromises).then(() => undefined));
     }
     return Promise.all(promises).then(() => undefined);
   }
@@ -714,7 +718,9 @@ export default class Core {
             itemIndex,
             itemArg ? String(itemArg) : null,
             newKey,
-          ).then(() => Core.evaluateAll(child)),
+          )
+            .then(() => Core.evaluateAll(child))
+            .then(() => Core.scheduleEvaluateAll(child))
         );
       } else {
         // 新しい要素を追加
@@ -734,7 +740,8 @@ export default class Core {
                 child,
                 parent.getChildren()[currentInsertIndex] || null,
               )
-              .then(() => Core.evaluateAll(child)),
+              .then(() => Core.evaluateAll(child))
+              .then(() => Core.scheduleEvaluateAll(child)),
           )
         );
       }
@@ -848,5 +855,16 @@ export default class Core {
     rowFragment.setListKey(listKey);
     rowFragment.setBindingData(bindingData as Record<string, unknown>);
     return rowFragment.setAttribute(`${Env.prefix}row`, listKey);
+  }
+
+  /**
+   * フラグメントの再評価を次のイベントループで実行します。
+   *
+   * @param fragment 再評価対象のフラグメント
+   */
+  private static scheduleEvaluateAll(fragment: ElementFragment): void {
+    setTimeout(() => {
+      void Core.evaluateAll(fragment);
+    }, 100);
   }
 }

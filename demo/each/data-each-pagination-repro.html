@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>data-each pagination repro</title>
+</head>
+
+<body>
+  <h1>data-each pagination repro</h1>
+  <p>Haori.js の開発中ソースでページネーション描画を再現する最小ページです。</p>
+
+  <script>
+    var Pagination = {
+      pages: function (totalPages, currentPage) {
+        var indices = Array.from({ length: totalPages }, function (_, i) { return i; })
+          .filter(function (i) {
+            return i === 0 || i === totalPages - 1 || (i >= currentPage - 5 && i <= currentPage + 5);
+          });
+        return indices.reduce(function (acc, p) {
+          var last = acc[acc.length - 1];
+          if (acc.length > 0 && !last.ellipsis && p > last.p + 1) {
+            return acc.concat([{ p: -acc.length, ellipsis: true }, { p: p, ellipsis: false }]);
+          }
+          return acc.concat([{ p: p, ellipsis: false }]);
+        }, []);
+      },
+    };
+  </script>
+  <script src="../../dist/haori.iife.js"></script>
+
+  <main
+    id="project-list"
+    data-bind='{"content":[],"totalPages":0,"number":0,"size":10,"totalElements":0}'
+    data-fetch="./data-each-pagination-repro.json"
+  >
+    <div>
+      <table>
+        <thead>
+          <tr>
+            <th>案件名</th>
+            <th>単価</th>
+            <th>時期</th>
+          </tr>
+        </thead>
+        <tbody data-each="content" data-each-key="id">
+          <tr>
+            <td>{{projectName}}</td>
+            <td>{{unitPrice}}</td>
+            <td>{{startPeriod}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <nav id="pagination-nav" aria-label="ページネーション">
+      <ul class="pagination" data-each="Pagination.pages(totalPages, number)" data-each-key="p">
+        <li class="page-item {{ellipsis ? 'disabled' : p === number ? 'active' : ''}}">
+          <span data-if="ellipsis" class="page-link" aria-hidden="true">…</span>
+          <span data-if="!ellipsis && p === number" class="page-link" aria-current="page">{{p + 1}}</span>
+          <button data-if="!ellipsis && p !== number" type="button" class="page-link">{{p + 1}}</button>
+        </li>
+      </ul>
+    </nav>
+  </main>
+</body>
+
+</html>
