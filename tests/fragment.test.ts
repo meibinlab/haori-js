@@ -261,6 +261,18 @@ describe('ElementFragment の属性操作', () => {
     expect(clone.getRawAttribute('class')).toBe('page-item {{active}}');
   });
 
+  it('clone() は data-if の hidden runtime 状態を持ち越さない', async () => {
+    const el = document.createElement('div');
+    const ef = new ElementFragment(el);
+
+    await ef.hide();
+
+    const clone = ef.clone();
+
+    expect(clone.getTarget().style.display).not.toBe('none');
+    expect(clone.getTarget().hasAttribute('data-if-false')).toBe(false);
+  });
+
 });
 
 describe('TextFragment と CommentFragment', () => {

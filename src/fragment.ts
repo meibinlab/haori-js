@@ -363,10 +363,32 @@ export class ElementFragment extends Fragment {
     clone.mounted = false;
     clone.bindingData = this.bindingData;
     clone.clearBindingDataCache();
-    clone.visible = this.visible;
+    clone.visible = true;
     clone.display = this.display;
     clone.template = this.template;
+    clone.normalizeClonedVisibilityState();
     return clone;
+  }
+
+  /**
+   * clone 時に runtime の hidden 状態だけを落とします。
+   */
+  private normalizeClonedVisibilityState(): void {
+    if (
+      this.visible === false ||
+      this.getTarget().style.display === 'none' ||
+      this.getTarget().hasAttribute(`${Env.prefix}if-false`)
+    ) {
+      this.visible = true;
+      this.display = '';
+      this.getTarget().style.display = '';
+      this.getTarget().removeAttribute(`${Env.prefix}if-false`);
+    }
+    this.children.forEach(child => {
+      if (child instanceof ElementFragment) {
+        child.normalizeClonedVisibilityState();
+      }
+    });
   }
 
   /**

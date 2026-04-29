@@ -9,6 +9,7 @@
  */
 import {describe, it, beforeEach, afterEach, expect, vi} from 'vitest';
 import Core from '../src/core';
+import {waitForCondition} from './helpers/async';
 // Procedure/Fragment を直接参照せず属性駆動でテストを行うため、
 // 未使用のインポートは削除しています。
 
@@ -34,15 +35,9 @@ describe('Fetch and Procedure scenarios', () => {
     target.id = 'target';
 
     const source = document.createElement('div');
-    // 非イベント fetch 属性と bind 指定（属性だけで動作する）
-    source.setAttribute('data-fetch', 'http://example.test/api');
-    source.setAttribute('data-fetch-bind', '#target');
-    source.setAttribute('data-fetch-bind-params', 'name&email');
-
-    container.append(target, source);
 
     // mock fetch: サーバーは name, email, age を返す
-    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -55,13 +50,30 @@ describe('Fetch and Procedure scenarios', () => {
       ) as unknown as Promise<Response>;
     });
 
+    // 非イベント fetch 属性と bind 指定（属性だけで動作する）
+    source.setAttribute('data-fetch', 'http://example.test/api');
+    source.setAttribute('data-fetch-bind', '#target');
+    source.setAttribute('data-fetch-bind-params', 'name&email');
+
+    container.append(target, source);
+
     // spy Core.setBindingData
     const sbd = vi
       .spyOn(Core, 'setBindingData')
       .mockResolvedValue(undefined as void);
 
-    // MutationObserver と EventDispatcher が非同期で処理するため少し待つ
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCondition(() => fetchSpy.mock.calls.length > 0, {
+      description: 'fetch call',
+    });
+    await waitForCondition(
+      () =>
+        sbd.mock.calls.some(
+          call => (call[0] as HTMLElement).id === 'target',
+        ),
+      {
+        description: 'binding data update',
+      },
+    );
 
     expect(sbd).toHaveBeenCalled();
     const calls = (sbd as unknown as {mock: {calls: unknown[][]}}).mock.calls;
@@ -109,12 +121,24 @@ describe('Fetch and Procedure scenarios', () => {
 
     // click を発火すると EventDispatcher が Procedure を呼び出す
     button.click();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCondition(
+      () =>
+        sbd.mock.calls.some(
+          call =>
+            (call[0] as HTMLElement).id === 'target2' &&
+            (call[1] as Record<string, unknown>).overridden === true,
+        ),
+      {
+        description: 'overridden binding data',
+      },
+    );
 
     expect(sbd).toHaveBeenCalled();
     const calls = (sbd as unknown as {mock: {calls: unknown[][]}}).mock.calls;
-    const last = calls[calls.length - 1];
-    const bound = last[1] as Record<string, unknown>;
+    const last = calls.find(
+      call => (call[0] as HTMLElement).id === 'target2',
+    );
+    const bound = (last?.[1] as Record<string, unknown>) ?? {};
     expect(bound).toHaveProperty('overridden');
 
     container.remove();
