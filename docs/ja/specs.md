@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.4.8
+バージョン: 0.4.9
 最終更新: 2026-05-01
 
 ## 目次
@@ -2543,7 +2543,7 @@ export {
 export default Haori
 
 // バージョン
-export const version = '0.4.8'
+export const version = '0.4.9'
 ```
 
 ### Core クラス

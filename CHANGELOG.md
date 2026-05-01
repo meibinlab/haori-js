@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-05-01
+
 ### Changed
 
 - `data-click-fetch` など click 手続きの実行中は起点要素へ `disabled` 属性を付与し、同一要素の重複実行を抑止するようにした
