@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-05-01
+
+### Changed
+
+- `data-haori-ready` を `body` に付与し、初期化完了前のちらつきを CSS で抑えやすくした
+- `data-import` の取り込み直後スキャンを初期化中に限定し、Observer 起動後の二重初期化を防いだ
+- `popstate` で Haori 管理の history だけをリロード対象にし、ブラウザ戻る・進む後の状態崩れを抑えた
+
+### Library
+
+- `data-haori-ready`、`data-import`、`popstate` の回帰テストを追加した
+
 ## [0.4.7] - 2026-04-29
 
 ### Changed

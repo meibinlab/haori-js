@@ -22,4 +22,4 @@ export type {HaoriRuntime} from './env';
 export default Haori;
 
 // バージョン情報
-export const version = '0.4.7';
+export const version = '0.4.8';
