@@ -400,6 +400,41 @@ describe('Expression', () => {
       expect(result).toEqual([2, 3]);
     });
 
+    it('配列メソッド内でオブジェクトリテラルを返せる', () => {
+      const result = Expression.evaluate(
+        'items.map(item => ({value: item, even: item % 2 === 0}))',
+        {
+          items: [1, 2, 3],
+        },
+      );
+      expect(result).toEqual([
+        {value: 1, even: false},
+        {value: 2, even: true},
+        {value: 3, even: false},
+      ]);
+    });
+
+    it('ページネーション向けの reduce + オブジェクトリテラル連鎖を評価できる', () => {
+      const result = Expression.evaluate(
+        'Array(totalPages).fill(0).map((_, i) => i).filter(i => i === 0 || i === totalPages - 1 || (i >= number - 2 && i <= number + 2)).reduce((acc, page) => acc.length > 0 && page > acc[acc.length - 1] + 1 ? [...acc, -acc.length, page] : [...acc, page], []).map(page => ({page, active: page >= 0 && page === number, ellipsis: page < 0}))',
+        {
+          totalPages: 10,
+          number: 4,
+        },
+      );
+      expect(result).toEqual([
+        {page: 0, active: false, ellipsis: false},
+        {page: -1, active: false, ellipsis: true},
+        {page: 2, active: false, ellipsis: false},
+        {page: 3, active: false, ellipsis: false},
+        {page: 4, active: true, ellipsis: false},
+        {page: 5, active: false, ellipsis: false},
+        {page: 6, active: false, ellipsis: false},
+        {page: -7, active: false, ellipsis: true},
+        {page: 9, active: false, ellipsis: false},
+      ]);
+    });
+
     it('スプレッド構文を含むメソッド呼び出しを評価できる', () => {
       const result = Expression.evaluate('Math.max(...scores)', {
         scores: [10, 3, 7],
@@ -423,6 +458,49 @@ describe('Expression', () => {
   });
 
   describe('セキュリティ: constructor 経由の脱出防止', () => {
+    it('object literal の識別子キーで constructor をブロックする', () => {
+      const result = Expression.evaluate('({constructor: 1})', {});
+      expect(result).toBeNull();
+    });
+
+    it('object literal の文字列キーで __proto__ をブロックする', () => {
+      const result = Expression.evaluate('({"__proto__": {polluted: true}})', {});
+      expect(result).toBeNull();
+    });
+
+    it('object literal の Unicode escape 文字列キーで __proto__ をブロックする', () => {
+      const result = Expression.evaluate(
+        '({"\\u{5f}\\u{5f}proto__": {polluted: true}})',
+        {},
+      );
+      expect(result).toBeNull();
+    });
+
+    it('object literal の computed key をブロックする', () => {
+      const result = Expression.evaluate('({["prototype"]: 1})', {});
+      expect(result).toBeNull();
+    });
+
+    it('object literal の getter で __proto__ をブロックする', () => {
+      const result = Expression.evaluate('({get __proto__(){x}})', {});
+      expect(result).toBeNull();
+    });
+
+    it('object literal の setter で constructor をブロックする', () => {
+      const result = Expression.evaluate('({set constructor(v){x}})', {});
+      expect(result).toBeNull();
+    });
+
+    it('object literal の getter で prototype をブロックする', () => {
+      const result = Expression.evaluate('({get prototype(){x}})', {});
+      expect(result).toBeNull();
+    });
+
+    it('object literal の async method で constructor をブロックする', () => {
+      const result = Expression.evaluate('({async constructor(){}})', {});
+      expect(result).toBeNull();
+    });
+
     it('ドット記法の constructor 呼び出しをブロックする', () => {
       const result = Expression.evaluate('[].filter.constructor(\'return this\')()', {});
       expect(result).toBeNull();

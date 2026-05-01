@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-04-29
+
+### Changed
+
+- `data-each` 配下の `data-if` と通常属性の再評価順を見直し、ページネーションのような再利用行でも表示が崩れないようにした
+- clone 時の runtime 表示状態を整理し、テンプレート由来の `hidden` が次の行へ持ち越されないようにした
+
+### Library
+
+- fetch / Procedure の統合テストを安定化し、`afterCallback` と `data-fetch-bind-params` の回帰を確認できるようにした
+
+## [0.4.6] - 2026-04-28
+
+### Changed
+
+- 式評価で object literal を含む安全な式を扱えるようにし、ページネーションなどの表示モデル生成をテンプレート式で記述できるようにした
+- object literal の key 位置でも `constructor`、`__proto__`、`prototype` を拒否し、getter / setter / async method / Unicode escape を使った危険キーの迂回を防止した
+
+### Library
+
+- object literal を返す `map()` と、ページネーション向けの `reduce()` 連鎖を評価する回帰テストを追加した
+- object literal の危険キー拒否に関する回帰テストを追加した
+
+## [0.4.5] - 2026-04-28
+
+### Changed
+
+- `data-{event}-scroll-error` を追加し、バリデーション失敗やエラー発生時に最初のエラー要素へスクロールできるようにした
+- non-form target のエラー表示でも `data-message-level="error"` を起点にスクロールするようにした
+- `validate` で最初の不正入力要素へフォーカスし、スクロールを 1 回だけ行うようにした
+- `history.state` を使って Haori 管理の履歴だけを `popstate` リロード対象にし、外部の履歴遷移では `location.reload()` しないようにした
+
+### Library
+
+- `data-{event}-scroll-error` と non-form target / 複数 invalid の回帰テストを追加した
+- `popstate` の state 判定と `start()` / `stop()` によるリスナー登録・解除の回帰テストを追加した
+
 ## [0.4.4] - 2026-04-27
 
 ### Changed

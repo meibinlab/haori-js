@@ -1,23 +1,13 @@
 /* @vitest-environment jsdom */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
-import Queue from '../src/queue';
+import {waitForCondition} from './helpers/async';
 
-// fetchをモック
 const mockData = [
   {id: 1, name: 'りんご'},
   {id: 2, name: 'みかん'},
   {id: 3, name: 'バナナ'},
 ];
-
-globalThis.fetch = vi.fn(async () => ({
-  ok: true,
-  json: async () => mockData,
-  headers: {
-    get: (name: string) =>
-      name === 'Content-Type' ? 'application/json' : undefined,
-  },
-})) as any;
 
 describe('data-fetch + data-each integration (tbody/tr)', () => {
   let container: HTMLElement;
@@ -30,9 +20,16 @@ describe('data-fetch + data-each integration (tbody/tr)', () => {
   afterEach(() => {
     document.body.removeChild(container);
     vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('fetchで取得した配列がtbody内trとしてDOMに反映される', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(mockData), {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    );
+
     const root = document.createElement('div');
     root.innerHTML = `
       <div data-fetch="/api/data" data-fetch-arg="items" data-fetch-bind="#result"></div>
@@ -49,26 +46,19 @@ describe('data-fetch + data-each integration (tbody/tr)', () => {
     `;
     container.appendChild(root);
     await Core.scan(root);
-    await Queue.wait();
-    // マイクロタスク解放＋再Queue.waitでDOM反映遅延を吸収
-    await new Promise(r => setTimeout(r, 0));
-    await Queue.wait();
-    // fetchが呼ばれたか確認
-    expect((globalThis.fetch as any).mock.calls.length).toBeGreaterThan(0);
+    await waitForCondition(
+      () => (globalThis.fetch as any).mock.calls.length > 0,
+      {description: 'fetch call'},
+    );
     // tbodyのtr要素数のみをまず確認
     const tbody = container.querySelector('tbody');
     expect(tbody).not.toBeNull();
-    let rows;
-    let ok = false;
-    for (let i = 0; i < 50; i++) {
-      rows = tbody!.querySelectorAll('tr');
-      if (rows.length === 3) {
-        ok = true;
-        break;
-      }
-      await new Promise(r => setTimeout(r, 10));
-    }
-    expect(ok).toBe(true);
+    await waitForCondition(
+      () => tbody!.querySelectorAll('tr').length === 3,
+      {description: 'tbody rows'},
+    );
+    const rows = tbody!.querySelectorAll('tr');
+    expect(fetchSpy).toHaveBeenCalled();
     // trのFragmentからバインドデータを直接確認
     const Fragment = (await import('../src/fragment')).default;
     const tr0 = (rows as NodeListOf<HTMLTableRowElement>)[0];

@@ -16,7 +16,7 @@ interface ExpressionToken {
   position: number;
 }
 
-type GroupContext = 'paren' | 'array' | 'member';
+type GroupContext = 'paren' | 'array' | 'member' | 'object';
 
 export default class Expression {
   /** Haoriで禁止すべき識別子一覧（eval と arguments は strict モードで無効化） */
@@ -114,6 +114,13 @@ export default class Expression {
     'constructor',
     '__proto__',
     'prototype',
+  ]);
+
+  /** object literal のプロパティ定義で前置修飾子として扱う識別子 */
+  private static readonly OBJECT_PROPERTY_MODIFIERS = new Set([
+    'get',
+    'set',
+    'async',
   ]);
 
   /** 式構文として許可しない予約語 */
@@ -284,6 +291,35 @@ export default class Expression {
       const next = tokens[index + 1] || null;
 
       const activeGroup = groups[groups.length - 1] || null;
+      const beforePrevious = tokens[index - 2] || null;
+      const thirdPrevious = tokens[index - 3] || null;
+
+      if (
+        this.startsObjectKey(
+          activeGroup,
+          previous,
+          beforePrevious,
+          thirdPrevious,
+        )
+      ) {
+        if (token.value === '[') {
+          return false;
+        }
+        if (
+          token.type === 'identifier' &&
+          this.FORBIDDEN_PROPERTY_NAMES.has(token.value)
+        ) {
+          return false;
+        }
+        if (
+          token.type === 'string' &&
+          this.FORBIDDEN_PROPERTY_NAMES.has(
+            this.decodeStringLiteral(token.value),
+          )
+        ) {
+          return false;
+        }
+      }
 
       if (token.type === 'identifier') {
         if (this.DISALLOWED_KEYWORDS.has(token.value)) {
@@ -342,9 +378,19 @@ export default class Expression {
           groups.push(group);
           break;
         }
+        case '{':
+          groups.push('object');
+          break;
         case ']': {
           const group = groups.pop();
           if (group === undefined) {
+            return false;
+          }
+          break;
+        }
+        case '}': {
+          const group = groups.pop();
+          if (group !== 'object') {
             return false;
           }
           break;
@@ -383,6 +429,8 @@ export default class Expression {
     const singleCharacters = new Set([
       '(',
       ')',
+      '{',
+      '}',
       '[',
       ']',
       '.',
@@ -576,6 +624,49 @@ export default class Expression {
   }
 
   /**
+   * object literal 内で次のトークンがキー位置かどうかを判定します。
+   *
+   * @param activeGroup 現在のグループ種別
+   * @param previous 直前のトークン
+   * @returns object literal のキー位置であれば true
+   */
+  private static startsObjectKey(
+    activeGroup: GroupContext | null,
+    previous: ExpressionToken | null,
+    beforePrevious: ExpressionToken | null,
+    thirdPrevious: ExpressionToken | null,
+  ): boolean {
+    if (activeGroup !== 'object') {
+      return false;
+    }
+    if (previous?.value === '{' || previous?.value === ',') {
+      return true;
+    }
+
+    if (
+      previous?.type === 'identifier' &&
+      this.OBJECT_PROPERTY_MODIFIERS.has(previous.value) &&
+      (beforePrevious?.value === '{' || beforePrevious?.value === ',')
+    ) {
+      return true;
+    }
+
+    if (previous?.value !== '*') {
+      return false;
+    }
+
+    if (beforePrevious?.value === '{' || beforePrevious?.value === ',') {
+      return true;
+    }
+
+    return (
+      beforePrevious?.type === 'identifier' &&
+      beforePrevious.value === 'async' &&
+      (thirdPrevious?.value === '{' || thirdPrevious?.value === ',')
+    );
+  }
+
+  /**
    * 文字列リテラルをプレーン文字列へ変換します。
    *
    * @param literal 文字列リテラル
@@ -584,6 +675,9 @@ export default class Expression {
   private static decodeStringLiteral(literal: string): string {
     return literal
       .slice(1, -1)
+      .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, code: string) =>
+        String.fromCodePoint(parseInt(code, 16)),
+      )
       .replace(/\\u([0-9a-fA-F]{4})/g, (_, code: string) =>
         String.fromCharCode(parseInt(code, 16)),
       )

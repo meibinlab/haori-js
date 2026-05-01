@@ -4,7 +4,7 @@
 
 import Core from '../src/core';
 import {ElementFragment} from '../src/fragment';
-import {waitForDomSettled} from './helpers/async';
+import {waitForCondition, waitForDomSettled} from './helpers/async';
 
 describe('Core', () => {
   let container: HTMLElement;
@@ -259,6 +259,46 @@ describe('Core', () => {
       ).toEqual(['warm', 'cool']);
     });
 
+    test('data-each 配下の data-if が行ごとに評価され、ページネーション相当の表示が崩れない', async () => {
+      container.innerHTML = `
+        <div
+          data-bind='{"currentPage":1,"pages":[{"p":0,"ellipsis":true},{"p":1,"ellipsis":false},{"p":2,"ellipsis":false}]}'
+        >
+          <ul data-each="pages" data-each-key="p">
+            <li class="{{ellipsis ? 'disabled' : p === currentPage ? 'active' : ''}}">
+              <span data-if="ellipsis" class="page-link" aria-hidden="true">…</span>
+              <span data-if="!ellipsis && p === currentPage" class="page-link" aria-current="page">{{p + 1}}</span>
+              <button data-if="!ellipsis && p !== currentPage" type="button" class="page-link">{{p + 1}}</button>
+            </li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      const items = Array.from(list.querySelectorAll('li'));
+      expect(items).toHaveLength(3);
+
+      const visibleChildren = items.map(item =>
+        Array.from(item.children).filter(
+          child => !child.hasAttribute('data-if-false'),
+        ),
+      );
+
+      expect(visibleChildren.map(children => children.length)).toEqual([1, 1, 1]);
+      expect(visibleChildren[0][0].textContent).toBe('…');
+      expect(visibleChildren[1][0].textContent).toBe('2');
+      expect(visibleChildren[2][0].textContent).toBe('3');
+
+      expect(items[0].classList.contains('disabled')).toBe(true);
+      expect(items[1].classList.contains('active')).toBe(true);
+      expect(items[2].classList.contains('active')).toBe(false);
+    });
+
     test('data-attr-src が生値を維持したまま実属性を再評価する', async () => {
       container.innerHTML = `
         <img
@@ -362,6 +402,78 @@ describe('Core', () => {
       // 再利用行でも null 評価の属性だけが削除されること。
       expect(items[0].hasAttribute('title')).toBe(false);
       expect(items[1].getAttribute('title')).toBe('B2');
+    });
+  });
+
+  describe('data-import: data-importing 属性', () => {
+    beforeEach(() => {
+      vi.resetAllMocks();
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('インポート中は data-importing 属性が付与される', async () => {
+      let resolveFetch!: (r: Response) => void;
+      const deferredFetch = new Promise<Response>(
+        resolve => (resolveFetch = resolve),
+      );
+      vi.spyOn(globalThis, 'fetch').mockReturnValue(deferredFetch);
+
+      const el = document.createElement('div');
+      el.setAttribute('data-import', '/header.html');
+      container.appendChild(el);
+
+      const scanPromise = Core.scan(el);
+
+      await waitForCondition(() => el.hasAttribute('data-importing'), {
+        description: 'data-importing が付与されること',
+      });
+      expect(el.hasAttribute('data-importing')).toBe(true);
+
+      resolveFetch({
+        ok: true,
+        text: async () => '<html><body><nav>Header</nav></body></html>',
+      } as Response);
+
+      await scanPromise;
+      await waitForDomSettled();
+      expect(el.hasAttribute('data-importing')).toBe(false);
+    });
+
+    it('インポート完了後は data-importing 属性が除去される', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        text: async () => '<html><body><nav>Header</nav></body></html>',
+      } as Response);
+
+      const el = document.createElement('div');
+      el.setAttribute('data-import', '/header.html');
+      container.appendChild(el);
+
+      await Core.scan(el);
+      await waitForDomSettled();
+
+      expect(el.hasAttribute('data-importing')).toBe(false);
+      expect(el.innerHTML).toContain('Header');
+    });
+
+    it('インポート失敗時も data-importing 属性が除去される', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+      } as Response);
+
+      const el = document.createElement('div');
+      el.setAttribute('data-import', '/header.html');
+      container.appendChild(el);
+
+      await Core.scan(el);
+      await waitForDomSettled();
+
+      expect(el.hasAttribute('data-importing')).toBe(false);
     });
   });
 });

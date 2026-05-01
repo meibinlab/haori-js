@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.4.4
+Version: 0.4.7
 
 ---
 
@@ -21,6 +21,7 @@ Contents
 ## Overview
 
 - Design principle: HTML-first — declare UI behavior with HTML attributes
+- Keep internal state authoritative; let the rendered DOM follow asynchronously
 - Key features:
   - Data binding via `data-bind`
   - Conditional rendering via `data-if`

@@ -1,7 +1,7 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.1.5
-最終更新: 2026-04-25
+バージョン: 0.4.7
+最終更新: 2026-04-28
 
 ## 目次
 
@@ -50,6 +50,7 @@ Haori.jsは以下の設計原則に基づいて構築されています：
 3. **最小限のAPI**: 学習コストを下げるシンプルなAPI設計
 4. **パフォーマンス重視**: 差分更新とキャッシング戦略による高速化
 5. **セキュリティファースト**: XSS対策を標準で組み込み
+6. **内部状態優先**: `visible` や binding data を正とし、DOM 上の表示状態は非同期で追随する
 
 ### アーキテクチャ図
 
@@ -221,6 +222,7 @@ Core.setAttributeは以下の優先順位で属性を処理します：
 
 #### data-if の動作
 
+- 判定の基準は内部状態であり、`style.display` や `data-if-false` は追随結果として扱う
 - 評価値が `false`, `null`, `undefined`, `NaN` の場合、要素を非表示化
 - 非表示時:
   - `style.display = 'none'` を設定
@@ -634,6 +636,8 @@ interface ProcedureOptions {
   historyData?: Record<string, unknown> | null // history pushState クエリパラメータ
   historyFormFragment?: ElementFragment | null // history pushState フォーム
   redirectUrl?: string | null                // リダイレクトURL
+  scrollOnError?: boolean | null             // エラー時に最初のエラー要素へスクロール
+  scrollTarget?: string | null               // 成功時にスクロールする要素のCSSセレクター
 }
 ```
 
@@ -736,7 +740,12 @@ async run(): Promise<void> {
     await Haori.toast(this.toastMessage, 'info')
   }
 
-  // 12. リダイレクト
+  // 12. スクロール（成功時）
+  if (this.scrollTarget) {
+    document.querySelector(this.scrollTarget)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+
+  // 13. リダイレクト
   if (this.redirectUrl) {
     window.location.href = this.redirectUrl
   }
@@ -1430,6 +1439,17 @@ data-import="url"
 **例**:
 ```html
 <div data-import="/components/header.html"></div>
+```
+
+**読み込み中の属性**:
+
+読み込みが進行中の間、対象要素に `data-importing` 属性が付与されます。読み込み完了（成功・失敗いずれも）後に除去されます。これを利用して、読み込み中のレイアウト崩れを防ぐことができます。
+
+```css
+/* 読み込み完了まで非表示にする */
+[data-importing] {
+  visibility: hidden;
+}
 ```
 
 ---
@@ -2519,7 +2539,7 @@ export {
 export default Haori
 
 // バージョン
-export const version = '0.1.5'
+export const version = '0.4.7'
 ```
 
 ### Core クラス
