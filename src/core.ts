@@ -276,12 +276,26 @@ export default class Core {
             Import.load(value)
               .then(html => {
                 const bytes = new TextEncoder().encode(html).length;
-                // DOM 更新はキュー内で実行し、オブザーバーに差分を拾わせる
+                // DOM 更新はキュー内で実行する
                 return Queue.enqueue(() => {
                   target.innerHTML = html;
                 }).then(() => {
                   target.removeAttribute(`${Env.prefix}importing`);
                   HaoriEvent.importEnd(target, value, bytes, startedAt);
+                  if (!document.body.hasAttribute('data-haori-ready')) {
+                    // 初期化中だけ明示スキャンし、Observer 起動後の二重初期化を避ける。
+                    const childPromises: Promise<void>[] = [];
+                    target.childNodes.forEach(node => {
+                      const child = Fragment.get(node);
+                      if (child instanceof ElementFragment) {
+                        childPromises.push(Core.scan(child.getTarget()));
+                      } else if (child instanceof TextFragment) {
+                        childPromises.push(Core.evaluateText(child));
+                      }
+                    });
+                    return Promise.all(childPromises).then(() => undefined);
+                  }
+                  return undefined;
                 });
               })
               .catch(error => {
@@ -720,7 +734,7 @@ export default class Core {
             newKey,
           )
             .then(() => Core.evaluateAll(child))
-            .then(() => Core.scheduleEvaluateAll(child))
+            .then(() => Core.scheduleEvaluateAll(child)),
         );
       } else {
         // 新しい要素を追加
@@ -742,7 +756,7 @@ export default class Core {
               )
               .then(() => Core.evaluateAll(child))
               .then(() => Core.scheduleEvaluateAll(child)),
-          )
+          ),
         );
       }
     });
