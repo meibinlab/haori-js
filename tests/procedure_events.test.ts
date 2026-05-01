@@ -32,6 +32,17 @@ describe('イベント属性: before-run / after-run', () => {
     return frag;
   };
 
+  const createDeferredResponse = (): {
+    promise: Promise<Response>;
+    resolve: (response: Response) => void;
+  } => {
+    let resolveResponse: (response: Response) => void = () => undefined;
+    const promise = new Promise<Response>(resolve => {
+      resolveResponse = resolve;
+    });
+    return {promise, resolve: resolveResponse};
+  };
+
   it('data-???-before-run が false を返すと以後の処理を停止する（dialog が呼ばれない）', async () => {
     const frag = createFragmentWith({
       'data-click-before-run': 'return false;',
@@ -116,6 +127,79 @@ describe('イベント属性: before-run / after-run', () => {
     expect(String(calls[0][0] as RequestInfo)).toBe(
       'https://example.com/override',
     );
+  });
+
+  it('click 実行中は disabled 属性を付与し、重複実行を抑止する', async () => {
+    // click 手続きの実行中だけ disabled 属性が付き、同一要素の再実行が止まること。
+    const frag = createFragmentWith({
+      'data-click-fetch': 'https://example.com/original',
+    });
+    const deferredResponse = createDeferredResponse();
+    const fetchMock = (global.fetch = vi.fn().mockImplementation(() => {
+      return deferredResponse.promise;
+    }) as unknown as typeof fetch);
+
+    const proc1 = new Procedure(frag, 'click');
+    const proc2 = new Procedure(frag, 'click');
+    const target = frag.getTarget();
+
+    const firstRun = proc1.runWithResult();
+
+    expect(target.hasAttribute('disabled')).toBe(true);
+
+    await expect(proc2.runWithResult()).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    deferredResponse.resolve(
+      new Response('{}', {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    );
+
+    await expect(firstRun).resolves.toBe(true);
+    expect(target.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('button 以外の click 要素でも disabled 属性で実行中を表現できる', async () => {
+    // 非 form control 要素でも disabled 属性が付き、完了後に解除されること。
+    const element = document.createElement('div');
+    element.setAttribute('data-click-fetch', 'https://example.com/original');
+    container.appendChild(element);
+
+    const frag = Fragment.get(element) as ElementFragment;
+    const deferredResponse = createDeferredResponse();
+    global.fetch = vi.fn().mockImplementation(() => {
+      return deferredResponse.promise;
+    }) as unknown as typeof fetch;
+
+    const proc = new Procedure(frag, 'click');
+    const running = proc.runWithResult();
+
+    expect(element.hasAttribute('disabled')).toBe(true);
+
+    deferredResponse.resolve(
+      new Response('{}', {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    );
+
+    await expect(running).resolves.toBe(true);
+    expect(element.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('既に disabled 属性を持つ click 要素は処理を開始しない', async () => {
+    // 事前に disabled の要素は再入防止対象として即停止すること。
+    const frag = createFragmentWith({
+      'data-click-fetch': 'https://example.com/original',
+      disabled: '',
+    });
+    const fetchMock = (global.fetch = vi.fn() as unknown as typeof fetch);
+
+    const proc = new Procedure(frag, 'click');
+
+    await expect(proc.runWithResult()).resolves.toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(frag.getTarget().hasAttribute('disabled')).toBe(true);
   });
 
   it('data-click-data のテンプレート式が評価された payload を送信する', async () => {

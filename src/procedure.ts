@@ -253,6 +253,14 @@ export interface ProcedureOptions {
   scrollTarget?: string | null;
 }
 
+interface ExecutionLockState {
+  /** 実行中として扱う対象要素 */
+  target: HTMLElement;
+
+  /** 今回の処理で disabled 属性を付与したかどうか */
+  appliedDisabledAttribute: boolean;
+}
+
 /**
  * 手続き的処理管理クラスです。
  */
@@ -264,6 +272,12 @@ export default class Procedure {
   /** 属性全体が単一テンプレート式かを判定する正規表現 */
   private static readonly SINGLE_PLACEHOLDER_REGEX =
     /^(\{\{\{[\s\S]+?\}\}\}|\{\{[\s\S]+?\}\})$/;
+
+  /** click 手続きの再入を防ぐ対象要素の集合 */
+  private static readonly RUNNING_CLICK_TARGETS = new WeakSet<HTMLElement>();
+
+  /** この Procedure が扱うイベント種別 */
+  private readonly eventType: string | null;
 
   /**
    * イベント属性名を正しく生成します。
@@ -1034,8 +1048,10 @@ ${body}
   ) {
     if (Procedure.isElementFragment(arg1)) {
       this.options = Procedure.buildOptions(arg1, arg2);
+      this.eventType = arg2;
     } else {
       this.options = arg1;
+      this.eventType = null;
     }
   }
 
@@ -1063,198 +1079,252 @@ ${body}
    * @returns 実行成功時は true、停止や失敗時は false
    */
   private async execute(): Promise<boolean> {
-    if (Object.keys(this.options).length === 0) {
+    const executionLock = this.acquireExecutionLock();
+    if (executionLock === false) {
       return false;
     }
-    if (
-      this.options.formFragment &&
-      this.validate(this.options.formFragment) === false
-    ) {
-      return false;
-    }
-    const confirmed = await this.confirm();
-    if (!confirmed) {
-      return false;
-    }
-    let fetchUrl = this.options.fetchUrl;
-    let fetchOptions = this.options.fetchOptions;
-    if (this.options.beforeCallback) {
-      const result = this.options.beforeCallback(
-        fetchUrl || null,
-        fetchOptions || null,
-      );
-      if (result !== undefined && result !== null) {
-        if (result === false || (typeof result === 'object' && result.stop)) {
-          return false;
-        }
-        if (typeof result === 'object') {
-          fetchUrl = ('fetchUrl' in result ? result.fetchUrl : fetchUrl) as
-            | string
-            | null;
-          fetchOptions = (
-            'fetchOptions' in result ? result.fetchOptions : fetchOptions
-          ) as RequestInit | null;
+
+    try {
+      if (Object.keys(this.options).length === 0) {
+        return false;
+      }
+      if (
+        this.options.formFragment &&
+        this.validate(this.options.formFragment) === false
+      ) {
+        return false;
+      }
+      const confirmed = await this.confirm();
+      if (!confirmed) {
+        return false;
+      }
+      let fetchUrl = this.options.fetchUrl;
+      let fetchOptions = this.options.fetchOptions;
+      if (this.options.beforeCallback) {
+        const result = this.options.beforeCallback(
+          fetchUrl || null,
+          fetchOptions || null,
+        );
+        if (result !== undefined && result !== null) {
+          if (result === false || (typeof result === 'object' && result.stop)) {
+            return false;
+          }
+          if (typeof result === 'object') {
+            fetchUrl = ('fetchUrl' in result ? result.fetchUrl : fetchUrl) as
+              | string
+              | null;
+            fetchOptions = (
+              'fetchOptions' in result ? result.fetchOptions : fetchOptions
+            ) as RequestInit | null;
+          }
         }
       }
-    }
 
-    // フォーム値と data を統合してペイロードを作成
-    const payload: Record<string, unknown> = {};
-    if (this.options.formFragment) {
-      const formValues = Form.getValues(this.options.formFragment);
-      Object.assign(payload, formValues);
-    }
-    if (this.options.data && typeof this.options.data === 'object') {
-      Object.assign(payload, this.options.data);
-    }
+      // フォーム値と data を統合してペイロードを作成
+      const payload: Record<string, unknown> = {};
+      if (this.options.formFragment) {
+        const formValues = Form.getValues(this.options.formFragment);
+        Object.assign(payload, formValues);
+      }
+      if (this.options.data && typeof this.options.data === 'object') {
+        Object.assign(payload, this.options.data);
+      }
 
-    const hasPayload = Object.keys(payload).length > 0;
-    if (fetchUrl) {
-      const finalOptions: RequestInit = {...(fetchOptions || {})};
-      const headers = new Headers(
-        (finalOptions.headers as HeadersInit | undefined) || undefined,
-      );
-      const requestedMethod = (finalOptions.method || 'GET').toUpperCase();
-      const isDemoQueryNormalization =
-        Env.runtime === 'demo' && !isQueryTransportMethod(requestedMethod);
-      const method = isDemoQueryNormalization ? 'GET' : requestedMethod;
+      const hasPayload = Object.keys(payload).length > 0;
+      if (fetchUrl) {
+        const finalOptions: RequestInit = {...(fetchOptions || {})};
+        const headers = new Headers(
+          (finalOptions.headers as HeadersInit | undefined) || undefined,
+        );
+        const requestedMethod = (finalOptions.method || 'GET').toUpperCase();
+        const isDemoQueryNormalization =
+          Env.runtime === 'demo' && !isQueryTransportMethod(requestedMethod);
+        const method = isDemoQueryNormalization ? 'GET' : requestedMethod;
 
-      finalOptions.method = method;
+        finalOptions.method = method;
 
-      if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-        if (hasPayload) {
-          fetchUrl = appendPayloadToUrl(fetchUrl!, payload);
+        if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+          if (hasPayload) {
+            fetchUrl = appendPayloadToUrl(fetchUrl!, payload);
+          }
+        } else if (hasPayload) {
+          const contentType = headers.get('Content-Type') || '';
+          if (/multipart\/form-data/i.test(contentType)) {
+            headers.delete('Content-Type');
+            const formData = new FormData();
+            for (const [k, v] of Object.entries(payload)) {
+              if (v === undefined || v === null) {
+                formData.append(k, '');
+              } else if (v instanceof Blob) {
+                formData.append(k, v);
+              } else if (Array.isArray(v)) {
+                v.forEach(item => formData.append(k, String(item)));
+              } else if (typeof v === 'object') {
+                formData.append(k, JSON.stringify(v));
+              } else {
+                formData.append(k, String(v));
+              }
+            }
+            finalOptions.body = formData;
+          } else if (/application\/x-www-form-urlencoded/i.test(contentType)) {
+            const params = new URLSearchParams();
+            for (const [k, v] of Object.entries(payload)) {
+              if (v === undefined) {
+                continue;
+              }
+              if (v === null) {
+                params.append(k, '');
+              } else if (Array.isArray(v)) {
+                v.forEach(item => params.append(k, String(item)));
+              } else if (typeof v === 'object') {
+                params.append(k, JSON.stringify(v));
+              } else {
+                params.append(k, String(v));
+              }
+            }
+            finalOptions.body = params;
+          } else {
+            headers.set('Content-Type', 'application/json');
+            finalOptions.body = JSON.stringify(payload);
+          }
         }
-      } else if (hasPayload) {
-        const contentType = headers.get('Content-Type') || '';
-        if (/multipart\/form-data/i.test(contentType)) {
+
+        finalOptions.headers = headers;
+        let queryString: string | undefined;
+
+        if (isDemoQueryNormalization) {
+          queryString = fetchUrl
+            ? new URL(fetchUrl, window.location.href).search || undefined
+            : undefined;
           headers.delete('Content-Type');
-          const formData = new FormData();
-          for (const [k, v] of Object.entries(payload)) {
-            if (v === undefined || v === null) {
-              formData.append(k, '');
-            } else if (v instanceof Blob) {
-              formData.append(k, v);
-            } else if (Array.isArray(v)) {
-              v.forEach(item => formData.append(k, String(item)));
-            } else if (typeof v === 'object') {
-              formData.append(k, JSON.stringify(v));
-            } else {
-              formData.append(k, String(v));
-            }
-          }
-          finalOptions.body = formData;
-        } else if (/application\/x-www-form-urlencoded/i.test(contentType)) {
-          const params = new URLSearchParams();
-          for (const [k, v] of Object.entries(payload)) {
-            if (v === undefined) {
-              continue;
-            }
-            if (v === null) {
-              params.append(k, '');
-            } else if (Array.isArray(v)) {
-              v.forEach(item => params.append(k, String(item)));
-            } else if (typeof v === 'object') {
-              params.append(k, JSON.stringify(v));
-            } else {
-              params.append(k, String(v));
-            }
-          }
-          finalOptions.body = params;
-        } else {
-          headers.set('Content-Type', 'application/json');
-          finalOptions.body = JSON.stringify(payload);
+          Log.info('Haori demo fetch normalization', {
+            runtime: Env.runtime,
+            requestedMethod,
+            effectiveMethod: method,
+            transportMode: 'query-get',
+            url: fetchUrl,
+            payload: hasPayload ? payload : undefined,
+            queryString,
+          });
         }
-      }
 
-      finalOptions.headers = headers;
-      let queryString: string | undefined;
+        // fetchstartイベントを発火
+        if (this.options.targetFragment && fetchUrl) {
+          const startedAt = performance.now();
+          const fetchStartMetadata = {
+            runtime: Env.runtime,
+            requestedMethod,
+            effectiveMethod: method,
+            transportMode: isDemoQueryNormalization ? 'query-get' : 'http',
+            ...(isDemoQueryNormalization ? {queryString} : {}),
+          };
 
-      if (isDemoQueryNormalization) {
-        queryString = fetchUrl
-          ? new URL(fetchUrl, window.location.href).search || undefined
-          : undefined;
-        headers.delete('Content-Type');
-        Log.info('Haori demo fetch normalization', {
-          runtime: Env.runtime,
-          requestedMethod,
-          effectiveMethod: method,
-          transportMode: 'query-get',
-          url: fetchUrl,
-          payload: hasPayload ? payload : undefined,
-          queryString,
+          HaoriEvent.fetchStart(
+            this.options.targetFragment.getTarget(),
+            fetchUrl,
+            finalOptions,
+            hasPayload ? payload : undefined,
+            fetchStartMetadata,
+          );
+
+          return fetch(fetchUrl, finalOptions)
+            .then(response => {
+              return this.handleFetchResult(
+                response,
+                fetchUrl || undefined,
+                startedAt,
+              );
+            })
+            .catch(error => {
+              if (fetchUrl) {
+                HaoriEvent.fetchError(
+                  this.options.targetFragment!.getTarget(),
+                  fetchUrl,
+                  error,
+                );
+              }
+              throw error;
+            });
+        }
+        return fetch(fetchUrl, finalOptions).then(response => {
+          return this.handleFetchResult(response, fetchUrl || undefined);
         });
       }
 
-      // fetchstartイベントを発火
-      if (this.options.targetFragment && fetchUrl) {
-        const startedAt = performance.now();
-        const fetchStartMetadata = {
-          runtime: Env.runtime,
-          requestedMethod,
-          effectiveMethod: method,
-          transportMode: isDemoQueryNormalization ? 'query-get' : 'http',
-          ...(isDemoQueryNormalization ? {queryString} : {}),
-        };
+      // fetchUrlが無い場合(changeイベント等)、bindFragmentsが無ければformFragmentにバインド
+      if (
+        (!this.options.bindFragments ||
+          this.options.bindFragments.length === 0) &&
+        this.options.formFragment &&
+        hasPayload
+      ) {
+        // 双方向バインディング: フォーム値を自動的にバインディングデータに反映
+        const formFragment = this.options.formFragment;
+        const formElement = formFragment.getTarget();
 
-        HaoriEvent.fetchStart(
-          this.options.targetFragment.getTarget(),
-          fetchUrl,
-          finalOptions,
-          hasPayload ? payload : undefined,
-          fetchStartMetadata,
+        formElement.setAttribute(
+          `${Env.prefix}bind`,
+          JSON.stringify(payload),
         );
 
-        return fetch(fetchUrl, finalOptions)
-          .then(response => {
-            return this.handleFetchResult(
-              response,
-              fetchUrl || undefined,
-              startedAt,
-            );
-          })
-          .catch(error => {
-            if (fetchUrl) {
-              HaoriEvent.fetchError(
-                this.options.targetFragment!.getTarget(),
-                fetchUrl,
-                error,
-              );
-            }
-            throw error;
-          });
+        const bindingData = formFragment.getBindingData();
+        Object.assign(bindingData, payload);
+        await Core.setBindingData(formElement, bindingData);
       }
-      return fetch(fetchUrl, finalOptions).then(response => {
-        return this.handleFetchResult(response, fetchUrl || undefined);
+
+      const merged = hasPayload ? payload : {};
+      const response = new Response(JSON.stringify(merged), {
+        headers: {'Content-Type': 'application/json'},
       });
+      return this.handleFetchResult(response);
+    } finally {
+      this.releaseExecutionLock(executionLock);
+    }
+  }
+
+  /**
+   * click 手続きの重複実行を防ぐためのロックを取得します。
+   *
+   * @returns ロック情報。取得不要なら null、取得失敗なら false。
+   */
+  private acquireExecutionLock(): ExecutionLockState | null | false {
+    if (this.eventType !== 'click' || !this.options.targetFragment) {
+      return null;
     }
 
-    // fetchUrlが無い場合(changeイベント等)、bindFragmentsが無ければformFragmentにバインド
+    const target = this.options.targetFragment.getTarget();
     if (
-      (!this.options.bindFragments ||
-        this.options.bindFragments.length === 0) &&
-      this.options.formFragment &&
-      hasPayload
+      Procedure.RUNNING_CLICK_TARGETS.has(target) ||
+      target.hasAttribute('disabled')
     ) {
-      // 双方向バインディング: フォーム値を自動的にバインディングデータに反映
-      const formFragment = this.options.formFragment;
-      const formElement = formFragment.getTarget();
-
-      formElement.setAttribute(
-        `${Env.prefix}bind`,
-        JSON.stringify(payload),
-      );
-
-      const bindingData = formFragment.getBindingData();
-      Object.assign(bindingData, payload);
-      await Core.setBindingData(formElement, bindingData);
+      return false;
     }
 
-    const merged = hasPayload ? payload : {};
-    const response = new Response(JSON.stringify(merged), {
-      headers: {'Content-Type': 'application/json'},
-    });
-    return this.handleFetchResult(response);
+    Procedure.RUNNING_CLICK_TARGETS.add(target);
+    target.setAttribute('disabled', '');
+    return {
+      target,
+      appliedDisabledAttribute: true,
+    };
+  }
+
+  /**
+   * 取得済みの実行ロックを解放します。
+   *
+   * @param executionLock 解放対象のロック情報。
+   * @returns 戻り値はありません。
+   */
+  private releaseExecutionLock(
+    executionLock: ExecutionLockState | null | false,
+  ): void {
+    if (!executionLock) {
+      return;
+    }
+
+    Procedure.RUNNING_CLICK_TARGETS.delete(executionLock.target);
+    if (executionLock.appliedDisabledAttribute) {
+      executionLock.target.removeAttribute('disabled');
+    }
   }
 
   /**

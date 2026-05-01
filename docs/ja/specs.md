@@ -1763,6 +1763,10 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 
 フェッチURLを指定します。
 
+`click` イベントでは、起点要素に処理中だけ `disabled` 属性を付与します。
+起点要素がすでに `disabled` の場合は処理を開始しません。
+この属性は `button` 以外の要素にも付与されるため、CSS で実行中スタイルを切り替えられます。
+
 ```html
 <button data-click-fetch="/api/user">取得</button>
 ```

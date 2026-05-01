@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `data-click-fetch` など click 手続きの実行中は起点要素へ `disabled` 属性を付与し、同一要素の重複実行を抑止するようにした
+
+### Library
+
+- click 手続きの `disabled` 属性付与と重複実行抑止の回帰テストを追加した
+
 ## [0.4.8] - 2026-05-01
 
 ### Changed
