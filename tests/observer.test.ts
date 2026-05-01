@@ -62,7 +62,7 @@ describe('Observer - data-haori-ready', () => {
     el.remove();
   });
 
-  it('data-import で取り込んだ HTML 内の Haori 属性が初期化される', async () => {
+  it('Observer 起動後に data-import で取り込んだ HTML 内の Haori 属性が初期化される', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       text: () =>
@@ -71,11 +71,12 @@ describe('Observer - data-haori-ready', () => {
         ),
     } as Response);
 
+    await Observer.init();
+
     const container = document.createElement('div');
     container.setAttribute('data-import', 'http://example.test/partial.html');
     document.body.appendChild(container);
 
-    await Observer.init();
     await waitForDomSettled();
 
     const imported = container.querySelector('[data-bind]') as HTMLElement;
