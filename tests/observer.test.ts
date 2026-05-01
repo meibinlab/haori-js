@@ -62,4 +62,26 @@ describe('Observer - data-haori-ready', () => {
     el.remove();
   });
 
+  it('data-import で取り込んだ HTML 内の Haori 属性が初期化される', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: () =>
+        Promise.resolve(
+          '<div data-bind=\'{"greeting":"こんにちは"}\'>{{greeting}}</div>',
+        ),
+    } as Response);
+
+    const container = document.createElement('div');
+    container.setAttribute('data-import', 'http://example.test/partial.html');
+    document.body.appendChild(container);
+
+    await Observer.init();
+    await waitForDomSettled();
+
+    const imported = container.querySelector('[data-bind]') as HTMLElement;
+    expect(imported).not.toBeNull();
+    expect(imported.textContent?.trim()).toBe('こんにちは');
+
+    container.remove();
+  });
 });

@@ -276,12 +276,24 @@ export default class Core {
             Import.load(value)
               .then(html => {
                 const bytes = new TextEncoder().encode(html).length;
-                // DOM 更新はキュー内で実行し、オブザーバーに差分を拾わせる
+                // DOM 更新はキュー内で実行する
                 return Queue.enqueue(() => {
                   target.innerHTML = html;
                 }).then(() => {
                   target.removeAttribute(`${Env.prefix}importing`);
                   HaoriEvent.importEnd(target, value, bytes, startedAt);
+                  // Observer 未起動時（起動スキャン中）にも取り込んだノードを
+                  // 確実に初期化するため、追加された子ノードを明示的にスキャンする
+                  const childPromises: Promise<void>[] = [];
+                  target.childNodes.forEach(node => {
+                    const child = Fragment.get(node as Node);
+                    if (child instanceof ElementFragment) {
+                      childPromises.push(Core.scan(child.getTarget()));
+                    } else if (child instanceof TextFragment) {
+                      childPromises.push(Core.evaluateText(child));
+                    }
+                  });
+                  return Promise.all(childPromises).then(() => undefined);
                 });
               })
               .catch(error => {
