@@ -84,6 +84,47 @@ npm install haori
 import Haori from 'haori'
 ```
 
+### 初期表示のちらつきを防ぐ（data-haori-ready）
+
+Haori.js の初期化（スキャンと初期フェッチ）がすべて完了すると、`<body>` タグに `data-haori-ready` 属性が自動的に付与されます。この属性を使って CSS で表示タイミングを制御することで、`{{name}}` のようなプレースホルダが一瞬表示される「ちらつき」を防げます。
+
+**基本的な使い方**:
+
+```html
+<style>
+  /* 初期化完了前はコンテンツを隠す */
+  body:not([data-haori-ready]) .page-content {
+    visibility: hidden;
+  }
+</style>
+
+<div class="page-content" data-fetch="/api/data">
+  <h1>{{title}}</h1>
+  <p>{{description}}</p>
+</div>
+```
+
+> `visibility: hidden` を使うと要素のレイアウト領域が保持されるためガタつきが起きません。`display: none` を使うと領域がなくなりレイアウトシフトが発生することがあります。
+
+ローディング表示と組み合わせる場合：
+
+```html
+<style>
+  #loading { display: flex; justify-content: center; padding: 2rem; }
+  body[data-haori-ready] #loading { display: none; }
+  body:not([data-haori-ready]) .page-content { visibility: hidden; }
+</style>
+
+<div id="loading">
+  <p>読み込み中...</p>
+</div>
+
+<div class="page-content" data-fetch="/api/profile">
+  <h1>{{name}}</h1>
+  <p>{{email}}</p>
+</div>
+```
+
 ---
 
 ## データバインディングの基本

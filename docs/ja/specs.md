@@ -549,30 +549,51 @@ class Observer {
 
 ```typescript
 async init(): Promise<void> {
-  // 1. document.head と document.body をスキャン
-  await Promise.all([
+  // 1. document.head と document.body をスキャン（初期フェッチを含む）
+  await Promise.allSettled([
     Core.scan(document.head),
     Core.scan(document.body)
   ])
 
-  // 2. それぞれに MutationObserver を設定
+  // 2. Queue に積まれた DOM 操作をすべて完了させる
+  await Queue.wait()
+
+  // 3. 初期化完了を示す属性を body に付与
+  document.body.setAttribute('data-haori-ready', '')
+
+  // 4. それぞれに MutationObserver を設定
   Observer.observe(document.head)
   Observer.observe(document.body)
 
-  // 3. EventDispatcher を開始
+  // 5. EventDispatcher を開始
   new EventDispatcher(document).start()
 
-  // 4. haori:ready イベント発火
-  HaoriEvent.ready(version)
+  // 6. IntersectObserver でツリーを同期
+  IntersectObserver.syncTree(document.body)
 }
 
 // DOMContentLoaded または即座に実行
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => Observer.init())
+  document.addEventListener('DOMContentLoaded', Observer.init)
 } else {
   Observer.init()
 }
 ```
+
+#### data-haori-ready 属性
+
+`Observer.init()` が完了すると `<body>` タグに `data-haori-ready=""` が付与されます。この属性を CSS セレクタとして利用することで、初期化前のプレースホルダ（`{{name}}` など）が表示されるちらつきを防げます。
+
+```css
+/* 初期化完了前はコンテンツを隠す */
+body:not([data-haori-ready]) .page-content {
+  visibility: hidden;
+}
+```
+
+- 付与タイミング: `Core.scan()` による全要素のスキャンと初期フェッチ、および `Queue.wait()` によるすべての DOM 操作の完了後
+- MutationObserver 開始前に付与されるため、observer が余分に反応しない
+- 属性値は常に空文字列
 
 ### 5. Procedure (procedure.ts)
 

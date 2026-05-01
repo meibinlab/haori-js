@@ -8,6 +8,7 @@ import Core from './core';
 import EventDispatcher from './event_dispatcher';
 import IntersectObserver from './intersect';
 import Log from './log';
+import Queue from './queue';
 
 /**
  * 監視対象の要素を管理するためのクラスです。
@@ -34,6 +35,8 @@ export class Observer {
     if (bodyResult.status !== 'fulfilled') {
       Log.error('[Haori]', 'Failed to build body fragment:', bodyResult.reason);
     }
+    await Queue.wait();
+    document.body.setAttribute('data-haori-ready', '');
     Observer.observe(document.head);
     Observer.observe(document.body);
     new EventDispatcher().start();
