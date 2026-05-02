@@ -327,11 +327,15 @@ describe('Core', () => {
 
       const tbody = container.querySelector('tbody') as HTMLElement;
       await Core.scan(tbody);
-      await waitForDomSettled();
-      await waitForDomSettled();
-      // scheduleEvaluateAll (100ms後) の再評価も待機
-      await new Promise(resolve => setTimeout(resolve, 200));
-      await waitForDomSettled();
+      await waitForCondition(
+        () => tbody.querySelectorAll('tr').length === 3,
+        {description: 'tbody rows'},
+      );
+      // scheduleEvaluateAll (100ms後) の再評価を待つ: 非表示リンクに data-if-false が付くまで待機
+      await waitForCondition(
+        () => tbody.querySelectorAll('[data-if-false]').length > 0,
+        {description: 'data-if-false applied', delayMs: 50, maxAttempts: 6},
+      );
 
       const rows = Array.from(tbody.querySelectorAll('tr'));
       expect(rows).toHaveLength(3);
@@ -589,8 +593,11 @@ describe('data-fetch + data-each + data-if integration', () => {
       () => tbody.querySelectorAll('tr').length === 3,
       {description: 'tbody rows via fetch'},
     );
-    // scheduleEvaluateAll (100ms後) の再評価も待機
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // scheduleEvaluateAll (100ms後) の再評価を待つ: 非表示リンクに data-if-false が付くまで待機
+    await waitForCondition(
+      () => tbody.querySelectorAll('[data-if-false]').length > 0,
+      {description: 'data-if-false applied via fetch', delayMs: 50, maxAttempts: 6},
+    );
 
     const rows = Array.from(tbody.querySelectorAll('tr'));
     const row0Links = Array.from(rows[0].querySelectorAll('a'));
