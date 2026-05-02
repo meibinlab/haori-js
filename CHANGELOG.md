@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-05-02
+
+### Changed
+
+- `data-each` 配下で `data-fetch` 経由の再評価でも `data-if` と通常属性の展開が安定するようにした
+- `waitForCondition` に `delayMs` を追加し、`scheduleEvaluateAll` の完了確認を DOM 状態ベースで行いやすくした
+
+### Library
+
+- `data-if` と `href` プレースホルダの共存、および `data-fetch` 経由の回帰テストを追加した
+- `waitForCondition` の `delayMs` を使った CI 耐性のある待機テストを追加した
+
 ## [0.4.9] - 2026-05-01
 
 ### Changed
