@@ -2,6 +2,7 @@
  * @fileoverview Coreクラスのテスト
  */
 
+import {vi} from 'vitest';
 import Core from '../src/core';
 import {ElementFragment} from '../src/fragment';
 import {waitForCondition, waitForDomSettled} from './helpers/async';
@@ -299,6 +300,70 @@ describe('Core', () => {
       expect(items[2].classList.contains('active')).toBe(false);
     });
 
+    test('data-each 配下の a タグに data-if と href プレースホルダが共存する場合に正しく hide/show される', async () => {
+      container.innerHTML = `
+        <table>
+          <tbody
+            data-bind='{"content":[
+              {"id":1,"customerCode":"C001","category":"顧客","billingId":null},
+              {"id":2,"customerCode":"C002","category":"請求","billingId":"B001"},
+              {"id":3,"customerCode":"C003","category":"入金","billingId":null}
+            ]}'
+            data-each="content"
+            data-each-key="id"
+          >
+            <tr>
+              <td>{{customerCode}}</td>
+              <td>{{category}}</td>
+              <td>
+                <a data-if="category === '顧客'" href="customer-list.html?customerCode={{customerCode}}">顧客対応</a>
+                <a data-if="category === '請求'" href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}">請求対応</a>
+                <a data-if="category === '入金'" href="payment-list.html?customerCode={{customerCode}}">入金対応</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+
+      const tbody = container.querySelector('tbody') as HTMLElement;
+      await Core.scan(tbody);
+      await waitForCondition(
+        () => tbody.querySelectorAll('tr').length === 3,
+        {description: 'tbody rows'},
+      );
+      // scheduleEvaluateAll (100ms後) の再評価を待つ: 非表示リンクに data-if-false が付くまで待機
+      await waitForCondition(
+        () => tbody.querySelectorAll('[data-if-false]').length > 0,
+        {description: 'data-if-false applied', delayMs: 50, maxAttempts: 6},
+      );
+
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      expect(rows).toHaveLength(3);
+
+      const row0Links = Array.from(rows[0].querySelectorAll('a'));
+      const row1Links = Array.from(rows[1].querySelectorAll('a'));
+      const row2Links = Array.from(rows[2].querySelectorAll('a'));
+
+      // row0: category=顧客 → 顧客リンク表示、請求・入金リンク非表示
+      expect(row0Links[0].hasAttribute('data-if-false')).toBe(false);
+      expect(row0Links[1].hasAttribute('data-if-false')).toBe(true);
+      expect(row0Links[2].hasAttribute('data-if-false')).toBe(true);
+      // href プレースホルダが行データで展開されていること
+      expect(row0Links[0].getAttribute('href')).toBe('customer-list.html?customerCode=C001');
+
+      // row1: category=請求 → 顧客リンク非表示、請求リンク表示、入金リンク非表示
+      expect(row1Links[0].hasAttribute('data-if-false')).toBe(true);
+      expect(row1Links[1].hasAttribute('data-if-false')).toBe(false);
+      expect(row1Links[2].hasAttribute('data-if-false')).toBe(true);
+      expect(row1Links[1].getAttribute('href')).toBe('billing-list.html?customerCode=C002&billingId=B001');
+
+      // row2: category=入金 → 顧客・請求リンク非表示、入金リンク表示
+      expect(row2Links[0].hasAttribute('data-if-false')).toBe(true);
+      expect(row2Links[1].hasAttribute('data-if-false')).toBe(true);
+      expect(row2Links[2].hasAttribute('data-if-false')).toBe(false);
+      expect(row2Links[2].getAttribute('href')).toBe('payment-list.html?customerCode=C003');
+    });
+
     test('data-attr-src が生値を維持したまま実属性を再評価する', async () => {
       container.innerHTML = `
         <img
@@ -475,5 +540,86 @@ describe('Core', () => {
 
       expect(el.hasAttribute('data-importing')).toBe(false);
     });
+  });
+});
+
+describe('data-fetch + data-each + data-if integration', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    document.body.removeChild(container);
+    vi.restoreAllMocks();
+  });
+
+  it('data-fetch経由でデータを取得した場合もdata-each内のdata-ifが行ごとに正しく評価される', async () => {
+    const responseData = {
+      content: [
+        {id: 1, customerCode: 'C001', category: '顧客', billingId: null},
+        {id: 2, customerCode: 'C002', category: '請求', billingId: 'B001'},
+        {id: 3, customerCode: 'C003', category: '入金', billingId: null},
+      ],
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(responseData), {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    );
+
+    container.innerHTML = `
+      <section id="alert-list" data-fetch="/api/alerts.json">
+        <table>
+          <tbody data-each="content" data-each-key="id">
+            <tr>
+              <td>
+                <a data-if="category === '顧客'" href="customer-list.html?customerCode={{customerCode}}">顧客対応</a>
+                <a data-if="category === '請求'" href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}">請求対応</a>
+                <a data-if="category === '入金'" href="payment-list.html?customerCode={{customerCode}}">入金対応</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    `;
+
+    const section = container.querySelector('section') as HTMLElement;
+    await Core.scan(section);
+    const tbody = container.querySelector('tbody') as HTMLElement;
+    await waitForCondition(
+      () => tbody.querySelectorAll('tr').length === 3,
+      {description: 'tbody rows via fetch'},
+    );
+    // scheduleEvaluateAll (100ms後) の再評価を待つ: 非表示リンクに data-if-false が付くまで待機
+    await waitForCondition(
+      () => tbody.querySelectorAll('[data-if-false]').length > 0,
+      {description: 'data-if-false applied via fetch', delayMs: 50, maxAttempts: 6},
+    );
+
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const row0Links = Array.from(rows[0].querySelectorAll('a'));
+    const row1Links = Array.from(rows[1].querySelectorAll('a'));
+    const row2Links = Array.from(rows[2].querySelectorAll('a'));
+
+    // row0: category=顧客 → 顧客リンクのみ表示、href が展開されていること
+    expect(row0Links[0].hasAttribute('data-if-false')).toBe(false);
+    expect(row0Links[0].getAttribute('href')).toBe('customer-list.html?customerCode=C001');
+    expect(row0Links[1].hasAttribute('data-if-false')).toBe(true);
+    expect(row0Links[2].hasAttribute('data-if-false')).toBe(true);
+
+    // row1: category=請求 → 請求リンクのみ表示、href が展開されていること
+    expect(row1Links[0].hasAttribute('data-if-false')).toBe(true);
+    expect(row1Links[1].hasAttribute('data-if-false')).toBe(false);
+    expect(row1Links[1].getAttribute('href')).toBe('billing-list.html?customerCode=C002&billingId=B001');
+    expect(row1Links[2].hasAttribute('data-if-false')).toBe(true);
+
+    // row2: category=入金 → 入金リンクのみ表示、href が展開されていること
+    expect(row2Links[0].hasAttribute('data-if-false')).toBe(true);
+    expect(row2Links[1].hasAttribute('data-if-false')).toBe(true);
+    expect(row2Links[2].hasAttribute('data-if-false')).toBe(false);
+    expect(row2Links[2].getAttribute('href')).toBe('payment-list.html?customerCode=C003');
   });
 });
