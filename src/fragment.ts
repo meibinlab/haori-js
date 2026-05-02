@@ -767,6 +767,15 @@ export class ElementFragment extends Fragment {
       return this.removeAliasedAttribute(rawName, targetName);
     }
     const contents = new AttributeContents(rawName, value);
+    // MutationObserver経由で展開済みの値が渡された場合に、テンプレート式を含む既存エントリを上書きしない。
+    // （例: href="...{{customerCode}}..." が展開された後の値でattributeMapが破壊されるのを防ぐ）
+    const existing = this.attributeMap.get(rawName);
+    if (existing && (existing.isEvaluate || existing.isForceEvaluation()) && !contents.isEvaluate && !contents.isForceEvaluation()) {
+      this.skipMutationAttributes = true;
+      return Queue.enqueue(() => {}).finally(() => {
+        this.skipMutationAttributes = false;
+      }) as Promise<void>;
+    }
     this.attributeMap.set(rawName, contents);
     this.skipMutationAttributes = true;
     const element = this.getTarget();
