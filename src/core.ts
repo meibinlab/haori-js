@@ -528,19 +528,7 @@ export default class Core {
       promises.push(Core.evaluateIf(fragment));
     }
     if (fragment.hasAttribute(`${Env.prefix}each`)) {
-      return Promise.all(promises)
-        .then(() => Core.evaluateEach(fragment))
-        .then(() => {
-          const childPromises: Promise<void>[] = [];
-          fragment.getChildren().forEach(child => {
-            if (child instanceof ElementFragment) {
-              childPromises.push(Core.evaluateAll(child));
-            } else if (child instanceof TextFragment) {
-              childPromises.push(Core.evaluateText(child));
-            }
-          });
-          return Promise.all(childPromises).then(() => undefined);
-        });
+      return Promise.all(promises).then(() => Core.evaluateEach(fragment));
     }
     fragment.getChildren().forEach(child => {
       if (child instanceof ElementFragment) {
