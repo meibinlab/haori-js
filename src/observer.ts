@@ -75,6 +75,7 @@ export class Observer {
                 element,
                 mutation.attributeName!,
                 element.getAttribute(mutation.attributeName!),
+                true,
               );
               IntersectObserver.syncElement(element);
               break;

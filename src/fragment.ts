@@ -695,8 +695,12 @@ export class ElementFragment extends Fragment {
    * @param value 属性値
    * @returns 属性の更新のPromise
    */
-  public setAttribute(name: string, value: string | null): Promise<void> {
-    return this.setAttributeInternal(name, name, value, true);
+  public setAttribute(
+    name: string,
+    value: string | null,
+    fromObserver = false,
+  ): Promise<void> {
+    return this.setAttributeInternal(name, name, value, true, fromObserver);
   }
 
   /**
@@ -756,6 +760,7 @@ export class ElementFragment extends Fragment {
     targetName: string,
     value: string | null,
     syncValueProperty: boolean,
+    fromObserver = false,
   ): Promise<void> {
     if (this.skipMutationAttributes) {
       return Promise.resolve();
@@ -767,17 +772,21 @@ export class ElementFragment extends Fragment {
       return this.removeAliasedAttribute(rawName, targetName);
     }
     const contents = new AttributeContents(rawName, value);
-    // MutationObserver経由で展開済みの値が渡された場合に、テンプレート式を含む既存エントリを上書きしない。
-    // （例: href="...{{customerCode}}..." が展開された後の値でattributeMapが破壊されるのを防ぐ）
-    const existing = this.attributeMap.get(rawName);
-    const existingHasTemplate = existing
-      && (existing.isEvaluate || existing.isForceEvaluation());
-    const newHasTemplate = contents.isEvaluate || contents.isForceEvaluation();
-    if (existingHasTemplate && !newHasTemplate) {
-      this.skipMutationAttributes = true;
-      return Queue.enqueue(() => {}).finally(() => {
-        this.skipMutationAttributes = false;
-      }) as Promise<void>;
+    if (fromObserver) {
+      // MutationObserver経由の書き戻し（展開済み値）でテンプレート式を含む既存エントリを上書きしない。
+      // （例: href="...{{customerCode}}..." が展開された後にObserverが展開済み値を再セットするのを防ぐ）
+      const existing = this.attributeMap.get(rawName);
+      if (
+        existing &&
+        (existing.isEvaluate || existing.isForceEvaluation()) &&
+        !contents.isEvaluate &&
+        !contents.isForceEvaluation()
+      ) {
+        this.skipMutationAttributes = true;
+        return Queue.enqueue(() => {}).finally(() => {
+          this.skipMutationAttributes = false;
+        }) as Promise<void>;
+      }
     }
     this.attributeMap.set(rawName, contents);
     this.skipMutationAttributes = true;

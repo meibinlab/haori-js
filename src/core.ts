@@ -234,6 +234,7 @@ export default class Core {
     element: HTMLElement,
     name: string,
     value: string | null,
+    fromObserver = false,
   ): Promise<void> {
     const fragment = Fragment.get(element);
     const aliasedAttributeName = Core.getAliasedAttributeName(name);
@@ -323,7 +324,7 @@ export default class Core {
     if (value === null) {
       promises.push(fragment.removeAttribute(name));
     } else {
-      promises.push(fragment.setAttribute(name, value));
+      promises.push(fragment.setAttribute(name, value, fromObserver));
     }
     return Promise.all(promises).then(() => undefined);
   }
