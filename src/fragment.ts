@@ -695,8 +695,12 @@ export class ElementFragment extends Fragment {
    * @param value 属性値
    * @returns 属性の更新のPromise
    */
-  public setAttribute(name: string, value: string | null): Promise<void> {
-    return this.setAttributeInternal(name, name, value, true);
+  public setAttribute(
+    name: string,
+    value: string | null,
+    fromObserver = false,
+  ): Promise<void> {
+    return this.setAttributeInternal(name, name, value, true, fromObserver);
   }
 
   /**
@@ -711,8 +715,11 @@ export class ElementFragment extends Fragment {
     rawName: string,
     targetName: string,
     value: string | null,
+    fromObserver = false,
   ): Promise<void> {
-    return this.setAttributeInternal(rawName, targetName, value, false);
+    return this.setAttributeInternal(
+      rawName, targetName, value, false, fromObserver,
+    );
   }
 
   /**
@@ -756,6 +763,7 @@ export class ElementFragment extends Fragment {
     targetName: string,
     value: string | null,
     syncValueProperty: boolean,
+    fromObserver = false,
   ): Promise<void> {
     if (this.skipMutationAttributes) {
       return Promise.resolve();
@@ -767,6 +775,22 @@ export class ElementFragment extends Fragment {
       return this.removeAliasedAttribute(rawName, targetName);
     }
     const contents = new AttributeContents(rawName, value);
+    if (fromObserver) {
+      // MutationObserver経由の書き戻し（展開済み値）でテンプレート式を含む既存エントリを上書きしない。
+      // （例: href="...{{customerCode}}..." が展開された後にObserverが展開済み値を再セットするのを防ぐ）
+      const existing = this.attributeMap.get(rawName);
+      if (
+        existing &&
+        (existing.isEvaluate || existing.isForceEvaluation()) &&
+        !contents.isEvaluate &&
+        !contents.isForceEvaluation()
+      ) {
+        this.skipMutationAttributes = true;
+        return Queue.enqueue(() => {}).finally(() => {
+          this.skipMutationAttributes = false;
+        }) as Promise<void>;
+      }
+    }
     this.attributeMap.set(rawName, contents);
     this.skipMutationAttributes = true;
     const element = this.getTarget();
