@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.4.12] - 2026-05-03
+
+### Changed
+
+- `data-if` の非表示処理で inline style の `display: ... !important` を保持し、`hide()` / `show()` の再入でも元の表示状態を壊さないようにした
+
+### Library
+
+- `display: ... !important` の元値保持と `hide()` / `show()` の連続呼び出しを検証する回帰テストを追加した
+
 ## [0.4.11] - 2026-05-03
 
 ### Changed
