@@ -273,6 +273,24 @@ describe('ElementFragment の属性操作', () => {
     expect(clone.getTarget().hasAttribute('data-if-false')).toBe(false);
   });
 
+  it('hide() は display を important 付きで上書きし、show() で元に戻す', async () => {
+    const el = document.createElement('div');
+    el.style.setProperty('display', 'inline-flex');
+    const ef = new ElementFragment(el);
+
+    await ef.hide();
+
+    expect(el.style.getPropertyValue('display')).toBe('none');
+    expect(el.style.getPropertyPriority('display')).toBe('important');
+    expect(el.hasAttribute('data-if-false')).toBe(true);
+
+    await ef.show();
+
+    expect(el.style.getPropertyValue('display')).toBe('inline-flex');
+    expect(el.style.getPropertyPriority('display')).toBe('');
+    expect(el.hasAttribute('data-if-false')).toBe(false);
+  });
+
 });
 
 describe('TextFragment と CommentFragment', () => {

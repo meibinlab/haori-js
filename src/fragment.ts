@@ -256,6 +256,9 @@ export class ElementFragment extends Fragment {
   /** 元の display 値 */
   private display: string | null = null;
 
+  /** 元の display の優先度 */
+  private displayPriority: string | null = null;
+
   /** each用のテンプレート */
   private template: ElementFragment | null = null;
 
@@ -365,6 +368,7 @@ export class ElementFragment extends Fragment {
     clone.clearBindingDataCache();
     clone.visible = true;
     clone.display = this.display;
+    clone.displayPriority = this.displayPriority;
     clone.template = this.template;
     clone.normalizeClonedVisibilityState();
     return clone;
@@ -380,8 +384,9 @@ export class ElementFragment extends Fragment {
       this.getTarget().hasAttribute(`${Env.prefix}if-false`)
     ) {
       this.visible = true;
-      this.display = '';
-      this.getTarget().style.display = '';
+      this.display = null;
+      this.displayPriority = null;
+      this.getTarget().style.removeProperty('display');
       this.getTarget().removeAttribute(`${Env.prefix}if-false`);
     }
     this.children.forEach(child => {
@@ -1137,9 +1142,11 @@ export class ElementFragment extends Fragment {
    */
   public hide(): Promise<void> {
     this.visible = false;
-    this.display = this.getTarget().style.display;
-    this.getTarget().style.display = 'none';
-    this.getTarget().setAttribute(`${Env.prefix}if-false`, '');
+    const target = this.getTarget();
+    this.display = target.style.getPropertyValue('display');
+    this.displayPriority = target.style.getPropertyPriority('display');
+    target.style.setProperty('display', 'none', 'important');
+    target.setAttribute(`${Env.prefix}if-false`, '');
     return Promise.resolve();
   }
 
@@ -1149,8 +1156,19 @@ export class ElementFragment extends Fragment {
    * @return エレメントの表示のPromise
    */
   public show(): Promise<void> {
-    this.getTarget().style.display = this.display ?? '';
-    this.getTarget().removeAttribute(`${Env.prefix}if-false`);
+    const target = this.getTarget();
+    if (this.display === null || this.display === '') {
+      target.style.removeProperty('display');
+    } else {
+      target.style.setProperty(
+        'display',
+        this.display,
+        this.displayPriority ?? '',
+      );
+    }
+    this.display = null;
+    this.displayPriority = null;
+    target.removeAttribute(`${Env.prefix}if-false`);
     this.visible = true;
     return Promise.resolve();
   }
