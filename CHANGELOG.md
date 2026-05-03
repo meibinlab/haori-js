@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-05-03
+
+### Changed
+
+- `MutationObserver` 経由の書き戻しで `attributeMap` がテンプレート式を失わないようにした
+- `data-attr-*` も `Observer` 経由の書き戻し抑止対象に含め、展開済み値での上書きを防ぐようにした
+
+### Library
+
+- `fromObserver` フラグの伝播と `data-attr-src` の回帰テストを追加した
+
 ## [0.4.10] - 2026-05-02
 
 ### Changed
