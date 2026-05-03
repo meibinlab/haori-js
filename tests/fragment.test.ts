@@ -275,7 +275,7 @@ describe('ElementFragment の属性操作', () => {
 
   it('hide() は display を important 付きで上書きし、show() で元に戻す', async () => {
     const el = document.createElement('div');
-    el.style.setProperty('display', 'inline-flex');
+    el.style.setProperty('display', 'inline-flex', 'important');
     const ef = new ElementFragment(el);
 
     await ef.hide();
@@ -284,10 +284,21 @@ describe('ElementFragment の属性操作', () => {
     expect(el.style.getPropertyPriority('display')).toBe('important');
     expect(el.hasAttribute('data-if-false')).toBe(true);
 
+    await ef.hide();
+    expect(el.style.getPropertyValue('display')).toBe('none');
+    expect(el.style.getPropertyPriority('display')).toBe('important');
+    expect(el.hasAttribute('data-if-false')).toBe(true);
+
     await ef.show();
 
     expect(el.style.getPropertyValue('display')).toBe('inline-flex');
-    expect(el.style.getPropertyPriority('display')).toBe('');
+    expect(el.style.getPropertyPriority('display')).toBe('important');
+    expect(el.hasAttribute('data-if-false')).toBe(false);
+
+    await ef.show();
+
+    expect(el.style.getPropertyValue('display')).toBe('inline-flex');
+    expect(el.style.getPropertyPriority('display')).toBe('important');
     expect(el.hasAttribute('data-if-false')).toBe(false);
   });
 

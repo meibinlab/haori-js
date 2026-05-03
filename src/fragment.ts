@@ -1141,6 +1141,9 @@ export class ElementFragment extends Fragment {
    * @returns エレメントの非表示のPromise
    */
   public hide(): Promise<void> {
+    if (!this.visible) {
+      return Promise.resolve();
+    }
     this.visible = false;
     const target = this.getTarget();
     this.display = target.style.getPropertyValue('display');
@@ -1156,6 +1159,9 @@ export class ElementFragment extends Fragment {
    * @return エレメントの表示のPromise
    */
   public show(): Promise<void> {
+    if (this.visible) {
+      return Promise.resolve();
+    }
     const target = this.getTarget();
     if (this.display === null || this.display === '') {
       target.style.removeProperty('display');
