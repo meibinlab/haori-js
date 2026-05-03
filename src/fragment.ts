@@ -770,7 +770,10 @@ export class ElementFragment extends Fragment {
     // MutationObserver経由で展開済みの値が渡された場合に、テンプレート式を含む既存エントリを上書きしない。
     // （例: href="...{{customerCode}}..." が展開された後の値でattributeMapが破壊されるのを防ぐ）
     const existing = this.attributeMap.get(rawName);
-    if (existing && (existing.isEvaluate || existing.isForceEvaluation()) && !contents.isEvaluate && !contents.isForceEvaluation()) {
+    const existingHasTemplate = existing
+      && (existing.isEvaluate || existing.isForceEvaluation());
+    const newHasTemplate = contents.isEvaluate || contents.isForceEvaluation();
+    if (existingHasTemplate && !newHasTemplate) {
       this.skipMutationAttributes = true;
       return Queue.enqueue(() => {}).finally(() => {
         this.skipMutationAttributes = false;
