@@ -4,7 +4,7 @@
 
 import {vi} from 'vitest';
 import Core from '../src/core';
-import {ElementFragment} from '../src/fragment';
+import Fragment, {ElementFragment} from '../src/fragment';
 import {waitForCondition, waitForDomSettled} from './helpers/async';
 
 describe('Core', () => {
@@ -387,6 +387,34 @@ describe('Core', () => {
 
       // バインディング変更時も生値を維持したまま実属性だけ更新されること。
       expect(image.getAttribute('data-attr-src')).toBe('img/{{id}}.jpg');
+      expect(image.getAttribute('src')).toBe('img/after.jpg');
+    });
+
+    test('MutationObserver経由の書き戻しでdata-attr-*のattributeMapが上書きされない', async () => {
+      container.innerHTML = `
+        <img
+          data-bind='{"id":"before"}'
+          data-attr-src="img/{{id}}.jpg"
+          alt="preview"
+        >
+      `;
+
+      const image = container.querySelector('img') as HTMLImageElement;
+
+      await Core.scan(image);
+      await waitForDomSettled();
+
+      expect(image.getAttribute('src')).toBe('img/before.jpg');
+
+      // Observer経由の書き戻しをシミュレート: 展開済みの値でsetAttributeを呼ぶ
+      const fragment = Fragment.get(image) as ElementFragment;
+      await fragment.setAliasedAttribute('data-attr-src', 'src', 'img/before.jpg', true);
+      await waitForDomSettled();
+
+      // attributeMapのテンプレート式が保持され、再バインドで正しく展開されること。
+      await Core.setBindingData(image, {id: 'after'});
+      await waitForDomSettled();
+
       expect(image.getAttribute('src')).toBe('img/after.jpg');
     });
 

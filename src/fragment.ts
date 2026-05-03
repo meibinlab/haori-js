@@ -715,8 +715,11 @@ export class ElementFragment extends Fragment {
     rawName: string,
     targetName: string,
     value: string | null,
+    fromObserver = false,
   ): Promise<void> {
-    return this.setAttributeInternal(rawName, targetName, value, false);
+    return this.setAttributeInternal(
+      rawName, targetName, value, false, fromObserver,
+    );
   }
 
   /**

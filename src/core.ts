@@ -242,7 +242,9 @@ export default class Core {
       if (value === null) {
         return fragment.removeAliasedAttribute(name, aliasedAttributeName);
       }
-      return fragment.setAliasedAttribute(name, aliasedAttributeName, value);
+      return fragment.setAliasedAttribute(
+        name, aliasedAttributeName, value, fromObserver,
+      );
     }
     const promises: Promise<void>[] = [];
     switch (name) {
