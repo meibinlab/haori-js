@@ -8,20 +8,25 @@
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import Haori from '../src/haori';
+import EventDispatcher from '../src/event_dispatcher';
+import Procedure from '../src/procedure';
 
 describe('Click attributes integration', () => {
   let container: HTMLElement;
+  let dispatcher: EventDispatcher;
 
   beforeEach(async () => {
-    // テスト用のコンテナを用意し、Observer を初期化して自動処理を有効にする
+    // テスト用のコンテナを用意し、クリック委譲だけを有効にする
     container = document.createElement('div');
     document.body.appendChild(container);
     vi.restoreAllMocks();
-    await import('../src/observer');
+    dispatcher = new EventDispatcher(document);
+    dispatcher.start();
   });
 
   afterEach(() => {
     // 後片付け
+    dispatcher.stop();
     document.body.removeChild(container);
     vi.restoreAllMocks();
   });
@@ -61,6 +66,28 @@ describe('Click attributes integration', () => {
     // confirm が呼ばれ、fetch は呼ばれない
     expect(confirmSpy).toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('data-click-* のない input は click Procedure を開始しない', async () => {
+    const input = document.createElement('input');
+    input.id = 'plain-input';
+    input.type = 'text';
+    container.appendChild(input);
+
+    const runSpy = vi.spyOn(Procedure.prototype, 'run').mockResolvedValue(
+      undefined,
+    );
+
+    await Core.scan(container);
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    input.dispatchEvent(new Event('click', {bubbles: true, cancelable: true}));
+
+    expect(input.hasAttribute('disabled')).toBe(false);
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(runSpy).not.toHaveBeenCalled();
   });
 
   it('data-click-validate でバリデーション失敗時にフォーカスされる', async () => {
