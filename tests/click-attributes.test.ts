@@ -9,6 +9,7 @@ import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import Haori from '../src/haori';
 import EventDispatcher from '../src/event_dispatcher';
+import Procedure from '../src/procedure';
 
 describe('Click attributes integration', () => {
   let container: HTMLElement;
@@ -67,27 +68,26 @@ describe('Click attributes integration', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('data-click-* のない input をクリックしても disabled にならない', async () => {
+  it('data-click-* のない input は click Procedure を開始しない', async () => {
     const input = document.createElement('input');
     input.id = 'plain-input';
     input.type = 'text';
     container.appendChild(input);
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
-      return Promise.resolve(
-        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
-      ) as unknown as Promise<Response>;
-    });
+    const runSpy = vi.spyOn(Procedure.prototype, 'run').mockResolvedValue(
+      undefined,
+    );
 
     await Core.scan(container);
     await new Promise(resolve => setTimeout(resolve, 50));
 
     input.dispatchEvent(new Event('click', {bubbles: true, cancelable: true}));
 
+    expect(input.hasAttribute('disabled')).toBe(false);
+
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    expect(input.hasAttribute('disabled')).toBe(false);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(runSpy).not.toHaveBeenCalled();
   });
 
   it('data-click-validate でバリデーション失敗時にフォーカスされる', async () => {
