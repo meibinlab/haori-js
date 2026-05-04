@@ -8,20 +8,24 @@
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import Haori from '../src/haori';
+import EventDispatcher from '../src/event_dispatcher';
 
 describe('Click attributes integration', () => {
   let container: HTMLElement;
+  let dispatcher: EventDispatcher;
 
   beforeEach(async () => {
-    // テスト用のコンテナを用意し、Observer を初期化して自動処理を有効にする
+    // テスト用のコンテナを用意し、クリック委譲だけを有効にする
     container = document.createElement('div');
     document.body.appendChild(container);
     vi.restoreAllMocks();
-    await import('../src/observer');
+    dispatcher = new EventDispatcher(document);
+    dispatcher.start();
   });
 
   afterEach(() => {
     // 後片付け
+    dispatcher.stop();
     document.body.removeChild(container);
     vi.restoreAllMocks();
   });
@@ -60,6 +64,29 @@ describe('Click attributes integration', () => {
 
     // confirm が呼ばれ、fetch は呼ばれない
     expect(confirmSpy).toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('data-click-* のない input をクリックしても disabled にならない', async () => {
+    const input = document.createElement('input');
+    input.id = 'plain-input';
+    input.type = 'text';
+    container.appendChild(input);
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    await Core.scan(container);
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    input.dispatchEvent(new Event('click', {bubbles: true, cancelable: true}));
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(input.hasAttribute('disabled')).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

@@ -93,7 +93,7 @@ export default class EventDispatcher {
    * @param type イベントタイプ（'click', 'change', 'load'など）
    */
   private delegate(event: Event, type: string) {
-    const element = this.getElementFromTarget(event.target);
+    const element = this.getElementFromTarget(event.target, type);
     if (!element) {
       return;
     }
@@ -116,17 +116,52 @@ export default class EventDispatcher {
    * イベントのターゲットから HTMLElement を取得します。
    *
    * @param target イベントのターゲット
+   * @param type イベントタイプ。click の場合のみ祖先委譲を行う
    * @returns HTMLElement または null
    */
-  private getElementFromTarget(target: EventTarget | null): HTMLElement | null {
+  private getElementFromTarget(
+    target: EventTarget | null,
+    type: string | null,
+  ): HTMLElement | null {
     if (!target) {
       return null;
     }
     if (target instanceof HTMLElement) {
+      if (type === 'click') {
+        return this.findClickableElement(target);
+      }
       return target;
     }
     if (target instanceof Node) {
-      return target.parentElement;
+      const element = target.parentElement;
+      if (!element) {
+        return null;
+      }
+      if (type === 'click') {
+        return this.findClickableElement(element);
+      }
+      return element;
+    }
+    return null;
+  }
+
+  /**
+   * data-click-* 属性を持つ最も近い祖先要素を返します。
+   *
+   * @param element 探索開始要素
+   * @returns 処理対象要素。見つからない場合は null
+   */
+  private findClickableElement(element: HTMLElement): HTMLElement | null {
+    let current: HTMLElement | null = element;
+    while (current) {
+      if (
+        current.getAttributeNames().some(name =>
+          name.startsWith('data-click-'),
+        )
+      ) {
+        return current;
+      }
+      current = current.parentElement;
     }
     return null;
   }
