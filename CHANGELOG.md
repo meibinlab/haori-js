@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.4.16] - 2026-05-06
+
+### Changed
+
+- `data-click-copy-params` で include / exclude を併用できるようにし、除外だけ指定した場合も全件コピーから差し引けるようにした
+
+### Library
+
+- `data-click-copy-params` の exclude-only、include/exclude 併用、空トークンと前後スペースの回帰テストを追加した
+
 ## [0.4.15] - 2026-05-06
 
 ### Changed
