@@ -1126,9 +1126,9 @@ ${body}
             Form.reset(fragment),
           ),
         );
+        this.captureHistorySnapshots();
       }
       const payload = this.buildPayload();
-      this.captureHistorySnapshots();
       let fetchUrl = this.options.fetchUrl;
       let fetchOptions = this.options.fetchOptions;
       if (this.options.beforeCallback) {
@@ -1499,16 +1499,12 @@ ${body}
   private pushHistory(): void {
     const hasHistoryUrl =
       this.options.historyUrl !== undefined && this.options.historyUrl !== null;
+    const historyDataValues = this.resolveHistoryDataValues();
+    const historyFormValues = this.resolveHistoryFormValues();
     const hasHistoryData =
-      (this.historyDataSnapshot !== undefined
-        ? this.historyDataSnapshot !== null
-        : this.options.historyData !== undefined &&
-          this.options.historyData !== null);
+      historyDataValues !== undefined && historyDataValues !== null;
     const hasHistoryForm =
-      (this.historyFormSnapshot !== undefined
-        ? this.historyFormSnapshot !== null
-        : this.options.historyFormFragment !== undefined &&
-          this.options.historyFormFragment !== null);
+      historyFormValues !== undefined && historyFormValues !== null;
 
     if (!hasHistoryUrl && !hasHistoryData && !hasHistoryForm) {
       return;
@@ -1547,19 +1543,9 @@ ${body}
       };
 
       if (hasHistoryData) {
-        appendParams(
-          (this.historyDataSnapshot !== undefined
-            ? this.historyDataSnapshot
-            : this.options.historyData) as Record<string, unknown>,
-        );
+        appendParams(historyDataValues as Record<string, unknown>);
       }
       if (hasHistoryForm) {
-        const historyFormFragment =
-          this.options.historyFormFragment as ElementFragment;
-        const historyFormValues =
-          this.historyFormSnapshot !== undefined
-            ? this.historyFormSnapshot
-            : Form.getValues(historyFormFragment);
         appendParams(historyFormValues as Record<string, unknown>);
       }
 
@@ -1954,6 +1940,41 @@ ${body}
     this.historyFormSnapshot = this.options.historyFormFragment
       ? Form.getValues(this.options.historyFormFragment)
       : undefined;
+  }
+
+  /**
+   * history-data の評価値を取得します。
+   *
+   * @returns history-data の評価値。
+   */
+  private resolveHistoryDataValues():
+    Record<string, unknown> | null | undefined {
+    if (this.historyDataSnapshot !== undefined) {
+      return this.historyDataSnapshot;
+    }
+    if (this.options.targetFragment && this.options.historyDataAttrName) {
+      return Procedure.resolveDataAttribute(
+        this.options.targetFragment,
+        this.options.historyDataAttrName,
+      );
+    }
+    return this.options.historyData;
+  }
+
+  /**
+   * history-form の評価値を取得します。
+   *
+   * @returns history-form の評価値。
+   */
+  private resolveHistoryFormValues():
+    Record<string, unknown> | null | undefined {
+    if (this.historyFormSnapshot !== undefined) {
+      return this.historyFormSnapshot;
+    }
+    if (this.options.historyFormFragment) {
+      return Form.getValues(this.options.historyFormFragment);
+    }
+    return undefined;
   }
 
   /**
