@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.4.14] - 2026-05-06
+
+### Changed
+
+- click 実行時の再入防止で `disabled` 属性の再付与を抑止し、非 form control の disabled をロックとして扱えるようにした
+
+### Library
+
+- 非 form control の disabled 抑止と `data-click-form` 経路の回帰テストを追加した
+
 ## [0.4.13] - 2026-05-05
 
 ### Changed
