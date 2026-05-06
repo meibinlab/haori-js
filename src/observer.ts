@@ -64,6 +64,14 @@ export class Observer {
               const element = mutation.target as HTMLElement;
               if (
                 mutation.attributeName &&
+                element.hasAttribute('data-haori-click-lock') &&
+                (mutation.attributeName === 'disabled' ||
+                  mutation.attributeName === 'data-haori-click-lock')
+              ) {
+                break;
+              }
+              if (
+                mutation.attributeName &&
                 Core.isAliasedAttributeReflection(
                   element,
                   mutation.attributeName,

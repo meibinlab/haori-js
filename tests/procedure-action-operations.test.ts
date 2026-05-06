@@ -42,6 +42,41 @@ describe('Procedure action operations', () => {
     container.remove();
   });
 
+  it('data-click-form を伴う click 実行後に disabled 属性が残らない', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const form = document.createElement('form');
+    form.id = 'search-form';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('data-click-fetch', 'http://api.test/search');
+    button.setAttribute('data-click-form', '#search-form');
+    button.setAttribute('data-click-data', '{"page":0}');
+    button.setAttribute('data-click-history-form', '#search-form');
+    form.appendChild(button);
+    container.appendChild(form);
+
+    await waitForDomSettled();
+    button.click();
+
+    await waitForCondition(() => fetchSpy.mock.calls.length > 0, {
+      description: 'search fetch',
+    });
+    await waitForCondition(() => !button.hasAttribute('disabled'), {
+      description: 'search button re-enabled',
+    });
+
+    expect(button.hasAttribute('disabled')).toBe(false);
+    container.remove();
+  });
+
   it('refetchFragments invokes Procedure.run', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
       return Promise.resolve(
