@@ -401,6 +401,50 @@ describe('Procedure action operations', () => {
     container.remove();
   });
 
+  it('data-click-copy-params ignores empty tokens and trims whitespace', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const sourceForm = document.createElement('form');
+    sourceForm.id = 'copy-trim-source-form';
+    const keywordInput = document.createElement('input');
+    keywordInput.name = 'keyword';
+    keywordInput.value = 'next';
+    const pageInput = document.createElement('input');
+    pageInput.name = 'page';
+    pageInput.value = '2';
+    sourceForm.append(keywordInput, pageInput);
+
+    const target = document.createElement('div');
+    target.id = 'copy-trim-target';
+    target.setAttribute('data-bind', '{"keep":"yes"}');
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '#copy-trim-source-form');
+    btn.setAttribute('data-click-copy', '#copy-trim-target');
+    btn.setAttribute('data-click-copy-params', '&& keyword & !page ');
+
+    container.append(sourceForm, target, btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => {
+      const bind = target.getAttribute('data-bind');
+      return bind !== null && bind.includes('"keyword":"next"');
+    }, {description: 'copy with trimmed params'});
+
+    const copied = JSON.parse(target.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({
+      keyword: 'next',
+      keep: 'yes',
+    });
+    expect(copied).not.toHaveProperty('page');
+    container.remove();
+  });
+
   it('data-click-reset executes before data-click-copy', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

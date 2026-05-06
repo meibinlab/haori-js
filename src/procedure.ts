@@ -1991,14 +1991,18 @@ ${body}
     const excludeParams = new Set<string>();
 
     this.options.copyParams.forEach(param => {
-      if (param.startsWith('!')) {
-        const excludedParam = param.slice(1).trim();
+      const trimmedParam = param.trim();
+      if (!trimmedParam) {
+        return;
+      }
+      if (trimmedParam.startsWith('!')) {
+        const excludedParam = trimmedParam.slice(1).trim();
         if (excludedParam) {
           excludeParams.add(excludedParam);
         }
         return;
       }
-      includeParams.add(param);
+      includeParams.add(trimmedParam);
     });
 
     const filtered: Record<string, unknown> = {};
