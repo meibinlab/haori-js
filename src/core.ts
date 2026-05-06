@@ -342,6 +342,7 @@ export default class Core {
   public static setBindingData(
     element: HTMLElement,
     data: Record<string, unknown>,
+    skipFragments: ReadonlySet<ElementFragment> = new Set(),
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
     const previous = fragment.getRawBindingData();
@@ -363,7 +364,7 @@ export default class Core {
             : data;
       chain = chain.then(() => Form.syncValues(fragment, formValues));
     }
-    chain = chain.then(() => Core.evaluateAll(fragment));
+    chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
 
     // bindchangeイベントを発火
     HaoriEvent.bindChange(element, previous, data, 'manual');
@@ -524,7 +525,13 @@ export default class Core {
    * @param fragment 対象フラグメント
    * @return Promise (DOM操作が完了したときに解決される)
    */
-  public static evaluateAll(fragment: ElementFragment): Promise<void> {
+  public static evaluateAll(
+    fragment: ElementFragment,
+    skipFragments: ReadonlySet<ElementFragment> = new Set(),
+  ): Promise<void> {
+    if (skipFragments.has(fragment)) {
+      return Promise.resolve();
+    }
     const promises: Promise<void>[] = [];
     promises.push(Core.reevaluateInterpolatedAttributes(fragment));
     if (fragment.hasAttribute(`${Env.prefix}if`)) {
@@ -535,7 +542,7 @@ export default class Core {
     }
     fragment.getChildren().forEach(child => {
       if (child instanceof ElementFragment) {
-        promises.push(Core.evaluateAll(child));
+        promises.push(Core.evaluateAll(child, skipFragments));
       } else if (child instanceof TextFragment) {
         promises.push(Core.evaluateText(child));
       }

@@ -202,6 +202,22 @@ describe('イベント属性: before-run / after-run', () => {
     expect(frag.getTarget().hasAttribute('disabled')).toBe(true);
   });
 
+  it('非 form control の click 要素でも disabled 属性があれば処理を開始しない', async () => {
+    const element = document.createElement('div');
+    element.setAttribute('disabled', '');
+    element.setAttribute('data-click-fetch', 'https://example.com/original');
+    container.appendChild(element);
+
+    const frag = Fragment.get(element) as ElementFragment;
+    const fetchMock = (global.fetch = vi.fn() as unknown as typeof fetch);
+
+    const proc = new Procedure(frag, 'click');
+
+    await expect(proc.runWithResult()).resolves.toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(frag.getTarget().hasAttribute('disabled')).toBe(true);
+  });
+
   it('data-click-data のテンプレート式が評価された payload を送信する', async () => {
     const host = document.createElement('div');
     host.setAttribute('data-bind', '{"status":"active","priority":3}');

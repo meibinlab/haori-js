@@ -34,6 +34,9 @@ const PROCEDURE_HAORI_METHOD_NAMES = [
 
 const PROCEDURE_HISTORY_STATE_KEY = '__haoriHistoryState__';
 
+/** click ロック中であることを示す内部マーカー属性名 */
+const PROCEDURE_CLICK_LOCK_MARKER = 'data-haori-click-lock';
+
 /**
  * Procedure から利用する Haori API を解決します。
  * window.Haori が差し替えられている場合はそちらを優先します。
@@ -1261,6 +1264,14 @@ ${body}
         // 双方向バインディング: フォーム値を自動的にバインディングデータに反映
         const formFragment = this.options.formFragment;
         const formElement = formFragment.getTarget();
+        const skipFragments = new Set<ElementFragment>();
+        if (
+          executionLock &&
+          executionLock.appliedDisabledAttribute &&
+          this.options.targetFragment
+        ) {
+          skipFragments.add(this.options.targetFragment);
+        }
 
         formElement.setAttribute(
           `${Env.prefix}bind`,
@@ -1269,7 +1280,7 @@ ${body}
 
         const bindingData = formFragment.getBindingData();
         Object.assign(bindingData, payload);
-        await Core.setBindingData(formElement, bindingData);
+        await Core.setBindingData(formElement, bindingData, skipFragments);
       }
 
       const merged = hasPayload ? payload : {};
@@ -1292,15 +1303,19 @@ ${body}
       return null;
     }
 
-    const target = this.options.targetFragment.getTarget();
+    const targetFragment = this.options.targetFragment;
+    const target = targetFragment.getTarget();
     if (
       Procedure.RUNNING_CLICK_TARGETS.has(target) ||
-      target.hasAttribute('disabled')
+      target.matches(':disabled') ||
+      target.hasAttribute('disabled') ||
+      target.hasAttribute(PROCEDURE_CLICK_LOCK_MARKER)
     ) {
       return false;
     }
 
     Procedure.RUNNING_CLICK_TARGETS.add(target);
+    target.setAttribute(PROCEDURE_CLICK_LOCK_MARKER, '');
     target.setAttribute('disabled', '');
     return {
       target,
@@ -1324,6 +1339,7 @@ ${body}
     Procedure.RUNNING_CLICK_TARGETS.delete(executionLock.target);
     if (executionLock.appliedDisabledAttribute) {
       executionLock.target.removeAttribute('disabled');
+      executionLock.target.removeAttribute(PROCEDURE_CLICK_LOCK_MARKER);
     }
   }
 
