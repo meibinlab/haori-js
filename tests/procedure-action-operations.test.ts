@@ -1040,6 +1040,125 @@ describe('Procedure action operations', () => {
     container.remove();
   });
 
+  it('data-click-reset と data-click-history-form でリセット前の値を使わない', async () => {
+    const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const form = document.createElement('form');
+    form.id = 'reset-history-form';
+    const input = document.createElement('input');
+    input.name = 'q';
+    input.setAttribute('value', 'default');
+    input.value = 'dirty';
+    form.appendChild(input);
+    container.appendChild(form);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-reset', '#reset-history-form');
+    btn.setAttribute('data-click-history', '/search');
+    btn.setAttribute('data-click-history-form', '#reset-history-form');
+    container.appendChild(btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => pushStateSpy.mock.calls.length > 0, {
+      description: 'pushState called after reset processing',
+    });
+
+    expect(pushStateSpy).toHaveBeenCalledWith(
+      {__haoriHistoryState__: true},
+      '',
+      expect.stringContaining('/search'),
+    );
+    expect(String(pushStateSpy.mock.calls[0]?.[2] ?? '')).not.toContain('dirty');
+    expect(input.value).toBe('default');
+    container.remove();
+  });
+
+  it('data-click-copy で history-data を pushState 前に更新する', async () => {
+    const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const form = document.createElement('form');
+    form.id = 'copy-history-form';
+    form.setAttribute('data-bind', '{"keyword":"stale"}');
+    const input = document.createElement('input');
+    input.name = 'keyword';
+    input.value = 'copied';
+    form.appendChild(input);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '#copy-history-form');
+    btn.setAttribute('data-click-copy', '#copy-history-form');
+    btn.setAttribute('data-click-history', '/search');
+    btn.setAttribute('data-click-history-data', 'keyword={{keyword}}');
+    form.appendChild(btn);
+
+    container.appendChild(form);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => pushStateSpy.mock.calls.length > 0, {
+      description: 'pushState called after copy processing',
+    });
+
+    expect(pushStateSpy).toHaveBeenCalledWith(
+      {__haoriHistoryState__: true},
+      '',
+      expect.stringContaining('/search?keyword=copied'),
+    );
+    expect(String(pushStateSpy.mock.calls[0]?.[2] ?? '')).not.toContain('stale');
+    container.remove();
+  });
+
+  it('data-click-reset-before で history-data と history-form は後続の bind/copy に上書きされない', async () => {
+    const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      return Promise.resolve(
+        new Response(JSON.stringify({keyword: 'copied'}), {
+          headers: {'Content-Type': 'application/json'},
+        }),
+      ) as unknown as Promise<Response>;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const form = document.createElement('form');
+    form.id = 'reset-before-history-form';
+    form.setAttribute('data-bind', '{"keyword":"reset"}');
+    const input = document.createElement('input');
+    input.name = 'keyword';
+    input.value = 'dirty';
+    form.appendChild(input);
+    container.appendChild(form);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/history-reset-before');
+    btn.setAttribute('data-click-fetch-method', 'POST');
+    btn.setAttribute('data-click-reset-before', '#reset-before-history-form');
+    btn.setAttribute('data-click-bind', '#reset-before-history-form');
+    btn.setAttribute('data-click-history', '/search');
+    btn.setAttribute('data-click-history-data', 'keyword={{keyword}}');
+    btn.setAttribute('data-click-history-form', '#reset-before-history-form');
+    btn.setAttribute('data-click-copy', '#reset-before-history-form');
+    form.appendChild(btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => pushStateSpy.mock.calls.length > 0, {
+      description: 'pushState called after reset-before processing',
+    });
+
+    const call = pushStateSpy.mock.calls[0];
+    expect(String(call[2] ?? '')).toContain('/search?');
+    expect(String(call[2] ?? '')).toContain('keyword=reset');
+    expect(String(call[2] ?? '')).not.toContain('copied');
+    container.remove();
+  });
+
   it('data-click-history with cross-origin URL logs error and skips pushState', async () => {
     const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
