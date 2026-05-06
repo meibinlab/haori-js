@@ -1308,6 +1308,7 @@ ${body}
     if (
       Procedure.RUNNING_CLICK_TARGETS.has(target) ||
       target.matches(':disabled') ||
+      target.hasAttribute('disabled') ||
       target.hasAttribute(PROCEDURE_CLICK_LOCK_MARKER)
     ) {
       return false;
