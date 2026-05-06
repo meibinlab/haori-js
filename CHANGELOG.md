@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.4.15] - 2026-05-06
+
+### Changed
+
+- `data-click-reset-before` の評価順を調整し、送信前のリセット後に `data` / `form` / `history` を評価するようにした
+
+### Library
+
+- `data-click-reset-before` と history スナップショットの回帰テストを追加した
+
 ## [0.4.14] - 2026-05-06
 
 ### Changed
