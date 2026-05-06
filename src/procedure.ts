@@ -1978,7 +1978,7 @@ ${body}
   }
 
   /**
-   * copy-params が指定されている場合は対象キーだけ抽出します。
+   * copy-params が指定されている場合は include / exclude を考慮して抽出します。
    */
   private pickCopyData(
     sourceData: Record<string, unknown>,
@@ -1987,12 +1987,40 @@ ${body}
       return sourceData;
     }
 
-    const filtered: Record<string, unknown> = {};
+    const includeParams = new Set<string>();
+    const excludeParams = new Set<string>();
+
     this.options.copyParams.forEach(param => {
-      if (param in sourceData) {
-        filtered[param] = sourceData[param];
+      const trimmedParam = param.trim();
+      if (!trimmedParam) {
+        return;
       }
+      if (trimmedParam.startsWith('!')) {
+        const excludedParam = trimmedParam.slice(1).trim();
+        if (excludedParam) {
+          excludeParams.add(excludedParam);
+        }
+        return;
+      }
+      includeParams.add(trimmedParam);
     });
+
+    const filtered: Record<string, unknown> = {};
+    const sourceKeys =
+      includeParams.size > 0
+        ? Array.from(includeParams)
+        : Object.keys(sourceData);
+
+    sourceKeys.forEach(param => {
+      if (!(param in sourceData)) {
+        return;
+      }
+      if (excludeParams.has(param)) {
+        return;
+      }
+      filtered[param] = sourceData[param];
+    });
+
     return filtered;
   }
 

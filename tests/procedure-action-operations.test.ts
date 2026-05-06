@@ -305,6 +305,146 @@ describe('Procedure action operations', () => {
     container.remove();
   });
 
+  it('data-click-copy-params excludes keys when only exclusions are specified', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const sourceForm = document.createElement('form');
+    sourceForm.id = 'copy-exclude-source-form';
+    const keywordInput = document.createElement('input');
+    keywordInput.name = 'keyword';
+    keywordInput.value = 'next';
+    const pageInput = document.createElement('input');
+    pageInput.name = 'page';
+    pageInput.value = '2';
+    const sortInput = document.createElement('input');
+    sortInput.name = 'sort';
+    sortInput.value = 'desc';
+    sourceForm.append(keywordInput, pageInput, sortInput);
+
+    const target = document.createElement('div');
+    target.id = 'copy-exclude-target';
+    target.setAttribute('data-bind', '{"keyword":"old","keep":"yes"}');
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '#copy-exclude-source-form');
+    btn.setAttribute('data-click-copy', '#copy-exclude-target');
+    btn.setAttribute('data-click-copy-params', '!page&!sort');
+
+    container.append(sourceForm, target, btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => {
+      const bind = target.getAttribute('data-bind');
+      return bind !== null && bind.includes('"keyword":"next"');
+    }, {description: 'copy with exclusions only'});
+
+    const copied = JSON.parse(target.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({
+      keyword: 'next',
+      keep: 'yes',
+    });
+    expect(copied).not.toHaveProperty('page');
+    expect(copied).not.toHaveProperty('sort');
+    container.remove();
+  });
+
+  it('data-click-copy-params can combine includes and excludes', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const sourceForm = document.createElement('form');
+    sourceForm.id = 'copy-mixed-source-form';
+    const keywordInput = document.createElement('input');
+    keywordInput.name = 'keyword';
+    keywordInput.value = 'next';
+    const pageInput = document.createElement('input');
+    pageInput.name = 'page';
+    pageInput.value = '2';
+    const sortInput = document.createElement('input');
+    sortInput.name = 'sort';
+    sortInput.value = 'desc';
+    sourceForm.append(keywordInput, pageInput, sortInput);
+
+    const target = document.createElement('div');
+    target.id = 'copy-mixed-target';
+    target.setAttribute('data-bind', '{"keyword":"old","keep":"yes"}');
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '#copy-mixed-source-form');
+    btn.setAttribute('data-click-copy', '#copy-mixed-target');
+    btn.setAttribute('data-click-copy-params', 'keyword&page&!page');
+
+    container.append(sourceForm, target, btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => {
+      const bind = target.getAttribute('data-bind');
+      return bind !== null && bind.includes('"keyword":"next"');
+    }, {description: 'copy with include and exclude'});
+
+    const copied = JSON.parse(target.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({
+      keyword: 'next',
+      keep: 'yes',
+    });
+    expect(copied).not.toHaveProperty('page');
+    expect(copied).not.toHaveProperty('sort');
+    container.remove();
+  });
+
+  it('data-click-copy-params ignores empty tokens and trims whitespace', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const sourceForm = document.createElement('form');
+    sourceForm.id = 'copy-trim-source-form';
+    const keywordInput = document.createElement('input');
+    keywordInput.name = 'keyword';
+    keywordInput.value = 'next';
+    const pageInput = document.createElement('input');
+    pageInput.name = 'page';
+    pageInput.value = '2';
+    sourceForm.append(keywordInput, pageInput);
+
+    const target = document.createElement('div');
+    target.id = 'copy-trim-target';
+    target.setAttribute('data-bind', '{"keep":"yes"}');
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '#copy-trim-source-form');
+    btn.setAttribute('data-click-copy', '#copy-trim-target');
+    btn.setAttribute('data-click-copy-params', '&& keyword & !page ');
+
+    container.append(sourceForm, target, btn);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => {
+      const bind = target.getAttribute('data-bind');
+      return bind !== null && bind.includes('"keyword":"next"');
+    }, {description: 'copy with trimmed params'});
+
+    const copied = JSON.parse(target.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({
+      keyword: 'next',
+      keep: 'yes',
+    });
+    expect(copied).not.toHaveProperty('page');
+    container.remove();
+  });
+
   it('data-click-reset executes before data-click-copy', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
