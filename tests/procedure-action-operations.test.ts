@@ -1040,7 +1040,7 @@ describe('Procedure action operations', () => {
     container.remove();
   });
 
-  it('data-click-reset with data-click-history-form does not use pre-reset values', async () => {
+  it('data-click-reset と data-click-history-form でリセット前の値を使わない', async () => {
     const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1076,7 +1076,7 @@ describe('Procedure action operations', () => {
     container.remove();
   });
 
-  it('data-click-copy updates history-data before pushState', async () => {
+  it('data-click-copy で history-data を pushState 前に更新する', async () => {
     const pushStateSpy = vi.spyOn(history, 'pushState').mockImplementation(() => {});
     const container = document.createElement('div');
     document.body.appendChild(container);
