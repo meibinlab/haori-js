@@ -157,6 +157,9 @@ export interface ProcedureOptions {
   /** 送信もしくは受信データ */
   data?: Record<string, unknown> | null;
 
+  /** data 属性の評価元となる属性名 */
+  dataAttrName?: string | null;
+
   /** フェッチ前実行スクリプト */
   beforeCallback?: (
     fetchUrl: string | null,
@@ -207,6 +210,9 @@ export interface ProcedureOptions {
   /** 次の行へ移動するかどうか */
   rowMoveNext?: boolean | null;
 
+  /** 送信前にリセットするフラグメント */
+  resetBeforeFragments?: ElementFragment[] | null;
+
   /** リセットするフラグメント */
   resetFragments?: ElementFragment[] | null;
 
@@ -243,8 +249,17 @@ export interface ProcedureOptions {
   /** history.pushState の URL に追記するクエリパラメータ */
   historyData?: Record<string, unknown> | null;
 
+  /** history.pushState の URL に追記するクエリパラメータの評価元属性名 */
+  historyDataAttrName?: string | null;
+
+  /** reset-before 後に確定した historyData のスナップショット */
+  historyDataSnapshot?: Record<string, unknown> | null;
+
   /** history.pushState の URL に追記するフォームフラグメント */
   historyFormFragment?: ElementFragment | null;
+
+  /** reset-before 後に確定した historyForm のスナップショット */
+  historyFormSnapshot?: Record<string, unknown> | null;
 
   /** リダイレクトURL */
   redirectUrl?: string | null;
@@ -494,10 +509,7 @@ export default class Procedure {
       }
       // data（イベント）
       if (fragment.hasAttribute(Procedure.attrName(event, 'data'))) {
-        options.data = Procedure.resolveDataAttribute(
-          fragment,
-          Procedure.attrName(event, 'data'),
-        );
+        options.dataAttrName = Procedure.attrName(event, 'data');
       }
       // form（イベント）
       if (fragment.hasAttribute(Procedure.attrName(event, 'form'))) {
@@ -878,10 +890,7 @@ ${body}
         ) as string | null;
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'history-data'))) {
-        options.historyData = Procedure.resolveDataAttribute(
-          fragment,
-          Procedure.attrName(event, 'history-data'),
-        );
+        options.historyDataAttrName = Procedure.attrName(event, 'history-data');
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'history-form'))) {
         const historyFormSelector = fragment.getRawAttribute(
@@ -908,6 +917,7 @@ ${body}
 
       // reset/refetch/click/open/close（イベント、CSSセレクタ）
       const selectorAttrs = [
+        'reset-before',
         'reset',
         'refetch',
         'click',
@@ -939,6 +949,9 @@ ${body}
         }
         if (list.length > 0) {
           switch (attrKey) {
+            case 'reset-before':
+              options.resetBeforeFragments = list;
+              break;
             case 'reset':
               options.resetFragments = list;
               break;
@@ -965,10 +978,7 @@ ${body}
     // 非イベントの data / form（data-fetch-data / data-fetch-form）も取り込む
     if (!event) {
       if (fragment.hasAttribute(Procedure.attrName(null, 'data', true))) {
-        options.data = Procedure.resolveDataAttribute(
-          fragment,
-          Procedure.attrName(null, 'data', true),
-        );
+        options.dataAttrName = Procedure.attrName(null, 'data', true);
       }
       if (fragment.hasAttribute(Procedure.attrName(null, 'form', true))) {
         const formSelector = fragment.getRawAttribute(
@@ -1023,6 +1033,12 @@ ${body}
 
   /** オプション */
   private readonly options: ProcedureOptions;
+
+  /** reset-before 後に確定した historyData スナップショット */
+  private historyDataSnapshot: Record<string, unknown> | null | undefined;
+
+  /** reset-before 後に確定した historyForm スナップショット */
+  private historyFormSnapshot: Record<string, unknown> | null | undefined;
 
   /**
    * オプションを指定してProcedureクラスのインスタンスを生成します。
@@ -1101,6 +1117,18 @@ ${body}
       if (!confirmed) {
         return false;
       }
+      if (
+        this.options.resetBeforeFragments &&
+        this.options.resetBeforeFragments.length > 0
+      ) {
+        await Promise.all(
+          this.options.resetBeforeFragments.map(fragment =>
+            Form.reset(fragment),
+          ),
+        );
+      }
+      const payload = this.buildPayload();
+      this.captureHistorySnapshots();
       let fetchUrl = this.options.fetchUrl;
       let fetchOptions = this.options.fetchOptions;
       if (this.options.beforeCallback) {
@@ -1121,16 +1149,6 @@ ${body}
             ) as RequestInit | null;
           }
         }
-      }
-
-      // フォーム値と data を統合してペイロードを作成
-      const payload: Record<string, unknown> = {};
-      if (this.options.formFragment) {
-        const formValues = Form.getValues(this.options.formFragment);
-        Object.assign(payload, formValues);
-      }
-      if (this.options.data && typeof this.options.data === 'object') {
-        Object.assign(payload, this.options.data);
       }
 
       const hasPayload = Object.keys(payload).length > 0;
@@ -1482,11 +1500,15 @@ ${body}
     const hasHistoryUrl =
       this.options.historyUrl !== undefined && this.options.historyUrl !== null;
     const hasHistoryData =
-      this.options.historyData !== undefined &&
-      this.options.historyData !== null;
+      (this.historyDataSnapshot !== undefined
+        ? this.historyDataSnapshot !== null
+        : this.options.historyData !== undefined &&
+          this.options.historyData !== null);
     const hasHistoryForm =
-      this.options.historyFormFragment !== undefined &&
-      this.options.historyFormFragment !== null;
+      (this.historyFormSnapshot !== undefined
+        ? this.historyFormSnapshot !== null
+        : this.options.historyFormFragment !== undefined &&
+          this.options.historyFormFragment !== null);
 
     if (!hasHistoryUrl && !hasHistoryData && !hasHistoryForm) {
       return;
@@ -1525,14 +1547,20 @@ ${body}
       };
 
       if (hasHistoryData) {
-        appendParams(this.options.historyData as Record<string, unknown>);
+        appendParams(
+          (this.historyDataSnapshot !== undefined
+            ? this.historyDataSnapshot
+            : this.options.historyData) as Record<string, unknown>,
+        );
       }
       if (hasHistoryForm) {
-        appendParams(
-          Form.getValues(
-            this.options.historyFormFragment as ElementFragment,
-          ),
-        );
+        const historyFormFragment =
+          this.options.historyFormFragment as ElementFragment;
+        const historyFormValues =
+          this.historyFormSnapshot !== undefined
+            ? this.historyFormSnapshot
+            : Form.getValues(historyFormFragment);
+        appendParams(historyFormValues as Record<string, unknown>);
       }
 
       history.pushState(
@@ -1883,6 +1911,49 @@ ${body}
       return {...this.options.targetFragment.getBindingData()};
     }
     return {};
+  }
+
+  /**
+   * data 属性とフォーム値を統合した送信データを作成します。
+   *
+   * @returns 送信データ。
+   */
+  private buildPayload(): Record<string, unknown> {
+    const payload: Record<string, unknown> = {};
+    if (this.options.formFragment) {
+      Object.assign(payload, Form.getValues(this.options.formFragment));
+    }
+    if (this.options.data && typeof this.options.data === 'object') {
+      Object.assign(payload, this.options.data);
+    }
+    if (this.options.targetFragment && this.options.dataAttrName) {
+      const resolvedData = Procedure.resolveDataAttribute(
+        this.options.targetFragment,
+        this.options.dataAttrName,
+      );
+      if (resolvedData) {
+        Object.assign(payload, resolvedData);
+      }
+    }
+    return payload;
+  }
+
+  /**
+   * reset-before 後の history 用スナップショットを保存します。
+   */
+  private captureHistorySnapshots(): void {
+    if (this.options.targetFragment && this.options.historyDataAttrName) {
+      this.historyDataSnapshot = Procedure.resolveDataAttribute(
+        this.options.targetFragment,
+        this.options.historyDataAttrName,
+      );
+    } else {
+      this.historyDataSnapshot = undefined;
+    }
+
+    this.historyFormSnapshot = this.options.historyFormFragment
+      ? Form.getValues(this.options.historyFormFragment)
+      : undefined;
   }
 
   /**

@@ -254,6 +254,42 @@ describe('イベント属性: before-run / after-run', () => {
     );
   });
 
+  it('data-click-reset-before で初期化した後のフォーム値を payload に使う', async () => {
+    const form = document.createElement('form');
+    form.id = 'reset-before-form';
+    const input = document.createElement('input');
+    input.name = 'username';
+    input.setAttribute('value', 'default');
+    input.value = 'dirty';
+    form.appendChild(input);
+    container.appendChild(form);
+
+    const button = document.createElement('button');
+    button.setAttribute('data-click-fetch', 'https://example.com/update');
+    button.setAttribute('data-click-fetch-method', 'POST');
+    button.setAttribute('data-click-form', '#reset-before-form');
+    button.setAttribute('data-click-reset-before', '#reset-before-form');
+    form.appendChild(button);
+
+    const fetchMock = (global.fetch = vi.fn().mockResolvedValue(
+      new Response('{}', {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    ) as unknown as typeof fetch);
+
+    const frag = Fragment.get(button) as ElementFragment;
+    const proc = new Procedure(frag, 'click');
+    await expect(proc.run()).resolves.toBeUndefined();
+
+    const calls = (fetchMock as unknown as {mock: {calls: unknown[][]}}).mock
+      .calls;
+    expect(calls.length).toBe(1);
+
+    const options = calls[0][1] as RequestInit;
+    expect(options.body).toBe(JSON.stringify({username: null}));
+    expect(input.value).not.toBe('dirty');
+  });
+
   it('data-click-data の JSON 形式で引用符を含む値を壊さず payload に送信する', async () => {
     const host = document.createElement('div');
     host.setAttribute('data-bind', '{"q":"a\\"b"}');
