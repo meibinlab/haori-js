@@ -15,6 +15,20 @@ import Queue from './queue';
  */
 export class Observer {
   private static _initialized = false;
+
+  /** 稼働中の MutationObserver 一覧 */
+  private static readonly _mutationObservers: MutationObserver[] = [];
+
+  /**
+   * 既存の MutationObserver をすべて停止します。
+   */
+  private static disconnectMutationObservers(): void {
+    Observer._mutationObservers.forEach(observer => {
+      observer.disconnect();
+    });
+    Observer._mutationObservers.length = 0;
+  }
+
   /**
    * 初期化メソッド。
    * ドキュメントのheadとbodyを監視対象として設定します。
@@ -24,6 +38,7 @@ export class Observer {
       return;
     }
     Observer._initialized = true;
+    Observer.disconnectMutationObservers();
     const results = await Promise.allSettled([
       Core.scan(document.head),
       Core.scan(document.body),
@@ -101,7 +116,7 @@ export class Observer {
                 Core.removeNode(node);
               });
               Array.from(mutation.addedNodes).forEach(node => {
-                if (!(node.parentElement instanceof HTMLElement)) {
+                if (!(node.parentElement instanceof Element)) {
                   return;
                 }
                 Core.addNode(node.parentElement, node);
@@ -147,6 +162,7 @@ export class Observer {
       attributes: true,
       characterData: true,
     });
+    Observer._mutationObservers.push(observer);
     Log.info('[Haori]', 'Observer initialized for', root);
   }
 }

@@ -231,6 +231,33 @@ export default abstract class Fragment {
  * DOM要素を表現し、子ノードを持つことができます。
  */
 export class ElementFragment extends Fragment {
+  /** HTML 真偽属性名のセット */
+  private static readonly BOOLEAN_ATTRIBUTES = new Set([
+    'allowfullscreen',
+    'async',
+    'autofocus',
+    'autoplay',
+    'checked',
+    'controls',
+    'default',
+    'defer',
+    'disabled',
+    'hidden',
+    'inert',
+    'ismap',
+    'loop',
+    'multiple',
+    'muted',
+    'nomodule',
+    'novalidate',
+    'open',
+    'playsinline',
+    'readonly',
+    'required',
+    'reversed',
+    'selected',
+  ]);
+
   /** inputイベントを発生させるタイプ */
   private readonly INPUT_EVENT_TYPES = [
     'text',
@@ -810,14 +837,45 @@ export class ElementFragment extends Fragment {
     this.attributeMap.set(rawName, contents);
     this.skipMutationAttributes = true;
     const element = this.getTarget();
+    const detail = contents.evaluateDetailed(this.getBindingData());
+    const hasTemplateExpression =
+      contents.isEvaluate || contents.isRawEvaluate;
+    const isBooleanAttribute =
+      rawName === targetName &&
+      ElementFragment.BOOLEAN_ATTRIBUTES.has(targetName.toLowerCase());
+    const isSingleExpression = contents.isSingleExpression();
+    const joinedValue = TextContents.joinEvaluateResults(detail.results);
+    const evaluatedValue = detail.results.length === 1
+      ? detail.results[0]
+      : joinedValue;
+    const shouldRemoveTarget = !contents.isForceEvaluation() && (
+      targetName !== rawName
+        ? detail.hasUnresolvedReference ||
+          evaluatedValue === null ||
+          evaluatedValue === undefined ||
+          evaluatedValue === false
+        : isBooleanAttribute
+          ? detail.hasUnresolvedReference ||
+            evaluatedValue === null ||
+            evaluatedValue === undefined ||
+            evaluatedValue === false
+          : isSingleExpression
+            ? detail.hasUnresolvedReference ||
+              evaluatedValue === null ||
+              evaluatedValue === undefined ||
+              evaluatedValue === false
+            : hasTemplateExpression && joinedValue === ''
+    );
     const result = contents.isForceEvaluation()
       ? value
-      : this.getAttribute(rawName);
+      : isSingleExpression
+        ? evaluatedValue
+        : joinedValue;
     return Queue.enqueue(() => {
       if (element.getAttribute(rawName) !== value) {
         element.setAttribute(rawName, value);
       }
-      if (result === null || result === false) {
+      if (shouldRemoveTarget || result === null || result === false) {
         element.removeAttribute(targetName);
       } else {
         const string = String(result);
@@ -1508,6 +1566,19 @@ class TextContents {
    */
   public getValue(): string {
     return this.value;
+  }
+
+  /**
+   * 単体プレースホルダのみで構成されているかどうかを返します。
+   *
+   * @returns 単体プレースホルダなら true
+   */
+  public isSingleExpression(): boolean {
+    return (
+      this.contents.length === 1 &&
+      (this.contents[0].type === ExpressionType.EXPRESSION ||
+        this.contents[0].type === ExpressionType.RAW_EXPRESSION)
+    );
   }
 
   /**

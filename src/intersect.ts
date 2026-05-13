@@ -31,11 +31,25 @@ export default class IntersectObserver {
     IntersectRegistration
   >();
 
+  /**
+   * ノードが現在の Window に属する HTMLElement かどうかを判定します。
+   *
+   * @param node 判定対象ノード
+   * @returns HTMLElement の場合は true
+   */
+  private static isHtmlElement(node: unknown): node is HTMLElement {
+    if (!(node instanceof Element)) {
+      return false;
+    }
+    const ctor = node.ownerDocument?.defaultView?.HTMLElement;
+    return typeof ctor !== 'undefined' && node instanceof ctor;
+  }
+
   public static syncTree(root: Node): void {
     if (!(root instanceof Element || root instanceof DocumentFragment)) {
       return;
     }
-    if (root instanceof HTMLElement) {
+    if (IntersectObserver.isHtmlElement(root)) {
       IntersectObserver.syncElement(root);
     }
     root.querySelectorAll<HTMLElement>('*').forEach(element => {
@@ -136,7 +150,7 @@ export default class IntersectObserver {
   }
 
   public static cleanupTree(root: Node): void {
-    if (root instanceof HTMLElement) {
+    if (IntersectObserver.isHtmlElement(root)) {
       const registration = IntersectObserver.registrations.get(root);
       if (registration) {
         registration.observer.disconnect();
@@ -182,7 +196,7 @@ export default class IntersectObserver {
       return null;
     }
     const root = document.querySelector(selector);
-    if (root instanceof HTMLElement) {
+    if (IntersectObserver.isHtmlElement(root)) {
       return root;
     }
     Log.error('[Haori]', `Intersect root element not found: ${selector}`);

@@ -35,10 +35,15 @@ export default class Core {
   private static readonly ATTRIBUTE_ALIAS_SUFFIX = 'attr-';
 
   /** 優先処理する属性のサフィックス（処理順序で定義） */
-  private static readonly PRIORITY_ATTRIBUTE_SUFFIXES = ['bind', 'if', 'each'];
+  private static readonly PRIORITY_ATTRIBUTE_SUFFIXES = [
+    'bind',
+    'url-param',
+    'if',
+    'each',
+  ];
 
   /** 遅延処理する属性のサフィックス */
-  private static readonly DEFERRED_ATTRIBUTE_SUFFIXES = ['fetch', 'url-param'];
+  private static readonly DEFERRED_ATTRIBUTE_SUFFIXES = ['fetch'];
 
   /** evaluateAll で再評価対象から除外する特殊属性のサフィックス */
   private static readonly EVALUATE_ALL_EXCLUDED_ATTRIBUTE_SUFFIXES = [
@@ -300,7 +305,8 @@ export default class Core {
     const resolvedUrl =
       importEvaluation &&
       !importEvaluation.hasUnresolvedReference &&
-      typeof importEvaluation.value === 'string'
+      typeof importEvaluation.value === 'string' &&
+      importEvaluation.value !== ''
         ? importEvaluation.value
         : null;
 
@@ -797,6 +803,10 @@ export default class Core {
     if (!fragment.isVisible() || !fragment.isMounted()) {
       return Promise.resolve();
     }
+    const data = Core.resolveEachItems(fragment);
+    if (data === null) {
+      return Promise.reject(new Error('Invalid each attribute.'));
+    }
     let template = fragment.getTemplate();
     if (template === null) {
       // テンプレートの作成
@@ -827,20 +837,36 @@ export default class Core {
         }
         // TextNodeやCommentNodeはテンプレートにならないので無視
       });
-      const data = fragment.getAttribute(`${Env.prefix}each`);
-      if (!Array.isArray(data)) {
-        Log.error('[Haori]', 'Invalid each attribute:', data);
-        return Promise.reject(new Error('Invalid each attribute.'));
-      }
       // テンプレートのunmount完了後にupdateDiffを実行
       return this.updateDiff(fragment, data);
     }
-    const data = fragment.getAttribute(`${Env.prefix}each`);
-    if (!Array.isArray(data)) {
-      Log.error('[Haori]', 'Invalid each attribute:', data);
-      return Promise.reject(new Error('Invalid each attribute.'));
-    }
     return this.updateDiff(fragment, data);
+  }
+
+  /**
+   * data-each 属性値を仕様に従って配列へ正規化します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 配列。無効な場合は null
+   */
+  private static resolveEachItems(
+    fragment: ElementFragment,
+  ): (Record<string, unknown> | string | number)[] | null {
+    const evaluation = fragment.getAttributeEvaluation(`${Env.prefix}each`);
+    const data = evaluation?.value;
+    if (
+      evaluation?.hasUnresolvedReference ||
+      data === false ||
+      data === null ||
+      data === undefined
+    ) {
+      return [];
+    }
+    if (Array.isArray(data)) {
+      return data as (Record<string, unknown> | string | number)[];
+    }
+    Log.error('[Haori]', 'Invalid each attribute:', data);
+    return null;
   }
 
   /**

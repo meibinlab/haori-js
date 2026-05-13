@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-14
+
+### Changed
+
+- プレースホルダ解決規則を見直し、`data-if` / `data-each` / 通常属性 / テキストノード / `data-fetch` / `data-import` で、単体プレースホルダと文字列埋め込みの未解決参照・`false`・`null`・`undefined`・空文字の扱いを統一した
+- `data-url-param` を入力系属性として `data-if` / `data-each` / 通常属性 / 副作用属性より先に反映するようにした
+- `data-each` は未解決参照および `false` / `null` / `undefined` を空配列として扱うようにした
+- 通常属性と `data-attr-*` は、テンプレート式を含む場合だけ空結果で削除し、リテラル空文字属性は保持するようにした
+
+### Library
+
+- プレースホルダ解決規則を種類別に網羅する回帰テストを追加し、`data-fetch` / `data-import` / `data-if` / `data-each` / 通常属性 / `data-attr-*` / テキストノード / 評価順を確認できるようにした
+- 行追加・削除・移動系の回帰テストと full Vitest 実行で、空値属性を使う `data-click-row-*` が影響を受けないことを確認した
+- jsdom 下の再初期化で stale な `MutationObserver` と `HTMLElement` 判定に引きずられないようにし、Observer / Intersect 周辺のテストを安定化した
+
 ## [0.4.17] - 2026-05-13
 
 ### Changed
