@@ -884,12 +884,16 @@ export class ElementFragment extends Fragment {
    * @param name 属性名
    * @returns 属性評価の詳細。属性が存在しない場合は null
    */
-  public getAttributeEvaluation(name: string): AttributeEvaluationDetail | null {
+  public getAttributeEvaluation(
+    name: string,
+  ): AttributeEvaluationDetail | null {
     const contents = this.attributeMap.get(name);
     if (contents === undefined) {
       return null;
     }
-    const detail = contents.evaluateDetailed(this.getBindingData());
+    const detail = contents.evaluateDetailed(
+      this.getBindingData(),
+    );
     if (detail.results.length === 1) {
       return {
         value: detail.results[0],

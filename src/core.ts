@@ -294,7 +294,9 @@ export default class Core {
   ): Promise<void> {
     const target = fragment.getTarget();
     const state = Core.getReactiveImportState(target);
-    const importEvaluation = fragment.getAttributeEvaluation(`${Env.prefix}import`);
+    const importEvaluation = fragment.getAttributeEvaluation(
+      `${Env.prefix}import`,
+    );
     const resolvedUrl =
       importEvaluation &&
       !importEvaluation.hasUnresolvedReference &&

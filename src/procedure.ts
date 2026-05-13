@@ -144,6 +144,11 @@ interface PreparedFetchRequest {
   signature: string | null;
 }
 
+interface PayloadResolution {
+  payload: Record<string, unknown>;
+  hasUnresolvedReference: boolean;
+}
+
 function normalizeRequestBody(body: BodyInit | null | undefined): unknown {
   if (body === undefined || body === null) {
     return null;
@@ -155,17 +160,20 @@ function normalizeRequestBody(body: BodyInit | null | undefined): unknown {
     return body.toString();
   }
   if (body instanceof FormData) {
-    return Array.from(body.entries()).map(([key, value]) => [
-      key,
-      value instanceof File
-        ? {
+    return Array.from(body.entries()).map(([key, value]) => {
+      if (value instanceof File) {
+        return [
+          key,
+          {
             type: 'file',
             name: value.name,
             size: value.size,
             mimeType: value.type,
-          }
-        : String(value),
-    ]);
+          },
+        ];
+      }
+      return [key, String(value)];
+    });
   }
   return String(body);
 }
@@ -2044,10 +2052,7 @@ ${body}
    *
    * @returns 送信データと未解決参照の有無。
    */
-  private buildPayloadResolution(): {
-    payload: Record<string, unknown>;
-    hasUnresolvedReference: boolean;
-  } {
+  private buildPayloadResolution(): PayloadResolution {
     const payload: Record<string, unknown> = {};
     let hasUnresolvedReference = false;
     if (this.options.formFragment) {
