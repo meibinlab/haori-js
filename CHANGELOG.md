@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.4.17] - 2026-05-13
+
+### Changed
+
+- `data-fetch` と `data-import` で未解決参照を含む評価サイクルの副作用実行を止め、後続の bind 更新で参照解決後にだけ再評価するようにした
+- `data-fetch` の自動再評価を URL 比較ではなく、URL・HTTP メソッド・ヘッダー・body を含む実行シグネチャ比較で判定するようにした
+
+### Library
+
+- 未解決参照時の `data-fetch` / `data-import` 抑止と、解決後の再評価条件を確認する回帰テストを追加した
+- README、README.ja.md、`docs/ja/guide.md`、`docs/ja/specs.md` を新しい `data-fetch` / `data-import` 仕様に合わせて更新した
+
 ## [0.4.16] - 2026-05-06
 
 ### Changed
