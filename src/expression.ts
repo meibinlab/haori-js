@@ -8,6 +8,17 @@
 
 import Log from './log';
 
+/**
+ * 式評価結果の詳細です。
+ */
+export interface ExpressionEvaluationDetail {
+  /** 評価結果 */
+  value: unknown;
+
+  /** 未解決参照が含まれていたかどうか */
+  unresolvedReference: boolean;
+}
+
 type ExpressionTokenType = 'identifier' | 'number' | 'string' | 'operator';
 
 interface ExpressionToken {
@@ -189,17 +200,31 @@ export default class Expression {
     expression: string,
     bindedValues: Record<string, unknown> = {},
   ): unknown {
+    return this.evaluateDetailed(expression, bindedValues).value;
+  }
+
+  /**
+   * 式を評価し、未解決参照の有無を含む詳細結果を返します。
+   *
+   * @param expression 評価する式文字列
+   * @param bindedValues バインドされた値のオブジェクト
+   * @returns 評価結果と未解決参照の有無
+   */
+  public static evaluateDetailed(
+    expression: string,
+    bindedValues: Record<string, unknown> = {},
+  ): ExpressionEvaluationDetail {
     if (expression.trim() === '') {
       Log.warn('[Haori]', expression, 'Expression is empty');
-      return null;
+      return {value: null, unresolvedReference: false};
     }
     if (this.containsDangerousPatterns(expression)) {
       Log.warn('[Haori]', expression, 'Expression contains dangerous patterns');
-      return null;
+      return {value: null, unresolvedReference: false};
     }
     if (this.containsForbiddenKeys(bindedValues)) {
       Log.warn('[Haori]', bindedValues, 'Binded values contain forbidden keys');
-      return null;
+      return {value: null, unresolvedReference: false};
     }
     if (this.containsForbiddenBindingValues(bindedValues)) {
       Log.warn(
@@ -207,7 +232,7 @@ export default class Expression {
         bindedValues,
         'Binded values contain forbidden values',
       );
-      return null;
+      return {value: null, unresolvedReference: false};
     }
 
     const bindKeys = Object.keys(bindedValues)
@@ -233,7 +258,7 @@ export default class Expression {
           expression,
           error,
         );
-        return null;
+        return {value: null, unresolvedReference: false};
       }
     }
     try {
@@ -242,14 +267,17 @@ export default class Expression {
       bindKeys.forEach((key: string) => {
         argValues.push(wrappedValues[key]);
       });
-      return this.withBlockedPropertyAccess(() => evaluator(...argValues));
+      return {
+        value: this.withBlockedPropertyAccess(() => evaluator(...argValues)),
+        unresolvedReference: false,
+      };
     } catch (error) {
       Log.error('[Haori]', 'Expression evaluation error:', expression, error);
       if (error instanceof ReferenceError) {
         // ReferenceError（未定義変数）はundefinedを返す
-        return undefined;
+        return {value: undefined, unresolvedReference: true};
       }
-      return null;
+      return {value: null, unresolvedReference: false};
     }
   }
 

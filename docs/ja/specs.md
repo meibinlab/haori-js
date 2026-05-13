@@ -1376,6 +1376,13 @@ data-fetch="url"
 - `data-fetch-bind-arg`: バインドキー名（`data-fetch-arg` の別名。`data-fetch-arg` が無い場合に参照）
 - `data-fetch-bind-params`: 抽出パラメータ (&区切り)
 
+**未解決参照と再評価**:
+- `data-fetch`、`data-fetch-method`、`data-fetch-content-type`、`data-fetch-data` の評価に未解決参照が 1 つでも含まれる場合、その評価サイクルでは `data-fetch` は無効扱いとなり実行しません。
+- bind 更新後は `data-fetch` を専用ルートで再評価します。
+- 再実行判定は、評価後の URL、HTTP メソッド、ヘッダー、body から組み立てた実行シグネチャで行います。
+- 実行シグネチャが前回と同じ場合は再実行しません。
+- 前回が未解決参照により未実行で、後続の bind 更新で解決した場合は、その時点で初回実行します。
+
 **例**:
 
 ```html
@@ -1451,6 +1458,13 @@ data-import="url"
   visibility: hidden;
 }
 ```
+
+**未解決参照と再評価**:
+- `data-import` の評価に未解決参照が 1 つでも含まれる場合、その評価サイクルでは読み込みを実行しません。
+- bind 更新後は `data-import` を専用ルートで再評価します。
+- 再実行判定は評価後 URL の比較で行います。
+- 評価後 URL が前回と同じ場合は再読み込みしません。
+- 前回が未解決参照により未実行で、後続の bind 更新で URL が確定した場合は、その時点で初回読み込みを実行します。
 
 ---
 

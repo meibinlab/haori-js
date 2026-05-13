@@ -14,6 +14,18 @@ import {Import} from './import';
 import Queue from './queue';
 import HaoriEvent from './event';
 
+interface ReactiveFetchState {
+  lastSignature: string | null;
+  running: boolean;
+  rerunRequested: boolean;
+}
+
+interface ReactiveImportState {
+  lastUrl: string | null;
+  running: boolean;
+  rerunRequested: boolean;
+}
+
 /**
  * アプリケーションの中心的な制御を行うクラスです。
  * Fragment の初期化、属性変化の処理、条件分岐・繰り返し処理を管理します。
@@ -41,6 +53,14 @@ export default class Core {
   /** 属性内プレースホルダ検出用の正規表現 */
   private static readonly ATTRIBUTE_PLACEHOLDER_REGEX =
     /\{\{\{[\s\S]+?\}\}\}|\{\{[\s\S]+?\}\}/;
+
+  /** data-fetch の自動再評価状態 */
+  private static readonly REACTIVE_FETCH_STATES =
+    new WeakMap<HTMLElement, ReactiveFetchState>();
+
+  /** data-import の自動再評価状態 */
+  private static readonly REACTIVE_IMPORT_STATES =
+    new WeakMap<HTMLElement, ReactiveImportState>();
 
   /**
    * 遅延属性かどうか（完全名で判定）を判定します。
@@ -139,6 +159,207 @@ export default class Core {
       );
     }
     return chain.then(() => undefined);
+  }
+
+  /**
+   * data-fetch の再評価状態を取得します。
+   *
+   * @param element 対象要素
+   * @returns 再評価状態
+   */
+  private static getReactiveFetchState(
+    element: HTMLElement,
+  ): ReactiveFetchState {
+    const existing = Core.REACTIVE_FETCH_STATES.get(element);
+    if (existing) {
+      return existing;
+    }
+    const state: ReactiveFetchState = {
+      lastSignature: null,
+      running: false,
+      rerunRequested: false,
+    };
+    Core.REACTIVE_FETCH_STATES.set(element, state);
+    return state;
+  }
+
+  /**
+   * data-import の再評価状態を取得します。
+   *
+   * @param element 対象要素
+   * @returns 再評価状態
+   */
+  private static getReactiveImportState(
+    element: HTMLElement,
+  ): ReactiveImportState {
+    const existing = Core.REACTIVE_IMPORT_STATES.get(element);
+    if (existing) {
+      return existing;
+    }
+    const state: ReactiveImportState = {
+      lastUrl: null,
+      running: false,
+      rerunRequested: false,
+    };
+    Core.REACTIVE_IMPORT_STATES.set(element, state);
+    return state;
+  }
+
+  /**
+   * bind 更新時に data-fetch / data-import を専用ルートで再評価します。
+   *
+   * @param fragment 対象フラグメント
+   * @param skipFragments 再評価をスキップするフラグメント集合
+   * @returns 再評価完了の Promise
+   */
+  private static reevaluateReactiveSpecialAttributes(
+    fragment: ElementFragment,
+    skipFragments: ReadonlySet<ElementFragment> = new Set(),
+  ): Promise<void> {
+    if (skipFragments.has(fragment)) {
+      return Promise.resolve();
+    }
+    const promises: Promise<void>[] = [];
+    if (fragment.hasAttribute(`${Env.prefix}fetch`)) {
+      promises.push(Core.executeManagedFetch(fragment));
+    }
+    if (fragment.hasAttribute(`${Env.prefix}import`)) {
+      promises.push(Core.executeManagedImport(fragment));
+    }
+    fragment.getChildren().forEach(child => {
+      if (child instanceof ElementFragment) {
+        promises.push(
+          Core.reevaluateReactiveSpecialAttributes(child, skipFragments),
+        );
+      }
+    });
+    return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * data-fetch をシグネチャ比較付きで実行します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 実行完了の Promise
+   */
+  private static executeManagedFetch(
+    fragment: ElementFragment,
+  ): Promise<void> {
+    const target = fragment.getTarget();
+    const state = Core.getReactiveFetchState(target);
+    const resolved = Procedure.resolveAutoFetchSignature(fragment);
+
+    if (state.running) {
+      if (
+        resolved.hasUnresolvedReference ||
+        resolved.signature !== state.lastSignature
+      ) {
+        state.rerunRequested = true;
+      }
+      return Promise.resolve();
+    }
+
+    if (resolved.hasUnresolvedReference || resolved.signature === null) {
+      state.lastSignature = null;
+      return Promise.resolve();
+    }
+
+    if (state.lastSignature === resolved.signature) {
+      return Promise.resolve();
+    }
+
+    state.lastSignature = resolved.signature;
+    state.running = true;
+    return new Procedure(fragment, null)
+      .runWithResult()
+      .then(() => undefined)
+      .finally(() => {
+        state.running = false;
+        if (state.rerunRequested) {
+          state.rerunRequested = false;
+          return Core.executeManagedFetch(fragment);
+        }
+        return undefined;
+      });
+  }
+
+  /**
+   * data-import を URL 比較付きで実行します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 実行完了の Promise
+   */
+  private static executeManagedImport(
+    fragment: ElementFragment,
+  ): Promise<void> {
+    const target = fragment.getTarget();
+    const state = Core.getReactiveImportState(target);
+    const importEvaluation = fragment.getAttributeEvaluation(`${Env.prefix}import`);
+    const resolvedUrl =
+      importEvaluation &&
+      !importEvaluation.hasUnresolvedReference &&
+      typeof importEvaluation.value === 'string'
+        ? importEvaluation.value
+        : null;
+
+    if (state.running) {
+      if (resolvedUrl !== state.lastUrl) {
+        state.rerunRequested = true;
+      }
+      return Promise.resolve();
+    }
+
+    if (resolvedUrl === null) {
+      state.lastUrl = null;
+      return Promise.resolve();
+    }
+
+    if (state.lastUrl === resolvedUrl) {
+      return Promise.resolve();
+    }
+
+    state.lastUrl = resolvedUrl;
+    state.running = true;
+    const startedAt = performance.now();
+    target.setAttribute(`${Env.prefix}importing`, '');
+    HaoriEvent.importStart(target, resolvedUrl);
+
+    return Import.load(resolvedUrl)
+      .then(html => {
+        const bytes = new TextEncoder().encode(html).length;
+        return Queue.enqueue(() => {
+          target.innerHTML = html;
+        }).then(() => {
+          target.removeAttribute(`${Env.prefix}importing`);
+          HaoriEvent.importEnd(target, resolvedUrl, bytes, startedAt);
+          if (!document.body.hasAttribute('data-haori-ready')) {
+            const childPromises: Promise<void>[] = [];
+            target.childNodes.forEach(node => {
+              const child = Fragment.get(node);
+              if (child instanceof ElementFragment) {
+                childPromises.push(Core.scan(child.getTarget()));
+              } else if (child instanceof TextFragment) {
+                childPromises.push(Core.evaluateText(child));
+              }
+            });
+            return Promise.all(childPromises).then(() => undefined);
+          }
+          return undefined;
+        });
+      })
+      .catch(error => {
+        target.removeAttribute(`${Env.prefix}importing`);
+        HaoriEvent.importError(target, resolvedUrl, error);
+        Log.error('[Haori]', 'Failed to import HTML:', resolvedUrl, error);
+      })
+      .finally(() => {
+        state.running = false;
+        if (state.rerunRequested) {
+          state.rerunRequested = false;
+          return Core.executeManagedImport(fragment);
+        }
+        return undefined;
+      }) as Promise<void>;
   }
 
   /**
@@ -264,52 +485,13 @@ export default class Core {
         promises.push(Core.evaluateEach(fragment));
         break;
       case `${Env.prefix}fetch`:
-        promises.push(
-          new Procedure(fragment, null).run().then(() => undefined),
-        );
+        promises.push(Core.executeManagedFetch(fragment));
         break;
-      case `${Env.prefix}import`: {
+      case `${Env.prefix}import`:
         if (typeof value === 'string') {
-          const target = fragment.getTarget();
-          const startedAt = performance.now();
-          target.setAttribute(`${Env.prefix}importing`, '');
-          HaoriEvent.importStart(target, value);
-
-          promises.push(
-            Import.load(value)
-              .then(html => {
-                const bytes = new TextEncoder().encode(html).length;
-                // DOM 更新はキュー内で実行する
-                return Queue.enqueue(() => {
-                  target.innerHTML = html;
-                }).then(() => {
-                  target.removeAttribute(`${Env.prefix}importing`);
-                  HaoriEvent.importEnd(target, value, bytes, startedAt);
-                  if (!document.body.hasAttribute('data-haori-ready')) {
-                    // 初期化中だけ明示スキャンし、Observer 起動後の二重初期化を避ける。
-                    const childPromises: Promise<void>[] = [];
-                    target.childNodes.forEach(node => {
-                      const child = Fragment.get(node);
-                      if (child instanceof ElementFragment) {
-                        childPromises.push(Core.scan(child.getTarget()));
-                      } else if (child instanceof TextFragment) {
-                        childPromises.push(Core.evaluateText(child));
-                      }
-                    });
-                    return Promise.all(childPromises).then(() => undefined);
-                  }
-                  return undefined;
-                });
-              })
-              .catch(error => {
-                target.removeAttribute(`${Env.prefix}importing`);
-                HaoriEvent.importError(target, value, error);
-                Log.error('[Haori]', 'Failed to import HTML:', value, error);
-              }) as unknown as Promise<void>,
-          );
+          promises.push(Core.executeManagedImport(fragment));
         }
         break;
-      }
       case `${Env.prefix}url-param`: {
         const arg = fragment.getAttribute(`${Env.prefix}url-arg`);
         const params = Url.readParams();
@@ -365,6 +547,9 @@ export default class Core {
       chain = chain.then(() => Form.syncValues(fragment, formValues));
     }
     chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
+    chain = chain.then(() =>
+      Core.reevaluateReactiveSpecialAttributes(fragment, skipFragments),
+    );
 
     // bindchangeイベントを発火
     HaoriEvent.bindChange(element, previous, data, 'manual');

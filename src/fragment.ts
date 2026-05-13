@@ -10,6 +10,17 @@ import Expression from './expression';
 import Env from './env';
 
 /**
+ * 属性評価結果の詳細です。
+ */
+export interface AttributeEvaluationDetail {
+  /** 評価済みの値 */
+  value: string | false | unknown | null;
+
+  /** 未解決参照が含まれていたかどうか */
+  hasUnresolvedReference: boolean;
+}
+
+/**
  * 仮想DOMのフラグメントの抽象クラス。
  */
 export default abstract class Fragment {
@@ -863,15 +874,32 @@ export class ElementFragment extends Fragment {
    * @returns 評価された値
    */
   public getAttribute(name: string): string | false | unknown | null {
+    const detail = this.getAttributeEvaluation(name);
+    return detail?.value ?? null;
+  }
+
+  /**
+   * 属性の評価値と未解決参照の有無を取得します。
+   *
+   * @param name 属性名
+   * @returns 属性評価の詳細。属性が存在しない場合は null
+   */
+  public getAttributeEvaluation(name: string): AttributeEvaluationDetail | null {
     const contents = this.attributeMap.get(name);
     if (contents === undefined) {
       return null;
     }
-    const results = contents.evaluate(this.getBindingData());
-    if (results.length === 1) {
-      return results[0];
+    const detail = contents.evaluateDetailed(this.getBindingData());
+    if (detail.results.length === 1) {
+      return {
+        value: detail.results[0],
+        hasUnresolvedReference: detail.hasUnresolvedReference,
+      };
     }
-    return TextContents.joinEvaluateResults(results);
+    return {
+      value: TextContents.joinEvaluateResults(detail.results),
+      hasUnresolvedReference: detail.hasUnresolvedReference,
+    };
   }
 
   /**
@@ -1504,18 +1532,36 @@ class TextContents {
    * @returns 評価結果のリスト
    */
   public evaluate(bindingValues: Record<string, unknown>): unknown[] {
+    return this.evaluateDetailed(bindingValues).results;
+  }
+
+  /**
+   * 式評価を行い、未解決参照の有無を含む結果を返します。
+   *
+   * @param bindingValues バインディングされた値のオブジェクト
+   * @returns 評価結果と未解決参照の有無
+   */
+  public evaluateDetailed(
+    bindingValues: Record<string, unknown>,
+  ): {results: unknown[]; hasUnresolvedReference: boolean} {
     if (!this.isEvaluate && !this.isRawEvaluate) {
-      return this.contents.map(c => c.text);
+      return {
+        results: this.contents.map(c => c.text),
+        hasUnresolvedReference: false,
+      };
     }
     const results: unknown[] = [];
+    let hasUnresolvedReference = false;
     this.contents.forEach(c => {
       try {
         if (
           c.type === ExpressionType.EXPRESSION ||
           c.type === ExpressionType.RAW_EXPRESSION
         ) {
-          const result = Expression.evaluate(c.text, bindingValues);
-          results.push(result);
+          const result = Expression.evaluateDetailed(c.text, bindingValues);
+          hasUnresolvedReference =
+            hasUnresolvedReference || result.unresolvedReference;
+          results.push(result.value);
         } else {
           results.push(c.text);
         }
@@ -1528,7 +1574,7 @@ class TextContents {
         results.push('');
       }
     });
-    return results;
+    return {results, hasUnresolvedReference};
   }
 }
 
@@ -1576,10 +1622,26 @@ class AttributeContents extends TextContents {
    * @returns 評価結果のリスト
    */
   public evaluate(bindingValues: Record<string, unknown>): unknown[] {
+    return this.evaluateDetailed(bindingValues).results;
+  }
+
+  /**
+   * 式評価を行い、未解決参照の有無を含む結果を返します。
+   *
+   * @param bindingValues バインディングされた値のオブジェクト
+   * @returns 評価結果と未解決参照の有無
+   */
+  public evaluateDetailed(
+    bindingValues: Record<string, unknown>,
+  ): {results: unknown[]; hasUnresolvedReference: boolean} {
     if (!this.isEvaluate && !this.forceEvaluation) {
-      return this.contents.map(c => c.text);
+      return {
+        results: this.contents.map(c => c.text),
+        hasUnresolvedReference: false,
+      };
     }
     const results: unknown[] = [];
+    let hasUnresolvedReference = false;
     this.contents.forEach(c => {
       try {
         if (
@@ -1587,8 +1649,10 @@ class AttributeContents extends TextContents {
           c.type === ExpressionType.EXPRESSION ||
           c.type === ExpressionType.RAW_EXPRESSION
         ) {
-          const result = Expression.evaluate(c.text, bindingValues);
-          results.push(result);
+          const result = Expression.evaluateDetailed(c.text, bindingValues);
+          hasUnresolvedReference =
+            hasUnresolvedReference || result.unresolvedReference;
+          results.push(result.value);
         } else {
           results.push(c.text);
         }
@@ -1607,8 +1671,11 @@ class AttributeContents extends TextContents {
         'each or if expressions must have a single content.',
         results,
       );
-      return [results[0]];
+      return {
+        results: [results[0]],
+        hasUnresolvedReference,
+      };
     }
-    return results;
+    return {results, hasUnresolvedReference};
   }
 }

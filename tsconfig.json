@@ -6,7 +6,7 @@
     "moduleResolution": "Bundler",
     "outDir": "dist",
     "rootDir": ".",
-    "lib": ["DOM", "ES2020"],
+    "lib": ["DOM", "DOM.Iterable", "ES2020"],
     "types": ["vitest/globals"],
     "declaration": true,
     "declarationMap": true,

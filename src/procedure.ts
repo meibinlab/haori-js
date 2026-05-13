@@ -117,6 +117,75 @@ function appendPayloadToUrl(
 }
 
 /**
+ * 自動再評価用に解決したフェッチシグネチャです。
+ */
+export interface ResolvedFetchSignature {
+  /** 比較用シグネチャ。無効な場合は null */
+  signature: string | null;
+
+  /** 未解決参照が含まれていたかどうか */
+  hasUnresolvedReference: boolean;
+}
+
+interface ResolvedDataAttribute {
+  value: Record<string, unknown> | null;
+  hasUnresolvedReference: boolean;
+}
+
+interface PreparedFetchRequest {
+  url: string | null;
+  options: RequestInit | null;
+  payload: Record<string, unknown>;
+  hasUnresolvedReference: boolean;
+  requestedMethod: string;
+  effectiveMethod: string;
+  queryString?: string;
+  transportMode: 'http' | 'query-get';
+  signature: string | null;
+}
+
+function normalizeRequestBody(body: BodyInit | null | undefined): unknown {
+  if (body === undefined || body === null) {
+    return null;
+  }
+  if (typeof body === 'string') {
+    return body;
+  }
+  if (body instanceof URLSearchParams) {
+    return body.toString();
+  }
+  if (body instanceof FormData) {
+    return Array.from(body.entries()).map(([key, value]) => [
+      key,
+      value instanceof File
+        ? {
+            type: 'file',
+            name: value.name,
+            size: value.size,
+            mimeType: value.type,
+          }
+        : String(value),
+    ]);
+  }
+  return String(body);
+}
+
+function buildFetchSignature(url: string, options: RequestInit): string {
+  const headers = new Headers(
+    (options.headers as HeadersInit | undefined) || undefined,
+  );
+  const normalizedHeaders = Array.from(headers.entries()).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  return JSON.stringify({
+    url,
+    method: String(options.method || 'GET').toUpperCase(),
+    headers: normalizedHeaders,
+    body: normalizeRequestBody((options.body as BodyInit | undefined) || null),
+  });
+}
+
+/**
  * フェッチ前実行スクリプト戻り値型。
  */
 export interface BeforeCallbackResult {
@@ -171,6 +240,9 @@ export interface ProcedureOptions {
 
   /** フェッチURL */
   fetchUrl?: string | null;
+
+  /** フェッチ関連属性に未解決参照が含まれていたかどうか */
+  fetchHasUnresolvedReference?: boolean | null;
 
   /** フェッチオプション */
   fetchOptions?: RequestInit | null;
@@ -328,26 +400,49 @@ export default class Procedure {
     rawAttribute: string,
     bindingValues: Record<string, unknown>,
   ): string {
-    return rawAttribute.replace(
+    return Procedure.resolveDataParamStringDetailed(rawAttribute, bindingValues)
+      .value;
+  }
+
+  /**
+   * data 属性のテンプレート式評価結果を URLSearchParams 向けに組み立てます。
+   *
+   * @param rawAttribute 生の属性値
+   * @param bindingValues バインディング値
+   * @returns パラメータ形式として扱える文字列と未解決参照の有無
+   */
+  private static resolveDataParamStringDetailed(
+    rawAttribute: string,
+    bindingValues: Record<string, unknown>,
+  ): {value: string; hasUnresolvedReference: boolean} {
+    let hasUnresolvedReference = false;
+    const value = rawAttribute.replace(
       Procedure.DATA_PLACEHOLDER_REGEX,
       (
         _matched: string,
         rawExpression: string | undefined,
         expression: string | undefined,
       ): string => {
-        const result = Expression.evaluate(
+        const result = Expression.evaluateDetailed(
           rawExpression ?? expression ?? '',
           bindingValues,
         );
-        if (result === null || result === undefined || Number.isNaN(result)) {
+        hasUnresolvedReference =
+          hasUnresolvedReference || result.unresolvedReference;
+        if (
+          result.value === null ||
+          result.value === undefined ||
+          Number.isNaN(result.value)
+        ) {
           return '';
         }
-        if (typeof result === 'object') {
-          return encodeURIComponent(JSON.stringify(result));
+        if (typeof result.value === 'object') {
+          return encodeURIComponent(JSON.stringify(result.value));
         }
-        return encodeURIComponent(String(result));
+        return encodeURIComponent(String(result.value));
       },
     );
+    return {value, hasUnresolvedReference};
   }
 
   /**
@@ -423,7 +518,23 @@ export default class Procedure {
     rawAttribute: string,
     bindingValues: Record<string, unknown>,
   ): string {
-    return rawAttribute.replace(
+    return Procedure.resolveDataJsonStringDetailed(rawAttribute, bindingValues)
+      .value;
+  }
+
+  /**
+   * JSON 形式 data 属性内のテンプレート式を安全に解決します。
+   *
+   * @param rawAttribute 生の属性値
+   * @param bindingValues バインディング値
+   * @returns JSON として解釈可能な文字列と未解決参照の有無
+   */
+  private static resolveDataJsonStringDetailed(
+    rawAttribute: string,
+    bindingValues: Record<string, unknown>,
+  ): {value: string; hasUnresolvedReference: boolean} {
+    let hasUnresolvedReference = false;
+    const value = rawAttribute.replace(
       Procedure.DATA_PLACEHOLDER_REGEX,
       (
         _matched: string,
@@ -431,15 +542,18 @@ export default class Procedure {
         expression: string | undefined,
         offset: number,
       ): string => {
-        const result = Expression.evaluate(
+        const result = Expression.evaluateDetailed(
           rawExpression ?? expression ?? '',
           bindingValues,
         );
+        hasUnresolvedReference =
+          hasUnresolvedReference || result.unresolvedReference;
         return Procedure.isJsonStringContext(rawAttribute, offset)
-          ? Procedure.stringifyJsonTemplateStringContent(result)
-          : Procedure.stringifyJsonTemplateValue(result);
+          ? Procedure.stringifyJsonTemplateStringContent(result.value)
+          : Procedure.stringifyJsonTemplateValue(result.value);
       },
     );
+    return {value, hasUnresolvedReference};
   }
 
   /**
@@ -453,33 +567,65 @@ export default class Procedure {
     fragment: ElementFragment,
     attrName: string,
   ): Record<string, unknown> | null {
+    return Procedure.resolveDataAttributeDetailed(fragment, attrName).value;
+  }
+
+  /**
+   * data 属性を評価済みの値として取得し、未解決参照の有無を返します。
+   *
+   * @param fragment フラグメント
+   * @param attrName 属性名
+   * @returns 送信データと未解決参照の有無
+   */
+  private static resolveDataAttributeDetailed(
+    fragment: ElementFragment,
+    attrName: string,
+  ): ResolvedDataAttribute {
     const rawAttribute = fragment.getRawAttribute(attrName);
-    const dataAttribute = fragment.getAttribute(attrName);
+    const attributeEvaluation = fragment.getAttributeEvaluation(attrName);
+    const dataAttribute = attributeEvaluation?.value ?? null;
+    const hasUnresolvedReference =
+      attributeEvaluation?.hasUnresolvedReference ?? false;
     if (
       dataAttribute &&
       typeof dataAttribute === 'object' &&
       !Array.isArray(dataAttribute)
     ) {
-      return dataAttribute as Record<string, unknown>;
+      return {
+        value: dataAttribute as Record<string, unknown>,
+        hasUnresolvedReference,
+      };
     }
     if (typeof dataAttribute !== 'string' || rawAttribute === null) {
-      return null;
+      return {value: null, hasUnresolvedReference};
     }
     const trimmed = rawAttribute.trim();
     if (Procedure.SINGLE_PLACEHOLDER_REGEX.test(trimmed)) {
-      return Core.parseDataBind(dataAttribute);
+      return {
+        value: Core.parseDataBind(dataAttribute),
+        hasUnresolvedReference,
+      };
     }
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      return Core.parseDataBind(
-        Procedure.resolveDataJsonString(
-          rawAttribute,
-          fragment.getBindingData(),
-        ),
+      const resolved = Procedure.resolveDataJsonStringDetailed(
+        rawAttribute,
+        fragment.getBindingData(),
       );
+      return {
+        value: Core.parseDataBind(resolved.value),
+        hasUnresolvedReference:
+          hasUnresolvedReference || resolved.hasUnresolvedReference,
+      };
     }
-    return Core.parseDataBind(
-      Procedure.resolveDataParamString(rawAttribute, fragment.getBindingData()),
+    const resolved = Procedure.resolveDataParamStringDetailed(
+      rawAttribute,
+      fragment.getBindingData(),
     );
+    return {
+      value: Core.parseDataBind(resolved.value),
+      hasUnresolvedReference:
+        hasUnresolvedReference || resolved.hasUnresolvedReference,
+    };
   }
 
   /**
@@ -562,7 +708,14 @@ ${body}
     const fetchAttrName = Procedure.attrName(event, 'fetch');
     const hasFetchAttr = fragment.hasAttribute(fetchAttrName);
     if (hasFetchAttr) {
-      options.fetchUrl = fragment.getAttribute(fetchAttrName) as string;
+      const fetchEvaluation = fragment.getAttributeEvaluation(fetchAttrName);
+      if (fetchEvaluation) {
+        options.fetchHasUnresolvedReference =
+          fetchEvaluation.hasUnresolvedReference;
+        options.fetchUrl = fetchEvaluation.hasUnresolvedReference
+          ? null
+          : (fetchEvaluation.value as string | null);
+      }
     }
     const fetchOptions: RequestInit = {};
     // fetch-method（イベントあり/なし）
@@ -570,16 +723,26 @@ ${body}
     if (event) {
       const fetchMethodAttrEvent = Procedure.attrName(event, 'fetch-method');
       if (fragment.hasAttribute(fetchMethodAttrEvent)) {
-        fetchOptions.method = fragment.getAttribute(
+        const fetchMethodEvaluation = fragment.getAttributeEvaluation(
           fetchMethodAttrEvent,
-        ) as string;
+        );
+        if (fetchMethodEvaluation?.hasUnresolvedReference) {
+          options.fetchHasUnresolvedReference = true;
+        } else {
+          fetchOptions.method = fetchMethodEvaluation?.value as string;
+        }
       }
     } else {
       const fetchMethodAttrNonEvent = Procedure.attrName(null, 'method', true);
       if (fragment.hasAttribute(fetchMethodAttrNonEvent)) {
-        fetchOptions.method = fragment.getAttribute(
+        const fetchMethodEvaluation = fragment.getAttributeEvaluation(
           fetchMethodAttrNonEvent,
-        ) as string;
+        );
+        if (fetchMethodEvaluation?.hasUnresolvedReference) {
+          options.fetchHasUnresolvedReference = true;
+        } else {
+          fetchOptions.method = fetchMethodEvaluation?.value as string;
+        }
       }
     }
     // fetch-headers（イベントあり/なし）
@@ -628,9 +791,15 @@ ${body}
         'fetch-content-type',
       );
       if (fragment.hasAttribute(fetchCTAttrEvent)) {
+        const fetchContentTypeEvaluation = fragment.getAttributeEvaluation(
+          fetchCTAttrEvent,
+        );
+        if (fetchContentTypeEvaluation?.hasUnresolvedReference) {
+          options.fetchHasUnresolvedReference = true;
+        }
         fetchOptions.headers = {
           ...fetchOptions.headers,
-          'Content-Type': fragment.getAttribute(fetchCTAttrEvent) as string,
+          'Content-Type': fetchContentTypeEvaluation?.value as string,
         };
       } else if (
         fetchOptions.method &&
@@ -669,9 +838,15 @@ ${body}
         true,
       );
       if (fragment.hasAttribute(fetchCTAttrNonEvent)) {
+        const fetchContentTypeEvaluation = fragment.getAttributeEvaluation(
+          fetchCTAttrNonEvent,
+        );
+        if (fetchContentTypeEvaluation?.hasUnresolvedReference) {
+          options.fetchHasUnresolvedReference = true;
+        }
         fetchOptions.headers = {
           ...fetchOptions.headers,
-          'Content-Type': fragment.getAttribute(fetchCTAttrNonEvent) as string,
+          'Content-Type': fetchContentTypeEvaluation?.value as string,
         };
       } else if (
         fetchOptions.method &&
@@ -1075,6 +1250,18 @@ ${body}
   }
 
   /**
+   * 非イベント data-fetch の自動再評価用シグネチャを解決します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns フェッチシグネチャと未解決参照の有無
+   */
+  public static resolveAutoFetchSignature(
+    fragment: ElementFragment,
+  ): ResolvedFetchSignature {
+    return new Procedure(fragment, null).resolveFetchSignature();
+  }
+
+  /**
    * 一連の処理を実行します。オプションが空の場合は即座にresolveされます。
    *
    * @returns 実行結果のPromise
@@ -1128,9 +1315,10 @@ ${body}
         );
         this.captureHistorySnapshots();
       }
-      const payload = this.buildPayload();
-      let fetchUrl = this.options.fetchUrl;
-      let fetchOptions = this.options.fetchOptions;
+      const preparedRequest = this.prepareFetchRequest();
+      const payload = preparedRequest.payload;
+      let fetchUrl = preparedRequest.url;
+      let fetchOptions = preparedRequest.options;
       if (this.options.beforeCallback) {
         const result = this.options.beforeCallback(
           fetchUrl || null,
@@ -1154,70 +1342,13 @@ ${body}
       const hasPayload = Object.keys(payload).length > 0;
       if (fetchUrl) {
         const finalOptions: RequestInit = {...(fetchOptions || {})};
-        const headers = new Headers(
-          (finalOptions.headers as HeadersInit | undefined) || undefined,
-        );
-        const requestedMethod = (finalOptions.method || 'GET').toUpperCase();
+        const requestedMethod = preparedRequest.requestedMethod;
+        const method = preparedRequest.effectiveMethod;
         const isDemoQueryNormalization =
-          Env.runtime === 'demo' && !isQueryTransportMethod(requestedMethod);
-        const method = isDemoQueryNormalization ? 'GET' : requestedMethod;
-
-        finalOptions.method = method;
-
-        if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-          if (hasPayload) {
-            fetchUrl = appendPayloadToUrl(fetchUrl!, payload);
-          }
-        } else if (hasPayload) {
-          const contentType = headers.get('Content-Type') || '';
-          if (/multipart\/form-data/i.test(contentType)) {
-            headers.delete('Content-Type');
-            const formData = new FormData();
-            for (const [k, v] of Object.entries(payload)) {
-              if (v === undefined || v === null) {
-                formData.append(k, '');
-              } else if (v instanceof Blob) {
-                formData.append(k, v);
-              } else if (Array.isArray(v)) {
-                v.forEach(item => formData.append(k, String(item)));
-              } else if (typeof v === 'object') {
-                formData.append(k, JSON.stringify(v));
-              } else {
-                formData.append(k, String(v));
-              }
-            }
-            finalOptions.body = formData;
-          } else if (/application\/x-www-form-urlencoded/i.test(contentType)) {
-            const params = new URLSearchParams();
-            for (const [k, v] of Object.entries(payload)) {
-              if (v === undefined) {
-                continue;
-              }
-              if (v === null) {
-                params.append(k, '');
-              } else if (Array.isArray(v)) {
-                v.forEach(item => params.append(k, String(item)));
-              } else if (typeof v === 'object') {
-                params.append(k, JSON.stringify(v));
-              } else {
-                params.append(k, String(v));
-              }
-            }
-            finalOptions.body = params;
-          } else {
-            headers.set('Content-Type', 'application/json');
-            finalOptions.body = JSON.stringify(payload);
-          }
-        }
-
-        finalOptions.headers = headers;
-        let queryString: string | undefined;
+          preparedRequest.transportMode === 'query-get';
+        const queryString = preparedRequest.queryString;
 
         if (isDemoQueryNormalization) {
-          queryString = fetchUrl
-            ? new URL(fetchUrl, window.location.href).search || undefined
-            : undefined;
-          headers.delete('Content-Type');
           Log.info('Haori demo fetch normalization', {
             runtime: Env.runtime,
             requestedMethod,
@@ -1905,7 +2036,20 @@ ${body}
    * @returns 送信データ。
    */
   private buildPayload(): Record<string, unknown> {
+    return this.buildPayloadResolution().payload;
+  }
+
+  /**
+   * data 属性とフォーム値を統合した送信データを作成し、未解決参照の有無を返します。
+   *
+   * @returns 送信データと未解決参照の有無。
+   */
+  private buildPayloadResolution(): {
+    payload: Record<string, unknown>;
+    hasUnresolvedReference: boolean;
+  } {
     const payload: Record<string, unknown> = {};
+    let hasUnresolvedReference = false;
     if (this.options.formFragment) {
       Object.assign(payload, Form.getValues(this.options.formFragment));
     }
@@ -1913,15 +2057,134 @@ ${body}
       Object.assign(payload, this.options.data);
     }
     if (this.options.targetFragment && this.options.dataAttrName) {
-      const resolvedData = Procedure.resolveDataAttribute(
+      const resolvedData = Procedure.resolveDataAttributeDetailed(
         this.options.targetFragment,
         this.options.dataAttrName,
       );
-      if (resolvedData) {
-        Object.assign(payload, resolvedData);
+      hasUnresolvedReference =
+        hasUnresolvedReference || resolvedData.hasUnresolvedReference;
+      if (resolvedData.value) {
+        Object.assign(payload, resolvedData.value);
       }
     }
-    return payload;
+    return {payload, hasUnresolvedReference};
+  }
+
+  /**
+   * 現在の data-fetch 実行内容を比較用シグネチャへ正規化します。
+   *
+   * @returns フェッチシグネチャと未解決参照の有無。
+   */
+  private resolveFetchSignature(): ResolvedFetchSignature {
+    const preparedRequest = this.prepareFetchRequest();
+    return {
+      signature: preparedRequest.signature,
+      hasUnresolvedReference: preparedRequest.hasUnresolvedReference,
+    };
+  }
+
+  /**
+   * 現在のオプションから送信前の fetch リクエストを組み立てます。
+   *
+   * @returns リクエスト情報。
+   */
+  private prepareFetchRequest(): PreparedFetchRequest {
+    const payloadResolution = this.buildPayloadResolution();
+    const payload = payloadResolution.payload;
+    const hasUnresolvedReference =
+      Boolean(this.options.fetchHasUnresolvedReference) ||
+      payloadResolution.hasUnresolvedReference;
+
+    if (!this.options.fetchUrl || hasUnresolvedReference) {
+      return {
+        url: null,
+        options: null,
+        payload,
+        hasUnresolvedReference,
+        requestedMethod: 'GET',
+        effectiveMethod: 'GET',
+        transportMode: 'http',
+        signature: null,
+      };
+    }
+
+    let fetchUrl = this.options.fetchUrl;
+    const finalOptions: RequestInit = {...(this.options.fetchOptions || {})};
+    const headers = new Headers(
+      (finalOptions.headers as HeadersInit | undefined) || undefined,
+    );
+    const requestedMethod = (finalOptions.method || 'GET').toUpperCase();
+    const isDemoQueryNormalization =
+      Env.runtime === 'demo' && !isQueryTransportMethod(requestedMethod);
+    const method = isDemoQueryNormalization ? 'GET' : requestedMethod;
+
+    finalOptions.method = method;
+
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+      if (Object.keys(payload).length > 0) {
+        fetchUrl = appendPayloadToUrl(fetchUrl, payload);
+      }
+    } else if (Object.keys(payload).length > 0) {
+      const contentType = headers.get('Content-Type') || '';
+      if (/multipart\/form-data/i.test(contentType)) {
+        headers.delete('Content-Type');
+        const formData = new FormData();
+        for (const [k, v] of Object.entries(payload)) {
+          if (v === undefined || v === null) {
+            formData.append(k, '');
+          } else if (v instanceof Blob) {
+            formData.append(k, v);
+          } else if (Array.isArray(v)) {
+            v.forEach(item => formData.append(k, String(item)));
+          } else if (typeof v === 'object') {
+            formData.append(k, JSON.stringify(v));
+          } else {
+            formData.append(k, String(v));
+          }
+        }
+        finalOptions.body = formData;
+      } else if (/application\/x-www-form-urlencoded/i.test(contentType)) {
+        const params = new URLSearchParams();
+        for (const [k, v] of Object.entries(payload)) {
+          if (v === undefined) {
+            continue;
+          }
+          if (v === null) {
+            params.append(k, '');
+          } else if (Array.isArray(v)) {
+            v.forEach(item => params.append(k, String(item)));
+          } else if (typeof v === 'object') {
+            params.append(k, JSON.stringify(v));
+          } else {
+            params.append(k, String(v));
+          }
+        }
+        finalOptions.body = params;
+      } else {
+        headers.set('Content-Type', 'application/json');
+        finalOptions.body = JSON.stringify(payload);
+      }
+    }
+
+    finalOptions.headers = headers;
+    let queryString: string | undefined;
+
+    if (isDemoQueryNormalization) {
+      queryString = new URL(fetchUrl, window.location.href).search || undefined;
+      headers.delete('Content-Type');
+    }
+
+    return {
+      url: fetchUrl,
+      options: finalOptions,
+      payload,
+      hasUnresolvedReference: false,
+      requestedMethod,
+      effectiveMethod: method,
+      queryString,
+      transportMode: isDemoQueryNormalization ? 'query-get' : 'http',
+      signature: buildFetchSignature(fetchUrl, finalOptions),
+    };
   }
 
   /**

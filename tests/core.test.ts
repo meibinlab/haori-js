@@ -568,6 +568,137 @@ describe('Core', () => {
 
       expect(el.hasAttribute('data-importing')).toBe(false);
     });
+
+    it('未解決参照は初回インポートを停止し、bind 更新で解決したら URL 変更時のみ再実行する', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation((input: RequestInfo | URL) => {
+          const url = String(input);
+          const body = url.includes('footer')
+            ? '<html><body><footer>Footer</footer></body></html>'
+            : '<html><body><nav>Header</nav></body></html>';
+          return Promise.resolve({
+            ok: true,
+            text: async () => body,
+          } as Response);
+        });
+
+      const root = document.createElement('div');
+      const el = document.createElement('div');
+      el.setAttribute('data-import', '/partials/{{view}}.html');
+      root.appendChild(el);
+      container.appendChild(root);
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      await Core.setBindingData(root, {view: 'header'});
+      await waitForCondition(() => fetchSpy.mock.calls.length === 1, {
+        description: 'header import after bind update',
+      });
+      expect(fetchSpy.mock.calls[0][0]).toBe('/partials/header.html');
+      expect(el.innerHTML).toContain('Header');
+
+      await Core.setBindingData(root, {view: 'header'});
+      await waitForDomSettled();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      await Core.setBindingData(root, {view: 'footer'});
+      await waitForCondition(() => fetchSpy.mock.calls.length === 2, {
+        description: 'footer import after url change',
+      });
+      expect(fetchSpy.mock.calls[1][0]).toBe('/partials/footer.html');
+      expect(el.innerHTML).toContain('Footer');
+    });
+  });
+
+  describe('bind 更新時の data-fetch 再評価', () => {
+    beforeEach(() => {
+      vi.resetAllMocks();
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('未解決参照は初回フェッチを停止し、シグネチャが変わったときだけ再実行する', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+          const request = init?.body ? JSON.parse(String(init.body)) : {};
+          return Promise.resolve(
+            new Response(JSON.stringify({query: request.query}), {
+              headers: {'Content-Type': 'application/json'},
+            }),
+          ) as Promise<Response>;
+        });
+
+      const root = document.createElement('div');
+      const el = document.createElement('div');
+  const bindTarget = document.createElement('div');
+  bindTarget.id = 'fetch-result';
+      el.setAttribute('data-fetch', 'http://api.test/search');
+      el.setAttribute('data-fetch-method', 'POST');
+      el.setAttribute('data-fetch-data', 'query={{query}}');
+  el.setAttribute('data-fetch-bind', '#fetch-result');
+      root.appendChild(el);
+  root.appendChild(bindTarget);
+      container.appendChild(root);
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      await Core.setBindingData(root, {query: 'alpha'});
+      await waitForCondition(() => fetchSpy.mock.calls.length === 1, {
+        description: 'first fetch after query resolved',
+      });
+      expect(fetchSpy.mock.calls[0][0]).toBe('http://api.test/search');
+      expect((fetchSpy.mock.calls[0][1] as RequestInit | undefined)?.body).toBe(
+        JSON.stringify({query: 'alpha'}),
+      );
+
+      await Core.setBindingData(root, {query: 'alpha'});
+      await waitForDomSettled();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      await Core.setBindingData(root, {query: 'beta'});
+      await waitForCondition(() => fetchSpy.mock.calls.length === 2, {
+        description: 'second fetch after signature change',
+      });
+      expect((fetchSpy.mock.calls[1][1] as RequestInit | undefined)?.body).toBe(
+        JSON.stringify({query: 'beta'}),
+      );
+    });
+
+    it('フェッチ結果の bind 更新が同一シグネチャなら再フェッチを起こさない', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(
+          new Response(JSON.stringify({query: 'alpha'}), {
+            headers: {'Content-Type': 'application/json'},
+          }),
+        );
+
+      const root = document.createElement('div');
+      root.setAttribute('data-bind', '{"query":"alpha"}');
+      const el = document.createElement('div');
+      el.setAttribute('data-fetch', 'http://api.test/search?query={{query}}');
+      root.appendChild(el);
+      container.appendChild(root);
+
+      await Core.scan(root);
+      await waitForCondition(() => fetchSpy.mock.calls.length === 1, {
+        description: 'initial fetch',
+      });
+      await waitForDomSettled();
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy.mock.calls[0][0]).toBe('http://api.test/search?query=alpha');
+    });
   });
 });
 
