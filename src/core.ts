@@ -437,6 +437,16 @@ export default class Core {
     }
     return attributeChain
       .then(() => {
+        const condition = fragment.getAttribute(`${Env.prefix}if`);
+        if (
+          fragment.hasAttribute(`${Env.prefix}if`) &&
+          (condition === false ||
+            condition === undefined ||
+            condition === null ||
+            Number.isNaN(condition))
+        ) {
+          return undefined;
+        }
         const childPromises: Promise<void>[] = [];
         fragment.getChildren().forEach(child => {
           if (child instanceof ElementFragment) {
@@ -727,11 +737,16 @@ export default class Core {
     }
     const promises: Promise<void>[] = [];
     promises.push(Core.reevaluateInterpolatedAttributes(fragment));
-    if (fragment.hasAttribute(`${Env.prefix}if`)) {
+    const hasIf = fragment.hasAttribute(`${Env.prefix}if`);
+    const hasEach = fragment.hasAttribute(`${Env.prefix}each`);
+    if (hasIf) {
       promises.push(Core.evaluateIf(fragment));
     }
-    if (fragment.hasAttribute(`${Env.prefix}each`)) {
+    if (hasEach) {
       return Promise.all(promises).then(() => Core.evaluateEach(fragment));
+    }
+    if (hasIf) {
+      return Promise.all(promises).then(() => undefined);
     }
     fragment.getChildren().forEach(child => {
       if (child instanceof ElementFragment) {

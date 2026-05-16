@@ -300,6 +300,45 @@ describe('Core', () => {
       expect(items[2].classList.contains('active')).toBe(false);
     });
 
+    test('data-if が false の行では子孫式を評価せず console.error を出さない', async () => {
+      const consoleSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      container.innerHTML = `
+        <div
+          data-bind='{"items":[{"id":1,"secondary":null},{"id":2,"secondary":{"name":"表示対象"}}]}'
+        >
+          <ul data-each="items" data-each-key="id" data-each-arg="item">
+            <li>
+              <div data-if="item.secondary">
+                <span class="secondary-name">{{item.secondary.name}}</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      const items = Array.from(list.querySelectorAll('li'));
+      expect(items).toHaveLength(2);
+
+      const firstConditional = items[0].querySelector('div') as HTMLElement;
+      const secondConditional = items[1].querySelector('div') as HTMLElement;
+
+      expect(firstConditional.hasAttribute('data-if-false')).toBe(true);
+      expect(secondConditional.hasAttribute('data-if-false')).toBe(false);
+      expect(
+        items[1].querySelector('.secondary-name')?.textContent,
+      ).toBe('表示対象');
+      expect(consoleSpy).not.toHaveBeenCalled();
+    });
+
     test('data-each 配下の a タグに data-if と href プレースホルダが共存する場合に正しく hide/show される', async () => {
       container.innerHTML = `
         <table>
