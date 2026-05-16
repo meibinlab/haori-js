@@ -793,7 +793,11 @@ export default class Core {
       const childPromises: Promise<void>[] = [];
       fragment.getChildren().forEach(child => {
         if (child instanceof ElementFragment) {
-          childPromises.push(Core.evaluateAll(child));
+          childPromises.push(
+            child.isMounted()
+              ? Core.evaluateAll(child)
+              : Core.scan(child.getTarget()),
+          );
         } else if (child instanceof TextFragment) {
           childPromises.push(Core.evaluateText(child));
         }
