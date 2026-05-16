@@ -793,6 +793,7 @@ export default class Core {
       const childPromises: Promise<void>[] = [];
       fragment.getChildren().forEach(child => {
         if (child instanceof ElementFragment) {
+          // 未スキャンの子は scan で初期化し、既に表示済みの子は再評価だけ行う。
           childPromises.push(
             child.isMounted()
               ? Core.evaluateAll(child)

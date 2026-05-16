@@ -263,7 +263,11 @@ describe('Core', () => {
     test('data-each 配下の data-if が行ごとに評価され、ページネーション相当の表示が崩れない', async () => {
       container.innerHTML = `
         <div
-          data-bind='{"currentPage":1,"pages":[{"p":0,"ellipsis":true},{"p":1,"ellipsis":false},{"p":2,"ellipsis":false}]}'
+          data-bind='{"currentPage":1,"pages":[
+            {"p":0,"ellipsis":true},
+            {"p":1,"ellipsis":false},
+            {"p":2,"ellipsis":false}
+          ]}'
         >
           <ul data-each="pages" data-each-key="p">
             <li class="{{ellipsis ? 'disabled' : p === currentPage ? 'active' : ''}}">
@@ -380,6 +384,63 @@ describe('Core', () => {
       expect(list.textContent).not.toContain('{{item.name}}');
     });
 
+    test('表示済みの data-if 配下は true から false を経て true に戻ると evaluateAll で再評価される', async () => {
+      container.innerHTML = `
+        <div data-bind='{"visible":true,"items":[{"id":1,"name":"A"}]}'>
+          <section data-if="visible">
+            <ul data-each="items" data-each-key="id" data-each-arg="item">
+              <li class="item">{{item.name}}</li>
+            </ul>
+          </section>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const section = root.querySelector('section') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      const listFragment = Fragment.get(list) as ElementFragment;
+      expect(listFragment.isMounted()).toBe(true);
+      expect(
+        Array.from(list.querySelectorAll('li')).map(item => item.textContent?.trim()),
+      ).toEqual(['A']);
+
+      await Core.setBindingData(root, {
+        visible: false,
+        items: [{id: 1, name: 'A'}],
+      });
+      await waitForDomSettled();
+
+      expect(section.hasAttribute('data-if-false')).toBe(true);
+
+      const evaluateAllSpy = vi.spyOn(Core, 'evaluateAll');
+      const scanSpy = vi.spyOn(Core, 'scan');
+
+      await Core.setBindingData(root, {
+        visible: true,
+        items: [
+          {id: 1, name: 'A2'},
+          {id: 2, name: 'B'},
+        ],
+      });
+      await waitForDomSettled();
+
+      expect(section.hasAttribute('data-if-false')).toBe(false);
+      expect(
+        Array.from(list.querySelectorAll('li')).map(item => item.textContent?.trim()),
+      ).toEqual(['A2', 'B']);
+      expect(
+        evaluateAllSpy.mock.calls.some(call => call[0] === listFragment),
+      ).toBe(true);
+      expect(scanSpy.mock.calls.some(call => call[0] === list)).toBe(false);
+
+      evaluateAllSpy.mockRestore();
+      scanSpy.mockRestore();
+    });
+
     test('data-each 配下の a タグに data-if と href プレースホルダが共存する場合に正しく hide/show される', async () => {
       container.innerHTML = `
         <table>
@@ -397,7 +458,10 @@ describe('Core', () => {
               <td>{{category}}</td>
               <td>
                 <a data-if="category === '顧客'" href="customer-list.html?customerCode={{customerCode}}">顧客対応</a>
-                <a data-if="category === '請求'" href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}">請求対応</a>
+                <a
+                  data-if="category === '請求'"
+                  href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}"
+                  >請求対応</a>
                 <a data-if="category === '入金'" href="payment-list.html?customerCode={{customerCode}}">入金対応</a>
               </td>
             </tr>
@@ -756,14 +820,14 @@ describe('Core', () => {
 
       const root = document.createElement('div');
       const el = document.createElement('div');
-  const bindTarget = document.createElement('div');
-  bindTarget.id = 'fetch-result';
+      const bindTarget = document.createElement('div');
+      bindTarget.id = 'fetch-result';
       el.setAttribute('data-fetch', 'http://api.test/search');
       el.setAttribute('data-fetch-method', 'POST');
       el.setAttribute('data-fetch-data', 'query={{query}}');
-  el.setAttribute('data-fetch-bind', '#fetch-result');
+      el.setAttribute('data-fetch-bind', '#fetch-result');
       root.appendChild(el);
-  root.appendChild(bindTarget);
+      root.appendChild(bindTarget);
       container.appendChild(root);
 
       await Core.scan(root);
@@ -899,7 +963,10 @@ describe('data-fetch + data-each + data-if integration', () => {
             <tr>
               <td>
                 <a data-if="category === '顧客'" href="customer-list.html?customerCode={{customerCode}}">顧客対応</a>
-                <a data-if="category === '請求'" href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}">請求対応</a>
+                <a
+                  data-if="category === '請求'"
+                  href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}"
+                  >請求対応</a>
                 <a data-if="category === '入金'" href="payment-list.html?customerCode={{customerCode}}">入金対応</a>
               </td>
             </tr>
