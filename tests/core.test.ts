@@ -263,7 +263,11 @@ describe('Core', () => {
     test('data-each 配下の data-if が行ごとに評価され、ページネーション相当の表示が崩れない', async () => {
       container.innerHTML = `
         <div
-          data-bind='{"currentPage":1,"pages":[{"p":0,"ellipsis":true},{"p":1,"ellipsis":false},{"p":2,"ellipsis":false}]}'
+          data-bind='{"currentPage":1,"pages":[
+            {"p":0,"ellipsis":true},
+            {"p":1,"ellipsis":false},
+            {"p":2,"ellipsis":false}
+          ]}'
         >
           <ul data-each="pages" data-each-key="p">
             <li class="{{ellipsis ? 'disabled' : p === currentPage ? 'active' : ''}}">
@@ -339,6 +343,104 @@ describe('Core', () => {
       expect(consoleSpy).not.toHaveBeenCalled();
     });
 
+    test('初回に false の data-if 配下でも bind 更新後に data-each が初期化される', async () => {
+      container.innerHTML = `
+        <div data-bind='{"record":{"totalCount":null,"items":[]}}'>
+          <section data-if="record.totalCount != null">
+            <ul data-each="record.items" data-each-key="id" data-each-arg="item">
+              <li class="item">{{item.name}}</li>
+            </ul>
+          </section>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const section = root.querySelector('section') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      expect(section.hasAttribute('data-if-false')).toBe(true);
+      expect(list.querySelectorAll('li')).toHaveLength(1);
+      expect(list.textContent).toContain('{{item.name}}');
+
+      await Core.setBindingData(root, {
+        record: {
+          totalCount: 2,
+          items: [
+            {id: 1, name: 'A'},
+            {id: 2, name: 'B'},
+          ],
+        },
+      });
+      await waitForDomSettled();
+
+      const items = Array.from(list.querySelectorAll('li'));
+
+      expect(section.hasAttribute('data-if-false')).toBe(false);
+      expect(items).toHaveLength(2);
+      expect(items.map(item => item.textContent?.trim())).toEqual(['A', 'B']);
+      expect(list.textContent).not.toContain('{{item.name}}');
+    });
+
+    test('表示済みの data-if 配下は true から false を経て true に戻ると evaluateAll で再評価される', async () => {
+      container.innerHTML = `
+        <div data-bind='{"visible":true,"items":[{"id":1,"name":"A"}]}'>
+          <section data-if="visible">
+            <ul data-each="items" data-each-key="id" data-each-arg="item">
+              <li class="item">{{item.name}}</li>
+            </ul>
+          </section>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const section = root.querySelector('section') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      const listFragment = Fragment.get(list) as ElementFragment;
+      expect(listFragment.isMounted()).toBe(true);
+      expect(
+        Array.from(list.querySelectorAll('li')).map(item => item.textContent?.trim()),
+      ).toEqual(['A']);
+
+      await Core.setBindingData(root, {
+        visible: false,
+        items: [{id: 1, name: 'A'}],
+      });
+      await waitForDomSettled();
+
+      expect(section.hasAttribute('data-if-false')).toBe(true);
+
+      const evaluateAllSpy = vi.spyOn(Core, 'evaluateAll');
+      const scanSpy = vi.spyOn(Core, 'scan');
+
+      await Core.setBindingData(root, {
+        visible: true,
+        items: [
+          {id: 1, name: 'A2'},
+          {id: 2, name: 'B'},
+        ],
+      });
+      await waitForDomSettled();
+
+      expect(section.hasAttribute('data-if-false')).toBe(false);
+      expect(
+        Array.from(list.querySelectorAll('li')).map(item => item.textContent?.trim()),
+      ).toEqual(['A2', 'B']);
+      expect(
+        evaluateAllSpy.mock.calls.some(call => call[0] === listFragment),
+      ).toBe(true);
+      expect(scanSpy.mock.calls.some(call => call[0] === list)).toBe(false);
+
+      evaluateAllSpy.mockRestore();
+      scanSpy.mockRestore();
+    });
+
     test('data-each 配下の a タグに data-if と href プレースホルダが共存する場合に正しく hide/show される', async () => {
       container.innerHTML = `
         <table>
@@ -356,7 +458,10 @@ describe('Core', () => {
               <td>{{category}}</td>
               <td>
                 <a data-if="category === '顧客'" href="customer-list.html?customerCode={{customerCode}}">顧客対応</a>
-                <a data-if="category === '請求'" href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}">請求対応</a>
+                <a
+                  data-if="category === '請求'"
+                  href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}"
+                  >請求対応</a>
                 <a data-if="category === '入金'" href="payment-list.html?customerCode={{customerCode}}">入金対応</a>
               </td>
             </tr>
@@ -651,6 +756,45 @@ describe('Core', () => {
       expect(fetchSpy.mock.calls[1][0]).toBe('/partials/footer.html');
       expect(el.innerHTML).toContain('Footer');
     });
+
+    it('初回 false の data-if 配下にある data-import は表示後に初期化される', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation((input: RequestInfo | URL) => {
+          const url = String(input);
+          return Promise.resolve({
+            ok: true,
+            text: async () => `<html><body><nav>${url}</nav></body></html>`,
+          } as Response);
+        });
+
+      container.innerHTML = `
+        <div data-bind='{"visible":false,"view":"header"}'>
+          <section data-if="visible">
+            <div id="import-target" data-import="/partials/{{view}}.html"></div>
+          </section>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const section = root.querySelector('section') as HTMLElement;
+      const target = root.querySelector('#import-target') as HTMLElement;
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      expect(section.hasAttribute('data-if-false')).toBe(true);
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      await Core.setBindingData(root, {visible: true, view: 'header'});
+      await waitForCondition(() => fetchSpy.mock.calls.length === 1, {
+        description: 'import after false data-if becomes visible',
+      });
+
+      expect(section.hasAttribute('data-if-false')).toBe(false);
+      expect(fetchSpy.mock.calls[0][0]).toBe('/partials/header.html');
+      expect(target.innerHTML).toContain('/partials/header.html');
+    });
   });
 
   describe('bind 更新時の data-fetch 再評価', () => {
@@ -676,14 +820,14 @@ describe('Core', () => {
 
       const root = document.createElement('div');
       const el = document.createElement('div');
-  const bindTarget = document.createElement('div');
-  bindTarget.id = 'fetch-result';
+      const bindTarget = document.createElement('div');
+      bindTarget.id = 'fetch-result';
       el.setAttribute('data-fetch', 'http://api.test/search');
       el.setAttribute('data-fetch-method', 'POST');
       el.setAttribute('data-fetch-data', 'query={{query}}');
-  el.setAttribute('data-fetch-bind', '#fetch-result');
+      el.setAttribute('data-fetch-bind', '#fetch-result');
       root.appendChild(el);
-  root.appendChild(bindTarget);
+      root.appendChild(bindTarget);
       container.appendChild(root);
 
       await Core.scan(root);
@@ -738,6 +882,50 @@ describe('Core', () => {
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       expect(fetchSpy.mock.calls[0][0]).toBe('http://api.test/search?query=alpha');
     });
+
+    it('初回 false の data-if 配下にある data-fetch は表示後に初期化される', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(
+          new Response(JSON.stringify({query: 'alpha'}), {
+            headers: {'Content-Type': 'application/json'},
+          }),
+        );
+
+      container.innerHTML = `
+        <div data-bind='{"visible":false,"query":"alpha"}'>
+          <section data-if="visible">
+            <div
+              data-fetch="http://api.test/search?query={{query}}"
+              data-fetch-bind="#fetch-result"></div>
+          </section>
+          <div id="fetch-result"></div>
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const section = root.querySelector('section') as HTMLElement;
+      const bindTarget = root.querySelector('#fetch-result') as HTMLElement;
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      expect(section.hasAttribute('data-if-false')).toBe(true);
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      await Core.setBindingData(root, {visible: true, query: 'alpha'});
+      await waitForCondition(() => fetchSpy.mock.calls.length === 1, {
+        description: 'fetch after false data-if becomes visible',
+      });
+
+      expect(section.hasAttribute('data-if-false')).toBe(false);
+      expect(fetchSpy.mock.calls[0][0]).toBe(
+        'http://api.test/search?query=alpha',
+      );
+      expect(
+        JSON.parse(bindTarget.getAttribute('data-bind') || '{}').query,
+      ).toBe('alpha');
+    });
   });
 });
 
@@ -775,7 +963,10 @@ describe('data-fetch + data-each + data-if integration', () => {
             <tr>
               <td>
                 <a data-if="category === '顧客'" href="customer-list.html?customerCode={{customerCode}}">顧客対応</a>
-                <a data-if="category === '請求'" href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}">請求対応</a>
+                <a
+                  data-if="category === '請求'"
+                  href="billing-list.html?customerCode={{customerCode}}&amp;billingId={{billingId}}"
+                  >請求対応</a>
                 <a data-if="category === '入金'" href="payment-list.html?customerCode={{customerCode}}">入金対応</a>
               </td>
             </tr>
