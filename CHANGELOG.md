@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-16
+
+### Changed
+
+- `data-if` が false の枝では子孫評価を止め、非表示要素内の危険な式や不要な再評価が走らないようにした
+- 初回に false だった `data-if` 配下が後から表示されたとき、未初期化の子孫を `scan()` で再初期化するようにした
+
+### Library
+
+- 初回 false の `data-if` 配下にある `data-each` / `data-fetch` / `data-import` が表示後に正しく初期化される回帰テストを追加した
+- 表示済み subtree の `true -> false -> true` トグル時に `evaluateAll()` 側で再評価される回帰テストを追加した
+
 ## [0.5.0] - 2026-05-14
 
 ### Changed
