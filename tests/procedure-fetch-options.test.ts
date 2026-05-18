@@ -2,7 +2,7 @@
 /**
  * Procedure の fetch オプションと前後フックに関するテスト
  */
-import {describe, it, expect, beforeEach, vi} from 'vitest';
+import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import Dev from '../src/dev';
 import Env from '../src/env';
@@ -13,6 +13,11 @@ describe('Procedure fetch options and hooks', () => {
     Dev.set(false);
     Env.setRuntime('embedded');
     await import('../src/observer');
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
   });
 
   it('sends JSON body for POST when method is POST', async () => {
@@ -249,6 +254,7 @@ describe('Procedure fetch options and hooks', () => {
     container.appendChild(target);
     container.appendChild(src);
 
+    await Core.scan(container);
     await new Promise(resolve => setTimeout(resolve, 50));
 
     expect(sbd).toHaveBeenCalled();
@@ -273,6 +279,7 @@ describe('Procedure fetch options and hooks', () => {
     btnStop.setAttribute('data-click-before-run', 'return false;');
     btnStop.setAttribute('data-click-fetch', 'http://api.test/stop');
     container.appendChild(btnStop);
+    await Core.scan(container);
     await new Promise(resolve => setTimeout(resolve, 50));
     btnStop.click();
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -284,6 +291,7 @@ describe('Procedure fetch options and hooks', () => {
     btnModify.setAttribute('data-click-before-run', modifyScript);
     btnModify.setAttribute('data-click-fetch', 'http://api.test/modify');
     container.appendChild(btnModify);
+    await Core.scan(btnModify);
     await new Promise(resolve => setTimeout(resolve, 50));
     btnModify.click();
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -308,6 +316,7 @@ describe('Procedure fetch options and hooks', () => {
     btn.setAttribute('data-click-after-run', 'return {stop:true};');
     container.appendChild(btn);
 
+    await Core.scan(container);
     await new Promise(resolve => setTimeout(resolve, 50));
     btn.click();
     await new Promise(resolve => setTimeout(resolve, 50));

@@ -488,6 +488,70 @@ window.Dates = {
 - `data-each-before`: ループの前に表示（繰り返されない）
 - `data-each-after`: ループの後に表示（繰り返されない）
 
+### 親子プルダウン向けの派生値定義
+
+親の選択値から子プルダウンの候補を導出したい場合は、`data-derive` / `data-derive-name` を使って派生値を子孫要素へ渡せます。
+
+`data-derive` は派生値の供給だけを担い、繰り返し描画には既存の `data-each` を使います。`select` に対しても `data-each` の一般規則をそのまま適用し、子要素の `option` をテンプレートとして扱います。
+
+```html
+<select
+  name="contractId"
+  data-each="contracts"
+  data-each-arg="contract"
+  data-each-key="id"
+>
+  <option data-each-before value="">契約を選択してください</option>
+  <option value="{{ contract.id }}">{{ contract.name }}</option>
+</select>
+
+<div
+  data-derive="contracts.find(contract => contract.id === contractId)?.options ?? []"
+  data-derive-name="optionList"
+>
+  <select
+    name="optionId"
+    data-each="optionList"
+    data-each-arg="option"
+    data-each-key="id"
+  >
+    <option data-each-before value="">オプションを選択してください</option>
+    <option value="{{ option.id }}">{{ option.optionName }}</option>
+  </select>
+</div>
+```
+
+この仕様では、少なくとも次の点を前提にしています。
+
+- `data-derive` はフォーム値更新時と `data-bind` 更新時に再評価される
+- `data-derive-name` の有効範囲は当該要素の配下に限定される
+- `option` を含む場合も `data-each` の一般規則を使い、`option` 自身に `data-each` は付けない
+
+### 名前衝突時の優先順位
+
+`data-derive-name` が既存の binding key と同じ名前でも使えます。子孫から見た同一スコープでは派生値が優先されますが、さらに内側の要素や form が同名の値を持つ場合は、その内側の値が優先されます。
+
+```html
+<div data-bind='{"status":"outer"}'>
+  <section
+    data-bind='{"status":"host"}'
+    data-derive="'derived'"
+    data-derive-name="status"
+  >
+    <p>{{status}}</p>
+
+    <form data-bind='{"status":"form"}'>
+      <input name="status" value="{{status}}">
+      <p>{{status}}</p>
+    </form>
+  </section>
+</div>
+```
+
+この例では、`section` 直下の `<p>` は `derived` を表示します。`form` の中では `form` 側の `status` がさらに近いスコープとして優先されるため、`input` と `<p>` は form の値を使います。
+
+設計の整理や背景は `docs/ja/data-derive-confirmation-draft.md` を参照してください。
+
 ---
 
 ## フォームとデータの双方向バインディング

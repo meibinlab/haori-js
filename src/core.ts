@@ -5,6 +5,7 @@
  * アプリケーションの中心的な機能を提供します。
  */
 import Env from './env';
+import Expression from './expression';
 import Form from './form';
 import Fragment, {ElementFragment, TextFragment} from './fragment';
 import Log from './log';
@@ -38,6 +39,8 @@ export default class Core {
   private static readonly PRIORITY_ATTRIBUTE_SUFFIXES = [
     'bind',
     'url-param',
+    'derive-name',
+    'derive',
     'if',
     'each',
   ];
@@ -48,6 +51,8 @@ export default class Core {
   /** evaluateAll で再評価対象から除外する特殊属性のサフィックス */
   private static readonly EVALUATE_ALL_EXCLUDED_ATTRIBUTE_SUFFIXES = [
     'bind',
+    'derive',
+    'derive-name',
     'if',
     'each',
     'fetch',
@@ -164,6 +169,24 @@ export default class Core {
       );
     }
     return chain.then(() => undefined);
+  }
+
+  /**
+   * 指定フラグメントの直下の子孫評価を再実行します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 再評価完了の Promise
+   */
+  private static reevaluateChildren(fragment: ElementFragment): Promise<void> {
+    const promises: Promise<void>[] = [];
+    fragment.getChildren().forEach(child => {
+      if (child instanceof ElementFragment) {
+        promises.push(Core.evaluateAll(child));
+      } else if (child instanceof TextFragment) {
+        promises.push(Core.evaluateText(child));
+      }
+    });
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -496,6 +519,24 @@ export default class Core {
         }
         break;
       }
+      case `${Env.prefix}derive`:
+        promises.push(
+          Core.evaluateDerive(
+            fragment,
+            value,
+            fragment.getRawAttribute(`${Env.prefix}derive-name`),
+          ),
+        );
+        break;
+      case `${Env.prefix}derive-name`:
+        promises.push(
+          Core.evaluateDerive(
+            fragment,
+            fragment.getRawAttribute(`${Env.prefix}derive`),
+            value,
+          ),
+        );
+        break;
       case `${Env.prefix}if`:
         promises.push(Core.evaluateIf(fragment));
         break;
@@ -528,7 +569,17 @@ export default class Core {
     } else {
       promises.push(fragment.setAttribute(name, value, fromObserver));
     }
-    return Promise.all(promises).then(() => undefined);
+    return Promise.all(promises)
+      .then(() => {
+        if (
+          name === `${Env.prefix}derive` ||
+          name === `${Env.prefix}derive-name`
+        ) {
+          return Core.reevaluateChildren(fragment);
+        }
+        return undefined;
+      })
+      .then(() => undefined);
   }
 
   /**
@@ -735,19 +786,23 @@ export default class Core {
     if (skipFragments.has(fragment)) {
       return Promise.resolve();
     }
-    const promises: Promise<void>[] = [];
-    promises.push(Core.reevaluateInterpolatedAttributes(fragment));
+    let chain = Core.reevaluateInterpolatedAttributes(fragment);
+    const hasDerive = fragment.hasAttribute(`${Env.prefix}derive`);
     const hasIf = fragment.hasAttribute(`${Env.prefix}if`);
     const hasEach = fragment.hasAttribute(`${Env.prefix}each`);
+    if (hasDerive) {
+      chain = chain.then(() => Core.evaluateDerive(fragment));
+    }
     if (hasIf) {
-      promises.push(Core.evaluateIf(fragment));
+      chain = chain.then(() => Core.evaluateIf(fragment));
     }
     if (hasEach) {
-      return Promise.all(promises).then(() => Core.evaluateEach(fragment));
+      return chain.then(() => Core.evaluateEach(fragment));
     }
     if (hasIf) {
-      return Promise.all(promises).then(() => undefined);
+      return chain.then(() => undefined);
     }
+    const promises: Promise<void>[] = [];
     fragment.getChildren().forEach(child => {
       if (child instanceof ElementFragment) {
         promises.push(Core.evaluateAll(child, skipFragments));
@@ -755,7 +810,45 @@ export default class Core {
         promises.push(Core.evaluateText(child));
       }
     });
-    return Promise.all(promises).then(() => undefined);
+    return chain.then(() => Promise.all(promises)).then(() => undefined);
+  }
+
+  /**
+   * data-derive / data-derive-name を評価し、子孫要素向けの派生値を更新します。
+   *
+   * @param fragment 対象フラグメント
+   * @param deriveExpression 上書きする導出式
+   * @param deriveName 上書きする導出名
+   * @returns Promise (評価完了時に解決)
+   */
+  public static evaluateDerive(
+    fragment: ElementFragment,
+    deriveExpression: string | null = fragment.getRawAttribute(
+      `${Env.prefix}derive`,
+    ),
+    deriveName: string | null = fragment.getRawAttribute(
+      `${Env.prefix}derive-name`,
+    ),
+  ): Promise<void> {
+    const normalizedName = typeof deriveName === 'string'
+      ? deriveName.trim()
+      : '';
+    if (!deriveExpression || normalizedName === '') {
+      fragment.setDerivedBindingData(null);
+      return Promise.resolve();
+    }
+    const result = Expression.evaluateDetailed(
+      deriveExpression,
+      fragment.getBindingData(),
+    );
+    if (result.unresolvedReference) {
+      fragment.setDerivedBindingData(null);
+      return Promise.resolve();
+    }
+    fragment.setDerivedBindingData({
+      [normalizedName]: result.value,
+    });
+    return Promise.resolve();
   }
 
   /**
@@ -979,15 +1072,20 @@ export default class Core {
             itemIndex,
             itemArg ? String(itemArg) : null,
             newKey,
-          ).then(() =>
-            parent
+          ).then(() => {
+            const referenceChild = parent
+              .getChildren()
+              .filter(
+                currentChild => currentChild instanceof ElementFragment,
+              )[currentInsertIndex] || null;
+            return parent
               .insertBefore(
                 child,
-                parent.getChildren()[currentInsertIndex] || null,
+                referenceChild,
               )
               .then(() => Core.evaluateAll(child))
-              .then(() => Core.scheduleEvaluateAll(child)),
-          ),
+              .then(() => Core.scheduleEvaluateAll(child));
+          }),
         );
       }
     });

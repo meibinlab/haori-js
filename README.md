@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.5.1
+Version: 0.6.0
 
 ---
 
@@ -99,6 +99,10 @@ Haori.mount(document.body, {items: [{name: 'apple'}, {name: 'orange'}]});
 - `data-import` — load external HTML and insert it
 - `data-url-param` — import URL query parameters into bindings
 
+Additional binding helpers:
+
+- `data-derive` / `data-derive-name` — define a derived value on an element and expose it to descendants only. This is useful for cases such as parent-child selects; see `docs/ja/data-derive-confirmation-draft.md` for the design background.
+
 Template expressions support safe JavaScript-like syntax such as property access, bracket access with dynamic indexes, optional chaining, ternary expressions, and method chains including array `map`/`filter` with arrow functions and spread calls. Access to global objects, `eval` or `arguments`, and prototype escape paths such as `constructor`, `__proto__`, `prototype`, or `Reflect` is blocked.
 
 `data-fetch` and `data-import` are automatically re-evaluated only when their evaluated values change after a binding update. `data-fetch` compares a request signature composed of the resolved URL, HTTP method, headers, and body, while `data-import` compares only the resolved URL. If either attribute contains even one unresolved reference, it is treated as invalid for that evaluation cycle, is not executed, and becomes executable only after a later binding update resolves the reference.
@@ -186,6 +190,7 @@ For more detailed usage, attribute specs, and internal design, see:
 
 - `docs/ja/guide.md` — User guide (many examples)
 - `docs/ja/specs.md` — Technical specifications (internal design, API)
+- `docs/ja/data-derive-confirmation-draft.md` — Design background for scoped derived bindings and stable parent-child select composition
 
 ---
 

@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.5.1
+バージョン: 0.6.0
 
 ---
 
@@ -99,6 +99,10 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `data-import` — 外部 HTML を読み込んで挿入
 - `data-url-param` — URL のクエリパラメータをバインディングに取り込む
 
+追加のバインディング補助:
+
+- `data-derive` / `data-derive-name` — 要素上で派生値を定義し、その要素の子孫にだけ公開します。親子プルダウンのような用途で使えます。設計の整理は `docs/ja/data-derive-confirmation-draft.md` を参照してください。
+
 テンプレート式では、プロパティアクセス、動的インデックスを含むブラケットアクセス、optional chaining、三項演算子、配列 `map` / `filter` のアロー関数、spread を伴う呼び出しなどの安全な構文を利用できます。一方で、グローバルオブジェクト、`eval` や `arguments`、`constructor`、`__proto__`、`prototype`、`Reflect` などの脱出経路は使用できません。
 
 `data-fetch` と `data-import` は、バインディング更新時に評価結果が変化した場合のみ自動で再評価されます。`data-fetch` は評価後の URL、HTTP メソッド、ヘッダー、body を含む実行シグネチャで比較し、`data-import` は評価後 URL で比較します。これらの属性値に未解決参照が 1 つでも含まれる場合、その時点では実行されず、後続のバインディング更新で参照が解決したときに初めて実行対象になります。
@@ -186,6 +190,7 @@ git push origin --tags
 
 - `docs/ja/guide.md` — 利用ガイド（サンプル多数）
 - `docs/ja/specs.md` — 技術仕様書（内部設計・API など）
+- `docs/ja/data-derive-confirmation-draft.md` — 派生値スコープと親子プルダウン構成に関する設計経緯
 
 ---
 

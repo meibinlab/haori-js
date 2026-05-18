@@ -1397,6 +1397,99 @@ data-each="arrayExpression"
 - `haori:rowremove` (行削除時)
 - `haori:rowmove` (行移動時)
 
+#### `data-derive` / `data-derive-name`
+
+以下は、親の現在値から子候補を導出するような UI を宣言的に構成するための仕様です。`data-derive` は派生値の供給、`data-each` は描画を担当します。
+
+**目的**:
+
+- 親の現在値から子候補を宣言的に導出できるようにする
+- 派生値の供給と反復描画の責務を分離する
+- `select` / `option` に対しても既存の `data-each` 一般規則をそのまま適用する
+
+**属性**:
+
+- `data-derive`: 派生値を計算する式
+- `data-derive-name`: 派生値を子孫要素から参照するための名前
+
+**評価タイミング**:
+
+- 初回の scan / mount 時
+- フォーム値更新時
+- `data-bind` 更新時
+- `data-derive` / `data-derive-name` の属性追加・変更・削除時
+- 子要素の `data-if` / `data-each` より前に再評価
+
+**動的属性変更時の扱い**:
+
+- `data-derive` または `data-derive-name` が実行中に追加・変更・削除された場合、その要素の派生値を直ちに再計算する
+- 派生値の公開状態が変わった場合は、その要素の子孫を再評価し、テキスト、通常属性、`data-if`、`data-each` を新しい公開状態へ追従させる
+- `data-derive-name` の変更時は旧名での公開を残さず、新しい名前だけを有効にする
+
+**スコープ**:
+
+- `data-derive-name` は当該要素の配下だけで有効
+- 子要素から参照可能
+- 兄弟、祖先、定義した要素自身からは参照不可
+- ネスト時は内側の同名定義が外側を上書き
+
+**名前衝突時の優先順位**:
+
+- 名前解決は近いスコープを優先する
+- `data-derive` を定義した要素の子孫から見た同一スコープでは、`data-derive-name` がその要素の `data-bind` や form バインド値より優先される
+- より内側の子要素や form が同名の binding key を持つ場合は、その内側の値が外側の派生値を上書きする
+
+**`data-each` との関係**:
+
+- `data-each` は繰り返し対象の親要素に付くという一般規則を維持する
+- `select` も他要素と同様に `data-each` を付ける対象になる
+- 子要素が `option` の場合も、最初の通常子要素をテンプレートにする一般規則を適用する
+- 固定の先頭 `option` は `data-each-before`、固定の末尾 `option` は `data-each-after` で表現する
+- `option` 自身に `data-each` を付ける書き方は採用しない
+
+**未解決参照時**:
+
+- `data-derive` の式に未解決参照があるサイクルでは、その導出名は未供給として扱う
+- 直前の導出値を保持し続けない
+- `data-each` が `null`、`undefined`、`false`、未供給を受けた場合は空配列相当として扱う
+
+**`data-derive-name` 未指定時**:
+
+- `data-derive-name` が未指定、空文字、空白のみの場合、その `data-derive` は子孫へ値を公開しない
+- この場合は無効な定義として扱い、直前の派生値を残さない
+- 後から `data-derive-name` が削除された場合も同様に、既存の公開を停止する
+
+**記述例**:
+
+```html
+<select
+  name="contractId"
+  data-each="contracts"
+  data-each-arg="contract"
+  data-each-key="id"
+>
+  <option data-each-before value="">契約を選択してください</option>
+  <option value="{{ contract.id }}">{{ contract.name }}</option>
+</select>
+
+<div
+  data-derive="contracts.find(contract => contract.id === contractId)?.options ?? []"
+  data-derive-name="optionList"
+>
+  <select
+    name="optionId"
+    data-each="optionList"
+    data-each-arg="option"
+    data-each-key="id"
+  >
+    <option data-each-before value="">オプションを選択してください</option>
+    <option value="{{ option.id }}">{{ option.optionName }}</option>
+  </select>
+</div>
+```
+
+設計経緯の詳細は `docs/ja/data-derive-confirmation-draft.md` を参照します。
+
 ---
 
 ### フェッチとインポート

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-19
+
+### Changed
+
+- `data-derive` / `data-derive-name` を追加し、descendant-only な派生値を `data-if` / `data-each` / 通常式から参照できるようにした
+- `data-derive` は初回 scan、`data-bind` 更新、form 更新、`data-derive` / `data-derive-name` の動的 add/change/remove 時に再評価され、子孫の `data-if` / `data-each` より先に反映されるようにした
+- `select` に対する既存の `data-each` 経路で、`data-each-before` / `data-each-after` の前後位置が更新後も崩れないようにした
+
+### Library
+
+- `data-derive` のスコープ、名前衝突、未解決参照のクリア、form 更新、`data-if` false 枝、`data-fetch` / `data-import` / `data-fetch-bind` 連携、`data-each` 行ごとの独立性を確認する回帰テストを追加した
+- 全体 Vitest 実行で不安定だった `tests/procedure-fetch-options.test.ts` を明示 `scan()` と DOM 後始末で安定化した
+
 ## [0.5.1] - 2026-05-16
 
 ### Changed

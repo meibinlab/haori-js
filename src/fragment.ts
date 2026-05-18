@@ -285,8 +285,14 @@ export class ElementFragment extends Fragment {
   /** バインドデータ */
   private bindingData: Record<string, unknown> | null = null;
 
+  /** 子孫要素へ公開する派生バインドデータ */
+  private derivedBindingData: Record<string, unknown> | null = null;
+
   /** バインドデータのキャッシュ */
   private bindingDataCache: Record<string, unknown> | null = null;
+
+  /** 子孫要素向けバインドデータのキャッシュ */
+  private descendantBindingDataCache: Record<string, unknown> | null = null;
 
   /** 表示状態 */
   private visible = true;
@@ -403,6 +409,7 @@ export class ElementFragment extends Fragment {
     });
     clone.mounted = false;
     clone.bindingData = this.bindingData;
+    clone.derivedBindingData = this.derivedBindingData;
     clone.clearBindingDataCache();
     clone.visible = true;
     clone.display = this.display;
@@ -449,6 +456,8 @@ export class ElementFragment extends Fragment {
     this.attributeMap.clear();
     this.bindingData = null;
     this.bindingDataCache = null;
+    this.derivedBindingData = null;
+    this.descendantBindingDataCache = null;
     if (this.template) {
       promises.push(this.template.remove(false));
       this.template = null;
@@ -477,12 +486,31 @@ export class ElementFragment extends Fragment {
     }
     this.bindingDataCache = {};
     if (this.parent) {
-      Object.assign(this.bindingDataCache, this.parent.getBindingData());
+      Object.assign(
+        this.bindingDataCache,
+        this.parent.getDescendantBindingData(),
+      );
     }
     if (this.bindingData) {
       Object.assign(this.bindingDataCache, this.bindingData);
     }
     return this.bindingDataCache;
+  }
+
+  /**
+   * 子孫要素向けのバインドデータを取得します。
+   *
+   * @returns 子孫要素向けのバインドデータ
+   */
+  public getDescendantBindingData(): Record<string, unknown> {
+    if (this.descendantBindingDataCache) {
+      return this.descendantBindingDataCache;
+    }
+    this.descendantBindingDataCache = {...this.getBindingData()};
+    if (this.derivedBindingData) {
+      Object.assign(this.descendantBindingDataCache, this.derivedBindingData);
+    }
+    return this.descendantBindingDataCache;
   }
 
   /**
@@ -505,6 +533,16 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 子孫要素向けの派生バインドデータを設定します。
+   *
+   * @param data 派生バインドデータ。解除する場合は null
+   */
+  public setDerivedBindingData(data: Record<string, unknown> | null): void {
+    this.derivedBindingData = data;
+    this.clearBindingDataCache();
+  }
+
+  /**
    * 親フラグメントを設定します。バインドデータキャッシュをクリアします。
    *
    * @param parent 親フラグメント
@@ -522,6 +560,7 @@ export class ElementFragment extends Fragment {
    */
   public clearBindingDataCache(): void {
     this.bindingDataCache = null;
+    this.descendantBindingDataCache = null;
     this.children.forEach(child => {
       if (child instanceof ElementFragment) {
         child.clearBindingDataCache();
@@ -1664,6 +1703,8 @@ class AttributeContents extends TextContents {
     'hor-if',
     'data-each',
     'hor-each',
+    'data-derive',
+    'hor-derive',
   ];
 
   /** 強制評価フラグ（プレースホルダでなくても評価する） */
