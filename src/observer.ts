@@ -69,13 +69,6 @@ export class Observer {
         try {
           switch (mutation.type) {
             case 'attributes': {
-              // 属性の変更
-              Log.info(
-                '[Haori]',
-                'Attribute changed:',
-                mutation.target,
-                mutation.attributeName,
-              );
               const element = mutation.target as HTMLElement;
               if (
                 mutation.attributeName &&
@@ -104,13 +97,6 @@ export class Observer {
               break;
             }
             case 'childList': {
-              // ノードの追加・削除
-              Log.info(
-                '[Haori]',
-                'Child list changed:',
-                Array.from(mutation.removedNodes).map(node => node.nodeName),
-                Array.from(mutation.addedNodes).map(node => node.nodeName),
-              );
               Array.from(mutation.removedNodes).forEach(node => {
                 IntersectObserver.cleanupTree(node);
                 Core.removeNode(node);
@@ -125,13 +111,6 @@ export class Observer {
               break;
             }
             case 'characterData': {
-              // テキストノードの変更
-              Log.info(
-                '[Haori]',
-                'Character data changed:',
-                mutation.target,
-                mutation.target.textContent,
-              );
               if (
                 mutation.target instanceof Text ||
                 mutation.target instanceof Comment
@@ -163,7 +142,6 @@ export class Observer {
       characterData: true,
     });
     Observer._mutationObservers.push(observer);
-    Log.info('[Haori]', 'Observer initialized for', root);
   }
 }
 

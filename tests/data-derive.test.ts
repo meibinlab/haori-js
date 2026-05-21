@@ -341,6 +341,77 @@ describe('data-derive', () => {
     expect(container.querySelector('#value')?.textContent).toBe('');
   });
 
+  it('同じ data-derive 式で同じ派生値なら子孫を再評価しない', async () => {
+    container.innerHTML = `
+      <div id="root">
+        <section
+          id="host"
+          data-derive="items.map(item => item)"
+          data-derive-name="optionList"
+        >
+          <p id="value">{{renderSpy(optionList.length)}}</p>
+        </section>
+      </div>
+    `;
+
+    const root = container.querySelector('#root') as HTMLElement;
+    const host = container.querySelector('#host') as HTMLElement;
+    const renderSpy = vi.fn((value: number) => String(value));
+
+    await Core.scan(root);
+    await Core.setBindingData(root, {
+      items: [
+        {id: 'mail', label: 'メール'},
+        {id: 'chat', label: 'チャット'},
+      ],
+      renderSpy,
+    });
+    await waitForDomSettled();
+
+    expect(container.querySelector('#value')?.textContent).toBe('2');
+    renderSpy.mockClear();
+
+    await Core.setAttribute(host, 'data-derive', 'items.map(item => item)');
+    await waitForDomSettled();
+
+    expect(renderSpy).not.toHaveBeenCalled();
+    expect(container.querySelector('#value')?.textContent).toBe('2');
+  });
+
+  it('同じ data-derive-name なら子孫を再評価しない', async () => {
+    container.innerHTML = `
+      <div id="root">
+        <section
+          id="host"
+          data-derive="status"
+          data-derive-name="currentStatus"
+        >
+          <p id="value">{{renderSpy(currentStatus)}}</p>
+        </section>
+      </div>
+    `;
+
+    const root = container.querySelector('#root') as HTMLElement;
+    const host = container.querySelector('#host') as HTMLElement;
+    const renderSpy = vi.fn((value: string) => value);
+
+    await Core.scan(root);
+    await Core.setBindingData(root, {
+      status: 'derived-value',
+      renderSpy,
+    });
+    await waitForDomSettled();
+
+    expect(container.querySelector('#value')?.textContent).toBe('derived-value');
+    renderSpy.mockClear();
+
+    await Core.setAttribute(host, 'data-derive-name', 'currentStatus');
+    await waitForDomSettled();
+
+    expect(renderSpy).not.toHaveBeenCalled();
+    expect(container.querySelector('#value')?.textContent).toBe('derived-value');
+  });
+
   it('MutationObserver 経由で data-derive を後付けしても子孫へ公開できる', async () => {
     const {Observer} = await import('../src/observer');
     Observer.observe(container);

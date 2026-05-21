@@ -509,6 +509,7 @@ export default class Core {
       );
     }
     const promises: Promise<void>[] = [];
+    let deriveChangedPromise: Promise<boolean> | null = null;
     switch (name) {
       case `${Env.prefix}bind`: {
         if (value === null) {
@@ -520,22 +521,20 @@ export default class Core {
         break;
       }
       case `${Env.prefix}derive`:
-        promises.push(
-          Core.evaluateDerive(
-            fragment,
-            value,
-            fragment.getRawAttribute(`${Env.prefix}derive-name`),
-          ),
+        deriveChangedPromise = Core.evaluateDerive(
+          fragment,
+          value,
+          fragment.getRawAttribute(`${Env.prefix}derive-name`),
         );
+        promises.push(deriveChangedPromise.then(() => undefined));
         break;
       case `${Env.prefix}derive-name`:
-        promises.push(
-          Core.evaluateDerive(
-            fragment,
-            fragment.getRawAttribute(`${Env.prefix}derive`),
-            value,
-          ),
+        deriveChangedPromise = Core.evaluateDerive(
+          fragment,
+          fragment.getRawAttribute(`${Env.prefix}derive`),
+          value,
         );
+        promises.push(deriveChangedPromise.then(() => undefined));
         break;
       case `${Env.prefix}if`:
         promises.push(Core.evaluateIf(fragment));
@@ -571,11 +570,13 @@ export default class Core {
     }
     return Promise.all(promises)
       .then(() => {
-        if (
-          name === `${Env.prefix}derive` ||
-          name === `${Env.prefix}derive-name`
-        ) {
-          return Core.reevaluateChildren(fragment);
+        if (deriveChangedPromise !== null) {
+          return deriveChangedPromise.then(changed => {
+            if (!changed) {
+              return undefined;
+            }
+            return Core.reevaluateChildren(fragment);
+          });
         }
         return undefined;
       })
@@ -791,7 +792,7 @@ export default class Core {
     const hasIf = fragment.hasAttribute(`${Env.prefix}if`);
     const hasEach = fragment.hasAttribute(`${Env.prefix}each`);
     if (hasDerive) {
-      chain = chain.then(() => Core.evaluateDerive(fragment));
+      chain = chain.then(() => Core.evaluateDerive(fragment).then(() => undefined));
     }
     if (hasIf) {
       chain = chain.then(() => Core.evaluateIf(fragment));
@@ -829,26 +830,40 @@ export default class Core {
     deriveName: string | null = fragment.getRawAttribute(
       `${Env.prefix}derive-name`,
     ),
-  ): Promise<void> {
+  ): Promise<boolean> {
+    const previousDerivedBindingData = fragment.getRawDerivedBindingData();
     const normalizedName = typeof deriveName === 'string'
       ? deriveName.trim()
       : '';
     if (!deriveExpression || normalizedName === '') {
+      if (previousDerivedBindingData === null) {
+        return Promise.resolve(false);
+      }
       fragment.setDerivedBindingData(null);
-      return Promise.resolve();
+      return Promise.resolve(true);
     }
     const result = Expression.evaluateDetailed(
       deriveExpression,
       fragment.getBindingData(),
     );
     if (result.unresolvedReference) {
+      if (previousDerivedBindingData === null) {
+        return Promise.resolve(false);
+      }
       fragment.setDerivedBindingData(null);
-      return Promise.resolve();
+      return Promise.resolve(true);
     }
-    fragment.setDerivedBindingData({
+    const nextDerivedBindingData = {
       [normalizedName]: result.value,
-    });
-    return Promise.resolve();
+    };
+    if (
+      Core.createBindingSignature(previousDerivedBindingData) ===
+      Core.createBindingSignature(nextDerivedBindingData)
+    ) {
+      return Promise.resolve(false);
+    }
+    fragment.setDerivedBindingData(nextDerivedBindingData);
+    return Promise.resolve(true);
   }
 
   /**
@@ -921,6 +936,11 @@ export default class Core {
       return Promise.reject(new Error('Invalid each attribute.'));
     }
     let template = fragment.getTemplate();
+    const keyArg = fragment.getAttribute(`${Env.prefix}each-key`);
+    const nextEachInputSignature = Core.createBindingSignature({
+      key: keyArg ? String(keyArg) : null,
+      items: data,
+    });
     if (template === null) {
       // テンプレートの作成
       let found = false;
@@ -951,9 +971,16 @@ export default class Core {
         // TextNodeやCommentNodeはテンプレートにならないので無視
       });
       // テンプレートのunmount完了後にupdateDiffを実行
-      return this.updateDiff(fragment, data);
+      return this.updateDiff(fragment, data).then(() => {
+        fragment.setEachInputSignature(nextEachInputSignature);
+      });
     }
-    return this.updateDiff(fragment, data);
+    if (fragment.getEachInputSignature() === nextEachInputSignature) {
+      return Promise.resolve();
+    }
+    return this.updateDiff(fragment, data).then(() => {
+      fragment.setEachInputSignature(nextEachInputSignature);
+    });
   }
 
   /**
@@ -1047,7 +1074,7 @@ export default class Core {
       if (srcIndex !== -1) {
         // 既存の要素を再利用
         child = childElements[srcIndex];
-        // 既存要素にも必ずバインドデータを再セットし、キャッシュもクリア
+        // 行の入力が同一なら子孫の再評価をスキップする。
         chain = chain.then(() =>
           Core.updateRowFragment(
             child,
@@ -1057,8 +1084,12 @@ export default class Core {
             itemArg ? String(itemArg) : null,
             newKey,
           )
-            .then(() => Core.evaluateAll(child))
-            .then(() => Core.scheduleEvaluateAll(child)),
+            .then(changed => {
+              if (!changed) {
+                return undefined;
+              }
+              return Core.evaluateAll(child);
+            }),
         );
       } else {
         // 新しい要素を追加
@@ -1083,8 +1114,12 @@ export default class Core {
                 child,
                 referenceChild,
               )
-              .then(() => Core.evaluateAll(child))
-              .then(() => Core.scheduleEvaluateAll(child));
+              .then(() => Core.scan(child.getTarget()))
+              .then(() => {
+                if (Core.needsScheduledEvaluateAll(child)) {
+                  Core.scheduleEvaluateAll(child);
+                }
+              });
           }),
         );
       }
@@ -1167,7 +1202,7 @@ export default class Core {
     index: number,
     arg: string | null,
     listKey: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     let bindingData = data;
     if (typeof data === 'object' && data !== null) {
       bindingData = {...data};
@@ -1192,12 +1227,132 @@ export default class Core {
           '[Haori]',
           `Primitive value requires '${Env.prefix}each-arg' attribute: ${data}`,
         );
-        return Promise.resolve();
+        return Promise.resolve(false);
       }
     }
+    const normalizedBindingData = bindingData as Record<string, unknown>;
+    const nextRenderSignature = Core.createBindingSignature({
+      listKey,
+      bindingData: normalizedBindingData,
+    });
+    if (
+      rowFragment.getListKey() === listKey &&
+      rowFragment.getRenderSignature() === nextRenderSignature
+    ) {
+      return Promise.resolve(false);
+    }
     rowFragment.setListKey(listKey);
-    rowFragment.setBindingData(bindingData as Record<string, unknown>);
-    return rowFragment.setAttribute(`${Env.prefix}row`, listKey);
+    rowFragment.setRenderSignature(nextRenderSignature);
+    rowFragment.setBindingData(normalizedBindingData);
+    return rowFragment.setAttribute(`${Env.prefix}row`, listKey)
+      .then(() => true);
+  }
+
+  /**
+   * 新規挿入行に遅延再評価が必要かどうかを判定します。
+   *
+   * @param fragment 判定対象の行フラグメント
+   * @returns 遅延再評価が必要なら true
+   */
+  private static needsScheduledEvaluateAll(
+    fragment: ElementFragment,
+  ): boolean {
+    const stack: ElementFragment[] = [fragment];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      current.getChildElementFragments().forEach(child => {
+        stack.push(child);
+      });
+      if (
+        current !== fragment &&
+        !current.isMounted() &&
+        Core.hasMountSensitiveAttribute(current)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * mounted 状態に依存して再評価が必要になりやすい属性を持つかどうかを返します。
+   *
+   * @param fragment 判定対象フラグメント
+   * @returns 該当属性を持つなら true
+   */
+  private static hasMountSensitiveAttribute(
+    fragment: ElementFragment,
+  ): boolean {
+    return [
+      'derive',
+      'if',
+      'each',
+      'fetch',
+      'import',
+    ].some(suffix => fragment.hasAttribute(`${Env.prefix}${suffix}`));
+  }
+
+  /**
+   * バインド値が同一かどうかを再帰的に判定します。
+   *
+   * @param left 比較元の値
+   * @param right 比較先の値
+   * @param visited 循環参照対策用の訪問済みペア
+   * @returns 同一なら true
+   */
+  private static createBindingSignature(
+    value: unknown,
+    seen: WeakMap<object, string> = new WeakMap(),
+    nextId: {value: number} = {value: 0},
+  ): string {
+    if (value === null) {
+      return 'null';
+    }
+    if (value === undefined) {
+      return 'undefined';
+    }
+    if (typeof value === 'string') {
+      return JSON.stringify(value);
+    }
+    if (
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      typeof value === 'bigint'
+    ) {
+      return String(value);
+    }
+    if (typeof value === 'function') {
+      return `[Function:${value.name || 'anonymous'}]`;
+    }
+    if (typeof value === 'symbol') {
+      return value.toString();
+    }
+    if (value instanceof Date) {
+      return `[Date:${value.toISOString()}]`;
+    }
+    if (Array.isArray(value)) {
+      if (seen.has(value)) {
+        return `[Circular:${seen.get(value)}]`;
+      }
+      const marker = `array-${nextId.value}`;
+      nextId.value += 1;
+      seen.set(value, marker);
+      return `[${value.map(item => Core.createBindingSignature(item, seen, nextId)).join(',')}]`;
+    }
+    if (typeof value === 'object') {
+      if (seen.has(value)) {
+        return `[Circular:${seen.get(value)}]`;
+      }
+      const marker = `object-${nextId.value}`;
+      nextId.value += 1;
+      seen.set(value, marker);
+      const record = value as Record<string, unknown>;
+      return `{${Object.keys(record)
+        .sort()
+        .map(key => `${JSON.stringify(key)}:${Core.createBindingSignature(record[key], seen, nextId)}`)
+        .join(',')}}`;
+    }
+    return String(value);
   }
 
   /**

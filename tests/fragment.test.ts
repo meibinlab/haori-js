@@ -6,6 +6,7 @@ import Fragment, {
   CommentFragment,
 } from '../src/fragment';
 import Log from '../src/log';
+import Queue from '../src/queue';
 
 // ヘルパー: DOM子要素のタグ名配列を取得
 const childTagNames = (el: Element) =>
@@ -302,6 +303,26 @@ describe('ElementFragment の属性操作', () => {
     expect(el.hasAttribute('data-if-false')).toBe(false);
   });
 
+  it('評価結果が同じ属性は Queue へ積まずに書き戻しを省略する', async () => {
+    const el = document.createElement('div');
+    el.setAttribute('title', '{{name}}');
+    const ef = new ElementFragment(el);
+    ef.setBindingData({name: 'Alice'});
+
+    const enqueueSpy = vi.spyOn(Queue, 'enqueue');
+
+    await ef.setAttribute('title', '{{name}}');
+    expect(el.getAttribute('title')).toBe('Alice');
+    expect(enqueueSpy).toHaveBeenCalled();
+
+    enqueueSpy.mockClear();
+
+    await ef.setAttribute('title', '{{name}}');
+
+    expect(el.getAttribute('title')).toBe('Alice');
+    expect(enqueueSpy).not.toHaveBeenCalled();
+  });
+
 });
 
 describe('TextFragment と CommentFragment', () => {
@@ -311,6 +332,29 @@ describe('TextFragment と CommentFragment', () => {
     await tf.setContent('world');
     // 通常テキストのみ（プレースホルダなし）
     expect(text.textContent).toBe('world');
+  });
+
+  it('評価結果が同じ text は Queue へ積まずに書き戻しを省略する', async () => {
+    const parent = document.createElement('div');
+    const text = document.createTextNode('{{name}}');
+    parent.appendChild(text);
+
+    const parentFragment = new ElementFragment(parent);
+    parentFragment.setBindingData({name: 'Alice'});
+
+    const textFragment = parentFragment.getChildren()[0] as TextFragment;
+    const setterSpy = vi.spyOn(Text.prototype, 'textContent', 'set');
+
+    await textFragment.evaluate();
+    expect(text.textContent).toBe('Alice');
+    expect(setterSpy).toHaveBeenCalled();
+
+    setterSpy.mockClear();
+
+    await textFragment.evaluate();
+
+    expect(text.textContent).toBe('Alice');
+    expect(setterSpy).not.toHaveBeenCalled();
   });
 
   it('CommentFragment setContent が textContent を更新する', async () => {

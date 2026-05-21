@@ -309,6 +309,12 @@ export class ElementFragment extends Fragment {
   /** each比較用のキー */
   private listKey: string | null = null;
 
+  /** 直近に描画した each 行の入力署名 */
+  private renderSignature: string | null = null;
+
+  /** 直近に描画した data-each 全体の入力署名 */
+  private eachInputSignature: string | null = null;
+
   /** valueプロパティの値 */
   private value: string | number | boolean | null = null;
 
@@ -415,6 +421,8 @@ export class ElementFragment extends Fragment {
     clone.display = this.display;
     clone.displayPriority = this.displayPriority;
     clone.template = this.template;
+    clone.renderSignature = this.renderSignature;
+    clone.eachInputSignature = this.eachInputSignature;
     clone.normalizeClonedVisibilityState();
     return clone;
   }
@@ -462,6 +470,7 @@ export class ElementFragment extends Fragment {
       promises.push(this.template.remove(false));
       this.template = null;
     }
+    this.eachInputSignature = null;
     promises.push(super.remove(unmount));
     return Promise.all(promises).then(() => undefined);
   }
@@ -520,6 +529,15 @@ export class ElementFragment extends Fragment {
    */
   public getRawBindingData(): Record<string, unknown> | null {
     return this.bindingData;
+  }
+
+  /**
+   * 生の派生バインドデータを取得します。
+   *
+   * @returns 生の派生バインドデータ
+   */
+  public getRawDerivedBindingData(): Record<string, unknown> | null {
+    return this.derivedBindingData;
   }
 
   /**
@@ -602,6 +620,42 @@ export class ElementFragment extends Fragment {
    */
   public getListKey(): string | null {
     return this.listKey;
+  }
+
+  /**
+   * 直近に描画した each 行の入力署名を取得します。
+   *
+   * @returns 入力署名
+   */
+  public getRenderSignature(): string | null {
+    return this.renderSignature;
+  }
+
+  /**
+   * 直近に描画した each 行の入力署名を設定します。
+   *
+   * @param signature 入力署名
+   */
+  public setRenderSignature(signature: string | null): void {
+    this.renderSignature = signature;
+  }
+
+  /**
+   * 直近に描画した data-each 全体の入力署名を取得します。
+   *
+   * @returns 入力署名
+   */
+  public getEachInputSignature(): string | null {
+    return this.eachInputSignature;
+  }
+
+  /**
+   * 直近に描画した data-each 全体の入力署名を設定します。
+   *
+   * @param signature 入力署名
+   */
+  public setEachInputSignature(signature: string | null): void {
+    this.eachInputSignature = signature;
   }
 
   /**
@@ -874,7 +928,6 @@ export class ElementFragment extends Fragment {
       }
     }
     this.attributeMap.set(rawName, contents);
-    this.skipMutationAttributes = true;
     const element = this.getTarget();
     const detail = contents.evaluateDetailed(this.getBindingData());
     const hasTemplateExpression =
@@ -910,31 +963,55 @@ export class ElementFragment extends Fragment {
       : isSingleExpression
         ? evaluatedValue
         : joinedValue;
+    const shouldSyncValueProperty =
+      syncValueProperty &&
+      contents.isEvaluate &&
+      targetName === 'value' &&
+      ((element instanceof HTMLInputElement &&
+        this.INPUT_EVENT_TYPES.includes(element.type)) ||
+        element instanceof HTMLTextAreaElement ||
+        element instanceof HTMLSelectElement);
+    const stringResult =
+      shouldRemoveTarget || result === null || result === false
+        ? null
+        : String(result);
+    const requiresRawAttributeWrite =
+      rawName !== targetName &&
+      element.getAttribute(rawName) !== value;
+    const requiresTargetAttributeWrite = stringResult === null
+      ? element.hasAttribute(targetName)
+      : element.getAttribute(targetName) !== stringResult;
+    const requiresValuePropertyWrite =
+      shouldSyncValueProperty &&
+      stringResult !== null &&
+      element.value !== stringResult;
+    if (
+      !requiresRawAttributeWrite &&
+      !requiresTargetAttributeWrite &&
+      !requiresValuePropertyWrite
+    ) {
+      if (shouldSyncValueProperty && stringResult !== null) {
+        this.value = stringResult;
+      }
+      return Promise.resolve();
+    }
+    this.skipMutationAttributes = true;
     return Queue.enqueue(() => {
-      if (element.getAttribute(rawName) !== value) {
+      if (requiresRawAttributeWrite) {
         element.setAttribute(rawName, value);
       }
-      if (shouldRemoveTarget || result === null || result === false) {
+      if (stringResult === null) {
         element.removeAttribute(targetName);
       } else {
-        const string = String(result);
-        if (element.getAttribute(targetName) !== string) {
-          element.setAttribute(targetName, string);
+        if (requiresTargetAttributeWrite) {
+          element.setAttribute(targetName, stringResult);
         }
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、
         // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
-        if (
-          syncValueProperty &&
-          contents.isEvaluate &&
-          targetName === 'value' &&
-          ((element instanceof HTMLInputElement &&
-            this.INPUT_EVENT_TYPES.includes(element.type)) ||
-            element instanceof HTMLTextAreaElement ||
-            element instanceof HTMLSelectElement)
-        ) {
-          this.value = string;
-          if (element.value !== string) {
-            element.value = string;
+        if (shouldSyncValueProperty) {
+          this.value = stringResult;
+          if (requiresValuePropertyWrite) {
+            element.value = stringResult;
           }
         }
       }
@@ -1341,6 +1418,9 @@ export class TextFragment extends Fragment {
   /** 更新スキップフラグ（オブザーバーによる無限ループ対応） */
   private skipMutation = false;
 
+  /** 直近に描画した文字列 */
+  private renderedText: string | null = null;
+
   /**
    * テキストフラグメントのコンストラクタ。
    * 対象テキストノードの内容を初期化します。
@@ -1363,6 +1443,7 @@ export class TextFragment extends Fragment {
     clone.mounted = false;
     clone.text = this.text;
     clone.contents = this.contents;
+    clone.renderedText = this.renderedText;
     return clone;
   }
 
@@ -1403,17 +1484,25 @@ export class TextFragment extends Fragment {
     }
     return Queue.enqueue(() => {
       this.skipMutation = true;
-      if (this.contents.isRawEvaluate) {
-        this.parent!.getTarget().innerHTML = this.contents.evaluate(
-          this.parent!.getBindingData(),
-        )[0] as string;
-      } else if (this.contents.isEvaluate) {
-        this.target.textContent = TextContents.joinEvaluateResults(
-          this.contents.evaluate(this.parent!.getBindingData()),
-        );
-      } else {
-        this.target.textContent = this.text;
+      const nextText = this.contents.isRawEvaluate
+        ? this.contents.evaluate(this.parent!.getBindingData())[0] as string
+        : this.contents.isEvaluate
+          ? TextContents.joinEvaluateResults(
+            this.contents.evaluate(this.parent!.getBindingData()),
+          )
+          : this.text;
+      const currentText = this.contents.isRawEvaluate
+        ? this.parent!.getTarget().innerHTML
+        : this.target.textContent || '';
+      if (this.renderedText === nextText && currentText === nextText) {
+        return;
       }
+      if (this.contents.isRawEvaluate) {
+        this.parent!.getTarget().innerHTML = nextText;
+      } else {
+        this.target.textContent = nextText;
+      }
+      this.renderedText = nextText;
     }).finally(() => {
       this.skipMutation = false;
     }) as Promise<void>;

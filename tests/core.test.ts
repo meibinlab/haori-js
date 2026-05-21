@@ -260,6 +260,165 @@ describe('Core', () => {
       ).toEqual(['warm', 'cool']);
     });
 
+    test('同じ行データなら data-each の再利用行を再評価しない', async () => {
+      container.innerHTML = `
+        <div id="root">
+          <p id="status">{{status}}</p>
+          <ul data-each="items" data-each-key="id" data-each-arg="item">
+            <li>{{renderSpy(item)}}</li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('#root') as HTMLElement;
+      const renderSpy = vi.fn((item: {label: string}) => item.label);
+      const items = [
+        {id: 'a', label: 'alpha'},
+        {id: 'b', label: 'beta'},
+      ];
+
+      await Core.scan(root);
+      await Core.setBindingData(root, {items, status: 'before', renderSpy});
+      await waitForDomSettled();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      await waitForDomSettled();
+
+      const baselineCalls = renderSpy.mock.calls.length;
+      expect(baselineCalls).toBeGreaterThanOrEqual(2);
+
+      await Core.setBindingData(root, {items, status: 'after', renderSpy});
+      await waitForDomSettled();
+
+      expect(renderSpy).toHaveBeenCalledTimes(baselineCalls);
+      expect(container.querySelector('#status')?.textContent).toBe('after');
+      expect(
+        Array.from(container.querySelectorAll('li')).map(item => item.textContent),
+      ).toEqual(['alpha', 'beta']);
+    });
+
+    test('同値の新しい配列なら data-each 全体の差分更新をスキップする', async () => {
+      container.innerHTML = `
+        <div id="root">
+          <p id="status">{{status}}</p>
+          <ul data-each="items" data-each-key="id" data-each-arg="item">
+            <li>{{item.label}}</li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('#root') as HTMLElement;
+
+      await Core.scan(root);
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'a', label: 'alpha'},
+          {id: 'b', label: 'beta'},
+        ],
+        status: 'before',
+      });
+      await waitForDomSettled();
+
+      const updateDiffSpy = vi.spyOn(
+        Core as unknown as {
+          updateDiff: (
+            parent: ElementFragment,
+            newList: (Record<string, unknown> | string | number)[],
+          ) => Promise<void>;
+        },
+        'updateDiff',
+      );
+
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'a', label: 'alpha'},
+          {id: 'b', label: 'beta'},
+        ],
+        status: 'after',
+      });
+      await waitForDomSettled();
+
+      expect(updateDiffSpy).not.toHaveBeenCalled();
+      expect(container.querySelector('#status')?.textContent).toBe('after');
+      expect(
+        Array.from(container.querySelectorAll('li')).map(item => item.textContent),
+      ).toEqual(['alpha', 'beta']);
+
+      updateDiffSpy.mockRestore();
+    });
+
+    test('変更された再利用行は即時再評価のみ行い、遅延再評価を重ねない', async () => {
+      container.innerHTML = `
+        <div id="root">
+          <ul data-each="items" data-each-key="id" data-each-arg="item">
+            <li>{{renderSpy(item)}}</li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('#root') as HTMLElement;
+      const renderSpy = vi.fn((item: {label: string}) => item.label);
+
+      await Core.scan(root);
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'a', label: 'alpha'},
+          {id: 'b', label: 'beta'},
+        ],
+        renderSpy,
+      });
+      await waitForDomSettled();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      await waitForDomSettled();
+
+      const baselineCalls = renderSpy.mock.calls.length;
+
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'a', label: 'alpha2'},
+          {id: 'b', label: 'beta2'},
+        ],
+        renderSpy,
+      });
+      await waitForDomSettled();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      await waitForDomSettled();
+
+      expect(renderSpy).toHaveBeenCalledTimes(baselineCalls + 2);
+      expect(
+        Array.from(container.querySelectorAll('li')).map(item => item.textContent),
+      ).toEqual(['alpha2', 'beta2']);
+    });
+
+    test('単純な新規 data-each 行では遅延再評価を追加しない', async () => {
+      container.innerHTML = `
+        <div id="root">
+          <ul data-each="items" data-each-key="id">
+            <li>{{renderSpy(label)}}</li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('#root') as HTMLElement;
+      const renderSpy = vi.fn((label: string) => label);
+
+      await Core.scan(root);
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'a', label: 'alpha'},
+          {id: 'b', label: 'beta'},
+        ],
+        renderSpy,
+      });
+      await waitForDomSettled();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      await waitForDomSettled();
+
+      expect(renderSpy).toHaveBeenCalledTimes(2);
+      expect(
+        Array.from(container.querySelectorAll('li')).map(item => item.textContent),
+      ).toEqual(['alpha', 'beta']);
+    });
+
     test('data-each 配下の data-if が行ごとに評価され、ページネーション相当の表示が崩れない', async () => {
       container.innerHTML = `
         <div
@@ -475,11 +634,8 @@ describe('Core', () => {
         () => tbody.querySelectorAll('tr').length === 3,
         {description: 'tbody rows'},
       );
-      // scheduleEvaluateAll (100ms後) の再評価を待つ: 非表示リンクに data-if-false が付くまで待機
-      await waitForCondition(
-        () => tbody.querySelectorAll('[data-if-false]').length > 0,
-        {description: 'data-if-false applied', delayMs: 50, maxAttempts: 6},
-      );
+      await waitForDomSettled();
+      expect(tbody.querySelectorAll('[data-if-false]').length).toBeGreaterThan(0);
 
       const rows = Array.from(tbody.querySelectorAll('tr'));
       expect(rows).toHaveLength(3);
@@ -982,11 +1138,8 @@ describe('data-fetch + data-each + data-if integration', () => {
       () => tbody.querySelectorAll('tr').length === 3,
       {description: 'tbody rows via fetch'},
     );
-    // scheduleEvaluateAll (100ms後) の再評価を待つ: 非表示リンクに data-if-false が付くまで待機
-    await waitForCondition(
-      () => tbody.querySelectorAll('[data-if-false]').length > 0,
-      {description: 'data-if-false applied via fetch', delayMs: 50, maxAttempts: 6},
-    );
+    await waitForDomSettled();
+    expect(tbody.querySelectorAll('[data-if-false]').length).toBeGreaterThan(0);
 
     const rows = Array.from(tbody.querySelectorAll('tr'));
     const row0Links = Array.from(rows[0].querySelectorAll('a'));

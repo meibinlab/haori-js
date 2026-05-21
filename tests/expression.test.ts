@@ -2,7 +2,7 @@
 /**
  * @fileoverview Expression（式評価エンジン）のセキュリティテスト
  */
-import {describe, it, expect} from 'vitest';
+import {describe, it, expect, vi} from 'vitest';
 import Expression from '../src/expression';
 
 describe('Expression', () => {
@@ -318,6 +318,58 @@ describe('Expression', () => {
       const result2 = Expression.evaluate('a + b', {b: 20, a: 10});
       expect(result1).toBe(3);
       expect(result2).toBe(30);
+    });
+
+    it('同じバインド参照を同一 microtask 内で再評価すると危険値チェックを再帰し直さない', () => {
+      const containsForbiddenBindingValuesSpy = vi.spyOn(
+        Expression as unknown as {
+          containsForbiddenBindingValues: (
+            obj: unknown,
+            seen?: WeakSet<object>,
+            forbiddenBindingValues?: ReadonlySet<unknown>,
+          ) => boolean;
+        },
+        'containsForbiddenBindingValues',
+      );
+      const bindedValues = {
+        user: {
+          profile: {
+            name: '田中',
+          },
+        },
+        items: [
+          {id: 1, label: 'A'},
+          {id: 2, label: 'B'},
+        ],
+      };
+
+      expect(Expression.evaluate('user.profile.name', bindedValues)).toBe('田中');
+      const firstCallCount = containsForbiddenBindingValuesSpy.mock.calls.length;
+
+      expect(Expression.evaluate('items[1].label', bindedValues)).toBe('B');
+      const secondCallCount =
+        containsForbiddenBindingValuesSpy.mock.calls.length - firstCallCount;
+
+      expect(firstCallCount).toBeGreaterThan(1);
+      expect(secondCallCount).toBe(1);
+
+      containsForbiddenBindingValuesSpy.mockRestore();
+    });
+
+    it('危険値チェックのキャッシュは次の microtask で破棄される', async () => {
+      const bindedValues: {
+        ctx: {label: string} | {document: Document};
+      } = {
+        ctx: {label: 'safe'},
+      };
+
+      expect(Expression.evaluate('ctx.label', bindedValues)).toBe('safe');
+
+      await Promise.resolve();
+
+      bindedValues.ctx = {document};
+
+      expect(Expression.evaluate('ctx.document.title', bindedValues)).toBeNull();
     });
   });
 

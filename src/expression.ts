@@ -30,6 +30,12 @@ interface ExpressionToken {
 type GroupContext = 'paren' | 'array' | 'member' | 'object';
 
 export default class Expression {
+  /** 危険値チェック結果の短命キャッシュ */
+  private static forbiddenBindingValueCache = new WeakMap<object, boolean>();
+
+  /** 危険値チェックキャッシュのクリア予約済みフラグ */
+  private static forbiddenBindingValueCacheResetScheduled = false;
+
   /** Haoriで禁止すべき識別子一覧（eval と arguments は strict モードで無効化） */
   private static readonly FORBIDDEN_NAMES = [
     // グローバルオブジェクト
@@ -118,6 +124,29 @@ export default class Expression {
       candidates.push(scope.window.location);
     }
     return candidates.filter(value => value !== undefined && value !== null);
+  }
+
+  /**
+   * 現在の評価サイクルで利用する危険値集合を返します。
+   *
+   * @returns 危険値の集合
+   */
+  private static getForbiddenBindingValueSet(): ReadonlySet<unknown> {
+    return new Set(this.getForbiddenBindingValues());
+  }
+
+  /**
+   * 危険値チェック用の短命キャッシュを次の microtask で破棄します。
+   */
+  private static scheduleForbiddenBindingValueCacheReset(): void {
+    if (this.forbiddenBindingValueCacheResetScheduled) {
+      return;
+    }
+    this.forbiddenBindingValueCacheResetScheduled = true;
+    queueMicrotask(() => {
+      this.forbiddenBindingValueCache = new WeakMap<object, boolean>();
+      this.forbiddenBindingValueCacheResetScheduled = false;
+    });
   }
 
   /** プロパティアクセスで拒否する名前 */
@@ -214,6 +243,7 @@ export default class Expression {
     expression: string,
     bindedValues: Record<string, unknown> = {},
   ): ExpressionEvaluationDetail {
+    this.scheduleForbiddenBindingValueCacheReset();
     if (expression.trim() === '') {
       Log.warn('[Haori]', expression, 'Expression is empty');
       return {value: null, unresolvedReference: false};
@@ -226,7 +256,8 @@ export default class Expression {
       Log.warn('[Haori]', bindedValues, 'Binded values contain forbidden keys');
       return {value: null, unresolvedReference: false};
     }
-    if (this.containsForbiddenBindingValues(bindedValues)) {
+    const forbiddenBindingValues = this.getForbiddenBindingValueSet();
+    if (this.containsForbiddenBindingValues(bindedValues, new WeakSet(), forbiddenBindingValues)) {
       Log.warn(
         '[Haori]',
         bindedValues,
@@ -941,9 +972,15 @@ export default class Expression {
   protected static containsForbiddenBindingValues(
     obj: unknown,
     seen: WeakSet<object> = new WeakSet<object>(),
+    forbiddenBindingValues: ReadonlySet<unknown> = this.getForbiddenBindingValueSet(),
   ): boolean {
     if (!obj || typeof obj !== 'object') {
       return false;
+    }
+
+    const cached = this.forbiddenBindingValueCache.get(obj as object);
+    if (cached !== undefined) {
+      return cached;
     }
 
     if (seen.has(obj as object)) {
@@ -951,26 +988,26 @@ export default class Expression {
     }
     seen.add(obj as object);
 
-    if (this.getForbiddenBindingValues().some(value => value === obj)) {
+    if (forbiddenBindingValues.has(obj)) {
+      this.forbiddenBindingValueCache.set(obj as object, true);
       return true;
     }
 
     for (const value of Object.values(obj as Record<string, unknown>)) {
       if (typeof value === 'function') {
-        if (
-          this.getForbiddenBindingValues().some(
-            forbidden => forbidden === value,
-          )
-        ) {
+        if (forbiddenBindingValues.has(value)) {
+          this.forbiddenBindingValueCache.set(obj as object, true);
           return true;
         }
         continue;
       }
-      if (this.containsForbiddenBindingValues(value, seen)) {
+      if (this.containsForbiddenBindingValues(value, seen, forbiddenBindingValues)) {
+        this.forbiddenBindingValueCache.set(obj as object, true);
         return true;
       }
     }
 
+    this.forbiddenBindingValueCache.set(obj as object, false);
     return false;
   }
 }
