@@ -909,8 +909,16 @@ ${body}
       }
     }
     const bindArgAttrEvent = Procedure.attrName(event, 'bind-arg');
-    const bindArgAttrNonEventLegacy = Procedure.attrName(null, 'arg', true); // data-fetch-arg
-    const bindArgAttrNonEventNew = Procedure.attrName(null, 'bind-arg', true); // data-fetch-bind-arg (less common)
+    const bindArgAttrNonEventLegacy = Procedure.attrName(
+      null,
+      'arg',
+      true,
+    ); // data-fetch-arg
+    const bindArgAttrNonEventNew = Procedure.attrName(
+      null,
+      'bind-arg',
+      true,
+    ); // data-fetch-bind-arg (less common)
     if (event) {
       if (fragment.hasAttribute(bindArgAttrEvent)) {
         options.bindArg = fragment.getRawAttribute(bindArgAttrEvent) as

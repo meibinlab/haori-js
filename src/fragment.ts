@@ -1511,13 +1511,16 @@ export class TextFragment extends Fragment {
     }
     return Queue.enqueue(() => {
       this.skipMutation = true;
-      const nextText = this.contents.isRawEvaluate
-        ? (this.contents.evaluate(this.parent!.getBindingData())[0] as string)
-        : this.contents.isEvaluate
-          ? TextContents.joinEvaluateResults(
-              this.contents.evaluate(this.parent!.getBindingData()),
-            )
-          : this.text;
+      let nextText = this.text;
+      if (this.contents.isRawEvaluate) {
+        nextText = this.contents.evaluate(
+          this.parent!.getBindingData(),
+        )[0] as string;
+      } else if (this.contents.isEvaluate) {
+        nextText = TextContents.joinEvaluateResults(
+          this.contents.evaluate(this.parent!.getBindingData()),
+        );
+      }
       const currentText = this.contents.isRawEvaluate
         ? this.parent!.getTarget().innerHTML
         : this.target.textContent || '';

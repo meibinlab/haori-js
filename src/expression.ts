@@ -528,7 +528,7 @@ export default class Expression {
         return null;
       }
 
-      if (current === '"' || current === "'") {
+      if (current === '"' || current === '\'') {
         const stringToken = this.readStringToken(expression, index);
         if (stringToken === null) {
           return null;
@@ -975,7 +975,8 @@ export default class Expression {
   protected static containsForbiddenBindingValues(
     obj: unknown,
     seen: WeakSet<object> = new WeakSet<object>(),
-    forbiddenBindingValues: ReadonlySet<unknown> = this.getForbiddenBindingValueSet(),
+    forbiddenBindingValues: ReadonlySet<unknown> =
+    this.getForbiddenBindingValueSet(),
   ): boolean {
     if (!obj || typeof obj !== 'object') {
       return false;
