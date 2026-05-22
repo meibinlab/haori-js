@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-22
+
+### Changed
+
+- `data-each` の描画経路を見直し、入力シグネチャ比較・差分更新・再利用行評価・fresh clone 初期化の無駄を減らして大きな一覧の描画負荷を下げた
+- plain nested `data-each` では、入力と要素自身の動的状態が不変な場合に子 `data-each` の再評価をスキップするようにした
+- 式評価の危険値チェックと `MutationObserver` 周辺のオーバーヘッドを削減し、大量再評価時のコストを抑えた
+
+### Library
+
+- `data-each` の並び替え・追加削除同時更新・再利用行・fresh clone 初期化・nested `data-each` の同値スキップを確認する回帰テストを追加した
+- `customers.html` 相当の重い描画パスを前提に最適化を見直し、Vitest・Playwright・lint を通して回帰がないことを確認した
+
 ## [0.6.0] - 2026-05-19
 
 ### Changed
