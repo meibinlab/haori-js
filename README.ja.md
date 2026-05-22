@@ -125,6 +125,8 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 4. 新しい版数タグから GitHub Release を公開する
 5. npm、jsDelivr、GitHub Release の assets が新しい版数を指すことを確認する
 
+GitHub Release 起点で npm publish する workflow では、`NPM_TOKEN` に `haori` パッケージの owner として publish 権限を持つユーザーのトークンを設定してください。認証自体は通っても `haori` への publish 権限がない場合、`npm publish` で原因が分かりにくい `E404` になることがあります。
+
 6. 依存インストール
 
 ```bash

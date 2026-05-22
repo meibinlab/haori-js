@@ -50,4 +50,16 @@ jobs:
             exit 1
           fi
 
+          package_name=$(node -p "require('./package.json').name")
+          npm_user=$(npm whoami)
+          if npm view "${package_name}" version >/dev/null 2>&1; then
+            owners=$(npm owner ls "${package_name}")
+            if ! grep -Fq "${npm_user}" <<< "${owners}"; then
+              echo "NPM_TOKEN is authenticated as ${npm_user}, but that user is not an owner of ${package_name}." >&2
+              echo "Package owners: ${owners}" >&2
+              echo "Configure NPM_TOKEN for a package owner or automation token with publish rights." >&2
+              exit 1
+            fi
+          fi
+
           npm publish --access public

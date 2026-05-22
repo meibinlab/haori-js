@@ -125,6 +125,8 @@ Quick release memo:
 4. Publish a GitHub Release from the new version tag.
 5. Confirm npm, jsDelivr, and the GitHub Release assets reflect the new version.
 
+For the GitHub Release-driven npm publish workflow, configure `NPM_TOKEN` for a user that is an owner of the `haori` package. If the token authenticates successfully but does not have publish rights for `haori`, npm may fail with a misleading `E404` during `npm publish`.
+
 6. Install dependencies
 
 ```bash
