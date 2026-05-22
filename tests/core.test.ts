@@ -346,6 +346,92 @@ describe('Core', () => {
       updateDiffSpy.mockRestore();
     });
 
+    test('data-each の並び順変更では eachupdate が新しいキー順を通知する', async () => {
+      container.innerHTML = `
+        <div id="root">
+          <ul data-each="items" data-each-key="id" data-each-arg="item">
+            <li>{{item.label}}</li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('#root') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+      const handler = vi.fn();
+      list.addEventListener('haori:eachupdate', handler);
+
+      await Core.scan(root);
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'a', label: 'alpha'},
+          {id: 'b', label: 'beta'},
+          {id: 'c', label: 'gamma'},
+        ],
+      });
+      await waitForDomSettled();
+      handler.mockClear();
+
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'b', label: 'beta'},
+          {id: 'c', label: 'gamma'},
+          {id: 'a', label: 'alpha'},
+        ],
+      });
+      await waitForDomSettled();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      const event = handler.mock.calls[0][0] as CustomEvent;
+      expect(event.detail.added).toEqual([]);
+      expect(event.detail.removed).toEqual([]);
+      expect(event.detail.order).toEqual(['b', 'c', 'a']);
+      expect(event.detail.total).toBe(3);
+    });
+
+    test('data-each の追加削除同時更新でも eachupdate が差分を正しく通知する', async () => {
+      container.innerHTML = `
+        <div id="root">
+          <ul data-each="items" data-each-key="id" data-each-arg="item">
+            <li>{{item.label}}</li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('#root') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+      const handler = vi.fn();
+      list.addEventListener('haori:eachupdate', handler);
+
+      await Core.scan(root);
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'a', label: 'alpha'},
+          {id: 'b', label: 'beta'},
+          {id: 'c', label: 'gamma'},
+        ],
+      });
+      await waitForDomSettled();
+      handler.mockClear();
+
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'b', label: 'beta'},
+          {id: 'd', label: 'delta'},
+        ],
+      });
+      await waitForDomSettled();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      const event = handler.mock.calls[0][0] as CustomEvent;
+      expect(event.detail.added).toEqual(['d']);
+      expect(event.detail.removed).toEqual(['a', 'c']);
+      expect(event.detail.order).toEqual(['b', 'd']);
+      expect(event.detail.total).toBe(2);
+      expect(
+        Array.from(list.querySelectorAll('li')).map(item => item.textContent),
+      ).toEqual(['beta', 'delta']);
+    });
+
     test('変更された再利用行は即時再評価のみ行い、遅延再評価を重ねない', async () => {
       container.innerHTML = `
         <div id="root">

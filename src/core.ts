@@ -404,18 +404,85 @@ export default class Core {
     if (!fragment) {
       return Promise.resolve();
     }
-    // DOMに組み込まれている場合はmountedをtrueにする
-    if (element.parentNode) {
-      const parentFragment = Fragment.get(element.parentNode as HTMLElement);
-      if (parentFragment?.isMounted()) {
-        fragment.setMounted(true);
-      } else if (document.body.contains(element)) {
-        // document.bodyに含まれている場合はマウント済みとする
-        fragment.setMounted(true);
-      } else {
-        fragment.setMounted(false);
+    return Core.initializeElementFragment(fragment, false);
+  }
+
+  /**
+   * 新規 each 行を局所初期化します。
+   * 既存 scan の属性順序を保ちつつ、Fragment 木を直接たどります。
+   *
+   * @param fragment 新規挿入された行フラグメント
+   * @returns 初期化完了の Promise
+   */
+  private static initializeFreshEachRow(
+    fragment: ElementFragment,
+  ): Promise<void> {
+    return Core.initializeElementFragment(fragment, true).then(() => {
+      if (Core.needsScheduledEvaluateAll(fragment)) {
+        Core.scheduleEvaluateAll(fragment);
       }
+      return undefined;
+    });
+  }
+
+  /**
+   * ElementFragment とその子孫を初期化します。
+   *
+   * @param fragment 対象フラグメント
+   * @param stopAtEach true の場合、data-each 要素では通常再帰を止める
+   * @returns 初期化完了の Promise
+   */
+  private static initializeElementFragment(
+    fragment: ElementFragment,
+    stopAtEach: boolean,
+  ): Promise<void> {
+    Core.syncMountedState(fragment);
+    return Core.initializeElementAttributes(fragment).then(() => {
+      if (Core.shouldSkipChildInitialization(fragment, stopAtEach)) {
+        return undefined;
+      }
+      const childPromises: Promise<void>[] = [];
+      fragment.getChildren().forEach(child => {
+        if (child instanceof ElementFragment) {
+          childPromises.push(
+            Core.initializeElementFragment(child, stopAtEach),
+          );
+        } else if (child instanceof TextFragment) {
+          childPromises.push(Core.evaluateText(child));
+        }
+      });
+      return Promise.all(childPromises).then(() => undefined);
+    });
+  }
+
+  /**
+   * 要素初期化時の mounted 状態を同期します。
+   *
+   * @param fragment 対象フラグメント
+   */
+  private static syncMountedState(fragment: ElementFragment): void {
+    const parent = fragment.getParent();
+    if (parent?.isMounted()) {
+      fragment.setMounted(true);
+      return;
     }
+    const target = fragment.getTarget();
+    if (target.parentNode && document.body.contains(target)) {
+      fragment.setMounted(true);
+      return;
+    }
+    fragment.setMounted(false);
+  }
+
+  /**
+   * scan と fresh clone 初期化で共有する属性初期化を行います。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 属性初期化完了の Promise
+   */
+  private static initializeElementAttributes(
+    fragment: ElementFragment,
+  ): Promise<void> {
     let attributeChain = Promise.resolve();
     const processedAttributes = new Set<string>();
     for (const suffix of Core.PRIORITY_ATTRIBUTE_SUFFIXES) {
@@ -458,29 +525,31 @@ export default class Core {
         processedAttributes.add(name);
       }
     }
-    return attributeChain
-      .then(() => {
-        const condition = fragment.getAttribute(`${Env.prefix}if`);
-        if (
-          fragment.hasAttribute(`${Env.prefix}if`) &&
-          (condition === false ||
-            condition === undefined ||
-            condition === null ||
-            Number.isNaN(condition))
-        ) {
-          return undefined;
-        }
-        const childPromises: Promise<void>[] = [];
-        fragment.getChildren().forEach(child => {
-          if (child instanceof ElementFragment) {
-            childPromises.push(Core.scan(child.getTarget()));
-          } else if (child instanceof TextFragment) {
-            childPromises.push(Core.evaluateText(child));
-          }
-        });
-        return Promise.all(childPromises).then(() => undefined);
-      })
-      .then(() => undefined);
+    return attributeChain.then(() => undefined);
+  }
+
+  /**
+   * 子孫初期化をスキップすべきかどうかを返します。
+   *
+   * @param fragment 対象フラグメント
+   * @param stopAtEach true の場合、data-each 要素で通常再帰を止める
+   * @returns 子孫初期化をスキップするなら true
+   */
+  private static shouldSkipChildInitialization(
+    fragment: ElementFragment,
+    stopAtEach: boolean,
+  ): boolean {
+    const condition = fragment.getAttribute(`${Env.prefix}if`);
+    if (
+      fragment.hasAttribute(`${Env.prefix}if`) &&
+      (condition === false ||
+        condition === undefined ||
+        condition === null ||
+        Number.isNaN(condition))
+    ) {
+      return true;
+    }
+    return stopAtEach && fragment.hasAttribute(`${Env.prefix}each`);
   }
 
   /**
@@ -792,7 +861,9 @@ export default class Core {
     const hasIf = fragment.hasAttribute(`${Env.prefix}if`);
     const hasEach = fragment.hasAttribute(`${Env.prefix}each`);
     if (hasDerive) {
-      chain = chain.then(() => Core.evaluateDerive(fragment).then(() => undefined));
+      chain = chain.then(() =>
+        Core.evaluateDerive(fragment).then(() => undefined),
+      );
     }
     if (hasIf) {
       chain = chain.then(() => Core.evaluateIf(fragment));
@@ -1044,6 +1115,7 @@ export default class Core {
       newKeys.push(listKey);
       keyDataMap.set(listKey, {item, itemIndex});
     });
+    const newKeySet = new Set(newKeys);
     const removalPromises: Promise<void>[] = [];
     let childElements = parent
       .getChildren()
@@ -1053,27 +1125,34 @@ export default class Core {
           !child.hasAttribute(`${Env.prefix}each-before`) &&
           !child.hasAttribute(`${Env.prefix}each-after`),
       );
+    const previousKeys = childElements.map(child => child.getListKey());
     childElements = childElements.filter(child => {
-      const index = newKeys.indexOf(String(child.getListKey()));
-      if (index === -1) {
+      if (!newKeySet.has(String(child.getListKey()))) {
         removalPromises.push(child.remove());
         return false;
       }
       return true;
     });
     const srcKeys = childElements.map(child => child.getListKey());
-    const baseInsertIndex = parent
-      .getChildren()
-      .filter(child => child instanceof ElementFragment)
-      .filter(child => child.hasAttribute(`${Env.prefix}each-before`)).length;
+    const childElementsByKey = new Map<string, ElementFragment>();
+    childElements.forEach(child => {
+      const listKey = child.getListKey();
+      if (listKey !== null && !childElementsByKey.has(listKey)) {
+        childElementsByKey.set(listKey, child);
+      }
+    });
+    const insertTargets = parent.getChildElementFragments().slice();
+    const baseInsertIndex = insertTargets.filter(child =>
+      child.hasAttribute(`${Env.prefix}each-before`),
+    ).length;
     let chain = Promise.resolve();
     newKeys.forEach((newKey, loopIndex) => {
-      const srcIndex = srcKeys.indexOf(newKey);
       const {item, itemIndex} = keyDataMap.get(newKey)!;
       let child: ElementFragment;
-      if (srcIndex !== -1) {
+      const reusedChild = childElementsByKey.get(newKey);
+      if (reusedChild) {
         // 既存の要素を再利用
-        child = childElements[srcIndex];
+        child = reusedChild;
         // 行の入力が同一なら子孫の再評価をスキップする。
         chain = chain.then(() =>
           Core.updateRowFragment(
@@ -1104,22 +1183,16 @@ export default class Core {
             itemArg ? String(itemArg) : null,
             newKey,
           ).then(() => {
-            const referenceChild = parent
-              .getChildren()
-              .filter(
-                currentChild => currentChild instanceof ElementFragment,
-              )[currentInsertIndex] || null;
+            const referenceChild = insertTargets[currentInsertIndex] ?? null;
             return parent
               .insertBefore(
                 child,
                 referenceChild,
               )
-              .then(() => Core.scan(child.getTarget()))
               .then(() => {
-                if (Core.needsScheduledEvaluateAll(child)) {
-                  Core.scheduleEvaluateAll(child);
-                }
-              });
+                insertTargets.splice(currentInsertIndex, 0, child);
+              })
+              .then(() => Core.initializeFreshEachRow(child));
           }),
         );
       }
@@ -1134,11 +1207,15 @@ export default class Core {
         const validSrcKeys = srcKeys.filter(
           (key): key is string => key !== null,
         );
+        const validSrcKeySet = new Set(validSrcKeys);
         const addedKeys = validNewKeys.filter(
-          key => !validSrcKeys.includes(key),
+          key => !validSrcKeySet.has(key),
         );
-        const removedKeys = validSrcKeys.filter(
-          key => !validNewKeys.includes(key),
+        const previousValidKeys = previousKeys.filter(
+          (key): key is string => key !== null,
+        );
+        const removedKeys = previousValidKeys.filter(
+          key => !newKeySet.has(key),
         );
         HaoriEvent.eachUpdate(
           parent.getTarget(),
@@ -1284,9 +1361,6 @@ export default class Core {
     fragment: ElementFragment,
   ): boolean {
     return [
-      'derive',
-      'if',
-      'each',
       'fetch',
       'import',
     ].some(suffix => fragment.hasAttribute(`${Env.prefix}${suffix}`));
@@ -1337,7 +1411,9 @@ export default class Core {
       const marker = `array-${nextId.value}`;
       nextId.value += 1;
       seen.set(value, marker);
-      return `[${value.map(item => Core.createBindingSignature(item, seen, nextId)).join(',')}]`;
+      return `[${value
+        .map(item => Core.createBindingSignature(item, seen, nextId))
+        .join(',')}]`;
     }
     if (typeof value === 'object') {
       if (seen.has(value)) {
@@ -1349,7 +1425,14 @@ export default class Core {
       const record = value as Record<string, unknown>;
       return `{${Object.keys(record)
         .sort()
-        .map(key => `${JSON.stringify(key)}:${Core.createBindingSignature(record[key], seen, nextId)}`)
+        .map(
+          key =>
+            `${JSON.stringify(key)}:${Core.createBindingSignature(
+              record[key],
+              seen,
+              nextId,
+            )}`,
+        )
         .join(',')}}`;
     }
     return String(value);
