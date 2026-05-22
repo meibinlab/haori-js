@@ -155,9 +155,7 @@ export default class EventDispatcher {
     let current: HTMLElement | null = element;
     while (current) {
       if (
-        current.getAttributeNames().some(name =>
-          name.startsWith('data-click-'),
-        )
+        current.getAttributeNames().some(name => name.startsWith('data-click-'))
       ) {
         return current;
       }

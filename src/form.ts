@@ -398,9 +398,8 @@ export default class Form {
   ): Promise<void> {
     const promises: Promise<void>[] = [];
     const activeHaori = resolveFormHaoriApi();
-    const addMsgFn = (
-      activeHaori as {addMessage?: typeof Haori.addMessage}
-    ).addMessage;
+    const addMsgFn = (activeHaori as {addMessage?: typeof Haori.addMessage})
+      .addMessage;
     const doAdd = (target: HTMLElement): Promise<void> =>
       typeof addMsgFn === 'function'
         ? (addMsgFn.call(activeHaori, target, message, level) as Promise<void>)

@@ -65,12 +65,16 @@ export default class Core {
     /\{\{\{[\s\S]+?\}\}\}|\{\{[\s\S]+?\}\}/;
 
   /** data-fetch の自動再評価状態 */
-  private static readonly REACTIVE_FETCH_STATES =
-    new WeakMap<HTMLElement, ReactiveFetchState>();
+  private static readonly REACTIVE_FETCH_STATES = new WeakMap<
+    HTMLElement,
+    ReactiveFetchState
+  >();
 
   /** data-import の自動再評価状態 */
-  private static readonly REACTIVE_IMPORT_STATES =
-    new WeakMap<HTMLElement, ReactiveImportState>();
+  private static readonly REACTIVE_IMPORT_STATES = new WeakMap<
+    HTMLElement,
+    ReactiveImportState
+  >();
 
   /**
    * 遅延属性かどうか（完全名で判定）を判定します。
@@ -270,9 +274,7 @@ export default class Core {
    * @param fragment 対象フラグメント
    * @returns 実行完了の Promise
    */
-  private static executeManagedFetch(
-    fragment: ElementFragment,
-  ): Promise<void> {
+  private static executeManagedFetch(fragment: ElementFragment): Promise<void> {
     const target = fragment.getTarget();
     const state = Core.getReactiveFetchState(target);
     const resolved = Procedure.resolveAutoFetchSignature(fragment);
@@ -437,6 +439,9 @@ export default class Core {
     stopAtEach: boolean,
   ): Promise<void> {
     Core.syncMountedState(fragment);
+    if (stopAtEach && fragment.isFreshInitializationSkippable()) {
+      return Promise.resolve();
+    }
     return Core.initializeElementAttributes(fragment).then(() => {
       if (Core.shouldSkipChildInitialization(fragment, stopAtEach)) {
         return undefined;
@@ -444,9 +449,7 @@ export default class Core {
       const childPromises: Promise<void>[] = [];
       fragment.getChildren().forEach(child => {
         if (child instanceof ElementFragment) {
-          childPromises.push(
-            Core.initializeElementFragment(child, stopAtEach),
-          );
+          childPromises.push(Core.initializeElementFragment(child, stopAtEach));
         } else if (child instanceof TextFragment) {
           childPromises.push(Core.evaluateText(child));
         }
@@ -574,7 +577,10 @@ export default class Core {
         return fragment.removeAliasedAttribute(name, aliasedAttributeName);
       }
       return fragment.setAliasedAttribute(
-        name, aliasedAttributeName, value, fromObserver,
+        name,
+        aliasedAttributeName,
+        value,
+        fromObserver,
       );
     }
     const promises: Promise<void>[] = [];
@@ -877,6 +883,9 @@ export default class Core {
     const promises: Promise<void>[] = [];
     fragment.getChildren().forEach(child => {
       if (child instanceof ElementFragment) {
+        if (Core.canSkipUnchangedNestedEach(child)) {
+          return;
+        }
         promises.push(Core.evaluateAll(child, skipFragments));
       } else if (child instanceof TextFragment) {
         promises.push(Core.evaluateText(child));
@@ -903,9 +912,8 @@ export default class Core {
     ),
   ): Promise<boolean> {
     const previousDerivedBindingData = fragment.getRawDerivedBindingData();
-    const normalizedName = typeof deriveName === 'string'
-      ? deriveName.trim()
-      : '';
+    const normalizedName =
+      typeof deriveName === 'string' ? deriveName.trim() : '';
     if (!deriveExpression || normalizedName === '') {
       if (previousDerivedBindingData === null) {
         return Promise.resolve(false);
@@ -1028,6 +1036,7 @@ export default class Core {
           }
           // 最初のElementFragmentをテンプレートとして採用
           template = child.clone();
+          Core.markFreshInitializationSkippable(template);
           fragment.setTemplate(template);
           found = true;
           // 元のchildはchildrenから除外
@@ -1078,6 +1087,130 @@ export default class Core {
     }
     Log.error('[Haori]', 'Invalid each attribute:', data);
     return null;
+  }
+
+  /**
+   * nested data-each の入力が同値で、要素自身に他の動的要素が無い場合は
+   * evaluateAll の子走査を省略できるかどうかを返します。
+   *
+   * @param fragment 判定対象フラグメント
+   * @returns 省略可能なら true
+   */
+  private static canSkipUnchangedNestedEach(
+    fragment: ElementFragment,
+  ): boolean {
+    if (!fragment.hasAttribute(`${Env.prefix}each`)) {
+      return false;
+    }
+    if (fragment.getEachInputSignature() === null) {
+      return false;
+    }
+    const parent = fragment.getParent();
+    if (
+      parent?.closestByAttribute(`${Env.prefix}derive`) ||
+      parent?.closestByAttribute(`${Env.prefix}derive-name`) ||
+      parent?.closestByAttribute(`${Env.prefix}if`) ||
+      parent?.closestByAttribute(`${Env.prefix}fetch`) ||
+      parent?.closestByAttribute(`${Env.prefix}import`)
+    ) {
+      return false;
+    }
+    if (Core.hasNonEachDynamicElementState(fragment)) {
+      return false;
+    }
+    const data = Core.resolveEachItems(fragment);
+    if (data === null) {
+      return false;
+    }
+    const keyArg = fragment.getAttribute(`${Env.prefix}each-key`);
+    const nextEachInputSignature = Core.createBindingSignature({
+      key: keyArg ? String(keyArg) : null,
+      items: data,
+    });
+    return fragment.getEachInputSignature() === nextEachInputSignature;
+  }
+
+  /**
+   * data-each 以外の動的要素状態を持つかどうかを返します。
+   *
+   * @param fragment 判定対象フラグメント
+   * @returns 該当するなら true
+   */
+  private static hasNonEachDynamicElementState(
+    fragment: ElementFragment,
+  ): boolean {
+    const allowedEachAttributes = new Set([
+      `${Env.prefix}each`,
+      `${Env.prefix}each-key`,
+      `${Env.prefix}each-arg`,
+      `${Env.prefix}each-index`,
+    ]);
+    const hasDynamicAttributes = fragment.getAttributeNames().some(name => {
+      if (allowedEachAttributes.has(name)) {
+        return false;
+      }
+      if (name.startsWith(`${Env.prefix}attr-`)) {
+        return true;
+      }
+      if (name.startsWith(Env.prefix)) {
+        return true;
+      }
+      const value = fragment.getRawAttribute(name);
+      return typeof value === 'string' && value.includes('{{');
+    });
+    if (hasDynamicAttributes) {
+      return true;
+    }
+    return fragment.getChildren().some(
+      child => child instanceof TextFragment && child.hasDynamicContent(),
+    );
+  }
+
+  /**
+   * fresh clone 初期化を subtree ごと省略できるかどうかを事前計算します。
+   *
+   * @param fragment 判定対象フラグメント
+   * @returns subtree 全体を省略可能なら true
+   */
+  private static markFreshInitializationSkippable(
+    fragment: ElementFragment,
+  ): boolean {
+    const hasDynamicAttributes = fragment
+      .getAttributeNames()
+      .some(name => Core.isFreshInitializationDynamicAttribute(fragment, name));
+    const hasDynamicChildren = fragment.getChildren().some(child => {
+      if (child instanceof ElementFragment) {
+        return !Core.markFreshInitializationSkippable(child);
+      }
+      if (child instanceof TextFragment) {
+        return child.hasDynamicContent();
+      }
+      return false;
+    });
+    const skippable = !hasDynamicAttributes && !hasDynamicChildren;
+    fragment.setFreshInitializationSkippable(skippable);
+    return skippable;
+  }
+
+  /**
+   * fresh clone 初期化で再評価が必要な属性かどうかを返します。
+   *
+   * @param fragment 判定対象フラグメント
+   * @param name 属性名
+   * @returns 再評価が必要なら true
+   */
+  private static isFreshInitializationDynamicAttribute(
+    fragment: ElementFragment,
+    name: string,
+  ): boolean {
+    if (name.startsWith(`${Env.prefix}attr-`)) {
+      return true;
+    }
+    if (name.startsWith(Env.prefix)) {
+      return true;
+    }
+    const value = fragment.getRawAttribute(name);
+    return typeof value === 'string' && value.includes('{{');
   }
 
   /**
@@ -1162,13 +1295,12 @@ export default class Core {
             itemIndex,
             itemArg ? String(itemArg) : null,
             newKey,
-          )
-            .then(changed => {
-              if (!changed) {
-                return undefined;
-              }
-              return Core.evaluateAll(child);
-            }),
+          ).then(changed => {
+            if (!changed) {
+              return undefined;
+            }
+            return Core.evaluateAll(child);
+          }),
         );
       } else {
         // 新しい要素を追加
@@ -1185,10 +1317,7 @@ export default class Core {
           ).then(() => {
             const referenceChild = insertTargets[currentInsertIndex] ?? null;
             return parent
-              .insertBefore(
-                child,
-                referenceChild,
-              )
+              .insertBefore(child, referenceChild)
               .then(() => {
                 insertTargets.splice(currentInsertIndex, 0, child);
               })
@@ -1208,9 +1337,7 @@ export default class Core {
           (key): key is string => key !== null,
         );
         const validSrcKeySet = new Set(validSrcKeys);
-        const addedKeys = validNewKeys.filter(
-          key => !validSrcKeySet.has(key),
-        );
+        const addedKeys = validNewKeys.filter(key => !validSrcKeySet.has(key));
         const previousValidKeys = previousKeys.filter(
           (key): key is string => key !== null,
         );
@@ -1321,7 +1448,8 @@ export default class Core {
     rowFragment.setListKey(listKey);
     rowFragment.setRenderSignature(nextRenderSignature);
     rowFragment.setBindingData(normalizedBindingData);
-    return rowFragment.setAttribute(`${Env.prefix}row`, listKey)
+    return rowFragment
+      .setAttribute(`${Env.prefix}row`, listKey)
       .then(() => true);
   }
 
@@ -1331,9 +1459,7 @@ export default class Core {
    * @param fragment 判定対象の行フラグメント
    * @returns 遅延再評価が必要なら true
    */
-  private static needsScheduledEvaluateAll(
-    fragment: ElementFragment,
-  ): boolean {
+  private static needsScheduledEvaluateAll(fragment: ElementFragment): boolean {
     const stack: ElementFragment[] = [fragment];
     while (stack.length > 0) {
       const current = stack.pop()!;
@@ -1360,10 +1486,9 @@ export default class Core {
   private static hasMountSensitiveAttribute(
     fragment: ElementFragment,
   ): boolean {
-    return [
-      'fetch',
-      'import',
-    ].some(suffix => fragment.hasAttribute(`${Env.prefix}${suffix}`));
+    return ['fetch', 'import'].some(suffix =>
+      fragment.hasAttribute(`${Env.prefix}${suffix}`),
+    );
   }
 
   /**

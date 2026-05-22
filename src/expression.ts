@@ -257,7 +257,13 @@ export default class Expression {
       return {value: null, unresolvedReference: false};
     }
     const forbiddenBindingValues = this.getForbiddenBindingValueSet();
-    if (this.containsForbiddenBindingValues(bindedValues, new WeakSet(), forbiddenBindingValues)) {
+    if (
+      this.containsForbiddenBindingValues(
+        bindedValues,
+        new WeakSet(),
+        forbiddenBindingValues,
+      )
+    ) {
       Log.warn(
         '[Haori]',
         bindedValues,
@@ -522,7 +528,7 @@ export default class Expression {
         return null;
       }
 
-      if (current === '"' || current === '\'') {
+      if (current === '"' || current === "'") {
         const stringToken = this.readStringToken(expression, index);
         if (stringToken === null) {
           return null;
@@ -817,10 +823,7 @@ export default class Expression {
         if (typeof property === 'symbol') {
           return result;
         }
-        return this.wrapBoundValue(
-          result,
-          cache,
-        );
+        return this.wrapBoundValue(result, cache);
       },
       has: (currentTarget, property) => {
         if (
@@ -942,8 +945,8 @@ export default class Expression {
   }
 
   /**
-  * トップレベルのバインド識別子に拒否対象名が含まれていないかを判定します。
-  * ネストしたオブジェクトのプロパティ名は識別子として評価されないため、ここでは拒否しません。
+   * トップレベルのバインド識別子に拒否対象名が含まれていないかを判定します。
+   * ネストしたオブジェクトのプロパティ名は識別子として評価されないため、ここでは拒否しません。
    *
    * @param obj チェック対象のオブジェクト
    * @return 禁止識別子が含まれていればtrue
@@ -1001,7 +1004,9 @@ export default class Expression {
         }
         continue;
       }
-      if (this.containsForbiddenBindingValues(value, seen, forbiddenBindingValues)) {
+      if (
+        this.containsForbiddenBindingValues(value, seen, forbiddenBindingValues)
+      ) {
         this.forbiddenBindingValueCache.set(obj as object, true);
         return true;
       }

@@ -505,6 +505,63 @@ describe('Core', () => {
       ).toEqual(['alpha', 'beta']);
     });
 
+    test('fresh clone 初期化では静的 subtree の属性初期化をスキップする', async () => {
+      container.innerHTML = `
+        <div id="root">
+          <ul data-each="items" data-each-key="id" data-each-arg="item">
+            <li>
+              <section class="static-block">
+                <div class="static-inner">
+                  <span>固定ラベル</span>
+                </div>
+              </section>
+              <strong>{{item.label}}</strong>
+            </li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('#root') as HTMLElement;
+      const list = root.querySelector('ul') as HTMLUListElement;
+
+      await Core.scan(root);
+
+      const initializeElementAttributesSpy = vi.spyOn(
+        Core as unknown as {
+          initializeElementAttributes: (
+            fragment: ElementFragment,
+          ) => Promise<void>;
+        },
+        'initializeElementAttributes',
+      );
+
+      await Core.setBindingData(root, {
+        items: [
+          {id: 'a', label: 'alpha'},
+          {id: 'b', label: 'beta'},
+        ],
+      });
+      await waitForDomSettled();
+
+      expect(
+        Array.from(list.querySelectorAll('strong')).map(item => item.textContent),
+      ).toEqual(['alpha', 'beta']);
+      expect(list.querySelectorAll('.static-block')).toHaveLength(2);
+      expect(
+        Array.from(list.querySelectorAll('.static-block')).map(
+          item => item.textContent?.trim(),
+        ),
+      ).toEqual(['固定ラベル', '固定ラベル']);
+      expect(
+        initializeElementAttributesSpy.mock.calls.filter(
+          ([fragment]) =>
+            fragment.getTarget().classList.contains('static-block'),
+        ),
+      ).toHaveLength(0);
+
+      initializeElementAttributesSpy.mockRestore();
+    });
+
     test('data-each 配下の data-if が行ごとに評価され、ページネーション相当の表示が崩れない', async () => {
       container.innerHTML = `
         <div
@@ -547,6 +604,83 @@ describe('Core', () => {
       expect(items[0].classList.contains('disabled')).toBe(true);
       expect(items[1].classList.contains('active')).toBe(true);
       expect(items[2].classList.contains('active')).toBe(false);
+    });
+
+    test('plain nested data-each の入力が同値なら子 data-each の再評価をスキップする', async () => {
+      container.innerHTML = `
+        <div
+          id="root"
+          data-bind='{
+            "plans":[
+              {
+                "id":"basic",
+                "name":"基本",
+                "options":[{"id":"mail","label":"メール"},{"id":"chat","label":"チャット"}]
+              },
+              {
+                "id":"plus",
+                "name":"拡張",
+                "options":[{"id":"phone","label":"電話"}]
+              }
+            ]
+          }'
+        >
+          <ul id="plans" data-each="plans" data-each-arg="plan" data-each-key="id">
+            <li>
+              <span class="plan-name">{{plan.name}}</span>
+              <ul class="option-list" data-each="plan.options" data-each-arg="option" data-each-key="id">
+                <li>{{option.label}}</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('#root') as HTMLElement;
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      const evaluateEachSpy = vi.spyOn(Core, 'evaluateEach');
+
+      await Core.setBindingData(root, {
+        plans: [
+          {
+            id: 'basic',
+            name: '基本改',
+            options: [
+              {id: 'mail', label: 'メール'},
+              {id: 'chat', label: 'チャット'},
+            ],
+          },
+          {
+            id: 'plus',
+            name: '拡張改',
+            options: [
+              {id: 'phone', label: '電話'},
+            ],
+          },
+        ],
+      });
+      await waitForDomSettled();
+
+      expect(
+        Array.from(container.querySelectorAll('.plan-name')).map(
+          item => item.textContent?.trim(),
+        ),
+      ).toEqual(['基本改', '拡張改']);
+      expect(
+        Array.from(container.querySelectorAll('.option-list > li')).map(
+          item => item.textContent?.trim(),
+        ),
+      ).toEqual(['メール', 'チャット', '電話']);
+      expect(
+        evaluateEachSpy.mock.calls.filter(
+          ([fragment]) =>
+            fragment.getTarget().classList.contains('option-list'),
+        ),
+      ).toHaveLength(0);
+
+      evaluateEachSpy.mockRestore();
     });
 
     test('data-if が false の行では子孫式を評価せず console.error を出さない', async () => {

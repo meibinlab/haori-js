@@ -116,7 +116,7 @@ export default abstract class Fragment {
       }) as Promise<void>;
     } else {
       // 親フラグメント情報が無くても、DOM 上に親ノードが存在する場合は安全に除去する。
-      const host = this.target.parentNode as (HTMLElement | null);
+      const host = this.target.parentNode as HTMLElement | null;
       if (host) {
         return Queue.enqueue(() => {
           if (this.target.parentNode === host) {
@@ -315,6 +315,9 @@ export class ElementFragment extends Fragment {
   /** 直近に描画した data-each 全体の入力署名 */
   private eachInputSignature: string | null = null;
 
+  /** fresh clone 初期化を subtree ごと省略できるかどうか */
+  private freshInitializationSkippable = false;
+
   /** valueプロパティの値 */
   private value: string | number | boolean | null = null;
 
@@ -423,6 +426,7 @@ export class ElementFragment extends Fragment {
     clone.template = this.template;
     clone.renderSignature = this.renderSignature;
     clone.eachInputSignature = this.eachInputSignature;
+    clone.freshInitializationSkippable = this.freshInitializationSkippable;
     clone.normalizeClonedVisibilityState();
     return clone;
   }
@@ -659,6 +663,24 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * fresh clone 初期化を subtree ごと省略できるかどうかを返します。
+   *
+   * @returns 省略可能なら true
+   */
+  public isFreshInitializationSkippable(): boolean {
+    return this.freshInitializationSkippable;
+  }
+
+  /**
+   * fresh clone 初期化を subtree ごと省略できるかどうかを設定します。
+   *
+   * @param skippable 省略可能なら true
+   */
+  public setFreshInitializationSkippable(skippable: boolean): void {
+    this.freshInitializationSkippable = skippable;
+  }
+
+  /**
    * 入力エレメントに値を設定します。
    * チェックボックとラジオボタンの場合は値に一致するかどうかでチェック状態を変更します。
    *
@@ -716,11 +738,7 @@ export class ElementFragment extends Fragment {
       } else {
         newChecked = result === String(value);
       }
-      this.value = isBooleanCheckbox
-        ? newChecked
-        : newChecked
-          ? value
-          : null;
+      this.value = isBooleanCheckbox ? newChecked : newChecked ? value : null;
       if (element.checked === newChecked) {
         return Promise.resolve();
       }
@@ -854,7 +872,11 @@ export class ElementFragment extends Fragment {
     fromObserver = false,
   ): Promise<void> {
     return this.setAttributeInternal(
-      rawName, targetName, value, false, fromObserver,
+      rawName,
+      targetName,
+      value,
+      false,
+      fromObserver,
     );
   }
 
@@ -930,18 +952,17 @@ export class ElementFragment extends Fragment {
     this.attributeMap.set(rawName, contents);
     const element = this.getTarget();
     const detail = contents.evaluateDetailed(this.getBindingData());
-    const hasTemplateExpression =
-      contents.isEvaluate || contents.isRawEvaluate;
+    const hasTemplateExpression = contents.isEvaluate || contents.isRawEvaluate;
     const isBooleanAttribute =
       rawName === targetName &&
       ElementFragment.BOOLEAN_ATTRIBUTES.has(targetName.toLowerCase());
     const isSingleExpression = contents.isSingleExpression();
     const joinedValue = TextContents.joinEvaluateResults(detail.results);
-    const evaluatedValue = detail.results.length === 1
-      ? detail.results[0]
-      : joinedValue;
-    const shouldRemoveTarget = !contents.isForceEvaluation() && (
-      targetName !== rawName
+    const evaluatedValue =
+      detail.results.length === 1 ? detail.results[0] : joinedValue;
+    const shouldRemoveTarget =
+      !contents.isForceEvaluation() &&
+      (targetName !== rawName
         ? detail.hasUnresolvedReference ||
           evaluatedValue === null ||
           evaluatedValue === undefined ||
@@ -956,8 +977,7 @@ export class ElementFragment extends Fragment {
               evaluatedValue === null ||
               evaluatedValue === undefined ||
               evaluatedValue === false
-            : hasTemplateExpression && joinedValue === ''
-    );
+            : hasTemplateExpression && joinedValue === '');
     const result = contents.isForceEvaluation()
       ? value
       : isSingleExpression
@@ -976,11 +996,11 @@ export class ElementFragment extends Fragment {
         ? null
         : String(result);
     const requiresRawAttributeWrite =
-      rawName !== targetName &&
-      element.getAttribute(rawName) !== value;
-    const requiresTargetAttributeWrite = stringResult === null
-      ? element.hasAttribute(targetName)
-      : element.getAttribute(targetName) !== stringResult;
+      rawName !== targetName && element.getAttribute(rawName) !== value;
+    const requiresTargetAttributeWrite =
+      stringResult === null
+        ? element.hasAttribute(targetName)
+        : element.getAttribute(targetName) !== stringResult;
     const requiresValuePropertyWrite =
       shouldSyncValueProperty &&
       stringResult !== null &&
@@ -1065,9 +1085,7 @@ export class ElementFragment extends Fragment {
     if (contents === undefined) {
       return null;
     }
-    const detail = contents.evaluateDetailed(
-      this.getBindingData(),
-    );
+    const detail = contents.evaluateDetailed(this.getBindingData());
     if (detail.results.length === 1) {
       return {
         value: detail.results[0],
@@ -1457,6 +1475,15 @@ export class TextFragment extends Fragment {
   }
 
   /**
+   * テキストに評価式が含まれているかどうかを返します。
+   *
+   * @returns 評価式を含むなら true
+   */
+  public hasDynamicContent(): boolean {
+    return this.contents.isEvaluate || this.contents.isRawEvaluate;
+  }
+
+  /**
    * コンテンツを更新します。
    *
    * @param text テキスト
@@ -1485,11 +1512,11 @@ export class TextFragment extends Fragment {
     return Queue.enqueue(() => {
       this.skipMutation = true;
       const nextText = this.contents.isRawEvaluate
-        ? this.contents.evaluate(this.parent!.getBindingData())[0] as string
+        ? (this.contents.evaluate(this.parent!.getBindingData())[0] as string)
         : this.contents.isEvaluate
           ? TextContents.joinEvaluateResults(
-            this.contents.evaluate(this.parent!.getBindingData()),
-          )
+              this.contents.evaluate(this.parent!.getBindingData()),
+            )
           : this.text;
       const currentText = this.contents.isRawEvaluate
         ? this.parent!.getTarget().innerHTML
@@ -1744,9 +1771,10 @@ class TextContents {
    * @param bindingValues バインディングされた値のオブジェクト
    * @returns 評価結果と未解決参照の有無
    */
-  public evaluateDetailed(
-    bindingValues: Record<string, unknown>,
-  ): {results: unknown[]; hasUnresolvedReference: boolean} {
+  public evaluateDetailed(bindingValues: Record<string, unknown>): {
+    results: unknown[];
+    hasUnresolvedReference: boolean;
+  } {
     if (!this.isEvaluate && !this.isRawEvaluate) {
       return {
         results: this.contents.map(c => c.text),
@@ -1836,9 +1864,10 @@ class AttributeContents extends TextContents {
    * @param bindingValues バインディングされた値のオブジェクト
    * @returns 評価結果と未解決参照の有無
    */
-  public evaluateDetailed(
-    bindingValues: Record<string, unknown>,
-  ): {results: unknown[]; hasUnresolvedReference: boolean} {
+  public evaluateDetailed(bindingValues: Record<string, unknown>): {
+    results: unknown[];
+    hasUnresolvedReference: boolean;
+  } {
     if (!this.isEvaluate && !this.forceEvaluation) {
       return {
         results: this.contents.map(c => c.text),

@@ -251,8 +251,8 @@ export default class HaoriEvent {
    * @param url フェッチURL
    * @param options フェッチオプション
    * @param payload 送信データ
-    * @param metadata runtime とメソッド変換情報。
-    * @return 戻り値はありません。
+   * @param metadata runtime とメソッド変換情報。
+   * @return 戻り値はありません。
    */
   public static fetchStart(
     target: HTMLElement,

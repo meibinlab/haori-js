@@ -657,9 +657,9 @@ export default class Procedure {
       }
       // confirm
       if (fragment.hasAttribute(Procedure.attrName(event, 'confirm'))) {
-        options.confirmMessage = (fragment.getAttribute(
-          Procedure.attrName(event, 'confirm'),
-        ) as string).replace(/\\n/g, '\n');
+        options.confirmMessage = (
+          fragment.getAttribute(Procedure.attrName(event, 'confirm')) as string
+        ).replace(/\\n/g, '\n');
       }
       // data（イベント）
       if (fragment.hasAttribute(Procedure.attrName(event, 'data'))) {
@@ -731,9 +731,8 @@ ${body}
     if (event) {
       const fetchMethodAttrEvent = Procedure.attrName(event, 'fetch-method');
       if (fragment.hasAttribute(fetchMethodAttrEvent)) {
-        const fetchMethodEvaluation = fragment.getAttributeEvaluation(
-          fetchMethodAttrEvent,
-        );
+        const fetchMethodEvaluation =
+          fragment.getAttributeEvaluation(fetchMethodAttrEvent);
         if (fetchMethodEvaluation?.hasUnresolvedReference) {
           options.fetchHasUnresolvedReference = true;
         } else {
@@ -794,14 +793,10 @@ ${body}
     // event: data-{event}-fetch-content-type
     // non-event: data-fetch-content-type
     if (event) {
-      const fetchCTAttrEvent = Procedure.attrName(
-        event,
-        'fetch-content-type',
-      );
+      const fetchCTAttrEvent = Procedure.attrName(event, 'fetch-content-type');
       if (fragment.hasAttribute(fetchCTAttrEvent)) {
-        const fetchContentTypeEvaluation = fragment.getAttributeEvaluation(
-          fetchCTAttrEvent,
-        );
+        const fetchContentTypeEvaluation =
+          fragment.getAttributeEvaluation(fetchCTAttrEvent);
         if (fetchContentTypeEvaluation?.hasUnresolvedReference) {
           options.fetchHasUnresolvedReference = true;
         }
@@ -846,9 +841,8 @@ ${body}
         true,
       );
       if (fragment.hasAttribute(fetchCTAttrNonEvent)) {
-        const fetchContentTypeEvaluation = fragment.getAttributeEvaluation(
-          fetchCTAttrNonEvent,
-        );
+        const fetchContentTypeEvaluation =
+          fragment.getAttributeEvaluation(fetchCTAttrNonEvent);
         if (fetchContentTypeEvaluation?.hasUnresolvedReference) {
           options.fetchHasUnresolvedReference = true;
         }
@@ -915,16 +909,8 @@ ${body}
       }
     }
     const bindArgAttrEvent = Procedure.attrName(event, 'bind-arg');
-    const bindArgAttrNonEventLegacy = Procedure.attrName(
-      null,
-      'arg',
-      true,
-    ); // data-fetch-arg
-    const bindArgAttrNonEventNew = Procedure.attrName(
-      null,
-      'bind-arg',
-      true,
-    ); // data-fetch-bind-arg (less common)
+    const bindArgAttrNonEventLegacy = Procedure.attrName(null, 'arg', true); // data-fetch-arg
+    const bindArgAttrNonEventNew = Procedure.attrName(null, 'bind-arg', true); // data-fetch-bind-arg (less common)
     if (event) {
       if (fragment.hasAttribute(bindArgAttrEvent)) {
         options.bindArg = fragment.getRawAttribute(bindArgAttrEvent) as
@@ -965,9 +951,7 @@ ${body}
       ? Procedure.attrName(event, 'copy-params')
       : null;
     if (copyParamsAttr && fragment.hasAttribute(copyParamsAttr)) {
-      const paramsString = fragment.getRawAttribute(
-        copyParamsAttr,
-      ) as string;
+      const paramsString = fragment.getRawAttribute(copyParamsAttr) as string;
       options.copyParams = paramsString
         .split('&')
         .map(param => param.trim())
@@ -1037,9 +1021,9 @@ ${body}
         }
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'dialog'))) {
-        options.dialogMessage = (fragment.getAttribute(
-          Procedure.attrName(event, 'dialog'),
-        ) as string).replace(/\\n/g, '\n');
+        options.dialogMessage = (
+          fragment.getAttribute(Procedure.attrName(event, 'dialog')) as string
+        ).replace(/\\n/g, '\n');
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'toast'))) {
         options.toastMessage = fragment.getAttribute(
@@ -1430,10 +1414,7 @@ ${body}
           skipFragments.add(this.options.targetFragment);
         }
 
-        formElement.setAttribute(
-          `${Env.prefix}bind`,
-          JSON.stringify(payload),
-        );
+        formElement.setAttribute(`${Env.prefix}bind`, JSON.stringify(payload));
 
         const bindingData = formFragment.getBindingData();
         Object.assign(bindingData, payload);
@@ -1659,10 +1640,7 @@ ${body}
         const errorMessage =
           'history.pushState: cross-origin URL is not allowed: ' +
           url.toString();
-        Log.error(
-          'Haori',
-          errorMessage,
-        );
+        Log.error('Haori', errorMessage);
         return;
       }
 
@@ -1829,10 +1807,7 @@ ${body}
     // 検出フェーズ（findFirstInvalid）は checkValidity で副作用なく走査済み。
     // reportValidity と focus は確定した 1 要素にだけ呼び出す。
     (
-      firstInvalid as
-        | HTMLInputElement
-        | HTMLSelectElement
-        | HTMLTextAreaElement
+      firstInvalid as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
     ).reportValidity();
     firstInvalid.focus();
     if (this.options.scrollOnError) {
@@ -1930,11 +1905,7 @@ ${body}
         this.options.bindFragments!.forEach(fragment => {
           const bindingData = fragment.getBindingData();
           const bindArg = this.options.bindArg as string;
-          if (
-            data &&
-            typeof data === 'object' &&
-            !Array.isArray(data)
-          ) {
+          if (data && typeof data === 'object' && !Array.isArray(data)) {
             const currentValue = bindingData[bindArg];
             const currentObject =
               currentValue &&
@@ -1964,10 +1935,7 @@ ${body}
             data as Record<string, unknown>,
           );
           promises.push(
-            Core.setBindingData(
-              fragment.getTarget(),
-              resolvedData,
-            ),
+            Core.setBindingData(fragment.getTarget(), resolvedData),
           );
         });
       }
@@ -2216,7 +2184,9 @@ ${body}
    * @returns history-data の評価値。
    */
   private resolveHistoryDataValues():
-    Record<string, unknown> | null | undefined {
+    | Record<string, unknown>
+    | null
+    | undefined {
     if (this.historyDataSnapshot !== undefined) {
       return this.historyDataSnapshot;
     }
@@ -2235,7 +2205,9 @@ ${body}
    * @returns history-form の評価値。
    */
   private resolveHistoryFormValues():
-    Record<string, unknown> | null | undefined {
+    | Record<string, unknown>
+    | null
+    | undefined {
     if (this.historyFormSnapshot !== undefined) {
       return this.historyFormSnapshot;
     }
