@@ -8,6 +8,384 @@ import Queue from './queue';
 import Log from './log';
 import Expression from './expression';
 import Env from './env';
+import Dev from './dev';
+
+interface EvaluationProfilePlaceholderSnapshot {
+  expression: string;
+  calls: number;
+  totalDurationMs: number;
+  maxDurationMs: number;
+}
+
+interface EvaluationProfileAttributeSnapshot {
+  name: string;
+  template: string;
+  calls: number;
+  totalDurationMs: number;
+  maxDurationMs: number;
+  placeholders: EvaluationProfilePlaceholderSnapshot[];
+}
+
+interface EvaluationProfileTextSnapshot {
+  childIndex: number;
+  template: string;
+  calls: number;
+  totalDurationMs: number;
+  maxDurationMs: number;
+  placeholders: EvaluationProfilePlaceholderSnapshot[];
+}
+
+interface EvaluationProfileElementSnapshot {
+  elementId: string;
+  tagName: string;
+  attributes: EvaluationProfileAttributeSnapshot[];
+  texts: EvaluationProfileTextSnapshot[];
+}
+
+type EvaluationProfileContext =
+  | {
+    kind: 'attribute';
+    element: HTMLElement;
+    rawName: string;
+    template: string;
+  }
+  | {
+    kind: 'text';
+    element: HTMLElement;
+    childIndex: number;
+    template: string;
+  };
+
+interface EvaluationProfileCounter {
+  template: string;
+  calls: number;
+  totalDurationMs: number;
+  maxDurationMs: number;
+  placeholders: Map<string, EvaluationProfilePlaceholderCounter>;
+}
+
+interface EvaluationProfilePlaceholderCounter {
+  calls: number;
+  totalDurationMs: number;
+  maxDurationMs: number;
+}
+
+interface EvaluationProfileElementStore {
+  tagName: string;
+  attributes: Map<string, EvaluationProfileCounter>;
+  texts: Map<string, EvaluationProfileCounter>;
+}
+
+/**
+ * 開発時の属性・テキスト評価回数を集計するレジストリです。
+ */
+class EvaluationProfileRegistry {
+  /** globalThis に公開するキー */
+  private static readonly GLOBAL_KEY = '__HAORI_EVALUATION_PROFILE__';
+
+  /** エレメントごとの集計 */
+  private static readonly ELEMENT_STORES = new Map<
+    string,
+    EvaluationProfileElementStore
+  >();
+
+  /**
+   * 集計状態を初期化します。
+   */
+  public static reset(): void {
+    EvaluationProfileRegistry.ELEMENT_STORES.clear();
+    EvaluationProfileRegistry.ensureGlobalAccess();
+  }
+
+  /**
+   * 現在の集計結果スナップショットを返します。
+   *
+   * @returns エレメントごとの集計結果
+   */
+  public static snapshot(): EvaluationProfileElementSnapshot[] {
+    EvaluationProfileRegistry.ensureGlobalAccess();
+    return [...EvaluationProfileRegistry.ELEMENT_STORES.entries()]
+      .map(([elementId, store]) => ({
+        elementId,
+        tagName: store.tagName,
+        attributes: [...store.attributes.entries()]
+          .map(([name, counter]) => ({
+            name,
+            template: counter.template,
+            calls: counter.calls,
+            totalDurationMs: counter.totalDurationMs,
+            maxDurationMs: counter.maxDurationMs,
+            placeholders: EvaluationProfileRegistry.sortPlaceholders(
+              counter.placeholders,
+            ),
+          }))
+          .sort((left, right) => right.calls - left.calls),
+        texts: [...store.texts.entries()]
+          .map(([childIndex, counter]) => ({
+            childIndex: Number(childIndex),
+            template: counter.template,
+            calls: counter.calls,
+            totalDurationMs: counter.totalDurationMs,
+            maxDurationMs: counter.maxDurationMs,
+            placeholders: EvaluationProfileRegistry.sortPlaceholders(
+              counter.placeholders,
+            ),
+          }))
+          .sort((left, right) => right.calls - left.calls),
+      }))
+      .sort((left, right) => {
+        const leftCalls =
+          left.attributes.reduce((sum, item) => sum + item.calls, 0) +
+          left.texts.reduce((sum, item) => sum + item.calls, 0);
+        const rightCalls =
+          right.attributes.reduce((sum, item) => sum + item.calls, 0) +
+          right.texts.reduce((sum, item) => sum + item.calls, 0);
+        return rightCalls - leftCalls;
+      });
+  }
+
+  /**
+   * 評価呼び出しを記録します。
+   *
+   * @param context 評価コンテキスト
+   * @param expressions 今回評価した式一覧
+   */
+  public static record(
+    context: EvaluationProfileContext | undefined,
+    expressions: Array<{expression: string; durationMs: number}>,
+    totalDurationMs: number,
+  ): void {
+    if (!Dev.isEnabled() || !context || expressions.length === 0) {
+      return;
+    }
+    EvaluationProfileRegistry.ensureGlobalAccess();
+    const store = EvaluationProfileRegistry.getOrCreateElementStore(
+      context.element,
+    );
+    if (context.kind === 'attribute') {
+      const counter = EvaluationProfileRegistry.getOrCreateCounter(
+        store.attributes,
+        context.rawName,
+        context.template,
+      );
+      EvaluationProfileRegistry.updateCounter(
+        counter,
+        expressions,
+        totalDurationMs,
+      );
+      return;
+    }
+    const counter = EvaluationProfileRegistry.getOrCreateCounter(
+      store.texts,
+      String(context.childIndex),
+      context.template,
+    );
+    EvaluationProfileRegistry.updateCounter(counter, expressions, totalDurationMs);
+  }
+
+  /**
+   * globalThis から dev-only の取得窓口を参照できるようにします。
+   */
+  private static ensureGlobalAccess(): void {
+    if (!Dev.isEnabled()) {
+      return;
+    }
+    const globalRecord = globalThis as Record<string, unknown>;
+    if (globalRecord[EvaluationProfileRegistry.GLOBAL_KEY] !== undefined) {
+      return;
+    }
+    globalRecord[EvaluationProfileRegistry.GLOBAL_KEY] = {
+      reset: () => EvaluationProfileRegistry.reset(),
+      snapshot: () => EvaluationProfileRegistry.snapshot(),
+    };
+  }
+
+  /**
+   * エレメント単位の集計ストアを取得または初期化します。
+   *
+   * @param element 対象エレメント
+   * @returns 集計ストア
+   */
+  private static getOrCreateElementStore(
+    element: HTMLElement,
+  ): EvaluationProfileElementStore {
+    const elementId = EvaluationProfileRegistry.createElementId(element);
+    const existing = EvaluationProfileRegistry.ELEMENT_STORES.get(elementId);
+    if (existing) {
+      return existing;
+    }
+    const store: EvaluationProfileElementStore = {
+      tagName: element.tagName.toLowerCase(),
+      attributes: new Map(),
+      texts: new Map(),
+    };
+    EvaluationProfileRegistry.ELEMENT_STORES.set(elementId, store);
+    return store;
+  }
+
+  /**
+   * カウンタを取得または初期化します。
+   *
+   * @param counters 種別ごとのカウンタマップ
+   * @param key カウンタキー
+   * @param template 元テンプレート
+   * @returns カウンタ
+   */
+  private static getOrCreateCounter(
+    counters: Map<string, EvaluationProfileCounter>,
+    key: string,
+    template: string,
+  ): EvaluationProfileCounter {
+    const existing = counters.get(key);
+    if (existing) {
+      return existing;
+    }
+    const counter: EvaluationProfileCounter = {
+      template,
+      calls: 0,
+      totalDurationMs: 0,
+      maxDurationMs: 0,
+      placeholders: new Map(),
+    };
+    counters.set(key, counter);
+    return counter;
+  }
+
+  /**
+   * プレースホルダカウンタを取得または初期化します。
+   *
+   * @param placeholders プレースホルダカウンタマップ
+   * @param expression 式文字列
+   * @returns プレースホルダカウンタ
+   */
+  private static getOrCreatePlaceholder(
+    placeholders: Map<string, EvaluationProfilePlaceholderCounter>,
+    expression: string,
+  ): EvaluationProfilePlaceholderCounter {
+    const existing = placeholders.get(expression);
+    if (existing) {
+      return existing;
+    }
+    const counter: EvaluationProfilePlaceholderCounter = {
+      calls: 0,
+      totalDurationMs: 0,
+      maxDurationMs: 0,
+    };
+    placeholders.set(expression, counter);
+    return counter;
+  }
+
+  /**
+   * カウンタへ今回の評価結果を加算します。
+   *
+   * @param counter 更新対象カウンタ
+   * @param expressions 今回評価した式一覧
+   * @param totalDurationMs 今回の総所要時間
+   */
+  private static updateCounter(
+    counter: EvaluationProfileCounter,
+    expressions: Array<{expression: string; durationMs: number}>,
+    totalDurationMs: number,
+  ): void {
+    counter.calls += 1;
+    counter.totalDurationMs += totalDurationMs;
+    counter.maxDurationMs = Math.max(counter.maxDurationMs, totalDurationMs);
+    expressions.forEach(expression => {
+      const placeholder = EvaluationProfileRegistry.getOrCreatePlaceholder(
+        counter.placeholders,
+        expression.expression,
+      );
+      placeholder.calls += 1;
+      placeholder.totalDurationMs += expression.durationMs;
+      placeholder.maxDurationMs = Math.max(
+        placeholder.maxDurationMs,
+        expression.durationMs,
+      );
+    });
+  }
+
+  /**
+   * プレースホルダ集計を calls 降順で返します。
+   *
+   * @param placeholders プレースホルダ集計
+   * @returns スナップショット
+   */
+  private static sortPlaceholders(
+    placeholders: Map<string, EvaluationProfilePlaceholderCounter>,
+  ): EvaluationProfilePlaceholderSnapshot[] {
+    return [...placeholders.entries()]
+      .map(([expression, counter]) => ({
+        expression,
+        calls: counter.calls,
+        totalDurationMs: counter.totalDurationMs,
+        maxDurationMs: counter.maxDurationMs,
+      }))
+      .sort((left, right) => {
+        if (right.calls !== left.calls) {
+          return right.calls - left.calls;
+        }
+        return right.totalDurationMs - left.totalDurationMs;
+      });
+  }
+
+  /**
+   * 現在時刻のタイムスタンプを返します。
+   *
+   * @returns ミリ秒
+   */
+  private static now(): number {
+    return globalThis.performance?.now() ?? Date.now();
+  }
+
+  /**
+   * 評価処理の所要時間を計測します。
+   *
+   * @param callback 計測対象
+   * @returns 結果と所要時間
+   */
+  public static measure<T>(callback: () => T): {
+    value: T;
+    durationMs: number;
+  } {
+    const startedAt = EvaluationProfileRegistry.now();
+    const value = callback();
+    return {
+      value,
+      durationMs: EvaluationProfileRegistry.now() - startedAt,
+    };
+  }
+
+  /**
+   * エレメント識別子を生成します。
+   *
+   * @param element 対象エレメント
+   * @returns 識別子
+   */
+  private static createElementId(element: HTMLElement): string {
+    const segments: string[] = [];
+    let current: Element | null = element;
+    while (current) {
+      let segment = current.tagName.toLowerCase();
+      const rawId = current.getAttribute('id') || '';
+      if (rawId.trim() !== '') {
+        segment += `#${rawId.trim()}`;
+        segments.unshift(segment);
+        break;
+      }
+      const deriveName = current.getAttribute(`${Env.prefix}derive-name`);
+      if (deriveName && deriveName.trim() !== '') {
+        segment += `[${Env.prefix}derive-name="${deriveName.trim()}"]`;
+      }
+      const parent: Element | null = current.parentElement;
+      if (parent) {
+        segment += `:nth-child(${[...parent.children].indexOf(current) + 1})`;
+      }
+      segments.unshift(segment);
+      current = parent;
+    }
+    return segments.join(' > ');
+  }
+}
 
 /**
  * 属性評価結果の詳細です。
@@ -315,6 +693,12 @@ export class ElementFragment extends Fragment {
   /** 直近に描画した data-each 全体の入力署名 */
   private eachInputSignature: string | null = null;
 
+  /** 直近に公開した data-derive subtree の入力署名 */
+  private deriveSubtreeSignature: string | null = null;
+
+  /** 直近に評価した data-derive の入力署名 */
+  private deriveInputSignature: string | null = null;
+
   /** fresh clone 初期化を subtree ごと省略できるかどうか */
   private freshInitializationSkippable = false;
 
@@ -426,6 +810,8 @@ export class ElementFragment extends Fragment {
     clone.template = this.template;
     clone.renderSignature = this.renderSignature;
     clone.eachInputSignature = this.eachInputSignature;
+    clone.deriveSubtreeSignature = null;
+    clone.deriveInputSignature = null;
     clone.freshInitializationSkippable = this.freshInitializationSkippable;
     clone.normalizeClonedVisibilityState();
     return clone;
@@ -475,6 +861,8 @@ export class ElementFragment extends Fragment {
       this.template = null;
     }
     this.eachInputSignature = null;
+    this.deriveSubtreeSignature = null;
+    this.deriveInputSignature = null;
     promises.push(super.remove(unmount));
     return Promise.all(promises).then(() => undefined);
   }
@@ -660,6 +1048,42 @@ export class ElementFragment extends Fragment {
    */
   public setEachInputSignature(signature: string | null): void {
     this.eachInputSignature = signature;
+  }
+
+  /**
+   * 直近に公開した data-derive subtree の入力署名を取得します。
+   *
+   * @returns 入力署名
+   */
+  public getDeriveSubtreeSignature(): string | null {
+    return this.deriveSubtreeSignature;
+  }
+
+  /**
+   * 直近に公開した data-derive subtree の入力署名を設定します。
+   *
+   * @param signature 入力署名
+   */
+  public setDeriveSubtreeSignature(signature: string | null): void {
+    this.deriveSubtreeSignature = signature;
+  }
+
+  /**
+   * 直近に評価した data-derive の入力署名を取得します。
+   *
+   * @returns 入力署名
+   */
+  public getDeriveInputSignature(): string | null {
+    return this.deriveInputSignature;
+  }
+
+  /**
+   * 直近に評価した data-derive の入力署名を設定します。
+   *
+   * @param signature 入力署名
+   */
+  public setDeriveInputSignature(signature: string | null): void {
+    this.deriveInputSignature = signature;
   }
 
   /**
@@ -951,7 +1375,12 @@ export class ElementFragment extends Fragment {
     }
     this.attributeMap.set(rawName, contents);
     const element = this.getTarget();
-    const detail = contents.evaluateDetailed(this.getBindingData());
+    const detail = contents.evaluateDetailed(this.getBindingData(), {
+      kind: 'attribute',
+      element,
+      rawName,
+      template: value,
+    });
     const hasTemplateExpression = contents.isEvaluate || contents.isRawEvaluate;
     const isBooleanAttribute =
       rawName === targetName &&
@@ -1085,7 +1514,12 @@ export class ElementFragment extends Fragment {
     if (contents === undefined) {
       return null;
     }
-    const detail = contents.evaluateDetailed(this.getBindingData());
+    const detail = contents.evaluateDetailed(this.getBindingData(), {
+      kind: 'attribute',
+      element: this.getTarget(),
+      rawName: name,
+      template: contents.getValue(),
+    });
     if (detail.results.length === 1) {
       return {
         value: detail.results[0],
@@ -1515,10 +1949,21 @@ export class TextFragment extends Fragment {
       if (this.contents.isRawEvaluate) {
         nextText = this.contents.evaluate(
           this.parent!.getBindingData(),
+          {
+            kind: 'text',
+            element: this.parent!.getTarget(),
+            childIndex: this.parent!.getChildren().indexOf(this),
+            template: this.text,
+          },
         )[0] as string;
       } else if (this.contents.isEvaluate) {
         nextText = TextContents.joinEvaluateResults(
-          this.contents.evaluate(this.parent!.getBindingData()),
+          this.contents.evaluate(this.parent!.getBindingData(), {
+            kind: 'text',
+            element: this.parent!.getTarget(),
+            childIndex: this.parent!.getChildren().indexOf(this),
+            template: this.text,
+          }),
         );
       }
       const currentText = this.contents.isRawEvaluate
@@ -1764,8 +2209,11 @@ class TextContents {
    * @param bindingValues バインディングされた値のオブジェクト
    * @returns 評価結果のリスト
    */
-  public evaluate(bindingValues: Record<string, unknown>): unknown[] {
-    return this.evaluateDetailed(bindingValues).results;
+  public evaluate(
+    bindingValues: Record<string, unknown>,
+    profileContext?: EvaluationProfileContext,
+  ): unknown[] {
+    return this.evaluateDetailed(bindingValues, profileContext).results;
   }
 
   /**
@@ -1774,7 +2222,10 @@ class TextContents {
    * @param bindingValues バインディングされた値のオブジェクト
    * @returns 評価結果と未解決参照の有無
    */
-  public evaluateDetailed(bindingValues: Record<string, unknown>): {
+  public evaluateDetailed(
+    bindingValues: Record<string, unknown>,
+    profileContext?: EvaluationProfileContext,
+  ): {
     results: unknown[];
     hasUnresolvedReference: boolean;
   } {
@@ -1784,30 +2235,75 @@ class TextContents {
         hasUnresolvedReference: false,
       };
     }
+    return this.evaluateWithProfile(
+      bindingValues,
+      profileContext,
+      content =>
+        content.type === ExpressionType.EXPRESSION ||
+        content.type === ExpressionType.RAW_EXPRESSION,
+      'text',
+    );
+  }
+
+  /**
+   * 式評価と profiler 記録をまとめて実行します。
+   *
+   * @param bindingValues バインディングされた値のオブジェクト
+   * @param profileContext profiler 用コンテキスト
+   * @param shouldEvaluate 評価対象判定
+   * @param errorKind エラーログ種別
+   * @returns 評価結果と未解決参照の有無
+   */
+  protected evaluateWithProfile(
+    bindingValues: Record<string, unknown>,
+    profileContext: EvaluationProfileContext | undefined,
+    shouldEvaluate: (content: Content) => boolean,
+    errorKind: 'text' | 'attribute',
+  ): {
+    results: unknown[];
+    hasUnresolvedReference: boolean;
+  } {
     const results: unknown[] = [];
+    const profileExpressions: Array<{expression: string; durationMs: number}> =
+      [];
+    let totalDurationMs = 0;
     let hasUnresolvedReference = false;
-    this.contents.forEach(c => {
+    this.contents.forEach(content => {
       try {
-        if (
-          c.type === ExpressionType.EXPRESSION ||
-          c.type === ExpressionType.RAW_EXPRESSION
-        ) {
-          const result = Expression.evaluateDetailed(c.text, bindingValues);
+        if (shouldEvaluate(content)) {
+          const measured = EvaluationProfileRegistry.measure(() =>
+            Expression.evaluateDetailed(content.text, bindingValues),
+          );
+          const result = measured.value;
+          totalDurationMs += measured.durationMs;
+          profileExpressions.push({
+            expression: content.text,
+            durationMs: measured.durationMs,
+          });
           hasUnresolvedReference =
             hasUnresolvedReference || result.unresolvedReference;
           results.push(result.value);
         } else {
-          results.push(c.text);
+          results.push(content.text);
         }
       } catch (error) {
         Log.error(
           '[Haori]',
-          `Error evaluating text expression: ${c.text}`,
+          `Error evaluating ${errorKind} expression: ${content.text}`,
           error,
         );
+        profileExpressions.push({
+          expression: content.text,
+          durationMs: 0,
+        });
         results.push('');
       }
     });
+    EvaluationProfileRegistry.record(
+      profileContext,
+      profileExpressions,
+      totalDurationMs,
+    );
     return {results, hasUnresolvedReference};
   }
 }
@@ -1857,8 +2353,11 @@ class AttributeContents extends TextContents {
    * @param bindingValues バインディングされた値のオブジェクト
    * @returns 評価結果のリスト
    */
-  public evaluate(bindingValues: Record<string, unknown>): unknown[] {
-    return this.evaluateDetailed(bindingValues).results;
+  public evaluate(
+    bindingValues: Record<string, unknown>,
+    profileContext?: EvaluationProfileContext,
+  ): unknown[] {
+    return this.evaluateDetailed(bindingValues, profileContext).results;
   }
 
   /**
@@ -1867,7 +2366,10 @@ class AttributeContents extends TextContents {
    * @param bindingValues バインディングされた値のオブジェクト
    * @returns 評価結果と未解決参照の有無
    */
-  public evaluateDetailed(bindingValues: Record<string, unknown>): {
+  public evaluateDetailed(
+    bindingValues: Record<string, unknown>,
+    profileContext?: EvaluationProfileContext,
+  ): {
     results: unknown[];
     hasUnresolvedReference: boolean;
   } {
@@ -1877,42 +2379,26 @@ class AttributeContents extends TextContents {
         hasUnresolvedReference: false,
       };
     }
-    const results: unknown[] = [];
-    let hasUnresolvedReference = false;
-    this.contents.forEach(c => {
-      try {
-        if (
-          (this.forceEvaluation && c.type === ExpressionType.TEXT) ||
-          c.type === ExpressionType.EXPRESSION ||
-          c.type === ExpressionType.RAW_EXPRESSION
-        ) {
-          const result = Expression.evaluateDetailed(c.text, bindingValues);
-          hasUnresolvedReference =
-            hasUnresolvedReference || result.unresolvedReference;
-          results.push(result.value);
-        } else {
-          results.push(c.text);
-        }
-      } catch (error) {
-        Log.error(
-          '[Haori]',
-          `Error evaluating attribute expression: ${c.text}`,
-          error,
-        );
-        results.push('');
-      }
-    });
-    if (this.forceEvaluation && results.length > 1) {
+    const detail = this.evaluateWithProfile(
+      bindingValues,
+      profileContext,
+      content =>
+        (this.forceEvaluation && content.type === ExpressionType.TEXT) ||
+        content.type === ExpressionType.EXPRESSION ||
+        content.type === ExpressionType.RAW_EXPRESSION,
+      'attribute',
+    );
+    if (this.forceEvaluation && detail.results.length > 1) {
       Log.error(
         '[Haori]',
         'each or if expressions must have a single content.',
-        results,
+        detail.results,
       );
       return {
-        results: [results[0]],
-        hasUnresolvedReference,
+        results: [detail.results[0]],
+        hasUnresolvedReference: detail.hasUnresolvedReference,
       };
     }
-    return {results, hasUnresolvedReference};
+    return detail;
   }
 }

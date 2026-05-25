@@ -5,6 +5,7 @@
  * アプリケーションの中心的な機能を提供します。
  */
 import Env from './env';
+import Dev from './dev';
 import Expression from './expression';
 import Form from './form';
 import Fragment, {ElementFragment, TextFragment} from './fragment';
@@ -25,6 +26,18 @@ interface ReactiveImportState {
   lastUrl: string | null;
   running: boolean;
   rerunRequested: boolean;
+}
+
+type DerivedSubtreeSignatureSource = 'evaluateAll' | 'refresh';
+
+interface DerivedSubtreeProfile {
+  hostId: string;
+  signatureComputeTotal: number;
+  signatureComputeFromEvaluateAll: number;
+  signatureComputeFromRefresh: number;
+  skipHitCount: number;
+  skipMissCount: number;
+  skipIneligibleCount: number;
 }
 
 /**
@@ -74,6 +87,12 @@ export default class Core {
   private static readonly REACTIVE_IMPORT_STATES = new WeakMap<
     HTMLElement,
     ReactiveImportState
+  >();
+
+  /** data-derive subtree skip の開発用プロファイル */
+  private static readonly DERIVE_SUBTREE_PROFILES = new WeakMap<
+    ElementFragment,
+    DerivedSubtreeProfile
   >();
 
   /**
@@ -444,6 +463,7 @@ export default class Core {
     }
     return Core.initializeElementAttributes(fragment).then(() => {
       if (Core.shouldSkipChildInitialization(fragment, stopAtEach)) {
+        Core.refreshDerivedSubtreeSignature(fragment);
         return undefined;
       }
       const childPromises: Promise<void>[] = [];
@@ -454,7 +474,10 @@ export default class Core {
           childPromises.push(Core.evaluateText(child));
         }
       });
-      return Promise.all(childPromises).then(() => undefined);
+      return Promise.all(childPromises).then(() => {
+        Core.refreshDerivedSubtreeSignature(fragment);
+        return undefined;
+      });
     });
   }
 
@@ -585,6 +608,7 @@ export default class Core {
     }
     const promises: Promise<void>[] = [];
     let deriveChangedPromise: Promise<boolean> | null = null;
+    let nextDeriveInputSignature: string | null = null;
     switch (name) {
       case `${Env.prefix}bind`: {
         if (value === null) {
@@ -596,6 +620,11 @@ export default class Core {
         break;
       }
       case `${Env.prefix}derive`:
+        nextDeriveInputSignature = Core.createDeriveInputSignature(
+          fragment,
+          value,
+          fragment.getRawAttribute(`${Env.prefix}derive-name`),
+        );
         deriveChangedPromise = Core.evaluateDerive(
           fragment,
           value,
@@ -604,6 +633,11 @@ export default class Core {
         promises.push(deriveChangedPromise.then(() => undefined));
         break;
       case `${Env.prefix}derive-name`:
+        nextDeriveInputSignature = Core.createDeriveInputSignature(
+          fragment,
+          fragment.getRawAttribute(`${Env.prefix}derive`),
+          value,
+        );
         deriveChangedPromise = Core.evaluateDerive(
           fragment,
           fragment.getRawAttribute(`${Env.prefix}derive`),
@@ -646,6 +680,7 @@ export default class Core {
     return Promise.all(promises)
       .then(() => {
         if (deriveChangedPromise !== null) {
+          fragment.setDeriveInputSignature(nextDeriveInputSignature);
           return deriveChangedPromise.then(changed => {
             if (!changed) {
               return undefined;
@@ -866,32 +901,106 @@ export default class Core {
     const hasDerive = fragment.hasAttribute(`${Env.prefix}derive`);
     const hasIf = fragment.hasAttribute(`${Env.prefix}if`);
     const hasEach = fragment.hasAttribute(`${Env.prefix}each`);
+    const deriveExpression = fragment.getRawAttribute(`${Env.prefix}derive`);
+    const deriveName = fragment.getRawAttribute(`${Env.prefix}derive-name`);
+    let shouldSkipDerivedSubtree = false;
+    let shouldRecordDerivedSubtreeSignature = false;
+    let nextDerivedSubtreeSignature: string | null = null;
+    if (!hasDerive && fragment.getDeriveSubtreeSignature() !== null) {
+      fragment.setDeriveSubtreeSignature(null);
+    }
+    if (!hasDerive && fragment.getDeriveInputSignature() !== null) {
+      fragment.setDeriveInputSignature(null);
+    }
     if (hasDerive) {
-      chain = chain.then(() =>
-        Core.evaluateDerive(fragment).then(() => undefined),
+      const nextDeriveInputSignature = Core.createDeriveInputSignature(
+        fragment,
+        deriveExpression,
+        deriveName,
       );
+      if (nextDeriveInputSignature === null) {
+        if (fragment.getDeriveInputSignature() !== null) {
+          fragment.setDeriveInputSignature(null);
+        }
+        chain = chain.then(() =>
+          Core.evaluateDerive(fragment, deriveExpression, deriveName).then(
+            () => undefined,
+          ),
+        );
+      } else if (
+        fragment.getDeriveInputSignature() !== nextDeriveInputSignature
+      ) {
+        chain = chain.then(() =>
+          Core.evaluateDerive(fragment, deriveExpression, deriveName).then(() => {
+            fragment.setDeriveInputSignature(nextDeriveInputSignature);
+            return undefined;
+          }),
+        );
+      }
     }
     if (hasIf) {
       chain = chain.then(() => Core.evaluateIf(fragment));
     }
     if (hasEach) {
+      if (fragment.getDeriveSubtreeSignature() !== null) {
+        fragment.setDeriveSubtreeSignature(null);
+      }
       return chain.then(() => Core.evaluateEach(fragment));
     }
     if (hasIf) {
+      if (fragment.getDeriveSubtreeSignature() !== null) {
+        fragment.setDeriveSubtreeSignature(null);
+      }
       return chain.then(() => undefined);
     }
-    const promises: Promise<void>[] = [];
-    fragment.getChildren().forEach(child => {
-      if (child instanceof ElementFragment) {
-        if (Core.canSkipUnchangedNestedEach(child)) {
+    if (hasDerive) {
+      chain = chain.then(() => {
+        if (!Core.canSkipStableDerivedSubtree(fragment)) {
+          fragment.setDeriveSubtreeSignature(null);
+          Core.logDerivedSubtreeProfileSnapshot(fragment, 'skip-ineligible');
           return;
         }
-        promises.push(Core.evaluateAll(child, skipFragments));
-      } else if (child instanceof TextFragment) {
-        promises.push(Core.evaluateText(child));
-      }
-    });
-    return chain.then(() => Promise.all(promises)).then(() => undefined);
+        nextDerivedSubtreeSignature = Core.createDescendantBindingSignature(
+          fragment,
+          'evaluateAll',
+        );
+        shouldRecordDerivedSubtreeSignature = true;
+        shouldSkipDerivedSubtree =
+          fragment.getDeriveSubtreeSignature() !== null &&
+          fragment.getDeriveSubtreeSignature() === nextDerivedSubtreeSignature;
+        Core.logDerivedSubtreeProfileSnapshot(
+          fragment,
+          shouldSkipDerivedSubtree ? 'skip-hit' : 'skip-miss',
+        );
+      });
+    }
+    return chain
+      .then(() => {
+        if (shouldSkipDerivedSubtree) {
+          return undefined;
+        }
+        const promises: Promise<void>[] = [];
+        fragment.getChildren().forEach(child => {
+          if (child instanceof ElementFragment) {
+            if (Core.canSkipUnchangedNestedEach(child)) {
+              return;
+            }
+            promises.push(Core.evaluateAll(child, skipFragments));
+          } else if (child instanceof TextFragment) {
+            promises.push(Core.evaluateText(child));
+          }
+        });
+        return Promise.all(promises).then(() => undefined);
+      })
+      .then(() => {
+        if (
+          shouldRecordDerivedSubtreeSignature &&
+          nextDerivedSubtreeSignature !== null
+        ) {
+          fragment.setDeriveSubtreeSignature(nextDerivedSubtreeSignature);
+        }
+        return undefined;
+      });
   }
 
   /**
@@ -1128,6 +1237,237 @@ export default class Core {
       items: data,
     });
     return fragment.getEachInputSignature() === nextEachInputSignature;
+  }
+
+  /**
+   * data-derive subtree の入力が同値で、保守条件も満たす場合に
+   * 子走査を省略できるかどうかを返します。
+   *
+   * @param fragment 判定対象フラグメント
+   * @returns 省略可能なら true
+   */
+  private static canSkipStableDerivedSubtree(
+    fragment: ElementFragment,
+  ): boolean {
+    if (!fragment.hasAttribute(`${Env.prefix}derive`)) {
+      return false;
+    }
+    if (
+      fragment.hasAttribute(`${Env.prefix}if`) ||
+      fragment.hasAttribute(`${Env.prefix}each`) ||
+      fragment.hasAttribute(`${Env.prefix}fetch`) ||
+      fragment.hasAttribute(`${Env.prefix}import`)
+    ) {
+      return false;
+    }
+    return !Core.hasDisallowedDerivedSubtreeDescendant(fragment);
+  }
+
+  /**
+   * data-derive subtree skip の初期 PoC で扱わない子孫要素を含むかを返します。
+   *
+   * @param fragment 判定対象フラグメント
+   * @returns 含むなら true
+   */
+  private static hasDisallowedDerivedSubtreeDescendant(
+    fragment: ElementFragment,
+  ): boolean {
+    return fragment.getChildren().some(child => {
+      if (!(child instanceof ElementFragment)) {
+        return false;
+      }
+      if (
+        child.hasAttribute(`${Env.prefix}derive`) ||
+        child.hasAttribute(`${Env.prefix}derive-name`) ||
+        child.hasAttribute(`${Env.prefix}fetch`) ||
+        child.hasAttribute(`${Env.prefix}import`)
+      ) {
+        return true;
+      }
+      return Core.hasDisallowedDerivedSubtreeDescendant(child);
+    });
+  }
+
+  /**
+   * data-derive host が子孫要素へ公開している binding の署名を返します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns binding 署名
+   */
+  private static createDescendantBindingSignature(
+    fragment: ElementFragment,
+    source: DerivedSubtreeSignatureSource,
+  ): string {
+    Core.recordDerivedSubtreeSignatureComputation(fragment, source);
+    return Core.createBindingSignature(fragment.getDescendantBindingData());
+  }
+
+  /**
+   * data-derive 実行前の入力署名を返します。
+   *
+   * @param fragment 対象フラグメント
+   * @param deriveExpression 導出式
+   * @param deriveName 導出名
+   * @returns 入力署名。導出が無効なら null
+   */
+  private static createDeriveInputSignature(
+    fragment: ElementFragment,
+    deriveExpression: string | null,
+    deriveName: string | null,
+  ): string | null {
+    const normalizedName =
+      typeof deriveName === 'string' ? deriveName.trim() : '';
+    if (!deriveExpression || normalizedName === '') {
+      return null;
+    }
+    return Core.createBindingSignature({
+      expression: deriveExpression,
+      name: normalizedName,
+      scope: fragment.getBindingData(),
+    });
+  }
+
+  /**
+   * data-derive subtree skip 用の署名を現在状態で更新します。
+   *
+   * @param fragment 対象フラグメント
+   */
+  private static refreshDerivedSubtreeSignature(
+    fragment: ElementFragment,
+  ): void {
+    if (!Core.canSkipStableDerivedSubtree(fragment)) {
+      fragment.setDeriveSubtreeSignature(null);
+      Core.logDerivedSubtreeProfileSnapshot(fragment, 'skip-ineligible');
+      return;
+    }
+    fragment.setDeriveSubtreeSignature(
+      Core.createDescendantBindingSignature(fragment, 'refresh'),
+    );
+    Core.logDerivedSubtreeProfileSnapshot(fragment, 'refresh');
+  }
+
+  /**
+   * data-derive subtree skip のプロファイルを取得または初期化します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns プロファイル
+   */
+  private static getOrCreateDerivedSubtreeProfile(
+    fragment: ElementFragment,
+  ): DerivedSubtreeProfile | null {
+    if (!Dev.isEnabled() || !fragment.hasAttribute(`${Env.prefix}derive`)) {
+      return null;
+    }
+    const existing = Core.DERIVE_SUBTREE_PROFILES.get(fragment);
+    if (existing) {
+      return existing;
+    }
+    const profile: DerivedSubtreeProfile = {
+      hostId: Core.createDerivedSubtreeHostId(fragment),
+      signatureComputeTotal: 0,
+      signatureComputeFromEvaluateAll: 0,
+      signatureComputeFromRefresh: 0,
+      skipHitCount: 0,
+      skipMissCount: 0,
+      skipIneligibleCount: 0,
+    };
+    Core.DERIVE_SUBTREE_PROFILES.set(fragment, profile);
+    return profile;
+  }
+
+  /**
+   * data-derive subtree host の識別子を作成します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns host 識別子
+   */
+  private static createDerivedSubtreeHostId(
+    fragment: ElementFragment,
+  ): string {
+    const segments: string[] = [];
+    let current: ElementFragment | null = fragment;
+    while (current) {
+      const target = current.getTarget();
+      if (!(target instanceof HTMLElement)) {
+        break;
+      }
+      let segment = target.tagName.toLowerCase();
+      if (target.id.trim() !== '') {
+        segment += `#${target.id.trim()}`;
+        segments.unshift(segment);
+        break;
+      }
+      const deriveName = current.getRawAttribute(`${Env.prefix}derive-name`);
+      if (typeof deriveName === 'string' && deriveName.trim() !== '') {
+        segment += `[${Env.prefix}derive-name="${deriveName.trim()}"]`;
+      }
+      const parent = current.getParent();
+      if (parent) {
+        const siblingIndex = parent
+          .getChildren()
+          .filter(child => child instanceof ElementFragment)
+          .findIndex(child => child === current);
+        segment += `:nth-child(${siblingIndex + 1})`;
+      }
+      segments.unshift(segment);
+      current = parent;
+    }
+    return segments.join(' > ');
+  }
+
+  /**
+   * data-derive subtree の署名計算回数を記録します。
+   *
+   * @param fragment 対象フラグメント
+   * @param source 計算元
+   */
+  private static recordDerivedSubtreeSignatureComputation(
+    fragment: ElementFragment,
+    source: DerivedSubtreeSignatureSource,
+  ): void {
+    const profile = Core.getOrCreateDerivedSubtreeProfile(fragment);
+    if (profile === null) {
+      return;
+    }
+    profile.signatureComputeTotal += 1;
+    if (source === 'refresh') {
+      profile.signatureComputeFromRefresh += 1;
+      return;
+    }
+    profile.signatureComputeFromEvaluateAll += 1;
+  }
+
+  /**
+   * data-derive subtree の現在プロファイルをログ出力します。
+   *
+   * @param fragment 対象フラグメント
+   * @param reason ログ理由
+   */
+  private static logDerivedSubtreeProfileSnapshot(
+    fragment: ElementFragment,
+    reason: 'refresh' | 'skip-hit' | 'skip-miss' | 'skip-ineligible',
+  ): void {
+    const profile = Core.getOrCreateDerivedSubtreeProfile(fragment);
+    if (profile === null) {
+      return;
+    }
+    if (reason === 'skip-hit') {
+      profile.skipHitCount += 1;
+    } else if (reason === 'skip-miss') {
+      profile.skipMissCount += 1;
+    } else if (reason === 'skip-ineligible') {
+      profile.skipIneligibleCount += 1;
+    }
+    Log.info('[Haori][derive-profile]', {
+      reason,
+      hostId: profile.hostId,
+      signatureComputeTotal: profile.signatureComputeTotal,
+      signatureComputeFromEvaluateAll: profile.signatureComputeFromEvaluateAll,
+      signatureComputeFromRefresh: profile.signatureComputeFromRefresh,
+      skipHitCount: profile.skipHitCount,
+      skipMissCount: profile.skipMissCount,
+      skipIneligibleCount: profile.skipIneligibleCount,
+    });
   }
 
   /**

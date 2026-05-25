@@ -1,7 +1,9 @@
 /* @vitest-environment jsdom */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
+import Dev from '../src/dev';
 import Fragment, {ElementFragment} from '../src/fragment';
+import Log from '../src/log';
 import {waitForCondition, waitForDomSettled} from './helpers/async';
 
 describe('data-derive', () => {
@@ -9,12 +11,14 @@ describe('data-derive', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    Dev.disable();
     container = document.createElement('div');
     document.body.appendChild(container);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    Dev.disable();
     document.body.removeChild(container);
   });
 
@@ -299,6 +303,142 @@ describe('data-derive', () => {
 
     expect(container.querySelector('#current')?.textContent).toBe('');
     expect(container.querySelector('#renamed')?.textContent).toBe('derived-value');
+  });
+
+  it('子孫に見える binding が同値なら data-derive subtree の再評価をスキップする', async () => {
+    container.innerHTML = `<div id="root" data-bind='{"status":"same"}'><section data-derive="'derived'" data-derive-name="label"><span id="child">{{label}}</span></section></div>`;
+
+    const root = container.querySelector('#root') as HTMLElement;
+    const child = container.querySelector('#child') as HTMLElement;
+    await Core.scan(root);
+    await waitForDomSettled();
+
+    const childFragment = Fragment.get(child) as ElementFragment;
+    const evaluateAllSpy = vi.spyOn(Core, 'evaluateAll');
+    evaluateAllSpy.mockClear();
+
+    await Core.setBindingData(root, {
+      status: 'same',
+    });
+    await waitForDomSettled();
+
+    expect(child.textContent).toBe('derived');
+    expect(
+      evaluateAllSpy.mock.calls.some(([fragment]) => fragment === childFragment),
+    ).toBe(false);
+  });
+
+  it('data-derive の結果が同じでも子孫に見える親 binding が変われば再評価する', async () => {
+    container.innerHTML = `<div id="root" data-bind='{"status":"same"}'><section data-derive="'derived'" data-derive-name="label"><span id="child">{{status}}</span></section></div>`;
+
+    const root = container.querySelector('#root') as HTMLElement;
+    await Core.scan(root);
+    await waitForDomSettled();
+
+    await Core.setBindingData(root, {
+      status: 'changed',
+    });
+    await waitForDomSettled();
+
+    expect(container.querySelector('#child')?.textContent).toBe('changed');
+  });
+
+  it('ネストした data-derive を含む subtree では外側の skip を行わず、内側入力が変われば再評価する', async () => {
+    container.innerHTML = `<div id="root" data-bind='{"outer":"same","inner":"nested"}'><section data-derive="outer" data-derive-name="label"><section id="inner-host" data-derive="inner" data-derive-name="nested"><span id="child">{{nested}}</span></section></section></div>`;
+
+    const root = container.querySelector('#root') as HTMLElement;
+    await Core.scan(root);
+    await waitForDomSettled();
+
+    const innerHost = container.querySelector('#inner-host') as HTMLElement;
+    const innerFragment = Fragment.get(innerHost) as ElementFragment;
+    const deriveSpy = vi.spyOn(Core, 'evaluateDerive');
+    deriveSpy.mockClear();
+
+    await Core.setBindingData(root, {
+      outer: 'same',
+      inner: 'changed',
+    });
+    await waitForDomSettled();
+
+    expect(
+      deriveSpy.mock.calls.some(([fragment]) => fragment === innerFragment),
+    ).toBe(true);
+    expect(container.querySelector('#child')?.textContent).toBe('changed');
+  });
+
+  it('同じ derive 式と同じ scope なら evaluateDerive を再実行しない', async () => {
+    container.innerHTML = `<div id="root" data-bind='{"status":"same","other":"before"}'><section id="host" data-derive="status" data-derive-name="label"><span id="child">{{label}}</span><span id="other">{{other}}</span></section></div>`;
+
+    const root = container.querySelector('#root') as HTMLElement;
+    const host = container.querySelector('#host') as HTMLElement;
+    const hostFragment = Fragment.get(host) as ElementFragment;
+
+    await Core.scan(root);
+    await waitForDomSettled();
+
+    const deriveSpy = vi.spyOn(Core, 'evaluateDerive');
+    deriveSpy.mockClear();
+
+    await Core.evaluateAll(hostFragment);
+    await waitForDomSettled();
+
+    expect(deriveSpy).not.toHaveBeenCalled();
+
+    await Core.setBindingData(root, {
+      status: 'same',
+      other: 'after',
+    });
+    await waitForDomSettled();
+
+    expect(deriveSpy).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('#child')?.textContent).toBe('same');
+    expect(container.querySelector('#other')?.textContent).toBe('after');
+  });
+
+  it('開発モードでは host ごとの署名計算回数と skip hit/miss をログに出す', async () => {
+    Dev.enable();
+    const infoSpy = vi.spyOn(Log, 'info').mockImplementation(() => {});
+
+    container.innerHTML = `<div id="root" data-bind='{"status":"same"}'><section id="host" data-derive="'derived'" data-derive-name="label"><span id="child">{{label}}-{{status}}</span></section></div>`;
+
+    const root = container.querySelector('#root') as HTMLElement;
+    await Core.scan(root);
+    await waitForDomSettled();
+
+    infoSpy.mockClear();
+
+    await Core.setBindingData(root, {
+      status: 'changed',
+    });
+    await waitForDomSettled();
+
+    await Core.setBindingData(root, {
+      status: 'changed',
+    });
+    await waitForDomSettled();
+
+    const profileCalls = infoSpy.mock.calls.filter(
+      ([message]) => message === '[Haori][derive-profile]',
+    );
+    expect(profileCalls.length).toBeGreaterThanOrEqual(2);
+    expect(
+      profileCalls.every(
+        call => (call[1] as Record<string, unknown>).hostId === 'section#host',
+      ),
+    ).toBe(true);
+
+    const latestPayload = profileCalls.at(-1)?.[1] as Record<string, unknown>;
+    expect(latestPayload).toMatchObject({
+      reason: 'skip-hit',
+      hostId: 'section#host',
+      signatureComputeTotal: 3,
+      signatureComputeFromEvaluateAll: 2,
+      signatureComputeFromRefresh: 1,
+      skipHitCount: 1,
+      skipMissCount: 1,
+      skipIneligibleCount: 0,
+    });
   });
 
   it('data-derive または data-derive-name を削除すると公開を停止する', async () => {
