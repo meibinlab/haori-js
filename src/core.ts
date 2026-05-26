@@ -930,12 +930,16 @@ export default class Core {
       } else if (
         fragment.getDeriveInputSignature() !== nextDeriveInputSignature
       ) {
-        chain = chain.then(() =>
-          Core.evaluateDerive(fragment, deriveExpression, deriveName).then(() => {
+        chain = chain.then(() => {
+          return Core.evaluateDerive(
+            fragment,
+            deriveExpression,
+            deriveName,
+          ).then(() => {
             fragment.setDeriveInputSignature(nextDeriveInputSignature);
             return undefined;
-          }),
-        );
+          });
+        });
       }
     }
     if (hasIf) {

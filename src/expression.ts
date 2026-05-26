@@ -27,9 +27,18 @@ interface ExpressionToken {
   position: number;
 }
 
+interface ExpressionEvaluatorSetup {
+  bindKeys: string[];
+  evaluator: ((...args: unknown[]) => unknown) | null;
+  compileFailed: boolean;
+}
+
 type GroupContext = 'paren' | 'array' | 'member' | 'object';
 
 export default class Expression {
+  /** 未宣言識別子の自動補完を試みる最大回数 */
+  private static readonly MAX_IDENTIFIER_RECOVERY_COUNT = 8;
+
   /** 危険値チェック結果の短命キャッシュ */
   private static forbiddenBindingValueCache = new WeakMap<object, boolean>();
 
@@ -272,50 +281,165 @@ export default class Expression {
       return {value: null, unresolvedReference: false};
     }
 
+    const runtimeBindings = {...bindedValues};
+    const allowMissingIdentifierRecovery =
+      this.canAttemptMissingIdentifierRecovery(expression);
+
+    for (
+      let recoveryCount = 0;
+      recoveryCount <= this.MAX_IDENTIFIER_RECOVERY_COUNT;
+      recoveryCount += 1
+    ) {
+      const setup = this.prepareEvaluator(expression, runtimeBindings);
+      if (setup.compileFailed || setup.evaluator === null) {
+        return {value: null, unresolvedReference: false};
+      }
+      try {
+        const argValues: unknown[] = [];
+        const wrappedValues = this.wrapBoundValues(runtimeBindings);
+        setup.bindKeys.forEach((key: string) => {
+          argValues.push(wrappedValues[key]);
+        });
+        return {
+          value: this.withBlockedPropertyAccess(() =>
+            setup.evaluator!(...argValues),
+          ),
+          unresolvedReference: false,
+        };
+      } catch (error) {
+        if (allowMissingIdentifierRecovery && error instanceof ReferenceError) {
+          const missingIdentifier = this.extractMissingIdentifier(error);
+          if (
+            missingIdentifier !== null &&
+            this.canRecoverMissingIdentifier(missingIdentifier, runtimeBindings)
+          ) {
+            runtimeBindings[missingIdentifier] = undefined;
+            continue;
+          }
+        }
+        Log.error('[Haori]', 'Expression evaluation error:', expression, error);
+        if (error instanceof ReferenceError) {
+          // ReferenceError（未定義変数）はundefinedを返す
+          return {value: undefined, unresolvedReference: true};
+        }
+        return {value: null, unresolvedReference: false};
+      }
+    }
+
+    Log.error(
+      '[Haori]',
+      'Failed to recover missing identifiers:',
+      expression,
+      runtimeBindings,
+    );
+    return {value: undefined, unresolvedReference: true};
+  }
+
+  /**
+   * 現在のバインド集合で evaluator を取得または生成します。
+   *
+   * @param expression 評価する式
+   * @param bindedValues バインドされた値のオブジェクト
+   * @returns evaluator 準備結果
+   */
+  private static prepareEvaluator(
+    expression: string,
+    bindedValues: Record<string, unknown>,
+  ): ExpressionEvaluatorSetup {
     const bindKeys = Object.keys(bindedValues)
       .filter(key => !this.FORBIDDEN_BINDING_NAMES.has(key))
       .sort();
     const cacheKey = `${expression}:${bindKeys.join(',')}`;
 
-    let evaluator = this.EXPRESSION_CACHE.get(cacheKey);
-    if (!evaluator) {
-      const assignments = this.buildAssignments(bindKeys);
-      const body = assignments
-        ? '"use strict";\n' + `${assignments};\nreturn (${expression});`
-        : '"use strict";\n' + `return (${expression});`;
-      try {
-        evaluator = new Function(...bindKeys, body) as (
-          ...args: unknown[]
-        ) => unknown;
-        this.EXPRESSION_CACHE.set(cacheKey, evaluator);
-      } catch (error) {
-        Log.error(
-          '[Haori]',
-          'Failed to compile expression:',
-          expression,
-          error,
-        );
-        return {value: null, unresolvedReference: false};
-      }
-    }
-    try {
-      const argValues: unknown[] = [];
-      const wrappedValues = this.wrapBoundValues(bindedValues);
-      bindKeys.forEach((key: string) => {
-        argValues.push(wrappedValues[key]);
-      });
+    let evaluator = this.EXPRESSION_CACHE.get(cacheKey) || null;
+    if (evaluator !== null) {
       return {
-        value: this.withBlockedPropertyAccess(() => evaluator(...argValues)),
-        unresolvedReference: false,
+        bindKeys,
+        evaluator,
+        compileFailed: false,
+      };
+    }
+
+    const assignments = this.buildAssignments(bindKeys);
+    const body = assignments
+      ? '"use strict";\n' + `${assignments};\nreturn (${expression});`
+      : '"use strict";\n' + `return (${expression});`;
+    try {
+      evaluator = new Function(...bindKeys, body) as (
+        ...args: unknown[]
+      ) => unknown;
+      this.EXPRESSION_CACHE.set(cacheKey, evaluator);
+      return {
+        bindKeys,
+        evaluator,
+        compileFailed: false,
       };
     } catch (error) {
-      Log.error('[Haori]', 'Expression evaluation error:', expression, error);
-      if (error instanceof ReferenceError) {
-        // ReferenceError（未定義変数）はundefinedを返す
-        return {value: undefined, unresolvedReference: true};
-      }
-      return {value: null, unresolvedReference: false};
+      Log.error(
+        '[Haori]',
+        'Failed to compile expression:',
+        expression,
+        error,
+      );
+      return {
+        bindKeys,
+        evaluator: null,
+        compileFailed: true,
+      };
     }
+  }
+
+  /**
+   * ReferenceError から未宣言識別子名を抽出します。
+   *
+   * @param error 発生した ReferenceError
+   * @returns 識別子名。抽出できない場合は null
+   */
+  private static extractMissingIdentifier(
+    error: ReferenceError,
+  ): string | null {
+    const message = String(error.message || '');
+    const match = message.match(
+      /^([A-Za-z_$][A-Za-z0-9_$]*) is not defined$/,
+    );
+    return match?.[1] || null;
+  }
+
+  /**
+   * 未宣言識別子を undefined バインドとして補完可能かを返します。
+   *
+   * @param identifier 識別子名
+   * @param bindedValues 現在のバインド値
+   * @returns 補完可能なら true
+   */
+  private static canRecoverMissingIdentifier(
+    identifier: string,
+    bindedValues: Record<string, unknown>,
+  ): boolean {
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(identifier)) {
+      return false;
+    }
+    return (
+      bindedValues[identifier] === undefined &&
+      !(identifier in bindedValues)
+    );
+  }
+
+  /**
+   * 未宣言識別子の補完を試みてよい式かを返します。
+   *
+   * @param expression 評価する式
+   * @returns 補完を試みてよい場合は true
+   */
+  private static canAttemptMissingIdentifierRecovery(
+    expression: string,
+  ): boolean {
+    return (
+      expression.includes('?.') ||
+      expression.includes('??') ||
+      expression.includes('||') ||
+      expression.includes('&&')
+    );
   }
 
   /**

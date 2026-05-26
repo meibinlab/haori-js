@@ -282,6 +282,14 @@ describe('Expression', () => {
       expect(result).toBeUndefined();
     });
 
+    it('未宣言識別子を含む optional chaining 式でもフォールバックまで評価できる', () => {
+      const result = Expression.evaluate(
+        '((detail?.results || []).find(row => row.id === (dialog?.id || id))?.contractorName) || dialog?.contractorName || contractorName || "顧客詳細"',
+        {},
+      );
+      expect(result).toBe('顧客詳細');
+    });
+
     it('構文エラーのある式はnullを返す', () => {
       const result = Expression.evaluate('x +', {x: 1});
       expect(result).toBeNull();

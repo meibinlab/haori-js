@@ -180,7 +180,11 @@ class EvaluationProfileRegistry {
       String(context.childIndex),
       context.template,
     );
-    EvaluationProfileRegistry.updateCounter(counter, expressions, totalDurationMs);
+    EvaluationProfileRegistry.updateCounter(
+      counter,
+      expressions,
+      totalDurationMs,
+    );
   }
 
   /**

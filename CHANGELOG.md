@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-05-26
+
+### Changed
+
+- `data-derive` で入力シグネチャが不変な subtree の再評価をスキップし、重い一覧の再描画コストを抑えた
+- development mode の evaluation profiler で、属性・テキスト・プレースホルダごとの `calls`、`totalDurationMs`、`maxDurationMs` を取得できるようにした
+- 未宣言識別子を含む optional chaining とフォールバック式では、必要な識別子だけを `undefined` として補完し、初期 `data-bind` が空でも後段の代替値まで評価できるようにした
+
+### Library
+
+- `data-derive` のスキップ判定と evaluation profiler の duration 集計に関する回帰テストを追加した
+- 未宣言識別子を含む optional chaining の回帰テストを追加し、未解決参照の副作用抑止を維持したままフォールバック評価できることを確認した
+- npm publish の権限不足が `E404` に見えるケースを公開手順へ追記し、リリース時の切り分けをしやすくした
+
 ## [0.6.1] - 2026-05-22
 
 ### Changed
