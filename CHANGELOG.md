@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-01
+
+### Changed
+
+- `data-click-copy-source` 属性を追加し、`data-click-copy` のコピー元要素を CSS セレクタで明示指定できるようにした。指定がない場合は従来通り `data-click-form` またはトリガー要素の binding data を参照する。空文字指定は自要素をコピー元とする
+- `data-click-click` で click を発火する前に `Core.evaluateAll()` を呼ぶようにし、bind 完了後の最新 DOM をクリック先要素が確実に参照できるようにした
+
+### Library
+
+- `data-click-copy-source` のフォーム・binding data・空文字・優先順位・エラーケースを確認する回帰テストを追加した
+- `data-click-click` の post-bind 再評価に関するコメントを追加した
+
 ## [0.6.2] - 2026-05-26
 
 ### Changed
