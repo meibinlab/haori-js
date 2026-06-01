@@ -311,6 +311,9 @@ export interface ProcedureOptions {
   /** コピー先フラグメント */
   copyFragments?: ElementFragment[] | null;
 
+  /** コピー元フラグメント（data-click-copy-source で指定） */
+  copySourceFragment?: ElementFragment | null;
+
   /** コピー対象パラメータ名のリスト */
   copyParams?: string[] | null;
 
@@ -1148,6 +1151,37 @@ ${body}
           }
         }
       });
+
+      // copy-source（単一セレクタ）
+      const copySourceAttrName = Procedure.attrName(event, 'copy-source');
+      if (fragment.hasAttribute(copySourceAttrName)) {
+        const selector = fragment.getRawAttribute(
+          copySourceAttrName,
+        ) as string | null;
+        if (selector) {
+          const el = document.body.querySelector(selector);
+          if (el !== null) {
+            const frag = Fragment.get(el);
+            if (frag) {
+              options.copySourceFragment = frag as ElementFragment;
+            } else {
+              Log.error(
+                'Haori',
+                `Element is not managed by Haori: ${selector}` +
+                  ` (${copySourceAttrName})`,
+              );
+            }
+          } else {
+            Log.error(
+              'Haori',
+              `Element not found: ${selector} (${copySourceAttrName})`,
+            );
+          }
+        } else {
+          // 値が省略されている場合は自要素を対象
+          options.copySourceFragment = fragment;
+        }
+      }
     }
 
     // 非イベントの data / form（data-fetch-data / data-fetch-form）も取り込む
@@ -1563,7 +1597,10 @@ ${body}
       });
     }
     if (this.options.clickFragments && this.options.clickFragments.length > 0) {
-      this.options.clickFragments.forEach(fragment => {
+      // bind 後の最新 DOM を参照させるため click 前に再評価する。
+      // 複数フラグメントは直列実行：各 click が前の evaluateAll 完了後に発火する。
+      for (const fragment of this.options.clickFragments) {
+        await Core.evaluateAll(fragment);
         const target = fragment.getTarget();
         if (typeof target.click === 'function') {
           target.click();
@@ -1572,7 +1609,7 @@ ${body}
             new MouseEvent('click', {bubbles: true, cancelable: true}),
           );
         }
-      });
+      }
     }
     if (this.options.openFragments && this.options.openFragments.length > 0) {
       this.options.openFragments.forEach(fragment => {
@@ -2005,6 +2042,13 @@ ${body}
    * copy のコピー元データを取得します。
    */
   private resolveCopySourceData(): Record<string, unknown> {
+    if (this.options.copySourceFragment) {
+      const sourceTarget = this.options.copySourceFragment.getTarget();
+      if (sourceTarget.tagName === 'FORM') {
+        return Form.getValues(this.options.copySourceFragment);
+      }
+      return {...this.options.copySourceFragment.getBindingData()};
+    }
     if (this.options.formFragment) {
       return Form.getValues(this.options.formFragment);
     }

@@ -261,6 +261,198 @@ describe('Procedure action operations', () => {
     container.remove();
   });
 
+  it('data-click-copy-source copies from specified form to destination', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const sourceForm = document.createElement('form');
+    sourceForm.id = 'copy-source-specified-form';
+    const keywordInput = document.createElement('input');
+    keywordInput.name = 'keyword';
+    keywordInput.value = 'from-source';
+    const pageInput = document.createElement('input');
+    pageInput.name = 'page';
+    pageInput.value = '5';
+    sourceForm.append(keywordInput, pageInput);
+
+    const destForm = document.createElement('form');
+    destForm.id = 'copy-dest-specified-form';
+    const destKeyword = document.createElement('input');
+    destKeyword.name = 'keyword';
+    const destPage = document.createElement('input');
+    destPage.name = 'page';
+    destForm.append(destKeyword, destPage);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-copy-source', '#copy-source-specified-form');
+    btn.setAttribute('data-click-copy', '#copy-dest-specified-form');
+
+    container.append(sourceForm, destForm, btn);
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(
+      () => destKeyword.value === 'from-source' && destPage.value === '5',
+      {description: 'copy from specified source form'},
+    );
+
+    expect(destKeyword.value).toBe('from-source');
+    expect(destPage.value).toBe('5');
+    container.remove();
+  });
+
+  it('data-click-copy-source copies binding data from specified non-form element', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const source = document.createElement('div');
+    source.id = 'copy-source-binding-div';
+    source.setAttribute('data-bind', '{"keyword":"from-binding","page":"9"}');
+
+    const dest = document.createElement('div');
+    dest.id = 'copy-dest-binding-div';
+    dest.setAttribute('data-bind', '{"keyword":"old","keep":"yes"}');
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-copy-source', '#copy-source-binding-div');
+    btn.setAttribute('data-click-copy', '#copy-dest-binding-div');
+
+    container.append(source, dest, btn);
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(
+      () => {
+        const bind = dest.getAttribute('data-bind');
+        return bind !== null && bind.includes('"keyword":"from-binding"');
+      },
+      {description: 'copy from specified source binding data'},
+    );
+
+    const copied = JSON.parse(dest.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({keyword: 'from-binding', page: '9', keep: 'yes'});
+    container.remove();
+  });
+
+  it('data-click-copy-source takes precedence over data-click-form', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const triggerForm = document.createElement('form');
+    triggerForm.id = 'copy-trigger-form';
+    const triggerInput = document.createElement('input');
+    triggerInput.name = 'keyword';
+    triggerInput.value = 'trigger-value';
+    triggerForm.appendChild(triggerInput);
+
+    const sourceForm = document.createElement('form');
+    sourceForm.id = 'copy-source-priority-form';
+    const sourceInput = document.createElement('input');
+    sourceInput.name = 'keyword';
+    sourceInput.value = 'source-value';
+    sourceForm.appendChild(sourceInput);
+
+    const dest = document.createElement('div');
+    dest.id = 'copy-dest-priority-div';
+    dest.setAttribute('data-bind', '{}');
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-form', '#copy-trigger-form');
+    btn.setAttribute('data-click-copy-source', '#copy-source-priority-form');
+    btn.setAttribute('data-click-copy', '#copy-dest-priority-div');
+
+    container.append(triggerForm, sourceForm, dest, btn);
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(
+      () => {
+        const bind = dest.getAttribute('data-bind');
+        return bind !== null && bind.includes('"keyword":"source-value"');
+      },
+      {description: 'copy-source takes precedence over form'},
+    );
+
+    const copied = JSON.parse(dest.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({keyword: 'source-value'});
+    container.remove();
+  });
+
+  it('data-click-copy-source logs error when selector does not match', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const dest = document.createElement('div');
+    dest.id = 'copy-dest-missing-source';
+    dest.setAttribute('data-bind', '{"keep":"yes"}');
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-bind', '{"keyword":"trigger"}');
+    btn.setAttribute('data-click-copy-source', '#no-such-source');
+    btn.setAttribute('data-click-copy', '#copy-dest-missing-source');
+
+    container.append(dest, btn);
+    await waitForDomSettled();
+    btn.click();
+
+    await waitForCondition(
+      () =>
+        errorSpy.mock.calls.some(call =>
+          call.some(
+            arg =>
+              typeof arg === 'string' &&
+              arg.includes('Element not found: #no-such-source'),
+          ),
+        ),
+      {description: 'missing copy-source error'},
+    );
+
+    const copied = JSON.parse(dest.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({keep: 'yes'});
+    errorSpy.mockRestore();
+    container.remove();
+  });
+
+  it('data-click-copy-source="" (empty) uses the trigger element itself as source', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-bind', '{"keyword":"self-source","page":"1"}');
+    btn.setAttribute('data-click-copy-source', '');
+    btn.setAttribute('data-click-copy', '#copy-dest-self-source');
+
+    const dest = document.createElement('div');
+    dest.id = 'copy-dest-self-source';
+    dest.setAttribute('data-bind', '{"keep":"yes"}');
+
+    container.append(btn, dest);
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(
+      () => {
+        const bind = dest.getAttribute('data-bind');
+        return bind !== null && bind.includes('"keyword":"self-source"');
+      },
+      {description: 'copy from self (empty selector)'},
+    );
+
+    const copied = JSON.parse(dest.getAttribute('data-bind') || '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(copied).toMatchObject({keyword: 'self-source', page: '1', keep: 'yes'});
+    container.remove();
+  });
+
   it('data-click-copy-params copies only selected keys and preserves target data', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
