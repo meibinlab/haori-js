@@ -363,6 +363,8 @@ window.Dates = {
 </div>
 ```
 
+`data-if` の表示判定は JavaScript の falsy 判定に準拠します。`false`・`null`・`undefined`・`NaN` に加えて、**数値 `0` と空文字列 `''` も非表示**になります。たとえば `data-if="items.length"` は要素数が 0 のとき非表示、`data-if="message"` は空文字列のとき非表示です。一方、空配列 `[]` や空オブジェクト `{}` は JavaScript と同様に truthy として扱われ、表示されます（件数で判定したい場合は `data-if="items.length"` を使ってください）。
+
 ---
 
 ## リストの表示と繰り返し
@@ -1032,6 +1034,29 @@ window.Dates = {
 
 `data-click-bind-append`、`data-change-bind-append`、`data-load-bind-append`、`data-intersect-bind-append` も同じ意味で使えます。
 
+#### 既存データを保持してマージする（`data-*-bind-merge`）
+
+通常のバインドは、バインド先要素の `data-bind` を**解決済みデータで全置換**します。これは `data-fetch` でサーバーの最新状態に差し替える用途に適していますが、「一部のキーだけを更新し、他のキーは残したい」場合には向きません。
+
+`data-*-bind-merge` を付けると、バインド先要素の**既存 `data-bind` を保持したまま**、解決済みデータの各キーを浅く上書きします。
+
+```html
+<div id="state" data-bind='{"items":[],"selectedId":null}'>
+  <!-- items 読み込み後に表示され、selectedId だけを更新する（items は保持） -->
+  <button
+    type="button"
+    data-if="items.length > 0 && !selectedId"
+    data-load-data="selectedId={{items[0]?.id}}"
+    data-load-bind="#state"
+    data-load-bind-merge
+  >自動選択</button>
+</div>
+```
+
+この例では、`data-load-bind-merge` がないと `#state` が `{selectedId}` だけに置き換わり `items` が消えますが、指定することで `items` を保持したまま `selectedId` を更新できます。`data-load-*` は `data-if` の表示（`haori:show`）と連動して発火するため、`items` がセットされてボタンが表示されたタイミングで自動選択が行われます。
+
+`data-click-bind-merge`、`data-change-bind-merge`、`data-intersect-bind-merge`、`data-fetch-bind-merge` も同じ意味で使えます。
+
 ### 組み合わせ例
 
 ```html
@@ -1167,6 +1192,8 @@ window.Dates = {
 `data-click-*`属性を使うと、ボタンクリック時の処理を定義できます。
 
 **注意**: `data-click-*`の代わりに`data-change-*`（フォーム要素の変更時）、`data-load-*`（要素のロード時）も使えます。画面への到達をきっかけにしたい場合は、この節とは別に `data-intersect-*` を使います。
+
+`data-load-*` は、ネイティブの `load` イベントを発火する要素（画像・iframe など）のロード時に加えて、**`data-if` が偽から真に変わって要素が表示された（`haori:show` が発火した）タイミングでも実行されます**。これにより、`<button>` や `<div>` のようにネイティブの `load` イベントが発生しない要素でも、表示を契機とした処理を定義できます。発火するのは非表示→表示への遷移時のみで、表示状態のままの再評価では再発火しません（無限ループや過剰実行を防ぐため）。
 
 ### 処理の実行順序
 

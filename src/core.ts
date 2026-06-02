@@ -568,10 +568,7 @@ export default class Core {
     const condition = fragment.getAttribute(`${Env.prefix}if`);
     if (
       fragment.hasAttribute(`${Env.prefix}if`) &&
-      (condition === false ||
-        condition === undefined ||
-        condition === null ||
-        Number.isNaN(condition))
+      Core.isHiddenIfCondition(condition)
     ) {
       return true;
     }
@@ -1069,8 +1066,23 @@ export default class Core {
   }
 
   /**
+   * data-if の評価値が「非表示」とみなされるかどうかを判定します。
+   *
+   * JavaScript の falsy 判定に準拠し、`false`・`null`・`undefined`・`NaN` に加えて
+   * `0`・空文字列 `''` も非表示とします（例: `data-if="items.length"` は要素数 0 で
+   * 非表示）。空配列 `[]` や空オブジェクト `{}` は JavaScript 同様 truthy なので表示されます。
+   *
+   * @param condition data-if の評価結果
+   * @return 非表示とみなす場合は true
+   */
+  private static isHiddenIfCondition(condition: unknown): boolean {
+    return !condition;
+  }
+
+  /**
    * if要素を評価します。
-   * 値がfalse、null、undefined、NaNの場合は非表示にし、それ以外の場合は表示します。
+   * 値が falsy（false・null・undefined・NaN・0・空文字列）の場合は非表示にし、
+   * それ以外の場合は表示します。
    *
    * @param fragment 対象フラグメント
    * @return Promise (DOM操作が完了したときに解決される)
@@ -1078,18 +1090,15 @@ export default class Core {
   public static evaluateIf(fragment: ElementFragment): Promise<void> {
     const promises: Promise<void>[] = [];
     const condition = fragment.getAttribute(`${Env.prefix}if`);
-    if (
-      condition === false ||
-      condition === undefined ||
-      condition === null ||
-      Number.isNaN(condition)
-    ) {
+    if (Core.isHiddenIfCondition(condition)) {
       promises.push(
         fragment.hide().then(() => {
           HaoriEvent.hide(fragment.getTarget());
         }),
       );
     } else {
+      // 非表示→表示への遷移を検出するため、show() 前の表示状態を退避する。
+      const wasVisible = fragment.isVisible();
       const childPromises: Promise<void>[] = [];
       fragment.getChildren().forEach(child => {
         if (child instanceof ElementFragment) {
@@ -1106,11 +1115,41 @@ export default class Core {
       promises.push(
         fragment.show().then(() => {
           HaoriEvent.show(fragment.getTarget());
+          // 非表示→表示へ遷移したときだけ data-load-* を発火する。
+          // ボタンや div などネイティブの load イベントが発生しない要素でも、
+          // data-if による表示（haori:show）を契機に data-load-* を実行できるようにする。
+          // 毎回の再評価で発火させると無限ループや過剰実行を招くため、遷移時に限定する。
+          if (!wasVisible) {
+            Core.triggerLoadOnShow(fragment);
+          }
         }),
       );
       promises.push(Promise.all(childPromises).then(() => undefined));
     }
     return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * data-if 表示時に data-load-* 手続きを発火します。
+   *
+   * 対象要素が data-load-* 属性を持つ場合のみ、load 種別の Procedure を1回実行します。
+   * 結果は待機せず（fire-and-forget）、表示処理の完了をブロックしません。
+   *
+   * @param fragment 対象フラグメント
+   * @return 戻り値はありません。
+   */
+  private static triggerLoadOnShow(fragment: ElementFragment): void {
+    const loadPrefix = `${Env.prefix}load-`;
+    const hasLoadAttribute = fragment
+      .getTarget()
+      .getAttributeNames()
+      .some(name => name.startsWith(loadPrefix));
+    if (!hasLoadAttribute) {
+      return;
+    }
+    void new Procedure(fragment, 'load').run().catch(error => {
+      Log.error('[Haori]', 'data-load procedure error (on show):', error);
+    });
   }
 
   /**

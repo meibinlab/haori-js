@@ -264,6 +264,12 @@ export interface ProcedureOptions {
   /** レスポンスデータのうち既存配列へ追記するパラメータ名のリスト */
   bindAppendParams?: string[] | null;
 
+  /**
+   * バインド対象の既存 binding data へ浅くマージするかどうか。
+   * true の場合、解決済みデータで全置換せず、未指定キーを保持したまま上書きする。
+   */
+  bindMerge?: boolean;
+
   /** レスポンスデータをバインドする際のキー名 */
   bindArg?: string | null;
 
@@ -957,6 +963,12 @@ ${body}
         .split('&')
         .map(p => p.trim())
         .filter(Boolean);
+    }
+    const bindMergeAttr = event
+      ? Procedure.attrName(event, 'bind-merge')
+      : Procedure.attrName(null, 'bind-merge', true);
+    if (fragment.hasAttribute(bindMergeAttr)) {
+      options.bindMerge = true;
     }
     const copyParamsAttr = event
       ? Procedure.attrName(event, 'copy-params')
@@ -1979,9 +1991,12 @@ ${body}
             fragment,
             data as Record<string, unknown>,
           );
-          promises.push(
-            Core.setBindingData(fragment.getTarget(), resolvedData),
-          );
+          // bind-merge 指定時は全置換せず、対象要素自身の既存 binding data へ
+          // 浅くマージして未指定キー（例: 一覧の items）を保持する。
+          const finalData = this.options.bindMerge
+            ? {...(fragment.getRawBindingData() ?? {}), ...resolvedData}
+            : resolvedData;
+          promises.push(Core.setBindingData(fragment.getTarget(), finalData));
         });
       }
       return Promise.all(promises).then(() => undefined);
