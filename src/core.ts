@@ -28,6 +28,14 @@ interface ReactiveImportState {
   rerunRequested: boolean;
 }
 
+/** data-each の差分更新の再入制御状態 */
+interface EachUpdateState {
+  /** updateDiff が実行中かどうか */
+  running: boolean;
+  /** 実行中に再評価要求があったかどうか */
+  rerunRequested: boolean;
+}
+
 type DerivedSubtreeSignatureSource = 'evaluateAll' | 'refresh';
 
 interface DerivedSubtreeProfile {
@@ -93,6 +101,12 @@ export default class Core {
   private static readonly DERIVE_SUBTREE_PROFILES = new WeakMap<
     ElementFragment,
     DerivedSubtreeProfile
+  >();
+
+  /** data-each の差分更新の再入制御状態 */
+  private static readonly EACH_UPDATE_STATES = new WeakMap<
+    ElementFragment,
+    EachUpdateState
   >();
 
   /**
@@ -1153,15 +1167,67 @@ export default class Core {
   }
 
   /**
+   * data-each フラグメントの差分更新の再入制御状態を取得します。
+   *
+   * @param fragment 対象フラグメント
+   * @return 再入制御状態
+   */
+  private static getEachUpdateState(
+    fragment: ElementFragment,
+  ): EachUpdateState {
+    let state = Core.EACH_UPDATE_STATES.get(fragment);
+    if (!state) {
+      state = {running: false, rerunRequested: false};
+      Core.EACH_UPDATE_STATES.set(fragment, state);
+    }
+    return state;
+  }
+
+  /**
    * each要素を評価します。
    * 非表示または未マウントの場合は処理をスキップします。
    *
+   * 同一フラグメントに対する差分更新が並行・再入しないように直列化します。
+   * 実行中に再度呼び出された場合は再評価要求だけを記録し、現在の更新完了後に
+   * 最新データで一度だけ再実行します。これにより、bind 直後のリアクティブ再評価が
+   * 重なっても data-each の描画が破壊されないようにします。
+   *
    * @param fragment 対象フラグメント
+   * @return 差分更新完了の Promise
    */
   public static evaluateEach(fragment: ElementFragment): Promise<void> {
     if (!fragment.isVisible() || !fragment.isMounted()) {
       return Promise.resolve();
     }
+    const state = Core.getEachUpdateState(fragment);
+    if (state.running) {
+      // 実行中は再評価要求のみ記録し、完了後に最新データで再実行する。
+      state.rerunRequested = true;
+      return Promise.resolve();
+    }
+    state.running = true;
+    return Core.performEachUpdate(fragment)
+      .catch(error => {
+        // updateDiff のエラーは呼び出し元へ伝播させつつ、ロックは finally で解除する。
+        throw error;
+      })
+      .finally(() => {
+        state.running = false;
+        if (state.rerunRequested) {
+          state.rerunRequested = false;
+          // 実行中に届いた最新データで再評価する（戻り値は待たず fire-and-forget）。
+          void Core.evaluateEach(fragment);
+        }
+      }) as Promise<void>;
+  }
+
+  /**
+   * data-each の差分更新本体を実行します（再入制御は呼び出し側で行います）。
+   *
+   * @param fragment 対象フラグメント
+   * @return 差分更新完了の Promise
+   */
+  private static performEachUpdate(fragment: ElementFragment): Promise<void> {
     const data = Core.resolveEachItems(fragment);
     if (data === null) {
       return Promise.reject(new Error('Invalid each attribute.'));

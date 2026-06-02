@@ -156,6 +156,25 @@ export default class HaoriEvent {
   }
 
   /**
+   * bindcompleteイベントを発火します。
+   *
+   * Procedure（data-*-bind / data-*-bind-arg など）によるバインドと、それに伴う
+   * 対象要素配下の再評価（data-if / data-each 等）が完了したタイミングで発火します。
+   * 外部スクリプトがバインド完了を契機に同期処理を行うために利用できます。
+   *
+   * @param target バインド対象要素
+   * @param bindArg バインド時に使用したネストキー（指定がない場合は null）
+   * @param reason 変更理由
+   */
+  public static bindComplete(
+    target: HTMLElement,
+    bindArg: string | null = null,
+    reason: 'form' | 'fetch' | 'manual' | 'import' | 'other' = 'other',
+  ): void {
+    HaoriEvent.dispatch(target, 'bindcomplete', {bindArg, reason});
+  }
+
+  /**
    * eachupdateイベントを発火します。
    *
    * @param target data-each要素

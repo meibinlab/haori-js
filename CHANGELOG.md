@@ -7,15 +7,21 @@
 - `data-load-*` を `data-if` の表示（`haori:show`）と連動させ、非表示→表示への遷移時にも発火するようにした。`<button>` や `<div>` などネイティブの `load` イベントが発生しない要素でも、表示を契機とした処理を定義できる。発火は遷移時のみで、表示状態のままの再評価では再発火しない
 - `data-if` の非表示判定を JavaScript の falsy 準拠に統一し、数値 `0` と空文字列 `''` も非表示とした（従来は `false`・`null`・`undefined`・`NaN` のみ非表示）。`data-if="items.length"` が要素数 0 のとき意図どおり非表示になる。空配列 `[]`・空オブジェクト `{}` は従来どおり truthy として表示される
 
+### Fixed
+
+- `data-each` の差分更新（`updateDiff`）を再入制御で直列化し、`data-*-bind-arg` などでバインド直後にリアクティブ再評価が重なった際に、同一 `data-each` への並行評価で行が重複・欠落したり描画が停止したりする不具合を修正した。実行中の再評価要求は記録し、現在の更新完了後に最新データで一度だけ再実行する
+
 ### Added
 
 - `data-*-bind-merge`（`data-click-bind-merge`・`data-change-bind-merge`・`data-load-bind-merge`・`data-intersect-bind-merge`・`data-fetch-bind-merge`）を追加した。指定時はバインド先の既存 `data-bind` を保持したまま解決済みデータを浅くマージ（未指定キーを保持）する。未指定時は従来どおり全置換。計算値（例: `selectedId={{items[0].id}}`）を既存 state にマージしたいケースで利用できる
+- `haori:bindcomplete` イベントを追加した。`data-*-bind` / `data-*-bind-arg` などによるバインドと対象要素配下の再評価（`data-if` / `data-each` 等）の完了時に対象要素で発火し、`detail.bindArg`（使用したネストキー、無指定なら `null`）を提供する。外部スクリプトからのバインド完了同期に利用できる
 
 ### Library
 
 - `data-load-*` の表示連動発火（遷移時の1回発火、表示維持時の再発火なし、`data-load-*` 非保持要素では未起動）に関する回帰テストを追加した
 - `data-if` の falsy 判定（`0`・`''` で非表示、`[]`・`{}` で表示）に関する回帰テストを追加した
 - `data-*-bind-merge` の浅いマージ（既存キー保持・上書き）と未指定時の全置換に関する回帰テストを追加した
+- `data-*-bind-arg` バインド後の `data-if` 表示・`data-each` 全行描画、同一 `data-each` への並行評価の安全性、`haori:bindcomplete` 発火に関する回帰テストを追加した
 
 ## [0.7.0] - 2026-06-01
 

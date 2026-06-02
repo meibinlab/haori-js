@@ -1999,7 +1999,15 @@ ${body}
           promises.push(Core.setBindingData(fragment.getTarget(), finalData));
         });
       }
-      return Promise.all(promises).then(() => undefined);
+      return Promise.all(promises).then(() => {
+        // バインドと対象配下の再評価（data-if / data-each 等）の完了後に
+        // bindcomplete を発火し、外部スクリプトが同期処理を行えるようにする。
+        const bindArg = this.options.bindArg ?? null;
+        this.options.bindFragments!.forEach(fragment => {
+          HaoriEvent.bindComplete(fragment.getTarget(), bindArg);
+        });
+        return undefined;
+      });
     });
   }
 

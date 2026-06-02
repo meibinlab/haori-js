@@ -2060,6 +2060,15 @@ element.addEventListener('haori:bindchange', (event) => {
 })
 ```
 
+`data-*-bind` / `data-*-bind-arg` などによるバインドと、それに伴う対象要素配下の再評価（`data-if` / `data-each` など）が完了すると、対象要素で `haori:bindcomplete` が発火します。バインド完了を契機に外部スクリプトで同期処理を行いたい場合に利用できます。
+
+```javascript
+document.querySelector('#dialog-state').addEventListener('haori:bindcomplete', (event) => {
+  // event.detail.bindArg: bind-arg で指定したネストキー（無指定なら null）
+  console.log('バインド完了:', event.detail.bindArg)
+})
+```
+
 ### 表示制御イベント
 
 ```javascript
