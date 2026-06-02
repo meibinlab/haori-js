@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.6.2
+Version: 0.8.0
 
 ---
 
@@ -24,12 +24,14 @@ Contents
 - Keep internal state authoritative; let the rendered DOM follow asynchronously
 - Key features:
   - Data binding via `data-bind`
-  - Conditional rendering via `data-if`
+  - Conditional rendering via `data-if` (JavaScript falsy semantics: `false`, `null`, `undefined`, `NaN`, `0`, and `''` are hidden)
   - List rendering via `data-each`
   - Two-way form binding (automatic binding based on `name` attributes)
   - Boolean checkbox support with `value="true"` (`true` when checked, `false` when unchecked)
+  - Event-driven actions via `data-click-*`, `data-change-*`, `data-load-*`, `data-intersect-*`
   - Server fetches via `data-fetch`
   - HTML imports via `data-import`
+  - Lifecycle events such as `haori:eachupdate`, `haori:bindcomplete`, `haori:show` / `haori:hide`
   - Zero runtime dependencies (uses browser-native APIs)
 
 Runtime mode can be distinguished with `data-runtime` and `Env.runtime` when you need different behavior for embedded use and browser demos.
@@ -102,6 +104,17 @@ Haori.mount(document.body, {items: [{name: 'apple'}, {name: 'orange'}]});
 Additional binding helpers:
 
 - `data-derive` / `data-derive-name` — define a derived value on an element and expose it to descendants only. This is useful for cases such as parent-child selects; see `docs/ja/data-derive-confirmation-draft.md` for the design background.
+- `data-*-bind-merge` (e.g. `data-click-bind-merge`, `data-fetch-bind-merge`) — when binding a result to a target element, shallow-merge it into the target's existing `data-bind` (keys not present in the new data are preserved) instead of replacing the whole binding. Useful for patching a single computed key (such as `selectedId={{items[0].id}}`) into existing state.
+
+Event-driven actions:
+
+- `data-click-*`, `data-change-*`, `data-load-*`, `data-intersect-*` declare actions (fetch, bind, copy, dialog control, etc.) triggered by click, form change, element load, and viewport intersection respectively. `data-load-*` also fires when a `data-if` element transitions from hidden to shown (the `haori:show` timing), so it works on elements like `<button>` that never receive a native `load` event.
+
+Lifecycle events:
+
+- `haori:eachupdate` — fired on the `data-each` element after a list diff completes; all added/removed/reordered rows are in the DOM and their content (`{{...}}`) is rendered by the time it fires, so it can be used to detect render completion (`detail`: `added`, `removed`, `order`, `total`).
+- `haori:bindcomplete` — fired on the target element after a `data-*-bind` / `data-*-bind-arg` bind and the subsequent re-evaluation of its subtree complete (`detail.bindArg`).
+- `haori:show` / `haori:hide` — fired when a `data-if` element becomes shown or hidden.
 
 Template expressions support safe JavaScript-like syntax such as property access, bracket access with dynamic indexes, optional chaining, ternary expressions, and method chains including array `map`/`filter` with arrow functions and spread calls. Access to global objects, `eval` or `arguments`, and prototype escape paths such as `constructor`, `__proto__`, `prototype`, or `Reflect` is blocked.
 
