@@ -1778,7 +1778,11 @@ export default class Core {
     return Promise.all(removalPromises)
       .then(() => chain)
       .then(() => {
-        // eachupdateイベントを発火
+        // eachupdate イベントを発火する。
+        // chain は全新規行の initializeFreshEachRow（= 行内容の描画）完了まで await
+        // しているため、本イベントは「今回の差分で追加・削除・並べ替えされた全行が
+        // DOM に反映され、各行の {{...}} 補間などの内容描画が完了した後」に発火する。
+        // これにより外部から data-each の描画完了を検知できる（仕様上の保証）。
         const validNewKeys = newKeys.filter(
           (key): key is string => key !== null,
         );

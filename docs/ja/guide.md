@@ -2084,11 +2084,28 @@ element.addEventListener('haori:hide', () => {
 
 ### リスト更新イベント
 
+`data-each` の差分更新が完了すると、`data-each` 要素で `haori:eachupdate` が発火します。
+
+**発火タイミングの保証**: `haori:eachupdate` は、その更新で**追加・削除・並べ替えされた全行が DOM に反映され、各行の `{{...}}` 補間などの内容描画が完了した後**に発火します。`data-each` は大量行を複数の `requestAnimationFrame` フレームに分割して描画しますが、`haori:eachupdate` はそれら全フレームの完了後に1回発火するため、**描画完了の検知に利用できます**（行内に `data-fetch` / `data-import` / 入れ子の `data-each` がある場合、それらの非同期処理は各行の描画完了後に別途進行します）。
+
+`event.detail` は以下を提供します。
+
+- `added`: 今回追加された行キーの配列
+- `removed`: 今回削除された行キーの配列
+- `order`: 更新後の全行キーの配列（現在の並び順）
+- `total`: 更新後の総行数（`order.length`）
+
 ```javascript
 listElement.addEventListener('haori:eachupdate', (event) => {
   console.log('追加されたキー:', event.detail.added)
   console.log('削除されたキー:', event.detail.removed)
   console.log('最終的な順序:', event.detail.order)
+  console.log('総行数:', event.detail.total)
+
+  // 例: 想定行数に達したら描画完了とみなす（外部からの完了検知）
+  if (event.detail.total === expectedRowCount) {
+    console.log('全行の描画が完了しました')
+  }
 })
 
 listElement.addEventListener('haori:rowadd', (event) => {

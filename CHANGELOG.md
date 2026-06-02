@@ -16,12 +16,17 @@
 - `data-*-bind-merge`（`data-click-bind-merge`・`data-change-bind-merge`・`data-load-bind-merge`・`data-intersect-bind-merge`・`data-fetch-bind-merge`）を追加した。指定時はバインド先の既存 `data-bind` を保持したまま解決済みデータを浅くマージ（未指定キーを保持）する。未指定時は従来どおり全置換。計算値（例: `selectedId={{items[0].id}}`）を既存 state にマージしたいケースで利用できる
 - `haori:bindcomplete` イベントを追加した。`data-*-bind` / `data-*-bind-arg` などによるバインドと対象要素配下の再評価（`data-if` / `data-each` 等）の完了時に対象要素で発火し、`detail.bindArg`（使用したネストキー、無指定なら `null`）を提供する。外部スクリプトからのバインド完了同期に利用できる
 
+### Documentation
+
+- `haori:eachupdate` の発火タイミングを仕様として明文化した。`data-each` の差分で追加・削除・並べ替えされた全行が DOM に反映され、各行の内容描画（`{{...}}` 補間等）が完了した後に発火することを保証し、大量行が複数フレームに分割描画される場合でも全フレーム完了後に1回発火するため**外部からの描画完了検知に利用できる**ことを `guide.md` に記載した（`detail`: `added` / `removed` / `order` / `total`）
+
 ### Library
 
 - `data-load-*` の表示連動発火（遷移時の1回発火、表示維持時の再発火なし、`data-load-*` 非保持要素では未起動）に関する回帰テストを追加した
 - `data-if` の falsy 判定（`0`・`''` で非表示、`[]`・`{}` で表示）に関する回帰テストを追加した
 - `data-*-bind-merge` の浅いマージ（既存キー保持・上書き）と未指定時の全置換に関する回帰テストを追加した
 - `data-*-bind-arg` バインド後の `data-if` 表示・`data-each` 全行描画、同一 `data-each` への並行評価の安全性、`haori:bindcomplete` 発火に関する回帰テストを追加した
+- `haori:eachupdate` が「全行の描画完了後」に発火すること（25行で発火時点に全行補間済み）と、`detail` の `added` / `removed` / `order` / `total` に関する回帰テストを追加した
 
 ## [0.7.0] - 2026-06-01
 
