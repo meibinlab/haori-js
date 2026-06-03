@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.10.0
+Version: 0.11.1
 
 ---
 
@@ -111,6 +111,7 @@ Event-driven actions:
 - `data-click-*`, `data-change-*`, `data-load-*`, `data-intersect-*` declare actions (fetch, bind, copy, dialog control, etc.) triggered by click, form change, element load, and viewport intersection respectively. `data-load-*` also fires when a `data-if` element transitions from hidden to shown (the `haori:show` timing), so it works on elements like `<button>` that never receive a native `load` event.
 - `data-click-copy-source` — explicitly set the copy source element for `data-click-copy` (defaults to the form given by `data-click-form`, otherwise the event element's binding).
 - `data-click-no-disabled` / `data-click-defer` — coexistence helpers for other libraries. `no-disabled` runs the click procedure without adding the `disabled` attribute (so libraries/CSS that ignore disabled elements, e.g. Bootstrap collapse, keep working; double execution is still prevented internally). `defer` runs the click procedure on the next frame (`requestAnimationFrame`/`setTimeout(0)`) so other libraries' synchronous click handlers complete first. Avoid `defer` on `<a href>` / `type="submit"` because the deferred procedure cannot `preventDefault()` the default action.
+- `data-{event}-run` (e.g. `data-click-run`, `data-change-run`) — run arbitrary JavaScript on the event without a fetch. The value is executed as real JS via `new Function` (like `-before-run`/`-after-run`), with `{{...}}` expanded at render time and `event` passed as an argument. Returning `false` calls `event.preventDefault()` (the `onclick="return false"` convention). **Security:** the expanded `{{...}}` is concatenated into executable code, so only interpolate trusted values (numeric indexes, IDs you control) — never untrusted strings (API/user input), which would run as code (XSS). Pass untrusted values via `data-bind` and read them inside the called function instead.
 
 Lifecycle events:
 

@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.10.0
+バージョン: 0.11.1
 最終更新: 2026-06-03
 
 ## 目次
@@ -1935,6 +1935,7 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 - **実行タイミング**: 手続きの同期実行中（`await` を挟む前）に実行されるため、`event.preventDefault()` が間に合います。`data-click-fetch` と併用した場合は **run を実行してから fetch** を継続します（run の `false` は preventDefault のみを制御し、fetch は中止しません。fetch を中止する場合は `data-{event}-before-run` を使用）。
 - **エラー時**: 評価・実行エラーは `Log.error` でコンソールに報告し、例外は外へ投げません。
 - **注意**: `data-click-defer` と併用すると手続きが次フレームへ遅延し同期実行でなくなるため、`return false` による `preventDefault()` は間に合いません。
+- **⚠️ セキュリティ（重要）**: `{{...}}` の展開結果は**実行コードへ文字列結合**されます。他属性の `{{...}}` は結果を「データ」として扱いますが、本属性は結果を「コード」として再実行するため、**`{{...}}` に入れた値が JavaScript として実行されます**。例えば `data-click-run="greet('{{name}}')"` で `name` が信頼できない文字列（`'); evilCode(); ('` 等）の場合、`greet(''); evilCode(); ('')` となり任意コードが実行されます（XSS）。`{{...}}` には**自分で制御する信頼できる値（数値 index・自前採番 ID など）のみ**を入れ、**API レスポンスやユーザー入力などの信頼できない文字列を差し込まないでください**。信頼できない値は `{{...}}` で結合せず、`data-bind` でスコープに置いて呼び出す関数の内部で参照する構成にします。
 
 ```html
 <!-- 関数呼び出し（type=button では preventDefault 不要） -->
@@ -3139,6 +3140,22 @@ if (type === ExpressionType.EXPRESSION) {
 ```
 
 `{{{ }}}` を使用する場合は、**信頼できるデータのみ**に限定してください。
+
+#### 6. 実 JS 実行属性（escape hatch）の注意
+
+`data-{event}-before-run` / `data-{event}-after-run` / `data-{event}-run` は、サンドボックス式評価ではなく **`new Function` による実 JavaScript 実行**です。これらの属性値は上記の式評価の制限（禁止識別子・危険パターン検出など）の対象外であり、記述したコードがそのまま実行されます。
+
+特に **`data-{event}-run` は `{{...}}` の展開結果を実行コードへ文字列結合**します（`before-run` / `after-run` は生の値を使うため `{{...}}` 展開は行いません）。そのため `data-{event}-run` の `{{...}}` に入れた値は JavaScript として実行されます。
+
+```html
+<!-- 危険: name が信頼できない文字列の場合に任意コード実行（XSS） -->
+<button data-click-run="greet('{{name}}')">...</button>
+<!-- name = "'); evilCode(); ('" → greet(''); evilCode(); ('') -->
+```
+
+- `data-{event}-run` の `{{...}}` には**自分で制御する信頼できる値のみ**（数値 index・自前採番 ID 等）を入れる。
+- **API レスポンスやユーザー入力などの信頼できない文字列を `{{...}}` で差し込まない**。必要な場合は `data-bind` でスコープに置き、`data-{event}-run` から呼ぶ関数の内部で参照する。
+- `before-run` / `after-run` / `run` の本体自体（コード部分）は静的なテンプレートに書き、動的な値はコードへ結合せずデータとして渡す。
 
 ### Content Security Policy (CSP)
 

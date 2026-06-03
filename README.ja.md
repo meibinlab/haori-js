@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.10.0
+バージョン: 0.11.1
 
 ---
 
@@ -111,6 +111,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `data-click-*`・`data-change-*`・`data-load-*`・`data-intersect-*` は、それぞれクリック・フォーム変更・要素ロード・ビューポート交差を契機に処理（fetch、bind、copy、ダイアログ操作など）を宣言します。`data-load-*` は `data-if` 要素が非表示→表示へ遷移した（`haori:show`）タイミングでも発火するため、ネイティブの `load` が発生しない `<button>` などでも利用できます。
 - `data-click-copy-source` — `data-click-copy` のコピー元要素を明示指定します（既定は `data-click-form` のフォーム、無ければイベント発火元の binding）。
 - `data-click-no-disabled` / `data-click-defer` — 他ライブラリとの併用補助です。`no-disabled` はクリック手続き実行中に `disabled` 属性を付与せず実行します（Bootstrap collapse など disabled 要素を無視するライブラリ・CSS が動作し続けます。多重実行は内部マーカーで防止）。`defer` はクリック手続きを次フレーム（`requestAnimationFrame`／`setTimeout(0)`）で実行し、他ライブラリの同期 click ハンドラを先に完了させます。遅延後は `preventDefault()` できないため、`<a href>` や `type="submit"` への `defer` 併用は避けてください。
+- `data-{event}-run`（例: `data-click-run`・`data-change-run`）— フェッチを伴わず任意の JavaScript をイベント時に実行します。属性値は `new Function` で実 JS として実行され（`-before-run`/`-after-run` と同方式）、`{{...}}` はレンダリング時に展開、`event` が引数で渡されます。本体が `false` を返すと `event.preventDefault()` を呼びます（`onclick="return false"` の慣習）。**セキュリティ**: 展開後の `{{...}}` は実行コードへ結合されるため、信頼できる値（数値 index・自前採番 ID 等）のみを入れてください。API レスポンスやユーザー入力などの信頼できない文字列を入れると任意コード実行（XSS）になり得ます。信頼できない値は `data-bind` 経由で渡し、呼び出す関数の内部で参照してください。
 
 ライフサイクルイベント:
 
