@@ -1970,7 +1970,13 @@ ${body}
       const promises: Promise<unknown>[] = [];
       if (this.options.bindArg) {
         this.options.bindFragments!.forEach(fragment => {
-          const bindingData = fragment.getBindingData();
+          // バインド先の「自身の」最新 binding（getRawBindingData）を基底にして
+          // bindArg キーだけを更新する。getBindingData()（継承込み）を基底にすると
+          // 継承キーが own の data-bind に混入してしまうため、own のみを対象にする。
+          // 読み取り〜書き込み（fragment.setBindingData）は await を挟まず同期で行われ、
+          // 並行・リアクティブな複数 bind-arg が重なっても呼び出し単位で原子的に
+          // 反映される（各呼び出しは直前の更新後の最新 own を読む）。
+          const bindingData = {...(fragment.getRawBindingData() ?? {})};
           const bindArg = this.options.bindArg as string;
           if (data && typeof data === 'object' && !Array.isArray(data)) {
             const currentValue = bindingData[bindArg];
