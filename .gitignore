@@ -48,3 +48,6 @@ debug-*.mjs
 test-*.js
 test-*.ts
 test-*.mjs
+
+# Local agent instructions (kept locally, not tracked)
+CLAUDE.md
