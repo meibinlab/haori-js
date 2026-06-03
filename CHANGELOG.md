@@ -11,16 +11,19 @@
 - `Core.dumpScope(element)` を追加した（ブラウザでは `Haori.Core.dumpScope(element)`）。式の識別子解決で見えるスコープ（`resolved`）と各キーの由来要素・種類（`sources`: `bind` / `derive`）を返し、開発モード（`Dev.enable()`）時はコンソールにも出力する。スコープ衝突のデバッグに利用できる
 - `data-each` の描画完了を外部テストから検知する手段を追加した（依頼3）。`data-each` が最新データで全行の描画を完了すると対象要素に `data-each-done` 属性を付与する（更新開始で除去、安定完了で再付与）。Playwright 等は `waitForSelector('[data-each-done]')` で待機できる
 - `Haori.waitForRenders()`（および `Queue.waitForIdle()` / 最上位 `waitForRenders` エクスポート）を追加した。進行中・追従投入分を含むすべてのレンダリングタスクの完了を待つ `Promise<void>` を返す。タブ切り替えやクリック後の複数描画をまとめて待機でき、イベント購読タイミングの競合を回避できる
+- `data-click-no-disabled` を追加した（依頼4）。指定時はクリック手続き中にボタンへ native `disabled` を付与しない。Bootstrap など他ライブラリの click ハンドラや CSS が `disabled` 要素を無視する問題を回避でき、Haori 内部の多重実行ガード（`data-haori-click-lock` / WeakSet）は維持される
 
 ### Documentation
 
 - 式の識別子解決スコープ（DOM ネスト優先・`data-derive` の位置づけ・グローバル）と、**フォーム入力値は change／明示同期までスコープに投入されない**ことを `guide.md` に明文化した。あわせて `haori:bindcomplete` の発火タイミング保証（DOM 反映完了まで）を追記した
 - 外部テスト（Playwright 等）から `data-each` の描画完了を待機する手段（`data-each-done` 属性 / `Haori.waitForRenders()`）を `guide.md` に追記した
+- `data-click-no-disabled` と他ライブラリ（Bootstrap 等）との共存（Haori はイベント伝播を止めないこと、`disabled` 付与の回避、命令的クラス上書きの注意）を `guide.md` に追記した
 
 ### Library
 
 - `haori:bindcomplete` 発火時点で `data-if` 表示・`data-each` 全行が反映済みであること、`Core.dumpScope` のスコープ解決・由来情報（内側優先、フォーム未同期時の外側フォールバック）に関する回帰テストを追加した
 - `data-each-done` の付与/除去タイミングと `Haori.waitForRenders()` / `Queue.waitForIdle()` による描画完了待機に関する回帰テストを追加した
+- `data-click-no-disabled` 指定時に `disabled` を付与しないこと・多重実行ガードが維持されることの回帰テストを追加した
 
 ## [0.8.0] - 2026-06-03
 

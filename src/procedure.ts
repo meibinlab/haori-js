@@ -1506,12 +1506,21 @@ ${body}
       return false;
     }
 
+    // data-click-no-disabled が指定されている場合は native disabled を付与しない。
+    // Bootstrap など他ライブラリの click ハンドラや CSS が disabled 要素を無視する
+    // 問題を避けつつ、内部マーカーと RUNNING_CLICK_TARGETS で多重実行は防止する。
+    const skipDisabled = target.hasAttribute(
+      `${Env.prefix}click-no-disabled`,
+    );
+
     Procedure.RUNNING_CLICK_TARGETS.add(target);
     target.setAttribute(PROCEDURE_CLICK_LOCK_MARKER, '');
-    target.setAttribute('disabled', '');
+    if (!skipDisabled) {
+      target.setAttribute('disabled', '');
+    }
     return {
       target,
-      appliedDisabledAttribute: true,
+      appliedDisabledAttribute: !skipDisabled,
     };
   }
 
@@ -1529,9 +1538,10 @@ ${body}
     }
 
     Procedure.RUNNING_CLICK_TARGETS.delete(executionLock.target);
+    // マーカーは常に解除する（解除し損ねると再クリックできなくなるため）。
+    executionLock.target.removeAttribute(PROCEDURE_CLICK_LOCK_MARKER);
     if (executionLock.appliedDisabledAttribute) {
       executionLock.target.removeAttribute('disabled');
-      executionLock.target.removeAttribute(PROCEDURE_CLICK_LOCK_MARKER);
     }
   }
 

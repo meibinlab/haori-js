@@ -1257,6 +1257,27 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 17. `data-click-history` - 履歴への pushState
 18. `data-click-redirect` - リダイレクト
 
+### 他ライブラリとの共存（`data-click-no-disabled`）
+
+Haori は `data-click-*` のクリック手続き実行中、多重クリックを防ぐためにボタンへ一時的に native の `disabled` 属性を付与します（手続き完了で解除）。Haori はクリックイベントの伝播を止めません（`stopPropagation` / `preventDefault` は呼びません）が、Bootstrap などの他ライブラリや CSS は `disabled` 要素のクリックを無視するため、**同じボタンに `data-bs-toggle="collapse"` のような他ライブラリのハンドラを併用すると、それらの動作が阻害される**ことがあります。
+
+このような場合は `data-click-no-disabled` を付けると、クリック手続き中に native の `disabled` を付与しなくなります。Haori 内部の多重実行ガードは引き続き有効なので、Haori 自身の処理が二重に走ることはありません。
+
+```html
+<!-- Bootstrap の collapse トグルと Haori のクリック処理を同居させる -->
+<button
+  data-bs-toggle="collapse"
+  data-bs-target="#detail-search"
+  data-click-reset-before="#state"
+  data-click-copy="#state"
+  data-click-no-disabled
+>
+  詳細検索
+</button>
+```
+
+なお、他ライブラリが要素へ命令的に付与したクラス（Bootstrap の `.show` など）は、その要素や祖先が Haori によって再描画されると、宣言された静的な属性で上書きされて失われることがあります。トグル対象（collapse の本体など）は、Haori が再描画する subtree の外に置くか、`data-bind` 由来の再評価対象に含めない構成にすることを推奨します。
+
 ### すべての属性の詳細
 
 #### `data-click-validate`: バリデーション実行
