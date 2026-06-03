@@ -492,16 +492,25 @@ export default class Form {
   }
 
   /**
-   * 対象のフラグメントがフォームフラグメントであればそれを返し、
-   * そうでなければ先祖要素をたどってフォームフラグメントを探します。
+   * 対象のフラグメントがフォームコンテナであればそれを返し、
+   * そうでなければ先祖要素をたどってフォームコンテナを探します。
    *
-   * @param fragment
+   * フォームコンテナは `<form>` 要素、または `data-form` 属性を持つ任意の要素です。
+   * 後者は `<table>` 内など `<form>` を直接置けない箇所で、`<tr>` などを値収集の
+   * コンテナとして扱うために使用します（`data-click-form` 等が対象を探す際に利用）。
+   *
+   * @param fragment 探索の起点フラグメント
+   * @returns フォームコンテナのフラグメント。見つからなければ null
    */
   public static getFormFragment(
     fragment: ElementFragment,
   ): ElementFragment | null {
     const element = fragment.getTarget();
-    if (element instanceof HTMLFormElement) {
+    if (
+      element instanceof HTMLFormElement ||
+      (element instanceof HTMLElement &&
+        element.hasAttribute(`${Env.prefix}form`))
+    ) {
       return fragment;
     }
     const parent = fragment.getParent();

@@ -12,6 +12,7 @@
 - `data-each` の描画完了を外部テストから検知する手段を追加した（依頼3）。`data-each` が最新データで全行の描画を完了すると対象要素に `data-each-done` 属性を付与する（更新開始で除去、安定完了で再付与）。Playwright 等は `waitForSelector('[data-each-done]')` で待機できる
 - `Haori.waitForRenders()`（および `Queue.waitForIdle()` / 最上位 `waitForRenders` エクスポート）を追加した。進行中・追従投入分を含むすべてのレンダリングタスクの完了を待つ `Promise<void>` を返す。タブ切り替えやクリック後の複数描画をまとめて待機でき、イベント購読タイミングの競合を回避できる
 - `data-click-no-disabled` を追加した（依頼4）。指定時はクリック手続き中にボタンへ native `disabled` を付与しない。Bootstrap など他ライブラリの click ハンドラや CSS が `disabled` 要素を無視する問題を回避でき、Haori 内部の多重実行ガード（`data-haori-click-lock` / WeakSet）は維持される
+- `data-form` 属性を追加した。`<form>` を直接置けない場所（`<table>` 内の `<tr>` など）でも、`data-form` を付けた任意の要素を `data-click-form` 等の値収集コンテナとして扱える。`Form.getFormFragment` が `<form>` に加えて `data-form` 要素を認識する（値収集専用で、双方向バインディングは行わないため `data-each` 行の binding data を壊さない）
 
 ### Documentation
 
@@ -24,6 +25,7 @@
 - `haori:bindcomplete` 発火時点で `data-if` 表示・`data-each` 全行が反映済みであること、`Core.dumpScope` のスコープ解決・由来情報（内側優先、フォーム未同期時の外側フォールバック）に関する回帰テストを追加した
 - `data-each-done` の付与/除去タイミングと `Haori.waitForRenders()` / `Queue.waitForIdle()` による描画完了待機に関する回帰テストを追加した
 - `data-click-no-disabled` 指定時に `disabled` を付与しないこと・多重実行ガードが維持されることの回帰テストを追加した
+- `data-form` を form コンテナとして認識すること、`<tr data-form>` のテーブル行で `data-click-form` が行 id を保持したまま入力値を収集・送信できることの回帰テストを追加した
 
 ## [0.8.0] - 2026-06-03
 

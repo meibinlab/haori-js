@@ -753,6 +753,50 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 
 フォームデータを取得すると、`total`は除外され、`{"price":1000,"quantity":3}`のみが取得されます。
 
+#### `<form>` を置けない場所でのフォーム化（`data-form`）
+
+HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テーブルの各行に入力欄が並ぶ UI などでは `<form>` を使えません。このような場合、任意の要素に **`data-form`** 属性を付けると、その要素を `<form>` と同等の**値収集コンテナ**として扱えます（属性値は不要・無視されます）。
+
+`data-click-form`（および `data-change-form` / `data-load-form` / `data-intersect-form`）が対象を探す際、`<form>` 要素に加えて `data-form` を持つ要素も認識します。`data-click-form` を空で指定すれば、先祖の `data-form` 要素が自動的に対象になります。
+
+```html
+<table>
+  <tbody data-each="prices" data-each-key="id">
+    <tr data-form>
+      <td><input type="month"  name="startMonth"></td>
+      <td><input type="number" name="price"></td>
+      <td><input type="text"   name="remarks"></td>
+      <td>
+        <button
+          data-click-validate
+          data-click-fetch="{{'../api/prices/' + id}}"
+          data-click-fetch-method="PUT"
+          data-click-form
+          data-click-toast="更新しました。"
+          data-click-refetch="#price-list">
+          確定
+        </button>
+      </td>
+    </tr>
+  </tbody>
+</table>
+```
+
+セレクタで直接指定することもできます。
+
+```html
+<section id="filter-form" data-form>
+  <select name="area">...</select>
+  <select name="type">...</select>
+</section>
+<button data-click-form="#filter-form" data-click-fetch="/api/data">検索</button>
+```
+
+補足:
+- `data-click-validate` は `<form>` でなくても、コンテナ配下の入力要素を個別に検証するため `data-form` でも機能します。
+- `data-form` は**値収集（送信）専用のコンテナ宣言**です。入力変更を要素の binding data へ書き戻す双方向バインディングは行いません。これは意図的な設計で、`data-each` 行（行データに `id` などを持つ）に `data-form` を付けても**行の binding data が入力値で上書きされない**ため、上の例の `{{'../api/prices/' + id}}` が正しく解決されます。
+- `data-form` と `data-form-object` を同一要素に併用することは推奨しません（コンテナ宣言とデータ構造変換が競合するため、`data-form` としての利用を想定してください）。
+
 ---
 
 ## URLパラメータとHTMLインポート
