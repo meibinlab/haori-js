@@ -229,6 +229,24 @@ export default class Expression {
   }
 
   /**
+   * 式の中で「使用できない（ブロックされた）グローバル識別子」を参照しているものを
+   * 検出します。`Object` などは評価時に `undefined` へ遮断されるため、`Object.assign`
+   * のように使うと原因の分かりにくい `TypeError` になります。エラー時のヒント表示に
+   * 用います。プロパティアクセス（`foo.Object`）は対象外です。
+   *
+   * @param expression 評価対象の式
+   * @returns 式が参照しているブロック済み識別子の一覧
+   */
+  private static detectForbiddenIdentifiers(expression: string): string[] {
+    return this.FORBIDDEN_NAMES.filter(name => {
+      // 直前が単語構成文字・`$`・`.` でなく、直後が単語構成文字・`$` でない
+      // 独立した識別子としての出現のみを検出する。
+      const pattern = new RegExp(`(^|[^\\w$.])${name}(?![\\w$])`);
+      return pattern.test(expression);
+    });
+  }
+
+  /**
    * 式を評価します。
    *
    * @param expression 評価する式文字列
@@ -316,6 +334,20 @@ export default class Expression {
             runtimeBindings[missingIdentifier] = undefined;
             continue;
           }
+        }
+        // 式が使用できない（ブロックされた）識別子を参照している場合は、
+        // 原因が分かりにくい TypeError になりがちなため明示的なヒントを出す。
+        const blocked = this.detectForbiddenIdentifiers(expression);
+        if (blocked.length > 0) {
+          Log.warn(
+            '[Haori]',
+            'Expression references blocked identifier(s): ' +
+              blocked.join(', ') +
+              '. These are blocked in expressions and evaluate to' +
+              ' undefined (often the cause of this error).' +
+              ' Use spread {...a, ...b} instead of Object.assign.',
+            expression,
+          );
         }
         Log.error('[Haori]', 'Expression evaluation error:', expression, error);
         if (error instanceof ReferenceError) {
