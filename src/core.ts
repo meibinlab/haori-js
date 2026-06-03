@@ -1426,33 +1426,42 @@ export default class Core {
       if (!found) {
         // フォールバック: フラグメントの子に要素が無いが DOM には要素子がある場合
         // （タブ表示やネスト data-if など特定フローでフラグメント木と DOM の子が
-        //  同期しない状況の復旧）、DOM の最初の要素子からテンプレートを取得する。
+        //  同期しない状況の復旧）、DOM の要素子からテンプレートを復旧する。
+        // この分岐は template===null かつフラグメント子テンプレートも無い「復旧専用
+        // パス」であり、each-before/after 以外の要素子はすべて each に未管理の残留物
+        // とみなせる。先頭要素子をテンプレートとして採用し、残りの該当要素子も
+        // まとめて除去して、後続の updateDiff をクリーンな状態から開始する。
         const target = fragment.getTarget();
-        for (const domChild of Array.from(target.children)) {
+        const staleChildren = Array.from(target.children).filter(
+          domChild =>
+            !domChild.hasAttribute(`${Env.prefix}each-before`) &&
+            !domChild.hasAttribute(`${Env.prefix}each-after`),
+        );
+        staleChildren.forEach(domChild => {
+          // 最初の要素子をテンプレートとして採用する。
+          if (!found) {
+            const childFragment = Fragment.get(domChild);
+            if (childFragment instanceof ElementFragment) {
+              template = childFragment.clone();
+              Core.markFreshInitializationSkippable(template);
+              fragment.setTemplate(template);
+              found = true;
+            }
+          }
+          // フラグメントに紐づく残留子があれば children から除外する。
+          const frag = Fragment.get(domChild);
           if (
-            domChild.hasAttribute(`${Env.prefix}each-before`) ||
-            domChild.hasAttribute(`${Env.prefix}each-after`)
+            frag instanceof ElementFragment &&
+            fragment.getChildren().includes(frag)
           ) {
-            continue;
+            fragment.removeChild(frag);
+            frag.setMounted(false);
           }
-          const childFragment = Fragment.get(domChild);
-          if (!(childFragment instanceof ElementFragment)) {
-            continue;
-          }
-          template = childFragment.clone();
-          Core.markFreshInitializationSkippable(template);
-          fragment.setTemplate(template);
-          found = true;
-          // children に残っていれば除外し、DOM からも除去する。
-          if (fragment.getChildren().includes(childFragment)) {
-            fragment.removeChild(childFragment);
-          }
+          // 未追跡の素の DOM ノードも含め、残留要素子は DOM から除去する。
           if (domChild.parentNode) {
             domChild.parentNode.removeChild(domChild);
           }
-          childFragment.setMounted(false);
-          break;
-        }
+        });
       }
       // テンプレートのunmount完了後にupdateDiffを実行
       return this.updateDiff(fragment, data).then(() => {
