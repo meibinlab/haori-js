@@ -107,9 +107,26 @@ export default class EventDispatcher {
       fragment.syncValue();
     }
 
-    new Procedure(fragment, type).run().catch(error => {
-      Log.error('[Haori]', 'Procedure execution error:', error);
-    });
+    const runProcedure = () => {
+      new Procedure(fragment, type).run().catch(error => {
+        Log.error('[Haori]', 'Procedure execution error:', error);
+      });
+    };
+
+    // data-click-defer 指定時は、Haori の click 処理を次フレーム（または次マクロ
+    // タスク）へ遅延する。これにより Bootstrap など他ライブラリの「同一クリック
+    // イベント中に同期実行される」ハンドラ（collapse トグル等）が先に完了し、
+    // Haori の reset/copy 等による DOM 変更との競合を避けられる。
+    if (type === 'click' && element.hasAttribute('data-click-defer')) {
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(() => runProcedure());
+      } else {
+        setTimeout(runProcedure, 0);
+      }
+      return;
+    }
+
+    runProcedure();
   }
 
   /**
