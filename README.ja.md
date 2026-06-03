@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.8.0
+バージョン: 0.10.0
 
 ---
 
@@ -109,6 +109,8 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 イベント駆動アクション:
 
 - `data-click-*`・`data-change-*`・`data-load-*`・`data-intersect-*` は、それぞれクリック・フォーム変更・要素ロード・ビューポート交差を契機に処理（fetch、bind、copy、ダイアログ操作など）を宣言します。`data-load-*` は `data-if` 要素が非表示→表示へ遷移した（`haori:show`）タイミングでも発火するため、ネイティブの `load` が発生しない `<button>` などでも利用できます。
+- `data-click-copy-source` — `data-click-copy` のコピー元要素を明示指定します（既定は `data-click-form` のフォーム、無ければイベント発火元の binding）。
+- `data-click-no-disabled` / `data-click-defer` — 他ライブラリとの併用補助です。`no-disabled` はクリック手続き実行中に `disabled` 属性を付与せず実行します（Bootstrap collapse など disabled 要素を無視するライブラリ・CSS が動作し続けます。多重実行は内部マーカーで防止）。`defer` はクリック手続きを次フレーム（`requestAnimationFrame`／`setTimeout(0)`）で実行し、他ライブラリの同期 click ハンドラを先に完了させます。遅延後は `preventDefault()` できないため、`<a href>` や `type="submit"` への `defer` 併用は避けてください。
 
 ライフサイクルイベント:
 
@@ -116,7 +118,9 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `haori:bindcomplete` — `data-*-bind` / `data-*-bind-arg` によるバインドと、対象要素配下の再評価が完了した後に対象要素で発火します（`detail.bindArg`）。
 - `haori:show` / `haori:hide` — `data-if` 要素の表示・非表示時に発火します。
 
-テンプレート式では、プロパティアクセス、動的インデックスを含むブラケットアクセス、optional chaining、三項演算子、配列 `map` / `filter` のアロー関数、spread を伴う呼び出しなどの安全な構文を利用できます。一方で、グローバルオブジェクト、`eval` や `arguments`、`constructor`、`__proto__`、`prototype`、`Reflect` などの脱出経路は使用できません。
+テンプレート式では、プロパティアクセス、動的インデックスを含むブラケットアクセス、optional chaining、三項演算子、配列 `map` / `filter` のアロー関数、spread を伴う呼び出しなどの安全な構文を利用できます。一方で、グローバルオブジェクト、`eval` や `arguments`、`constructor`、`__proto__`、`prototype`、`Reflect`、`Object` などの脱出経路は使用できません。`Object` がブロックされるため、`Object.assign` の代わりにスプレッド構文 `{...a, ...b}` を使ってください。ブロックされた識別子を式で参照すると、コンソールに `blocked identifier(s): …` という警告が出力されます。
+
+テスト・デバッグ補助: `waitForRenders()`（`Haori.waitForRenders()` でも可）は、初期化・進行中のフェッチ・キューに積まれた描画タスクがすべて落ち着くまで待機します（E2E テストで描画完了を待つのに便利）。`Haori.Core.dumpScope(element)` は要素に解決されるスコープ（`resolved`）と各キーの由来（`sources`）を返します。開発モードでは falsy な `data-if` がその式と参照スコープを自動でログ出力します。
 
 `data-fetch` と `data-import` は、バインディング更新時に評価結果が変化した場合のみ自動で再評価されます。`data-fetch` は評価後の URL、HTTP メソッド、ヘッダー、body を含む実行シグネチャで比較し、`data-import` は評価後 URL で比較します。これらの属性値に未解決参照が 1 つでも含まれる場合、その時点では実行されず、後続のバインディング更新で参照が解決したときに初めて実行対象になります。
 

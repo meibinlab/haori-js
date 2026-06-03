@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.8.0
+Version: 0.10.0
 
 ---
 
@@ -109,6 +109,8 @@ Additional binding helpers:
 Event-driven actions:
 
 - `data-click-*`, `data-change-*`, `data-load-*`, `data-intersect-*` declare actions (fetch, bind, copy, dialog control, etc.) triggered by click, form change, element load, and viewport intersection respectively. `data-load-*` also fires when a `data-if` element transitions from hidden to shown (the `haori:show` timing), so it works on elements like `<button>` that never receive a native `load` event.
+- `data-click-copy-source` — explicitly set the copy source element for `data-click-copy` (defaults to the form given by `data-click-form`, otherwise the event element's binding).
+- `data-click-no-disabled` / `data-click-defer` — coexistence helpers for other libraries. `no-disabled` runs the click procedure without adding the `disabled` attribute (so libraries/CSS that ignore disabled elements, e.g. Bootstrap collapse, keep working; double execution is still prevented internally). `defer` runs the click procedure on the next frame (`requestAnimationFrame`/`setTimeout(0)`) so other libraries' synchronous click handlers complete first. Avoid `defer` on `<a href>` / `type="submit"` because the deferred procedure cannot `preventDefault()` the default action.
 
 Lifecycle events:
 
@@ -116,7 +118,9 @@ Lifecycle events:
 - `haori:bindcomplete` — fired on the target element after a `data-*-bind` / `data-*-bind-arg` bind and the subsequent re-evaluation of its subtree complete (`detail.bindArg`).
 - `haori:show` / `haori:hide` — fired when a `data-if` element becomes shown or hidden.
 
-Template expressions support safe JavaScript-like syntax such as property access, bracket access with dynamic indexes, optional chaining, ternary expressions, and method chains including array `map`/`filter` with arrow functions and spread calls. Access to global objects, `eval` or `arguments`, and prototype escape paths such as `constructor`, `__proto__`, `prototype`, or `Reflect` is blocked.
+Template expressions support safe JavaScript-like syntax such as property access, bracket access with dynamic indexes, optional chaining, ternary expressions, and method chains including array `map`/`filter` with arrow functions and spread calls. Access to global objects, `eval` or `arguments`, and prototype escape paths such as `constructor`, `__proto__`, `prototype`, `Reflect`, or `Object` is blocked. Because `Object` is blocked, use spread syntax `{...a, ...b}` instead of `Object.assign`; when a blocked identifier is referenced in an expression, a `blocked identifier(s): …` warning is logged to the console.
+
+Helpers for tests and debugging: `waitForRenders()` (also `Haori.waitForRenders()`) resolves once initialization, in-flight fetches, and queued render tasks have all settled — useful for E2E tests. `Haori.Core.dumpScope(element)` returns the scope resolved for an element (`resolved`) and where each key comes from (`sources`); in dev mode a falsy `data-if` also logs its expression and referenced scope automatically.
 
 `data-fetch` and `data-import` are automatically re-evaluated only when their evaluated values change after a binding update. `data-fetch` compares a request signature composed of the resolved URL, HTTP method, headers, and body, while `data-import` compares only the resolved URL. If either attribute contains even one unresolved reference, it is treated as invalid for that evaluation cycle, is not executed, and becomes executable only after a later binding update resolves the reference.
 
