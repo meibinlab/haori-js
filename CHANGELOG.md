@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-03
+
 ### Fixed
 
 - `haori:bindcomplete` を、バインド操作だけでなく**バインド起因の `data-if` 表示切り替えと `data-each` 差分描画の DOM 反映完了後**に発火するよう強化した。`evaluateEach` の再入時の再実行を fire-and-forget から待機可能（loop-until-stable な単一 settle Promise を共有）へ変更し、`evaluateAll`→`setBindingData`→`haori:bindcomplete` が最終描画まで確実に待つようにした
