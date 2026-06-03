@@ -1757,6 +1757,8 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 17. `data-{event}-history`: 履歴 pushState 実行
 18. `data-{event}-redirect`: リダイレクト実行
 
+なお `data-{event}-run`（フェッチを伴わない任意 JS 実行）は、`event.preventDefault()` を有効にするため、上記 2（confirm）より前の**同期タイミング**で実行されます。`data-{event}-fetch` と併用した場合は run → fetch の順になります。
+
 #### 交差監視トリガー (`data-intersect-*`)
 
 `data-intersect-*` は `IntersectionObserver` によって発火する専用トリガー属性です。`click` / `change` / `load` の DOM イベントとは別に、要素が監視領域へ入ったことをきっかけに Procedure を実行します。主な用途は無限スクロール、一覧の先読み、遅延読み込みです。
@@ -1921,6 +1923,43 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 >
   取得
 </button>
+```
+
+##### `data-{event}-run`
+
+フェッチを伴わないイベント時に、任意の JavaScript を実行します。`data-click-run` / `data-change-run` などイベント種別ごとに利用できます。クライアント側の状態操作や関数呼び出しのために、`document.addEventListener('click', ...)` 等の独自ハンドラを書かずに済ませるための属性です。
+
+- **実行方式**: 属性値を本体として `new Function('event', "use strict"; body)` で実行します（`before-run` / `after-run` と同じ実 JS 実行。サンドボックス式評価ではありません）。`this` は起点要素、引数 `event` は起点の DOM イベントです。
+- **`{{...}}` の展開**: 属性値に含まれる `{{...}}` は、他の属性と同様にレンダリング時に評価・展開され、展開後の文字列が本体として実行されます（`{{...}}` 部分のみバインディングスコープを参照できます）。
+- **戻り値による既定動作の抑止**: 本体が **`false` を返したときだけ `event.preventDefault()`** を呼びます（`onclick="return false"` / jQuery と同じ慣習）。`<a href>` や `type="submit"` の既定動作を抑止したい場合は `return false` を返してください。`type="button"` など既定動作が無い要素では不要です。
+- **実行タイミング**: 手続きの同期実行中（`await` を挟む前）に実行されるため、`event.preventDefault()` が間に合います。`data-click-fetch` と併用した場合は **run を実行してから fetch** を継続します（run の `false` は preventDefault のみを制御し、fetch は中止しません。fetch を中止する場合は `data-{event}-before-run` を使用）。
+- **エラー時**: 評価・実行エラーは `Log.error` でコンソールに報告し、例外は外へ投げません。
+- **注意**: `data-click-defer` と併用すると手続きが次フレームへ遅延し同期実行でなくなるため、`return false` による `preventDefault()` は間に合いません。
+
+```html
+<!-- 関数呼び出し（type=button では preventDefault 不要） -->
+<button type="button"
+  data-click-run="Plans.addElectricTemplateRule('#ept-dialog-state', '#ept-rule-form')">
+  ルール追加
+</button>
+
+<!-- {{...}} をレンダリング時に展開（ruleI = 2 なら editRule('#ep', 2, '#form') を実行） -->
+<button type="button"
+  data-click-run="Plans.editRule('#ep-dialog-state', {{ruleI}}, '#ep-rule-form')">
+  編集
+</button>
+
+<!-- 確認のうえ実行（confirm はブラウザ標準。実 JS なので利用可） -->
+<button type="button"
+  data-click-run="if (confirm('このルールを削除しますか？')) Plans.removeRule('#ept-dialog-state', {{ruleI}})">
+  削除
+</button>
+
+<!-- リンクの既定遷移を抑止したい場合は false を返す -->
+<a href="/fallback"
+  data-click-run="openInApp(); return false">
+  アプリで開く
+</a>
 ```
 
 #### フェッチ

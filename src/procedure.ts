@@ -237,6 +237,12 @@ export interface ProcedureOptions {
   /** data 属性の評価元となる属性名 */
   dataAttrName?: string | null;
 
+  /**
+   * クリック等のイベント時に実行する任意 JS（data-{event}-run）。
+   * 本体が false を返した場合、呼び出し側が event.preventDefault() を行う。
+   */
+  runScript?: ((event: Event | null) => unknown) | null;
+
   /** フェッチ前実行スクリプト */
   beforeCallback?: (
     fetchUrl: string | null,
@@ -385,6 +391,12 @@ export default class Procedure {
 
   /** この Procedure が扱うイベント種別 */
   private readonly eventType: string | null;
+
+  /**
+   * 起点となった DOM イベント（data-{event}-run の preventDefault 用）。
+   * イベント駆動でない実行や、イベントを渡さない経路では null。
+   */
+  private readonly domEvent: Event | null;
 
   /**
    * イベント属性名を正しく生成します。
@@ -718,6 +730,23 @@ ${body}
           ) => BeforeCallbackResult | boolean | void;
         } catch (e) {
           Log.error('Haori', `Invalid before script: ${e}`);
+        }
+      }
+      // data-{event}-run: フェッチを伴わない任意 JS をクリック等で実行する。
+      // before-run と異なり {{...}} を展開した値（getAttribute）を本体にする。
+      const runAttrName = Procedure.attrName(event, 'run');
+      if (fragment.hasAttribute(runAttrName)) {
+        const body = String(fragment.getAttribute(runAttrName) ?? '');
+        try {
+          options.runScript = new Function(
+            'event',
+            `
+"use strict";
+${body}
+`,
+          ) as (event: Event | null) => unknown;
+        } catch (e) {
+          Log.error('Haori', `Invalid run script: ${e}`);
         }
       }
     }
@@ -1273,18 +1302,25 @@ ${body}
    *
    * @param fragment フラグメント
    * @param event イベント名
+   * @param domEvent 起点となった DOM イベント（data-{event}-run の preventDefault 用）
    */
-  constructor(fragment: ElementFragment, event: string | null);
+  constructor(
+    fragment: ElementFragment,
+    event: string | null,
+    domEvent?: Event | null,
+  );
 
   /**
    * コンストラクタ。
    *
    * @param arg1 オプションもしくはフラグメント
    * @param arg2 イベント名
+   * @param domEvent 起点となった DOM イベント
    */
   constructor(
     arg1: ProcedureOptions | ElementFragment,
     arg2: string | null = null,
+    domEvent: Event | null = null,
   ) {
     if (Procedure.isElementFragment(arg1)) {
       this.options = Procedure.buildOptions(arg1, arg2);
@@ -1293,6 +1329,7 @@ ${body}
       this.options = arg1;
       this.eventType = null;
     }
+    this.domEvent = domEvent;
   }
 
   /**
@@ -1345,6 +1382,23 @@ ${body}
         this.validate(this.options.formFragment) === false
       ) {
         return false;
+      }
+      // data-{event}-run: 任意 JS を同期実行する。await を挟む前に実行することで、
+      // クリックイベント中の event.preventDefault() が間に合う。本体が false を
+      // 返した場合はデフォルト動作（リンク遷移・フォーム送信）を抑止する。
+      if (this.options.runScript) {
+        const sourceElement = this.options.targetFragment?.getTarget() ?? null;
+        try {
+          const result = this.options.runScript.call(
+            sourceElement,
+            this.domEvent,
+          );
+          if (result === false && this.domEvent) {
+            this.domEvent.preventDefault();
+          }
+        } catch (e) {
+          Log.error('Haori', `Run script execution error: ${e}`);
+        }
       }
       const confirmed = await this.confirm();
       if (!confirmed) {

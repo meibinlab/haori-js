@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Added
+
+- `data-{event}-run` を追加した。フェッチを伴わないクリック等のイベントで任意の JavaScript を実行する（`data-click-run` / `data-change-run` など）。属性値は `{{...}}` をレンダリング時に展開した文字列を本体として `new Function('event', ...)` で実行する（`data-{event}-before-run` / `-after-run` と同じ実 JS 実行方式）。本体が `false` を返した場合のみ `event.preventDefault()` を呼ぶ（`onclick="return false"` / jQuery と同じ慣習）。`event` を引数で受け取れるため `stopPropagation()` 等も明示できる。`data-click-fetch` と併用した場合は run を同期実行してから fetch を継続する（run の戻り値は preventDefault のみを制御し fetch は中止しない）。評価・実行エラーは `Log.error` で報告する
+
+### Library
+
+- `data-{event}-run` のクリック実行・`{{...}}` 展開・`return false` での preventDefault・戻り値なしでの非抑止・エラー時の Log.error・change イベントでの動作を検証する回帰テストを追加した
+
 ## [0.10.1] - 2026-06-03
 
 ### Changed

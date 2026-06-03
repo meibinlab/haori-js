@@ -108,7 +108,7 @@ export default class EventDispatcher {
     }
 
     const runProcedure = () => {
-      new Procedure(fragment, type).run().catch(error => {
+      new Procedure(fragment, type, event).run().catch(error => {
         Log.error('[Haori]', 'Procedure execution error:', error);
       });
     };
