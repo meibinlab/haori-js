@@ -1305,12 +1305,17 @@ export default class Core {
     state: EachUpdateState,
   ): Promise<void> {
     state.running = true;
+    // 新しい描画サイクルの開始時に完了マーカーを外す。
+    fragment.getTarget().removeAttribute(`${Env.prefix}each-done`);
     const settled = (async () => {
       try {
         do {
           state.rerunRequested = false;
           await Core.performEachUpdate(fragment);
         } while (state.rerunRequested);
+        // 全行の描画が安定して完了したことを示すマーカーを付与する。
+        // 外部テストは `[data-each-done]` を待機して描画完了を検知できる。
+        fragment.getTarget().setAttribute(`${Env.prefix}each-done`, '');
       } finally {
         state.running = false;
         state.settled = null;

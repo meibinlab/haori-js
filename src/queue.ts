@@ -145,6 +145,49 @@ class AsyncQueue {
       await Promise.allSettled(promises);
     }
   }
+
+  /**
+   * 現在処理中・待機中のタスクに加えて、その完了に追従して投入されるタスクも含め、
+   * キューが安定して空になるまで待機します。
+   *
+   * `wait()` は呼び出し時点のキュー内容だけを待つため、複数フレームに分割される描画
+   * （`data-each` の大量行など）では完了前に解決し得ます。本メソッドは、空かつ非処理の
+   * 状態が 1 フレームを跨いでも維持されるまでループして待つことで、レンダリング全体の
+   * 完了を待てるようにします。
+   *
+   * @param maxIterations 無限ループ防止の最大反復回数（連続アニメーション等への保険）
+   * @returns レンダリングが安定するまで解決されない Promise
+   */
+  public async waitForIdle(maxIterations = 1000): Promise<void> {
+    let stableChecks = 0;
+    let iterations = 0;
+    while (stableChecks < 2 && iterations < maxIterations) {
+      if (this.processing || this.queue.length > 0) {
+        await this.wait();
+        stableChecks = 0;
+      } else {
+        stableChecks += 1;
+      }
+      // 追従して積まれるタスク（chain の .then や rAF 起点の処理）を拾うため 1 tick 譲る。
+      await AsyncQueue.nextTick();
+      iterations += 1;
+    }
+  }
+
+  /**
+   * 次のフレーム（または 1 マクロタスク）まで待機します。
+   *
+   * @returns 次フレームで解決される Promise
+   */
+  private static nextTick(): Promise<void> {
+    return new Promise<void>(resolve => {
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(() => resolve());
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
+  }
 }
 
 /**
@@ -174,5 +217,15 @@ export default class Queue {
    */
   public static wait(): Promise<void> {
     return this.ASYNC_QUEUE.wait();
+  }
+
+  /**
+   * レンダリング（追従して投入されるタスクを含む）が安定して完了するまで待機します。
+   *
+   * @param maxIterations 無限ループ防止の最大反復回数
+   * @returns レンダリングが安定するまで解決されない Promise
+   */
+  public static waitForIdle(maxIterations = 1000): Promise<void> {
+    return this.ASYNC_QUEUE.waitForIdle(maxIterations);
   }
 }

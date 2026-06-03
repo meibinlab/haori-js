@@ -18,6 +18,16 @@ import './observer';
 export {Core, Env, Fragment, Form, Haori, Log, Queue};
 export type {HaoriRuntime} from './env';
 
+/**
+ * すべてのレンダリングタスク（追従投入分を含む）の完了を待ちます。
+ *
+ * iife グローバルからは `Haori.waitForRenders()`、ESM では
+ * `import {waitForRenders} from 'haori'` で利用できます。
+ *
+ * @return すべてのレンダリングが完了したら解決される Promise
+ */
+export const waitForRenders = (): Promise<void> => Haori.waitForRenders();
+
 // デフォルトエクスポート（Haoriをメインとして提供）
 export default Haori;
 

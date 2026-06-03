@@ -27,6 +27,21 @@ export default class Haori {
   }
 
   /**
+   * 進行中・追従して投入されるものを含め、すべてのレンダリングタスクの完了を待ちます。
+   *
+   * `data-each` の大量行のように複数フレームに分割される描画でも、安定して完了する
+   * まで待機します。Playwright などの外部テストから、タブ切り替えやクリック後に
+   * 描画完了を安全に待機するために利用できます。
+   *
+   * 例: `await page.evaluate(() => Haori.waitForRenders())`
+   *
+   * @return すべてのレンダリングが完了したら解決される Promise
+   */
+  public static waitForRenders(): Promise<void> {
+    return Queue.waitForIdle();
+  }
+
+  /**
    * 通知ダイアログを表示します。
    *
    * @param message 表示メッセージ

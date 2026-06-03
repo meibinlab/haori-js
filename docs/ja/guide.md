@@ -2148,7 +2148,29 @@ listElement.addEventListener('haori:eachupdate', (event) => {
     console.log('全行の描画が完了しました')
   }
 })
+```
 
+#### 外部テストから描画完了を待機する
+
+Playwright などの外部テストでは、`haori:eachupdate` の購読登録前に発火してしまうと待機が永久に解決しないことがあります。これを避けるため、次の2つの手段を利用できます。
+
+**1. `data-each-done` 属性（推奨・宣言的）**: `data-each` が最新データで全行の描画を完了すると、その要素に `data-each-done` 属性が付与されます（更新が始まると一旦外れ、安定完了で再付与）。属性は完了後に残るため、購読タイミングの競合がありません。
+
+```js
+await page.click('#demand-tab')
+await page.waitForSelector('#demand-table tbody[data-each-done]')
+```
+
+**2. `Haori.waitForRenders()`（命令的・全体待機）**: 進行中および追従して投入されるものを含め、すべてのレンダリングタスクの完了を待つ `Promise<void>` を返します。特定の `data-each` を指定せず、タブ切り替え後の複数描画をまとめて待ちたい場合に有用です。
+
+```js
+await page.click('#demand-tab')
+await page.evaluate(() => Haori.waitForRenders())
+```
+
+iife（`<script src>`）読み込み時はグローバル `Haori.waitForRenders()`、ES Module では `import {waitForRenders} from 'haori'`（または `import Haori from 'haori'; Haori.waitForRenders()`）で利用できます。
+
+```javascript
 listElement.addEventListener('haori:rowadd', (event) => {
   console.log('行が追加されました')
   console.log('キー:', event.detail.key)
