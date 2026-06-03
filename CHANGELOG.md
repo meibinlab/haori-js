@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [Unreleased]
+## [0.11.0] - 2026-06-03
 
 ### Added
 
