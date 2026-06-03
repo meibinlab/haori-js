@@ -34,6 +34,11 @@ interface EachUpdateState {
   running: boolean;
   /** 実行中に再評価要求があったかどうか */
   rerunRequested: boolean;
+  /**
+   * 実行中の差分更新（再実行を含む）の完了 Promise。
+   * 再入した呼び出し元はこの Promise を待つことで、最終的な DOM 反映まで待機できる。
+   */
+  settled: Promise<void> | null;
 }
 
 type DerivedSubtreeSignatureSource = 'evaluateAll' | 'refresh';
@@ -749,6 +754,82 @@ export default class Core {
   }
 
   /**
+   * 指定要素の式評価で見えるバインディングスコープをダンプします（デバッグ用）。
+   *
+   * 式（`data-if` / `{{...}}` など）の識別子は、その要素を起点に DOM のネストを
+   * たどって解決されます（内側のスコープが外側を上書き）。本メソッドは解決済みの
+   * スコープ（`resolved`）と、各キーがどの要素・どの種類（`bind` または `derive`）に
+   * 由来するか（`sources`）を返します。開発モード時はコンソールにも出力します。
+   *
+   * 注意: フォームの入力値（`name` 属性）は、変更（change）や明示的な同期が行われる
+   * までフォームの binding data に反映されません。したがって初期表示時点では、入力名と
+   * 同名の識別子は**外側のスコープ**にフォールバックして解決されます。
+   *
+   * @param element 対象要素
+   * @return 解決済みスコープと各キーの由来情報
+   */
+  public static dumpScope(element: HTMLElement): {
+    resolved: Record<string, unknown>;
+    sources: Record<
+      string,
+      {value: unknown; source: string; kind: 'bind' | 'derive'; depth: number}
+    >;
+  } {
+    const fragment = Fragment.get(element) as ElementFragment | null;
+    if (!fragment) {
+      return {resolved: {}, sources: {}};
+    }
+    const resolved = fragment.getBindingData();
+    const sources: Record<
+      string,
+      {value: unknown; source: string; kind: 'bind' | 'derive'; depth: number}
+    > = {};
+    const describe = (frag: ElementFragment): string => {
+      const target = frag.getTarget();
+      if (target.id) {
+        return `#${target.id}`;
+      }
+      return target.tagName.toLowerCase();
+    };
+    const record = (
+      data: Record<string, unknown> | null,
+      frag: ElementFragment,
+      kind: 'bind' | 'derive',
+      depth: number,
+    ): void => {
+      if (!data) {
+        return;
+      }
+      for (const key of Object.keys(data)) {
+        if (!(key in sources)) {
+          sources[key] = {
+            value: data[key],
+            source: describe(frag),
+            kind,
+            depth,
+          };
+        }
+      }
+    };
+    let current: ElementFragment | null = fragment;
+    let depth = 0;
+    while (current) {
+      // 子孫から見ると derive は同要素の bind より優先されるため derive を先に記録する。
+      // ただし起点要素自身の derive は自身のスコープには現れない（子孫にのみ公開）。
+      if (current !== fragment) {
+        record(current.getRawDerivedBindingData(), current, 'derive', depth);
+      }
+      record(current.getRawBindingData(), current, 'bind', depth);
+      current = current.getParent();
+      depth += 1;
+    }
+    if (Dev.isEnabled()) {
+      Log.info('[Haori]', 'scope dump for', element, {resolved, sources});
+    }
+    return {resolved, sources};
+  }
+
+  /**
    * data-bind 属性の値をパースします。
    *
    * @param data data-bind 属性の値
@@ -1177,7 +1258,7 @@ export default class Core {
   ): EachUpdateState {
     let state = Core.EACH_UPDATE_STATES.get(fragment);
     if (!state) {
-      state = {running: false, rerunRequested: false};
+      state = {running: false, rerunRequested: false, settled: null};
       Core.EACH_UPDATE_STATES.set(fragment, state);
     }
     return state;
@@ -1188,12 +1269,13 @@ export default class Core {
    * 非表示または未マウントの場合は処理をスキップします。
    *
    * 同一フラグメントに対する差分更新が並行・再入しないように直列化します。
-   * 実行中に再度呼び出された場合は再評価要求だけを記録し、現在の更新完了後に
-   * 最新データで一度だけ再実行します。これにより、bind 直後のリアクティブ再評価が
-   * 重なっても data-each の描画が破壊されないようにします。
+   * 実行中に再度呼び出された場合は再評価要求を記録し、現在進行中の更新の完了
+   * Promise（後続の再実行も含む）を返します。これにより、bind 直後のリアクティブ
+   * 再評価が重なっても data-each の描画が破壊されず、かつ呼び出し元（`evaluateAll`→
+   * `setBindingData`→`haori:bindcomplete`）が**最終的な DOM 反映まで確実に待機**できます。
    *
    * @param fragment 対象フラグメント
-   * @return 差分更新完了の Promise
+   * @return 差分更新（再実行を含む）の完了 Promise
    */
   public static evaluateEach(fragment: ElementFragment): Promise<void> {
     if (!fragment.isVisible() || !fragment.isMounted()) {
@@ -1201,24 +1283,41 @@ export default class Core {
     }
     const state = Core.getEachUpdateState(fragment);
     if (state.running) {
-      // 実行中は再評価要求のみ記録し、完了後に最新データで再実行する。
+      // 実行中は再評価要求を記録し、進行中の settle Promise を待つ
+      // （最新データの描画完了まで待てるようにする）。
       state.rerunRequested = true;
-      return Promise.resolve();
+      return state.settled ?? Promise.resolve();
     }
+    return Core.runEachUpdateLoop(fragment, state);
+  }
+
+  /**
+   * data-each の差分更新を、再評価要求が無くなるまで直列に繰り返し実行します。
+   * 進行中・後続の再実行を含む完了 Promise を state に保持し、再入した呼び出し元が
+   * 同じ Promise を待てるようにします。
+   *
+   * @param fragment 対象フラグメント
+   * @param state 再入制御状態
+   * @return すべての差分更新が安定するまでの完了 Promise
+   */
+  private static runEachUpdateLoop(
+    fragment: ElementFragment,
+    state: EachUpdateState,
+  ): Promise<void> {
     state.running = true;
-    return Core.performEachUpdate(fragment)
-      .catch(error => {
-        // updateDiff のエラーは呼び出し元へ伝播させつつ、ロックは finally で解除する。
-        throw error;
-      })
-      .finally(() => {
-        state.running = false;
-        if (state.rerunRequested) {
+    const settled = (async () => {
+      try {
+        do {
           state.rerunRequested = false;
-          // 実行中に届いた最新データで再評価する（戻り値は待たず fire-and-forget）。
-          void Core.evaluateEach(fragment);
-        }
-      }) as Promise<void>;
+          await Core.performEachUpdate(fragment);
+        } while (state.rerunRequested);
+      } finally {
+        state.running = false;
+        state.settled = null;
+      }
+    })();
+    state.settled = settled;
+    return settled;
   }
 
   /**

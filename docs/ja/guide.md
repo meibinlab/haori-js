@@ -554,6 +554,45 @@ window.Dates = {
 
 設計の整理や背景は `docs/ja/data-derive-confirmation-draft.md` を参照してください。
 
+### 式の識別子解決スコープ
+
+`data-if` や `{{ ... }}` などの式に書いた識別子（`id`、`dialog` など）は、その式を持つ要素を起点に **DOM のネストをたどって解決**されます。優先順位は次のとおりです（先に見つかったものが採用され、内側が外側を上書きします）。
+
+1. 起点要素自身の `data-bind`
+2. 祖先要素の `data-derive`（`data-derive-name` で公開された派生値。同一要素では `data-bind` より優先）
+3. 祖先要素の `data-bind`（内側の祖先ほど優先）
+4. グローバル（`window` 上の関数・オブジェクトなど。上記で同名がシャドウされていない場合のみ）
+
+そのため、`data-url-param`（`data-url-arg` を付けた場合はそのキー配下に格納される）や祖先の `data-bind` で定義された値も、ネスト順に従って解決されます。
+
+#### フォーム入力値はスコープに自動投入されない（重要）
+
+フォームの入力値（`name` 属性）は、**ユーザーの変更（change）または明示的な同期が行われるまで、フォームの binding data に反映されません**。初期表示時点（未入力・未同期）では、入力名と同名の識別子は**外側のスコープにフォールバック**して解決されます。
+
+たとえば次の構造では、`#state` がトップレベルに `id`（顧客 ID など）を持つ場合、フォーム内の `name="id"` がまだ同期されていない初期表示では、`data-if="!(dialog?.id || id)"` の `id` は **フォームの空文字ではなく `#state` の `id`** に解決されます。
+
+```html
+<div id="state" data-bind='{"id":"CUSTOMER-1"}'>
+  <form>
+    <input name="id" type="text">
+    <!-- 初期表示では id = "CUSTOMER-1"（外側）に解決される -->
+    <button data-if="!(dialog?.id || id)">新規登録</button>
+  </form>
+</div>
+```
+
+意図しないスコープ解決を避けるには、トップレベルのキーと衝突しない**専用のキー名**を使う（例: フォーム側を `data-bind` で別名にする、判定に `id` を使わず `data-if="!(dialog?.id)"` とする）か、`data-derive-name` で明示的にスコープへ供給してください。
+
+#### スコープのデバッグ（開発モード）
+
+解決スコープを確認するには `Core.dumpScope(element)` を使います（ブラウザのグローバルからは `Haori.Core.dumpScope(要素)`）。解決済みスコープ（`resolved`）と、各キーがどの要素・種類（`bind` / `derive`）に由来するか（`sources`）を返します。`Dev.enable()`（開発モード）時はコンソールにも出力します。
+
+```js
+// 例: 開発者ツールのコンソールで
+const {resolved, sources} = Haori.Core.dumpScope(document.querySelector('button'))
+console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', kind: 'bind', ... }）
+```
+
 ---
 
 ## フォームとデータの双方向バインディング
@@ -2061,6 +2100,8 @@ element.addEventListener('haori:bindchange', (event) => {
 ```
 
 `data-*-bind` / `data-*-bind-arg` などによるバインドと、それに伴う対象要素配下の再評価（`data-if` / `data-each` など）が完了すると、対象要素で `haori:bindcomplete` が発火します。バインド完了を契機に外部スクリプトで同期処理を行いたい場合に利用できます。
+
+**発火タイミングの保証**: `haori:bindcomplete` は、バインド操作だけでなく、**そのバインドに起因する `data-if` の表示切り替えと `data-each` の差分描画（複数フレームに分割される場合や、再評価が重なって再実行される場合も含む）がすべて DOM へ反映された後**に発火します。したがって `haori:bindcomplete` を待てば、参照キーに基づく `data-if` / `data-each` の結果を安全に参照できます（行内に `data-fetch` / `data-import` がある場合、それらの非同期処理はバインド完了後に別途進行します）。
 
 ```javascript
 document.querySelector('#dialog-state').addEventListener('haori:bindcomplete', (event) => {

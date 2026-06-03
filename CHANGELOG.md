@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `haori:bindcomplete` を、バインド操作だけでなく**バインド起因の `data-if` 表示切り替えと `data-each` 差分描画の DOM 反映完了後**に発火するよう強化した。`evaluateEach` の再入時の再実行を fire-and-forget から待機可能（loop-until-stable な単一 settle Promise を共有）へ変更し、`evaluateAll`→`setBindingData`→`haori:bindcomplete` が最終描画まで確実に待つようにした
+
+### Added
+
+- `Core.dumpScope(element)` を追加した（ブラウザでは `Haori.Core.dumpScope(element)`）。式の識別子解決で見えるスコープ（`resolved`）と各キーの由来要素・種類（`sources`: `bind` / `derive`）を返し、開発モード（`Dev.enable()`）時はコンソールにも出力する。スコープ衝突のデバッグに利用できる
+
+### Documentation
+
+- 式の識別子解決スコープ（DOM ネスト優先・`data-derive` の位置づけ・グローバル）と、**フォーム入力値は change／明示同期までスコープに投入されない**ことを `guide.md` に明文化した。あわせて `haori:bindcomplete` の発火タイミング保証（DOM 反映完了まで）を追記した
+
+### Library
+
+- `haori:bindcomplete` 発火時点で `data-if` 表示・`data-each` 全行が反映済みであること、`Core.dumpScope` のスコープ解決・由来情報（内側優先、フォーム未同期時の外側フォールバック）に関する回帰テストを追加した
+
 ## [0.8.0] - 2026-06-03
 
 ### Changed
