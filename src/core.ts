@@ -1372,6 +1372,37 @@ export default class Core {
         }
         // TextNodeやCommentNodeはテンプレートにならないので無視
       });
+      if (!found) {
+        // フォールバック: フラグメントの子に要素が無いが DOM には要素子がある場合
+        // （タブ表示やネスト data-if など特定フローでフラグメント木と DOM の子が
+        //  同期しない状況の復旧）、DOM の最初の要素子からテンプレートを取得する。
+        const target = fragment.getTarget();
+        for (const domChild of Array.from(target.children)) {
+          if (
+            domChild.hasAttribute(`${Env.prefix}each-before`) ||
+            domChild.hasAttribute(`${Env.prefix}each-after`)
+          ) {
+            continue;
+          }
+          const childFragment = Fragment.get(domChild);
+          if (!(childFragment instanceof ElementFragment)) {
+            continue;
+          }
+          template = childFragment.clone();
+          Core.markFreshInitializationSkippable(template);
+          fragment.setTemplate(template);
+          found = true;
+          // children に残っていれば除外し、DOM からも除去する。
+          if (fragment.getChildren().includes(childFragment)) {
+            fragment.removeChild(childFragment);
+          }
+          if (domChild.parentNode) {
+            domChild.parentNode.removeChild(domChild);
+          }
+          childFragment.setMounted(false);
+          break;
+        }
+      }
       // テンプレートのunmount完了後にupdateDiffを実行
       return this.updateDiff(fragment, data).then(() => {
         fragment.setEachInputSignature(nextEachInputSignature);
