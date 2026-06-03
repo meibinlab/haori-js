@@ -1175,6 +1175,51 @@ export default class Core {
   }
 
   /**
+   * 開発モードで、falsy により非表示になった `data-if` 式の診断情報を出力します。
+   *
+   * 式が参照するトップレベル識別子について、解決値と由来要素（`dumpScope` の
+   * `sources`）を併記します。フォームの `name` 由来の値が想定外のスコープから
+   * 解決される等のスコープ競合をデバッグするための補助です。
+   *
+   * @param fragment data-if フラグメント
+   * @return 戻り値はありません。
+   */
+  private static logFalsyIfDiagnostics(fragment: ElementFragment): void {
+    const expression = fragment.getRawAttribute(`${Env.prefix}if`);
+    if (typeof expression !== 'string' || expression.indexOf('{{') >= 0) {
+      // テンプレート式（{{...}}）を含む属性は対象外（純粋な data-if 式のみ）。
+      return;
+    }
+    const {sources} = Core.dumpScope(fragment.getTarget());
+    // 式に現れるトップレベル識別子（プロパティアクセスの末尾などは除く）を抽出する。
+    const identifiers = new Set<string>();
+    const matches = expression.match(/[A-Za-z_$][\w$]*/g) ?? [];
+    let prevCharIndex = 0;
+    matches.forEach(name => {
+      const at = expression.indexOf(name, prevCharIndex);
+      prevCharIndex = at + name.length;
+      // 直前が `.` の場合はプロパティ名なのでトップレベル識別子ではない。
+      if (at > 0 && expression[at - 1] === '.') {
+        return;
+      }
+      identifiers.add(name);
+    });
+    const used: Record<string, unknown> = {};
+    identifiers.forEach(name => {
+      if (name in sources) {
+        used[name] = sources[name];
+      }
+    });
+    Log.info(
+      '[Haori]',
+      'data-if is falsy (hidden):',
+      expression,
+      '— referenced scope:',
+      used,
+    );
+  }
+
+  /**
    * if要素を評価します。
    * 値が falsy（false・null・undefined・NaN・0・空文字列）の場合は非表示にし、
    * それ以外の場合は表示します。
@@ -1186,6 +1231,12 @@ export default class Core {
     const promises: Promise<void>[] = [];
     const condition = fragment.getAttribute(`${Env.prefix}if`);
     if (Core.isHiddenIfCondition(condition)) {
+      // 開発モードでは、falsy で非表示になった data-if 式と、その式が参照する
+      // 識別子の解決値・由来（どの要素の bind/derive か）を出力する。
+      // 「フォームの name 由来の値が想定外に解決される」等のスコープ競合の特定に役立つ。
+      if (Dev.isEnabled()) {
+        Core.logFalsyIfDiagnostics(fragment);
+      }
       promises.push(
         fragment.hide().then(() => {
           HaoriEvent.hide(fragment.getTarget());

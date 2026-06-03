@@ -591,6 +591,23 @@ window.Dates = {
 
 意図しないスコープ解決を避けるには、トップレベルのキーと衝突しない**専用のキー名**を使う（例: フォーム側を `data-bind` で別名にする、判定に `id` を使わず `data-if="!(dialog?.id)"` とする）か、`data-derive-name` で明示的にスコープへ供給してください。
 
+#### 推奨パターン: `data-derive` でクリーンなスコープで判定する
+
+`name="id"` の入力を持つフォーム内で「新規モード判定」をしたい場合、フォームの**外側**（`name="id"` の影響を受けないスコープ）で `data-derive` を使って判定値を計算し、一意名で配下へ公開すると、入力値との衝突を避けられます。
+
+```html
+<div id="state">
+  <!-- form の外側で判定（id は外側の値で解決され、form 入力に汚染されない） -->
+  <div data-derive="!(dialog?.id || id)" data-derive-name="isNew">
+    <form>
+      <input name="id" type="text">
+      <!-- isNew は name="id" と衝突しない一意名なので安全 -->
+      <button data-if="isNew">新規登録</button>
+    </form>
+  </div>
+</div>
+```
+
 #### スコープのデバッグ（開発モード）
 
 解決スコープを確認するには `Core.dumpScope(element)` を使います（ブラウザのグローバルからは `Haori.Core.dumpScope(要素)`）。解決済みスコープ（`resolved`）と、各キーがどの要素・種類（`bind` / `derive`）に由来するか（`sources`）を返します。`Dev.enable()`（開発モード）時はコンソールにも出力します。
@@ -600,6 +617,8 @@ window.Dates = {
 const {resolved, sources} = Haori.Core.dumpScope(document.querySelector('button'))
 console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', kind: 'bind', ... }）
 ```
+
+さらに**開発モードでは、`data-if` が falsy（非表示）と評価されるたびに、その式と参照している識別子の解決値・由来をコンソールへ自動出力**します。`data-if="!(dialog?.id || id)"` が想定外に非表示になる場合、`id` がどの要素（例: フォーム）の値で解決されているかをそのまま確認できます。
 
 ---
 
