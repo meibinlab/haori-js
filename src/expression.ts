@@ -276,7 +276,31 @@ export default class Expression {
       return {value: null, unresolvedReference: false};
     }
     if (this.containsDangerousPatterns(expression)) {
-      Log.warn('[Haori]', expression, 'Expression contains dangerous patterns');
+      const keywords = this.detectDisallowedKeywords(expression);
+      if (keywords.length > 0) {
+        // function 宣言・return・各種ステートメント系キーワードは式構文として
+        // 使用できない。よくある原因は function(){return ...} の使用なので、
+        // アロー関数への置き換えを促す具体的なヒントを併記する。
+        const hint = keywords.some(k => k === 'function' || k === 'return')
+          ? ' Statement keywords are not allowed in expressions;' +
+            ' use an arrow function such as `x => ({key: value})`' +
+            ' instead of `function(x){ return {key: value}; }`.'
+          : ' These are statement keywords and cannot be used in expressions.';
+        Log.warn(
+          '[Haori]',
+          expression,
+          'Expression uses disallowed keyword(s): ' +
+            keywords.join(', ') +
+            '.' +
+            hint,
+        );
+      } else {
+        Log.warn(
+          '[Haori]',
+          expression,
+          'Expression contains dangerous patterns',
+        );
+      }
       return {value: null, unresolvedReference: false};
     }
     if (this.containsForbiddenKeys(bindedValues)) {
@@ -490,6 +514,28 @@ export default class Expression {
       /\barguments\s*\./, // arguments.xxx
     ];
     return dangerousPatterns.some(pattern => pattern.test(expression));
+  }
+
+  /**
+   * 式の中で使用されている「使用できないキーワード」を検出します。
+   * 文字列リテラルやプロパティ名は対象外とするため、トークナイザを用いて
+   * 識別子トークンのみを判定します。エラー時のヒント表示に使用します。
+   *
+   * @param expression 検査対象の式
+   * @returns 式に現れた使用できないキーワードの一覧（重複なし、出現順）
+   */
+  private static detectDisallowedKeywords(expression: string): string[] {
+    // トークナイザは `;` など式構文外の文字で null を返すため、ここでは独立した
+    // 識別子としての出現を正規表現で検出する。直前が単語構成文字・`$`・`.`（プロパティ
+    // アクセス）でなく、直後が単語構成文字・`$` でないものだけを対象にする。
+    const found: string[] = [];
+    this.DISALLOWED_KEYWORDS.forEach(keyword => {
+      const pattern = new RegExp(`(^|[^\\w$.])${keyword}(?![\\w$])`);
+      if (pattern.test(expression)) {
+        found.push(keyword);
+      }
+    });
+    return found;
   }
 
   /**

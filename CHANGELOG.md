@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Changed
+
+- 式評価で使用できないキーワード（`function`・`return` などのステートメント系キーワード）を含む式が失敗した場合、従来の汎用的な `Expression contains dangerous patterns` ではなく、検出したキーワード名と「アロー関数を使う（`x => ({key: value})`）」具体的なヒントを併記した警告を出すようにした。`data-derive` で `function(m){return {...}}` を使うと式が `null` になり行が描画されない、といった原因の分かりにくい事象の特定を容易にする（プロパティ名や部分一致は誤検出しない）
+
+### Library
+
+- 使用できないキーワードを含む式の評価失敗時に、具体的なヒント付き警告を出すこと・正常なアロー関数式や部分一致識別子では出さないことの回帰テストを追加した
+- `data-derive` → `data-each` 連鎖の行描画が `Haori.waitForRenders()` で待機できること、各行に nested `data-fetch` を含む場合も待機できることの回帰テストを追加した
+
 ## [0.10.0] - 2026-06-03
 
 ### Fixed
