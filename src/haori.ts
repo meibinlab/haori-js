@@ -1,6 +1,8 @@
 import Log from './log';
 import Env from './env';
 import Queue from './queue';
+import {date, number, pages, range} from './builtins';
+import type {PageItem, PagesOptions} from './builtins';
 
 /**
  * Haoriクラスは、アプリケーション全体で使用されるユーティリティメソッドを提供します。
@@ -177,5 +179,69 @@ export default class Haori {
         element.removeAttribute('data-message-level');
       });
     }, true) as Promise<void>;
+  }
+
+  /**
+   * 日時を指定フォーマットの文字列へ整形します。
+   *
+   * テンプレート式中の `haori.date(...)` と同じ実装です。
+   *
+   * @param value 整形対象の日時（ISO 文字列・エポックミリ秒・Date）
+   * @param format フォーマット文字列（省略時は `yyyy/MM/dd HH:mm`）
+   * @returns 整形済み文字列。整形できない場合は空文字
+   */
+  public static date(
+    value: string | number | Date | null | undefined,
+    format?: string,
+  ): string {
+    return date(value, format);
+  }
+
+  /**
+   * 数値を桁区切り・小数桁付きの文字列へ整形します。
+   *
+   * テンプレート式中の `haori.number(...)` と同じ実装です。
+   *
+   * @param value 整形対象（数値または数値文字列）
+   * @param decimals 小数桁数（省略可能）
+   * @returns 整形済み文字列。整形できない場合は空文字
+   */
+  public static number(
+    value: number | string | null | undefined,
+    decimals?: number,
+  ): string {
+    return number(value, decimals);
+  }
+
+  /**
+   * 整数の配列を生成します（終端は排他）。
+   *
+   * テンプレート式中の `haori.range(...)` と同じ実装です。
+   *
+   * @param start `end` 省略時は終端、指定時は開始値
+   * @param end 終端（排他）
+   * @param step 刻み幅（省略時は 1）
+   * @returns 整数配列
+   */
+  public static range(start: number, end?: number, step?: number): number[] {
+    return range(start, end, step);
+  }
+
+  /**
+   * 番号ページネーション用の表示要素列を生成します。
+   *
+   * テンプレート式中の `haori.pages(...)` と同じ実装です。
+   *
+   * @param totalPages 総ページ数
+   * @param current 現在ページ（0 始まり）
+   * @param options 表示調整オプション（window・boundary）
+   * @returns 表示要素の配列
+   */
+  public static pages(
+    totalPages: number,
+    current: number,
+    options?: PagesOptions,
+  ): PageItem[] {
+    return pages(totalPages, current, options);
   }
 }

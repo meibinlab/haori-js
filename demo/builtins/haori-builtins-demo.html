@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>haori built-in helpers demo</title>
+</head>
+
+<body>
+  <h1>haori built-in helpers demo</h1>
+  <p>
+    組み込みヘルパー（<code>haori.date</code> / <code>haori.number</code> /
+    <code>haori.pages</code>）と <code>data-click-prevent</code> の最小確認ページです。
+  </p>
+
+  <script src="../../dist/haori.iife.js"></script>
+
+  <main
+    id="app"
+    data-bind='{"totalPages":20,"number":9,"content":[{"id":1,"name":"案件A","lastUpdatedAt":"2024-01-05T09:05:03","amount":1234567},{"id":2,"name":"案件B","lastUpdatedAt":"2024-12-31T23:59:00","amount":1000}]}'
+  >
+    <!-- 日時・数値フォーマット（H3） -->
+    <table id="data-table">
+      <thead>
+        <tr>
+          <th>名称</th>
+          <th>最終更新</th>
+          <th>金額</th>
+        </tr>
+      </thead>
+      <tbody data-each="content" data-each-key="id">
+        <tr>
+          <td class="name">{{name}}</td>
+          <td class="updated">{{ haori.date(lastUpdatedAt, 'yyyy/MM/dd HH:mm') }}</td>
+          <td class="amount">{{ haori.number(amount) }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 番号ページネーション（H2） -->
+    <nav id="pagination-nav" aria-label="ページネーション">
+      <ul
+        class="pagination"
+        data-each="haori.pages(totalPages, number, {window: 2})"
+        data-each-key="page"
+      >
+        <li class="page-item {{active ? 'active' : ''}} {{ellipsis ? 'disabled' : ''}}">
+          <span data-if="ellipsis" class="page-link ellipsis" aria-hidden="true">…</span>
+          <span
+            data-if="!ellipsis && active"
+            class="page-link"
+            aria-current="page"
+          >{{label}}</span>
+          <button
+            data-if="!ellipsis && !active"
+            type="button"
+            class="page-link"
+          >{{label}}</button>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- type="submit" のネイティブ送信抑止（H1） -->
+    <form id="save-form" action="/should-not-navigate" method="get">
+      <input name="title" value="hello" />
+      <button
+        id="save-btn"
+        type="submit"
+        data-click-prevent
+        data-click-run="window.__submitHandled = true"
+      >保存</button>
+    </form>
+  </main>
+</body>
+
+</html>

@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.11.1
+Version: 0.12.0
 
 ---
 
@@ -111,6 +111,7 @@ Event-driven actions:
 - `data-click-*`, `data-change-*`, `data-load-*`, `data-intersect-*` declare actions (fetch, bind, copy, dialog control, etc.) triggered by click, form change, element load, and viewport intersection respectively. `data-load-*` also fires when a `data-if` element transitions from hidden to shown (the `haori:show` timing), so it works on elements like `<button>` that never receive a native `load` event.
 - `data-click-copy-source` — explicitly set the copy source element for `data-click-copy` (defaults to the form given by `data-click-form`, otherwise the event element's binding).
 - `data-click-no-disabled` / `data-click-defer` — coexistence helpers for other libraries. `no-disabled` runs the click procedure without adding the `disabled` attribute (so libraries/CSS that ignore disabled elements, e.g. Bootstrap collapse, keep working; double execution is still prevented internally). `defer` runs the click procedure on the next frame (`requestAnimationFrame`/`setTimeout(0)`) so other libraries' synchronous click handlers complete first. Avoid `defer` on `<a href>` / `type="submit"` because the deferred procedure cannot `preventDefault()` the default action.
+- `data-{event}-prevent` (e.g. `data-click-prevent`) — suppress the browser's native default action for the event (form submission for a `type="submit"` button, navigation for `<a href>`). `preventDefault()` is called synchronously during the click, so it works even together with `data-click-defer`, and `stopPropagation()` is never called (other libraries' event propagation is unaffected). This lets you keep `type="submit"` and still attach `data-click-fetch` etc. without the page reloading.
 - `data-{event}-run` (e.g. `data-click-run`, `data-change-run`) — run arbitrary JavaScript on the event without a fetch. The value is executed as real JS via `new Function` (like `-before-run`/`-after-run`), with `{{...}}` expanded at render time and `event` passed as an argument. Returning `false` calls `event.preventDefault()` (the `onclick="return false"` convention). **Security:** the expanded `{{...}}` is concatenated into executable code, so only interpolate trusted values (numeric indexes, IDs you control) — never untrusted strings (API/user input), which would run as code (XSS). Pass untrusted values via `data-bind` and read them inside the called function instead.
 
 Lifecycle events:
@@ -118,6 +119,8 @@ Lifecycle events:
 - `haori:eachupdate` — fired on the `data-each` element after a list diff completes; all added/removed/reordered rows are in the DOM and their content (`{{...}}`) is rendered by the time it fires, so it can be used to detect render completion (`detail`: `added`, `removed`, `order`, `total`).
 - `haori:bindcomplete` — fired on the target element after a `data-*-bind` / `data-*-bind-arg` bind and the subsequent re-evaluation of its subtree complete (`detail.bindArg`).
 - `haori:show` / `haori:hide` — fired when a `data-if` element becomes shown or hidden.
+
+Built-in helpers are available in expressions under the reserved namespace `haori`: `haori.date(value, format?)` formats an ISO string / epoch ms / `Date` (default `yyyy/MM/dd HH:mm`, local time), `haori.number(value, decimals?)` formats numbers with grouping, `haori.range(start, end?, step?)` builds an integer array (end-exclusive), and `haori.pages(totalPages, current, {window?, boundary?})` builds an ellipsis-aware page list (`current` is 0-based; each item exposes `{page, label, active, ellipsis}` with `label` = `page + 1`). These let you build number pagination (`data-each="haori.pages(totalPages, number, {window: 2})"`) and format values (`{{ haori.date(lastUpdatedAt, 'yyyy/MM/dd HH:mm') }}`) declaratively. The same functions are exposed as `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages`. `haori` is reserved: a `data-bind` key of the same name does not shadow the built-ins inside expressions.
 
 Template expressions support safe JavaScript-like syntax such as property access, bracket access with dynamic indexes, optional chaining, ternary expressions, and method chains including array `map`/`filter` with arrow functions and spread calls. Access to global objects, `eval` or `arguments`, and prototype escape paths such as `constructor`, `__proto__`, `prototype`, `Reflect`, or `Object` is blocked. Because `Object` is blocked, use spread syntax `{...a, ...b}` instead of `Object.assign`; when a blocked identifier is referenced in an expression, a `blocked identifier(s): …` warning is logged to the console.
 

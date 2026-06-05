@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [0.12.0] - 2026-06-05
+
+### Added
+
+- テンプレート式から呼び出せる組み込みヘルパーを追加した。式中の予約名前空間 `haori` として注入され、`haori.date(value, format?)`（日時整形）・`haori.number(value, decimals?)`（数値整形）・`haori.range(start, end?, step?)`（整数レンジ）・`haori.pages(totalPages, current, options?)`（省略記号付き番号ページネーション）を提供する。いずれも副作用のない純粋関数で、`data-each="haori.pages(...)"` や `{{ haori.date(lastUpdatedAt, 'yyyy/MM/dd HH:mm') }}` のように宣言的に利用できる。同じ関数は公開 API `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages` としても利用できる。`pages()` の `current` は 0 始まり（Spring の `Page.number` 等）を想定し、各要素の `label` は表示用に 1 始まりへ変換される
+- `data-{event}-prevent`（主に `data-click-prevent`）を追加した。指定要素のイベントでブラウザのネイティブなデフォルト動作（`type="submit"` のフォーム送信や `<a href>` の遷移）を抑止する。クリックの同期区間で `preventDefault()` を呼ぶため `data-click-defer` と併用しても確実に抑止でき、`stopPropagation()` は呼ばないので他ライブラリのイベント伝播には影響しない。これにより `type="submit"` のまま `data-click-fetch` 等を付けても、ページ再読込なしにフェッチ・トースト・リダイレクトが機能する
+
+### Library
+
+- `haori` は式評価エンジンの予約名前空間となり、`data-bind` で同名のキーを与えても式中では組み込みヘルパーが優先される（開発モードでは警告を出す）。式が `haori` を独立した識別子として参照する場合のみヘルパーを注入し、参照しない式には影響しない
+- 組み込みヘルパー（date/number/range/pages）の単体テスト、式評価への注入・予約名の上書き不可・プロパティアクセス非干渉の回帰テスト、`data-{event}-prevent` の送信抑止・オプトイン・`data-click-defer` 併用の回帰テスト（vitest）、および実ブラウザでの日時整形・番号ページネーション・送信抑止を検証する Playwright e2e（`demo/builtins/haori-builtins-demo.html`）を追加した
+
 ## [0.11.1] - 2026-06-03
 
 ### Documentation

@@ -97,6 +97,15 @@ export default class EventDispatcher {
     if (!element) {
       return;
     }
+
+    // data-{event}-prevent: ネイティブのデフォルト動作（type="submit" のフォーム送信や
+    // <a href> の遷移など）を抑止する。delegate はイベントリスナー内で同期実行される
+    // ため、ここで preventDefault すれば data-click-defer と併用してもデフォルト動作を
+    // 確実に止められる（伝播は止めないので他ライブラリのハンドラには影響しない）。
+    if (element.hasAttribute(`data-${type}-prevent`)) {
+      event.preventDefault();
+    }
+
     const fragment = Fragment.get(element);
     if (!fragment) {
       return;

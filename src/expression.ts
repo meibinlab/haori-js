@@ -7,6 +7,7 @@
  */
 
 import Log from './log';
+import Builtins from './builtins';
 
 /**
  * 式評価結果の詳細です。
@@ -38,6 +39,25 @@ type GroupContext = 'paren' | 'array' | 'member' | 'object';
 export default class Expression {
   /** 未宣言識別子の自動補完を試みる最大回数 */
   private static readonly MAX_IDENTIFIER_RECOVERY_COUNT = 8;
+
+  /** 組み込みヘルパーを公開する予約名前空間 */
+  private static readonly BUILTIN_NAMESPACE = 'haori';
+
+  /**
+   * 式スコープへ注入する組み込みヘルパー。公開 API の凍結オブジェクトをそのまま
+   * 注入すると、評価時の Proxy ラップが「read-only プロパティに別値を返せない」と
+   * いう Proxy 不変条件に違反するため、非凍結の浅いコピーを用いる。
+   */
+  private static readonly BUILTIN_HELPERS: Record<string, unknown> = {
+    ...Builtins,
+  };
+
+  /**
+   * 式が予約名前空間 `haori` を独立した識別子として参照しているか判定する正規表現。
+   * `foo.haori` のようなプロパティアクセスは対象外とする。
+   */
+  private static readonly BUILTIN_REFERENCE_PATTERN =
+    /(^|[^\w$.])haori(?![\w$])/;
 
   /** 危険値チェック結果の短命キャッシュ */
   private static forbiddenBindingValueCache = new WeakMap<object, boolean>();
@@ -323,7 +343,19 @@ export default class Expression {
       return {value: null, unresolvedReference: false};
     }
 
-    const runtimeBindings = {...bindedValues};
+    // 式が予約名前空間 `haori` を参照している場合のみ組み込みヘルパーを注入する。
+    // 参照していない式に無駄な引数・Proxy ラップを増やさないための最適化。
+    const referencesBuiltins = this.BUILTIN_REFERENCE_PATTERN.test(expression);
+    if (referencesBuiltins && this.BUILTIN_NAMESPACE in bindedValues) {
+      Log.warn(
+        '[Haori]',
+        `Binding key "${this.BUILTIN_NAMESPACE}" is reserved for built-in` +
+          ' helpers; the bound value is ignored in expressions.',
+      );
+    }
+    const runtimeBindings: Record<string, unknown> = referencesBuiltins
+      ? {...bindedValues, [this.BUILTIN_NAMESPACE]: this.BUILTIN_HELPERS}
+      : {...bindedValues};
     const allowMissingIdentifierRecovery =
       this.canAttemptMissingIdentifierRecovery(expression);
 

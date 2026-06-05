@@ -533,6 +533,19 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 5. plain object / array / function を Proxy でラップし、`constructor`、`__proto__`、`prototype` へのアクセスを遮断
 6. 評価中のみ prototype 系プロパティの生アクセスを一時的に遮断
 
+#### 組み込みヘルパー（予約名前空間 `haori`）
+
+式評価エンジンは、純粋関数の組み込みヘルパー（`builtins.ts`）を予約名前空間 `haori` として式スコープへ注入します。実装は `src/builtins.ts`、注入は `Expression.evaluateDetailed` 内で行います。
+
+- **注入条件**: 式が `haori` を独立した識別子として参照する場合のみ注入します（`/(^|[^\w$.])haori(?![\w$])/`）。参照しない式には引数も Proxy ラップも追加しません。`foo.haori` のようなプロパティアクセスは注入対象外です。
+- **優先順位**: `data-bind` に `haori` キーがあっても、式中では組み込みが優先されます（バインド値は無視。開発モードでは `Log.warn` で警告）。
+- **凍結との関係**: 公開 API 用の `Builtins` は `Object.freeze` 済みですが、凍結オブジェクトをそのまま注入すると評価時の Proxy ラップが Proxy 不変条件（read-only プロパティに別値を返せない）に違反するため、注入には非凍結の浅いコピーを用います。
+- **提供関数**（いずれも副作用なし・冪等。公開 API `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages` としても同一実装を提供）:
+  - `haori.date(value, format?)`: ISO 文字列・エポックミリ秒・`Date` を整形（既定 `yyyy/MM/dd HH:mm`、ローカル時刻）。トークン `yyyy yy MM M dd d HH H mm ss`。空・不正値は空文字。
+  - `haori.number(value, decimals?)`: 桁区切り付きで数値を整形（`Intl.NumberFormat`、`en-US`）。非数値は空文字。`en-US` ロケールは区切り文字（カンマ・ドット）を決めるだけで、小数桁は固定しません。`decimals` を指定するとその桁数で固定します（末尾ゼロ埋めあり。例 `number(1000, 2) → "1,000.00"`）。`decimals` を省略した場合は `Intl.NumberFormat` の既定に従い、整数はそのまま・小数は末尾ゼロ埋めなしで表示し、**小数は最大 3 桁まで（`maximumFractionDigits = 3`）に丸められます**（例 `number(1234.56789) → "1,234.568"`）。4 桁以上をそのまま出したい場合は `decimals` を明示してください。
+  - `haori.range(start, end?, step?)`: 整数配列を生成（終端排他）。`range(n)`＝`[0..n-1]`。負の `step` で降順。要素数は上限で打ち切り。
+  - `haori.pages(totalPages, current, {window?, boundary?})`: 省略記号付きの番号ページ列。`current` は 0 始まり。要素は `{page, label, active, ellipsis}`（`page` は 0 始まり、`label` は `page + 1`、省略記号は `{page: null, label: '…', active: false, ellipsis: true}`）。既定 `window: 2` / `boundary: 1`。
+
 ### 4. Observer (observer.ts)
 
 **役割**: MutationObserverを使用したDOM監視
@@ -1759,6 +1772,8 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 
 なお `data-{event}-run`（フェッチを伴わない任意 JS 実行）は、`event.preventDefault()` を有効にするため、上記 2（confirm）より前の**同期タイミング**で実行されます。`data-{event}-fetch` と併用した場合は run → fetch の順になります。
 
+また `data-{event}-prevent` は上記の手続き順序とは独立に、イベントの委譲（`EventDispatcher.delegate`）の**最初の同期段**で `event.preventDefault()` を呼びます。手続き本体（fetch 等）の成否や `await` に依存せずネイティブのデフォルト動作を抑止するためで、`data-{event}-defer` で手続きを遅延させても抑止は確実に効きます。
+
 #### 交差監視トリガー (`data-intersect-*`)
 
 `data-intersect-*` は `IntersectionObserver` によって発火する専用トリガー属性です。`click` / `change` / `load` の DOM イベントとは別に、要素が監視領域へ入ったことをきっかけに Procedure を実行します。主な用途は無限スクロール、一覧の先読み、遅延読み込みです。
@@ -1961,6 +1976,25 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
   data-click-run="openInApp(); return false">
   アプリで開く
 </a>
+```
+
+##### `data-{event}-prevent`
+
+そのイベントでブラウザのネイティブなデフォルト動作を抑止します（`data-click-prevent` が主用途）。`type="submit"` ボタンのフォーム送信や `<a href>` の遷移を止めたい場合に使います。
+
+- **指定方法**: 真偽属性（存在＝有効）。値は将来の条件指定用に予約しており、現状は無視します。
+- **実行方式**: `EventDispatcher.delegate` の最初の同期段で `event.preventDefault()` を呼びます。手続き（fetch 等）の有無・成否に依存せず常に抑止します。
+- **`data-{event}-defer` との関係**: prevent は同期段で確定するため、`defer` で手続きを遅延させても抑止は有効です（`data-{event}-run` の `return false` が defer と併用できないのとは異なります）。
+- **伝播**: `stopPropagation()` は呼びません。他ライブラリのイベントハンドラへは伝播し続けます。
+
+```html
+<!-- type="submit" のまま、ページ再読込なしにフェッチ・トーストを実行する -->
+<form>
+  <button type="submit" data-click-prevent data-click-fetch="/api/save">保存</button>
+</form>
+
+<!-- リンクの既定遷移だけを抑止する（onclick="return false" 相当） -->
+<a href="#" data-click-prevent>何もしないリンク</a>
 ```
 
 #### フェッチ

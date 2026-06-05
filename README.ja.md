@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.11.1
+バージョン: 0.12.0
 
 ---
 
@@ -111,6 +111,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `data-click-*`・`data-change-*`・`data-load-*`・`data-intersect-*` は、それぞれクリック・フォーム変更・要素ロード・ビューポート交差を契機に処理（fetch、bind、copy、ダイアログ操作など）を宣言します。`data-load-*` は `data-if` 要素が非表示→表示へ遷移した（`haori:show`）タイミングでも発火するため、ネイティブの `load` が発生しない `<button>` などでも利用できます。
 - `data-click-copy-source` — `data-click-copy` のコピー元要素を明示指定します（既定は `data-click-form` のフォーム、無ければイベント発火元の binding）。
 - `data-click-no-disabled` / `data-click-defer` — 他ライブラリとの併用補助です。`no-disabled` はクリック手続き実行中に `disabled` 属性を付与せず実行します（Bootstrap collapse など disabled 要素を無視するライブラリ・CSS が動作し続けます。多重実行は内部マーカーで防止）。`defer` はクリック手続きを次フレーム（`requestAnimationFrame`／`setTimeout(0)`）で実行し、他ライブラリの同期 click ハンドラを先に完了させます。遅延後は `preventDefault()` できないため、`<a href>` や `type="submit"` への `defer` 併用は避けてください。
+- `data-{event}-prevent`（例: `data-click-prevent`）— そのイベントでブラウザのネイティブなデフォルト動作（`type="submit"` ボタンのフォーム送信、`<a href>` の遷移など）を抑止します。`preventDefault()` はクリックの同期区間で呼ぶため `data-click-defer` と併用しても確実に抑止でき、`stopPropagation()` は呼ばないので他ライブラリのイベント伝播には影響しません。これにより `type="submit"` のまま `data-click-fetch` 等を付けても、ページ再読込なしに動作します。
 - `data-{event}-run`（例: `data-click-run`・`data-change-run`）— フェッチを伴わず任意の JavaScript をイベント時に実行します。属性値は `new Function` で実 JS として実行され（`-before-run`/`-after-run` と同方式）、`{{...}}` はレンダリング時に展開、`event` が引数で渡されます。本体が `false` を返すと `event.preventDefault()` を呼びます（`onclick="return false"` の慣習）。**セキュリティ**: 展開後の `{{...}}` は実行コードへ結合されるため、信頼できる値（数値 index・自前採番 ID 等）のみを入れてください。API レスポンスやユーザー入力などの信頼できない文字列を入れると任意コード実行（XSS）になり得ます。信頼できない値は `data-bind` 経由で渡し、呼び出す関数の内部で参照してください。
 
 ライフサイクルイベント:
@@ -118,6 +119,8 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `haori:eachupdate` — `data-each` のリスト差分完了時に `data-each` 要素で発火します。発火時点で追加・削除・並べ替えされた全行が DOM に反映され、各行の内容（`{{...}}`）も描画済みのため、描画完了の検知に利用できます（`detail`: `added`・`removed`・`order`・`total`）。
 - `haori:bindcomplete` — `data-*-bind` / `data-*-bind-arg` によるバインドと、対象要素配下の再評価が完了した後に対象要素で発火します（`detail.bindArg`）。
 - `haori:show` / `haori:hide` — `data-if` 要素の表示・非表示時に発火します。
+
+式中では予約名前空間 `haori` の組み込みヘルパーを利用できます。`haori.date(value, format?)` は ISO 文字列・エポックミリ秒・`Date` を整形し（既定 `yyyy/MM/dd HH:mm`、ローカル時刻）、`haori.number(value, decimals?)` は桁区切り付きで数値を整形、`haori.range(start, end?, step?)` は整数配列を生成し（終端排他）、`haori.pages(totalPages, current, {window?, boundary?})` は省略記号付きの番号ページ列を生成します（`current` は 0 始まり。各要素は `{page, label, active, ellipsis}` を持ち `label` は `page + 1`）。これにより番号ページネーション（`data-each="haori.pages(totalPages, number, {window: 2})"`）や値の整形（`{{ haori.date(lastUpdatedAt, 'yyyy/MM/dd HH:mm') }}`）を宣言的に書けます。同じ関数は `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages` としても公開されています。`haori` は予約名のため、同名の `data-bind` キーを与えても式中では組み込みが優先されます。
 
 テンプレート式では、プロパティアクセス、動的インデックスを含むブラケットアクセス、optional chaining、三項演算子、配列 `map` / `filter` のアロー関数、spread を伴う呼び出しなどの安全な構文を利用できます。一方で、グローバルオブジェクト、`eval` や `arguments`、`constructor`、`__proto__`、`prototype`、`Reflect`、`Object` などの脱出経路は使用できません。`Object` がブロックされるため、`Object.assign` の代わりにスプレッド構文 `{...a, ...b}` を使ってください。ブロックされた識別子を式で参照すると、コンソールに `blocked identifier(s): …` という警告が出力されます。
 
