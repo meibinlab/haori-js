@@ -1,6 +1,6 @@
 {
   "name": "haori",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "A lightweight HTML-first UI engine powered by declarative data bindings and expressions.",
   "scripts": {
     "dev": "vite",
@@ -41,13 +41,21 @@
   "type": "module",
   "exports": {
     ".": {
-      "import": "./dist/haori.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/haori.es.js",
+      "require": "./dist/haori.cjs.js"
     }
   },
   "main": "dist/haori.es.js",
+  "module": "dist/haori.es.js",
+  "unpkg": "dist/haori.iife.js",
+  "jsdelivr": "dist/haori.iife.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist/haori.es.js",
+    "dist/haori.cjs.js",
+    "dist/haori.iife.js",
+    "dist/index.d.ts"
   ],
   "bugs": {
     "url": "https://github.com/meibinlab/haori-js/issues"

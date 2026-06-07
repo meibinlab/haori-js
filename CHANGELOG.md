@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [0.13.1] - 2026-06-07
+
+### Packaging
+
+- npm パッケージの同梱物を実行時成果物だけに絞った。`files` を `dist` 一括指定から `dist/haori.es.js` / `dist/haori.cjs.js` / `dist/haori.iife.js` / `dist/index.d.ts` の明示指定へ変更し、これまで同梱されていたコンパイル済みテスト（`dist/tests/**`）・ソースマップ（`*.map`）・型宣言の個別ファイル（`dist/src/**`）・設定ファイル（`dist/vite.config.*` 等）を公開物から除外した（unpacked size を縮小。ランタイム動作・CDN 配信・型解決には影響なし）。
+- `exports` を実在ファイルへ修正した。`import` 条件が存在しない `./dist/haori.js` を指していた不整合を `./dist/haori.es.js` に直し、`require`（`./dist/haori.cjs.js`）と `types`（`./dist/index.d.ts`）条件、および `module` / `unpkg` / `jsdelivr` フィールドを追加して、ESM `import`・CJS `require`・型・CDN の各解決を正しくした。型宣言（`dist/index.d.ts`）はロールアップ済みで自己完結のため、`dist/src` を除外しても型解決に影響しない。
+
 ## [0.13.0] - 2026-06-07
 
 ### Changed
