@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [0.14.0] - 2026-06-08
+
+### Added
+
+- 組み込みヘルパー（予約名前空間 `haori`）に月次ユーティリティ `haori.monthAdd(value, delta)` と `haori.monthRange(count, base?)` を追加した。`monthAdd` は `YYYY-MM` 形式の年月へ月数を加算して `YYYY-MM` で返す（`Date` を介さない整数演算でタイムゾーン非依存。不正な入力・月が 1〜12 外は空文字、`delta` が 0 のときは正規化して返す）。`monthRange` は基準月から過去方向へ `count + 1` 個の `{targetMonth, label}`（`label` は `YYYY/MM`）を降順で返す（`base` 省略時は現在月。月セレクト・月次ナビゲーション向け）。公開 API `Haori.monthAdd` / `Haori.monthRange` としても同一実装を提供。
+- 組み込みヘルパーにページ件数サマリー `haori.pageSummary(page, visibleCount?)` を追加した。Spring Data の `Page` 相当（`number`・`size`・`totalElements`／`totalCount`）から `{start, end, total, empty}` を計算する（`number` は 0 始まり、末尾ページの端数は `visibleCount` →`page.numberOfElements`→`size` の順で算出、総件数 0・非オブジェクトは `empty`）。`1 - 20 / 100 件` のような表示の算出元。公開 API `Haori.pageSummary` としても提供。
+
+### Documentation
+
+- 上記ヘルパーの仕様・用例を specs.md・guide.md・README に追加した。`monthRange` は `base` 省略時に現在月へ依存する（他ヘルパーの冪等性とは異なる）点、再評価で結果を固定したい場合は `base` を明示する点を明記した。
+- 専用属性を追加せず既存機能の組み合わせで実現できるパターンを guide.md にレシピとして追加した（いずれもライブラリ実装は変更なし。end-to-end の捨てテストで動作を確認済み）: ①state 配列の追加・削除（式の `[...arr, x]`／`filter` ＋ JSON 形式 `data-click-data` ＋ `data-click-bind-merge`）、②フォーム値と state 配列の合成送信（`data-click-form` ＋ `data-click-data` の payload 統合）、③クリップボードコピー（`data-click-run` の `navigator.clipboard.writeText` ＋ `data-click-toast`）、④送信前のペイロード加工・空行除外（`data-click-before-run`）。
+
+### Library
+
+- `monthAdd`（加算・桁またぎ・正規化・不正入力）・`monthRange`（降順生成・`count=0`・現在月基準・不正入力）・`pageSummary`（先頭/途中/末尾端数・`numberOfElements`/`totalCount`・空）の単体テストと、式評価エンジン経由の呼び出しテストを追加した。
+
 ## [0.13.2] - 2026-06-07
 
 ### Fixed

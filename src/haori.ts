@@ -1,8 +1,21 @@
 import Log from './log';
 import Env from './env';
 import Queue from './queue';
-import {date, number, pages, range} from './builtins';
-import type {PageItem, PagesOptions} from './builtins';
+import {
+  date,
+  monthAdd,
+  monthRange,
+  number,
+  pageSummary,
+  pages,
+  range,
+} from './builtins';
+import type {
+  MonthItem,
+  PageItem,
+  PageSummary,
+  PagesOptions,
+} from './builtins';
 
 /**
  * Haoriクラスは、アプリケーション全体で使用されるユーティリティメソッドを提供します。
@@ -243,5 +256,50 @@ export default class Haori {
     options?: PagesOptions,
   ): PageItem[] {
     return pages(totalPages, current, options);
+  }
+
+  /**
+   * `YYYY-MM` 形式の年月文字列に月数を加算します。
+   *
+   * テンプレート式中の `haori.monthAdd(...)` と同じ実装です。
+   *
+   * @param value 基準となる年月（`YYYY-MM` 形式）
+   * @param delta 加算する月数（負数で過去方向）
+   * @returns 加算後の年月（`YYYY-MM` 形式）。不正な入力は空文字
+   */
+  public static monthAdd(
+    value: string | null | undefined,
+    delta: number,
+  ): string {
+    return monthAdd(value, delta);
+  }
+
+  /**
+   * 基準月から過去方向へ `count + 1` 個の年月配列を降順で返します。
+   *
+   * テンプレート式中の `haori.monthRange(...)` と同じ実装です。
+   *
+   * @param count 基準月から遡る月数（戻り値の要素数は `count + 1`）
+   * @param base 基準月（`YYYY-MM` 形式、省略時は現在月）
+   * @returns 年月情報の降順配列。不正な入力は空配列
+   */
+  public static monthRange(count: number, base?: string): MonthItem[] {
+    return monthRange(count, base);
+  }
+
+  /**
+   * ページレスポンスから表示用サマリーを作ります。
+   *
+   * テンプレート式中の `haori.pageSummary(...)` と同じ実装です。
+   *
+   * @param page ページ情報（`number`・`size`・`totalElements`／`totalCount` 等）
+   * @param visibleCount 現在表示している件数（省略可）
+   * @returns 表示サマリー
+   */
+  public static pageSummary(
+    page: Record<string, unknown> | null | undefined,
+    visibleCount?: number,
+  ): PageSummary {
+    return pageSummary(page, visibleCount);
   }
 }

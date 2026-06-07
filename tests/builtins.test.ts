@@ -4,7 +4,15 @@
  * 式評価エンジンへの予約名前空間 `haori` 注入の統合テストです。
  */
 import {describe, it, expect} from 'vitest';
-import Builtins, {date, number, range, pages} from '../src/builtins';
+import Builtins, {
+  date,
+  monthAdd,
+  monthRange,
+  number,
+  pageSummary,
+  range,
+  pages,
+} from '../src/builtins';
 import Expression from '../src/expression';
 import Haori from '../src/haori';
 
@@ -131,12 +139,131 @@ describe('Builtins', () => {
     });
   });
 
+  describe('monthAdd()', () => {
+    it('月を加算する（YYYY-MM 形式で返す）', () => {
+      expect(monthAdd('2026-06', 1)).toBe('2026-07');
+      expect(monthAdd('2026-06', -1)).toBe('2026-05');
+    });
+
+    it('年をまたいで繰り上がり・繰り下がりする', () => {
+      expect(monthAdd('2026-12', 1)).toBe('2027-01');
+      expect(monthAdd('2026-01', -1)).toBe('2025-12');
+      expect(monthAdd('2026-06', -18)).toBe('2024-12');
+    });
+
+    it('delta が 0 なら正規化して返す', () => {
+      expect(monthAdd('2026-06', 0)).toBe('2026-06');
+      expect(monthAdd('2026-6', 0)).toBe('2026-06');
+    });
+
+    it('不正な入力は空文字を返す', () => {
+      expect(monthAdd('', 1)).toBe('');
+      expect(monthAdd(null, 1)).toBe('');
+      expect(monthAdd('2026-13', 1)).toBe('');
+      expect(monthAdd('2026/06', 1)).toBe('');
+      expect(monthAdd('not-a-month', 1)).toBe('');
+    });
+  });
+
+  describe('monthRange()', () => {
+    it('基準月から降順に count + 1 個返す', () => {
+      const result = monthRange(3, '2026-06');
+      expect(result.map(item => item.targetMonth)).toEqual([
+        '2026-06',
+        '2026-05',
+        '2026-04',
+        '2026-03',
+      ]);
+      expect(result[0].label).toBe('2026/06');
+    });
+
+    it('count が 0 なら基準月だけを返す', () => {
+      expect(monthRange(0, '2026-06')).toEqual([
+        {targetMonth: '2026-06', label: '2026/06'},
+      ]);
+    });
+
+    it('base 省略時は現在月を先頭にする', () => {
+      const now = new Date();
+      const year = String(now.getFullYear()).padStart(4, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const result = monthRange(2);
+      expect(result.length).toBe(3);
+      expect(result[0].targetMonth).toBe(`${year}-${month}`);
+    });
+
+    it('不正な count・base は空配列を返す', () => {
+      expect(monthRange(-1, '2026-06')).toEqual([]);
+      expect(monthRange(3, 'bad')).toEqual([]);
+    });
+  });
+
+  describe('pageSummary()', () => {
+    it('先頭ページのサマリーを計算する', () => {
+      expect(
+        pageSummary({number: 0, size: 20, totalElements: 100}),
+      ).toEqual({start: 1, end: 20, total: 100, empty: false});
+    });
+
+    it('途中ページのサマリーを計算する', () => {
+      expect(
+        pageSummary({number: 2, size: 20, totalElements: 100}),
+      ).toEqual({start: 41, end: 60, total: 100, empty: false});
+    });
+
+    it('末尾ページの端数は visibleCount を優先する', () => {
+      expect(
+        pageSummary({number: 4, size: 20, totalElements: 90}, 10),
+      ).toEqual({start: 81, end: 90, total: 90, empty: false});
+    });
+
+    it('numberOfElements があれば末尾の端数に使う', () => {
+      expect(
+        pageSummary({
+          number: 4,
+          size: 20,
+          totalElements: 90,
+          numberOfElements: 10,
+        }),
+      ).toEqual({start: 81, end: 90, total: 90, empty: false});
+    });
+
+    it('totalCount も総件数として受け付ける', () => {
+      expect(pageSummary({number: 0, size: 10, totalCount: 25})).toEqual({
+        start: 1,
+        end: 10,
+        total: 25,
+        empty: false,
+      });
+    });
+
+    it('総件数 0・不正な入力は empty を返す', () => {
+      const empty = {start: 0, end: 0, total: 0, empty: true};
+      expect(pageSummary({number: 0, size: 20, totalElements: 0})).toEqual(
+        empty,
+      );
+      expect(pageSummary(null)).toEqual(empty);
+      expect(pageSummary(undefined)).toEqual(empty);
+    });
+  });
+
   describe('Haori 公開 API との共用', () => {
     it('Haori.date / number / range / pages が同じ実装を返す', () => {
       expect(Haori.date('2024-01-05T09:05:03')).toBe('2024/01/05 09:05');
       expect(Haori.number(1234567)).toBe('1,234,567');
       expect(Haori.range(3)).toEqual([0, 1, 2]);
       expect(Haori.pages(3, 0).length).toBe(3);
+    });
+
+    it('Haori.monthAdd / monthRange / pageSummary が同じ実装を返す', () => {
+      expect(Haori.monthAdd('2026-06', -1)).toBe('2026-05');
+      expect(Haori.monthRange(1, '2026-06').map(m => m.targetMonth)).toEqual([
+        '2026-06',
+        '2026-05',
+      ]);
+      expect(
+        Haori.pageSummary({number: 0, size: 20, totalElements: 100}),
+      ).toEqual({start: 1, end: 20, total: 100, empty: false});
     });
   });
 
@@ -158,6 +285,28 @@ describe('Builtins', () => {
       >;
       expect(result.length).toBe(3);
       expect(result[0].label).toBe(1);
+    });
+
+    it('式から haori.monthAdd / monthRange を呼べる', () => {
+      expect(
+        Expression.evaluate("haori.monthAdd(m, -1)", {m: '2026-06'}),
+      ).toBe('2026-05');
+      const months = Expression.evaluate(
+        "haori.monthRange(1, '2026-06')",
+        {},
+      ) as Array<Record<string, unknown>>;
+      expect(months.map(item => item.targetMonth)).toEqual([
+        '2026-06',
+        '2026-05',
+      ]);
+    });
+
+    it('式から haori.pageSummary を呼べる', () => {
+      const result = Expression.evaluate('haori.pageSummary(view)', {
+        view: {number: 0, size: 20, totalElements: 100},
+      }) as Record<string, unknown>;
+      expect(result.start).toBe(1);
+      expect(result.end).toBe(20);
     });
 
     it('haori はユーザーのバインド値より優先される（上書き不可）', () => {

@@ -275,9 +275,192 @@ export function pages(
   return items;
 }
 
+/** `YYYY-MM` 形式の年月文字列を判定する正規表現 */
+const MONTH_PATTERN = /^(\d{4})-(\d{1,2})$/;
+
+/** monthRange() が一度に生成する要素数の上限（暴走防止・約100年分） */
+const MONTH_RANGE_MAX_LENGTH = 1200;
+
+/**
+ * `monthRange()` が返す1要素分の情報です。
+ */
+export interface MonthItem {
+  /** 年月（`YYYY-MM` 形式） */
+  targetMonth: string;
+
+  /** 表示用ラベル（`YYYY/MM` 形式） */
+  label: string;
+}
+
+/**
+ * `pageSummary()` が返すページ表示サマリーです。
+ */
+export interface PageSummary {
+  /** 表示中の先頭要素の通し番号（1 始まり）。0 件のときは 0 */
+  start: number;
+
+  /** 表示中の末尾要素の通し番号（1 始まり）。0 件のときは 0 */
+  end: number;
+
+  /** 総件数 */
+  total: number;
+
+  /** 総件数が 0 のとき true */
+  empty: boolean;
+}
+
+/**
+ * 値を有限な整数へ変換します。変換できない場合は既定値を返します。
+ *
+ * @param value 変換対象の値
+ * @param fallback 変換できない場合の既定値
+ * @returns 変換後の整数または既定値
+ */
+function toFiniteInt(value: unknown, fallback: number): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.trunc(numeric) : fallback;
+}
+
+/**
+ * `YYYY-MM` 形式の年月文字列に月数を加算して `YYYY-MM` 形式で返します。
+ *
+ * 日付オブジェクトを介さず整数演算で計算するため、タイムゾーンの影響を受けません。
+ * `value` が `YYYY-MM` 形式でない・月が 1〜12 の範囲外の場合は空文字を返します。
+ * `delta` が 0 のときは入力月を正規化（ゼロ埋め）して返します。
+ *
+ * @param value 基準となる年月（`YYYY-MM` 形式）
+ * @param delta 加算する月数（負数で過去方向）
+ * @returns 加算後の年月（`YYYY-MM` 形式）。不正な入力は空文字
+ */
+export function monthAdd(
+  value: string | null | undefined,
+  delta: number,
+): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const matched = MONTH_PATTERN.exec(value.trim());
+  if (!matched) {
+    return '';
+  }
+  const year = Number(matched[1]);
+  const month = Number(matched[2]);
+  if (month < 1 || month > 12) {
+    return '';
+  }
+  const offset = Number.isFinite(delta) ? Math.trunc(delta) : 0;
+  // 0 始まりの月インデックス（year*12 + month-1）で計算してから戻す
+  const total = year * 12 + (month - 1) + offset;
+  const newYear = Math.floor(total / 12);
+  const newMonth = total - newYear * 12 + 1;
+  return `${String(newYear).padStart(4, '0')}-${pad2(newMonth)}`;
+}
+
+/**
+ * 基準月を `YYYY-MM` 形式で解決します。
+ *
+ * `base` が指定されていればそれを正規化し、省略時は現在月（ローカル時刻）を返します。
+ *
+ * @param base 基準月（`YYYY-MM` 形式、省略可）
+ * @returns 正規化した基準月。`base` が不正なら空文字
+ */
+function resolveBaseMonth(base?: string): string {
+  if (typeof base === 'string' && base.trim() !== '') {
+    return monthAdd(base, 0);
+  }
+  const now = new Date();
+  const year = String(now.getFullYear()).padStart(4, '0');
+  return `${year}-${pad2(now.getMonth() + 1)}`;
+}
+
+/**
+ * 基準月から過去方向へ `count + 1` 個の年月配列を降順（新しい月が先頭）で返します。
+ *
+ * 月セレクトや月次ナビゲーションの選択肢生成に利用できます。各要素は
+ * `targetMonth`（`YYYY-MM`）と表示用 `label`（`YYYY/MM`）を持ちます。
+ *
+ * 注意: `base` を省略すると現在月に依存するため、同じ呼び出しでも月をまたぐと
+ * 結果が変わります（他の組み込みヘルパーの冪等性とは異なります）。再評価で結果を
+ * 固定したい場合は `base` を明示してください。
+ *
+ * @param count 基準月から遡る月数（戻り値の要素数は `count + 1`）
+ * @param base 基準月（`YYYY-MM` 形式、省略時は現在月）
+ * @returns 年月情報（{@link MonthItem}）の降順配列。不正な入力は空配列
+ */
+export function monthRange(count: number, base?: string): MonthItem[] {
+  const total = Math.trunc(Number(count));
+  if (!Number.isFinite(total) || total < 0) {
+    return [];
+  }
+  const baseMonth = resolveBaseMonth(base);
+  if (baseMonth === '') {
+    return [];
+  }
+  const length = Math.min(total, MONTH_RANGE_MAX_LENGTH);
+  const items: MonthItem[] = [];
+  for (let i = 0; i <= length; i += 1) {
+    const targetMonth = monthAdd(baseMonth, -i);
+    items.push({targetMonth, label: targetMonth.replace(/-/g, '/')});
+  }
+  return items;
+}
+
+/**
+ * ページレスポンスから表示用サマリー（`1 - 20 / 100 件` の算出元）を作ります。
+ *
+ * Spring Data の `Page` 相当（`number`・`size`・`totalElements`／`totalCount`）を
+ * 受け取り、表示中の先頭・末尾の通し番号と総件数を計算します。`number` は 0 始まりの
+ * ページ番号を想定します。末尾ページで端数になる場合の `end` 計算には、`visibleCount`
+ * （指定時）→ `page.numberOfElements` → `size` の順で表示件数を採用します。
+ *
+ * @param page ページ情報（`number`・`size`・`totalElements`／`totalCount` 等）
+ * @param visibleCount 現在表示している件数（省略可）
+ * @returns 表示サマリー（{@link PageSummary}）
+ */
+export function pageSummary(
+  page: Record<string, unknown> | null | undefined,
+  visibleCount?: number,
+): PageSummary {
+  const emptyResult: PageSummary = {start: 0, end: 0, total: 0, empty: true};
+  if (!page || typeof page !== 'object') {
+    return emptyResult;
+  }
+  const source = page as Record<string, unknown>;
+  const total = toFiniteInt(
+    source.totalElements ?? source.totalCount,
+    0,
+  );
+  if (total <= 0) {
+    return emptyResult;
+  }
+  const number = Math.max(0, toFiniteInt(source.number, 0));
+  const size = Math.max(0, toFiniteInt(source.size, 0));
+  const offset = number * size;
+  const start = Math.min(offset + 1, total);
+  let visible: number;
+  if (visibleCount !== undefined && Number.isFinite(visibleCount)) {
+    visible = Math.max(0, Math.trunc(visibleCount));
+  } else {
+    const numberOfElements = toFiniteInt(source.numberOfElements, NaN);
+    visible = Number.isFinite(numberOfElements)
+      ? numberOfElements
+      : Math.min(size, total - offset);
+  }
+  const end = Math.min(offset + visible, total);
+  return {start, end: Math.max(end, start), total, empty: false};
+}
+
 /**
  * 式中の予約名前空間 `haori` として公開する組み込みヘルパー集合です。
  */
-const Builtins = Object.freeze({date, number, pages, range});
+const Builtins = Object.freeze({
+  date,
+  number,
+  pages,
+  range,
+  monthAdd,
+  monthRange,
+  pageSummary,
+});
 
 export default Builtins;
