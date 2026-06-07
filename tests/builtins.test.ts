@@ -179,5 +179,62 @@ describe('Builtins', () => {
     it('Builtins は凍結されている', () => {
       expect(Object.isFrozen(Builtins)).toBe(true);
     });
+
+    it('文字列リテラル内の haori は識別子として扱わない', () => {
+      // 文字列リテラルはそのまま評価され、注入による破壊や誤検出が起きない
+      expect(Expression.evaluate("'haori'", {})).toBe('haori');
+      expect(Expression.evaluate('"haori is reserved"', {x: 1})).toBe(
+        'haori is reserved',
+      );
+    });
+  });
+
+  describe('レビュー指摘の追加検証', () => {
+    it('date: リテラルエスケープ（\'...\'）でトークン英字をそのまま出力する', () => {
+      expect(date('2024-01-05T09:05:03', "yyyy-MM-dd'T'HH:mm:ss")).toBe(
+        '2024-01-05T09:05:03',
+      );
+      expect(date('2024-01-05T09:05:03', "HH'h'mm")).toBe('09h05');
+      // '' はリテラルのシングルクォート1文字
+      expect(date('2024-01-05T09:05:03', "HH''mm")).toBe("09'05");
+    });
+
+    it('number: decimals 省略時は最大3桁に丸められる', () => {
+      expect(number(1234.56789)).toBe('1,234.568');
+    });
+
+    it('number: 空白のみ・前後空白を適切に扱う', () => {
+      expect(number('   ')).toBe('');
+      expect(number(' 12 ')).toBe('12');
+      expect(number('1e3')).toBe('1,000');
+      expect(number(Infinity)).toBe('');
+    });
+
+    it('range: 非整数は切り捨て、上限で打ち切る', () => {
+      expect(range(1.9, 5.9)).toEqual([1, 2, 3, 4]);
+      expect(range(0, 20000).length).toBe(10000);
+    });
+
+    it('pages: 隠れるのが1ページなら省略記号でなく番号を出す', () => {
+      const result = pages(5, 2, {window: 0});
+      expect(result.map(item => item.label)).toEqual([1, 2, 3, 4, 5]);
+      expect(result.some(item => item.ellipsis)).toBe(false);
+      expect(result.find(item => item.active)?.label).toBe(3);
+    });
+
+    it('pages: 大きなギャップでは従来どおり省略記号を出す', () => {
+      const result = pages(20, 9, {window: 2});
+      expect(result.filter(item => item.ellipsis).length).toBe(2);
+    });
+
+    it('pages: boundary を増やすと先頭・末尾の表示数が増える', () => {
+      const result = pages(20, 9, {window: 1, boundary: 2});
+      // 先頭2ページ（label 1,2）と末尾2ページ（label 19,20）が含まれる
+      const labels = result.filter(i => !i.ellipsis).map(i => i.label);
+      expect(labels).toContain(1);
+      expect(labels).toContain(2);
+      expect(labels).toContain(19);
+      expect(labels).toContain(20);
+    });
   });
 });

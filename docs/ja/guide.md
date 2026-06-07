@@ -290,8 +290,8 @@ window.Dates = {
 金額: 1,234,567 円
 ```
 
-- `haori.date(value, format?)`: ISO 文字列・エポックミリ秒・`Date` をローカル時刻で整形します（既定は `yyyy/MM/dd HH:mm`）。利用できるトークンは `yyyy`（4桁年）`yy`（2桁年）`MM`/`M`（月）`dd`/`d`（日）`HH`/`H`（時・24時間）`mm`（分）`ss`（秒）です。空・不正な値は空文字になります。
-- `haori.number(value, decimals?)`: 桁区切りを付けて整形します。`decimals` を指定すると小数桁を固定できます（例 `{{ haori.number(rate, 2) }}`）。
+- `haori.date(value, format?)`: ISO 文字列・エポックミリ秒・`Date` をローカル時刻で整形します（既定は `yyyy/MM/dd HH:mm`）。利用できるトークンは `yyyy`（4桁年）`yy`（2桁年）`MM`/`M`（月）`dd`/`d`（日）`HH`/`H`（時・24時間）`mm`（分）`ss`（秒）です。空・不正な値は空文字になります。`y M d H m s` などトークンに使う英字をそのまま文字として出したい場合はシングルクォートで囲みます（例 `{{ haori.date(t, "yyyy-MM-dd'T'HH:mm") }}` → `2024-01-15T10:30`）。
+- `haori.number(value, decimals?)`: 桁区切りを付けて整形します。`decimals` を指定すると小数桁を固定できます（例 `{{ haori.number(rate, 2) }}`）。数値文字列の前後空白は無視し、空・空白のみ・数値化できない値は空文字になります。
 
 > `haori` は予約名です。`data-bind` で `haori` というキーを与えても、式の中では組み込みヘルパーが優先されます。同じ関数は JavaScript からも `Haori.date(...)` / `Haori.number(...)` として呼べます。
 

@@ -345,7 +345,15 @@ export default class Expression {
 
     // 式が予約名前空間 `haori` を参照している場合のみ組み込みヘルパーを注入する。
     // 参照していない式に無駄な引数・Proxy ラップを増やさないための最適化。
-    const referencesBuiltins = this.BUILTIN_REFERENCE_PATTERN.test(expression);
+    // 文字列リテラル（'...' / "..."）内の `haori` は識別子ではないので検出から除外する
+    // （テンプレートリテラル内の ${haori...} を壊さないようバッククォートは残す）。
+    const expressionForDetection = expression.replace(
+      /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g,
+      '',
+    );
+    const referencesBuiltins = this.BUILTIN_REFERENCE_PATTERN.test(
+      expressionForDetection,
+    );
     if (referencesBuiltins && this.BUILTIN_NAMESPACE in bindedValues) {
       Log.warn(
         '[Haori]',

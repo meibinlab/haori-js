@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## [0.13.2] - 2026-06-07
+
+### Fixed
+
+- `type="number"` の数値化を `value="{{...}}"`（value 属性のテンプレート評価）経由にも適用した。従来は `syncValue` / `applyValue` 経由のみ正規化され、属性評価経由では文字列のまま内部値に残っていた（`data-attr-value` は仕様上 `input.value` を同期しないため対象外）。
+- `haori.date()` でフォーマット中の英字（`y M d H m s`）が常にトークンとして解釈され、リテラル文字（例 `'Month'` の `M`）が誤って置換される問題に対し、シングルクォートによるリテラルエスケープ（例 `yyyy-MM-dd'T'HH:mm`、`''` は `'` 1文字）を追加した。
+- `haori.number()` で空白のみの文字列が `0` になっていたのを空文字に修正し、数値文字列の前後空白を無視するようにした。
+- `haori.pages()` で「隠れるページが1つだけ」のとき（ギャップが2）でも省略記号を出していたのを、その番号を表示するよう改善した（例 `pages(5, 2, {window: 0})` → `1 2 [3] 4 5`）。
+- `EventDispatcher` のクリック委譲・`data-{event}-prevent`・`data-click-defer` 判定がプレフィックスを `data-` でハードコードしていたのを `Env.prefix` 基準に修正した。`data-prefix` でプレフィックスを変更した場合に委譲・prevent・defer が機能しなかった既存の不具合を解消（既定 `data-` では挙動不変）。
+- 式評価で予約名前空間 `haori` の参照を検出する際、文字列リテラル（`'...'` / `"..."`）内の `haori` を識別子と誤認して不要な注入・警告を出していたのを、検出前に文字列リテラルを除外して回避した（テンプレートリテラルの `${...}` は対象外）。
+
+### Documentation
+
+- 上記の挙動（date のエスケープ、number の空白扱い、pages の単一ページ表示、number 収集経路と `data-attr-value` の非対象、エラー応答 `errors` 配列の改行連結）を specs.md・guide.md に反映した。
+
+### Library
+
+- date エスケープ、number の3桁丸め・空白、range の非整数/上限、pages の単一ページ/boundary、式の文字列リテラル除外、value 属性経由の number 収集、カスタムプレフィックス時の prevent/委譲、change での prevent 無害性を検証する回帰テストを追加した。
+
 ## [0.13.1] - 2026-06-07
 
 ### Packaging

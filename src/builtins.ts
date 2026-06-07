@@ -60,7 +60,10 @@ export interface PageItem {
  * 解釈はブラウザのローカルタイムゾーンで行います。空・null・不正な日時は空文字を
  * 返します。利用できるトークン（いずれもローカル時刻）:
  * `yyyy`（4桁年）`yy`（2桁年）`MM`/`M`（月）`dd`/`d`（日）`HH`/`H`（時・24時間）
- * `mm`（分）`ss`（秒）。トークン以外の文字（区切りなど）はそのまま出力します。
+ * `mm`（分）`ss`（秒）。`/ : - ` や日本語など、これらのトークンに該当しない文字は
+ * そのまま出力されます。`y M d H m s` などトークンに使う英字をそのまま出したい場合は
+ * シングルクォートで囲みます（例 `'T'`）。`''`（連続するシングルクォート2つ）は
+ * リテラルのシングルクォート1文字になります（例 `HH'h'mm` → `09h05`）。
  *
  * @param value 整形対象の日時（ISO 文字列・エポックミリ秒・Date）
  * @param format フォーマット文字列（省略時は `yyyy/MM/dd HH:mm`）
@@ -89,10 +92,16 @@ export function date(
     mm: pad2(parsed.getMinutes()),
     ss: pad2(parsed.getSeconds()),
   };
+  // 先頭の `'...'` はリテラルとして取り出し、トークン置換から除外する（`''` は ' 1文字）。
   // 長いトークンを先に並べ、`yyyy` が `yy` より、`MM` が `M` より優先されるようにする。
   return format.replace(
-    /yyyy|yy|MM|dd|HH|mm|ss|M|d|H/g,
-    matched => tokens[matched],
+    /'([^']*)'|yyyy|yy|MM|dd|HH|mm|ss|M|d|H/g,
+    (matched, literal: string | undefined) => {
+      if (literal !== undefined) {
+        return literal === '' ? '\'' : literal;
+      }
+      return tokens[matched];
+    },
   );
 }
 
@@ -100,8 +109,8 @@ export function date(
  * 数値を桁区切り・小数桁付きの文字列へ整形します。
  *
  * 桁区切りは常に有効で、`en-US` ロケール（カンマ区切り・ドット小数）で出力します。
- * `en-US` は区切り文字を決めるだけで小数桁は固定しません。数値文字列も受け付け、
- * 数値に変換できない値・null・空文字は空文字を返します。
+ * `en-US` は区切り文字を決めるだけで小数桁は固定しません。数値文字列も受け付け（前後の
+ * 空白は無視）、null・空文字・空白のみ・数値に変換できない値は空文字を返します。
  *
  * `decimals` を省略した場合は `Intl.NumberFormat` の既定に従い、末尾ゼロ埋めはせず、
  * 小数は最大 3 桁（`maximumFractionDigits = 3`）に丸められます（例 1234.56789 →
@@ -115,10 +124,20 @@ export function number(
   value: number | string | null | undefined,
   decimals?: number,
 ): string {
-  if (value === null || value === undefined || value === '') {
+  if (value === null || value === undefined) {
     return '';
   }
-  const numeric = typeof value === 'number' ? value : Number(value);
+  let numeric: number;
+  if (typeof value === 'number') {
+    numeric = value;
+  } else {
+    // 文字列は前後の空白を無視する。空文字・空白のみは数値として扱わない
+    const trimmed = String(value).trim();
+    if (trimmed === '') {
+      return '';
+    }
+    numeric = Number(trimmed);
+  }
   if (!Number.isFinite(numeric)) {
     return '';
   }
@@ -232,7 +251,18 @@ export function pages(
   let previous: number | null = null;
   for (const index of sorted) {
     if (previous !== null && index - previous > 1) {
-      items.push({page: null, label: '…', active: false, ellipsis: true});
+      if (index - previous === 2) {
+        // 隠れるのが 1 ページだけなら、省略記号ではなくその番号を表示する
+        const middle = previous + 1;
+        items.push({
+          page: middle,
+          label: middle + 1,
+          active: middle === currentPage,
+          ellipsis: false,
+        });
+      } else {
+        items.push({page: null, label: '…', active: false, ellipsis: true});
+      }
     }
     items.push({
       page: index,

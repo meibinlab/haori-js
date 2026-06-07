@@ -541,10 +541,10 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 - **優先順位**: `data-bind` に `haori` キーがあっても、式中では組み込みが優先されます（バインド値は無視。開発モードでは `Log.warn` で警告）。
 - **凍結との関係**: 公開 API 用の `Builtins` は `Object.freeze` 済みですが、凍結オブジェクトをそのまま注入すると評価時の Proxy ラップが Proxy 不変条件（read-only プロパティに別値を返せない）に違反するため、注入には非凍結の浅いコピーを用います。
 - **提供関数**（いずれも副作用なし・冪等。公開 API `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages` としても同一実装を提供）:
-  - `haori.date(value, format?)`: ISO 文字列・エポックミリ秒・`Date` を整形（既定 `yyyy/MM/dd HH:mm`、ローカル時刻）。トークン `yyyy yy MM M dd d HH H mm ss`。空・不正値は空文字。
-  - `haori.number(value, decimals?)`: 桁区切り付きで数値を整形（`Intl.NumberFormat`、`en-US`）。非数値は空文字。`en-US` ロケールは区切り文字（カンマ・ドット）を決めるだけで、小数桁は固定しません。`decimals` を指定するとその桁数で固定します（末尾ゼロ埋めあり。例 `number(1000, 2) → "1,000.00"`）。`decimals` を省略した場合は `Intl.NumberFormat` の既定に従い、整数はそのまま・小数は末尾ゼロ埋めなしで表示し、**小数は最大 3 桁まで（`maximumFractionDigits = 3`）に丸められます**（例 `number(1234.56789) → "1,234.568"`）。4 桁以上をそのまま出したい場合は `decimals` を明示してください。
+  - `haori.date(value, format?)`: ISO 文字列・エポックミリ秒・`Date` を整形（既定 `yyyy/MM/dd HH:mm`、ローカル時刻）。トークン `yyyy yy MM M dd d HH H mm ss`。空・不正値は空文字。**トークンに使う英字（`y M d H m s`）はフォーマット中のどこにあってもトークンとして解釈される**ため、リテラルとして出したい英字はシングルクォートで囲む（例 `yyyy-MM-dd'T'HH:mm`、`''` はシングルクォート1文字）。`/ : -`・日本語などトークン外の文字はそのまま出力。
+  - `haori.number(value, decimals?)`: 桁区切り付きで数値を整形（`Intl.NumberFormat`、`en-US`）。非数値・null・空文字・空白のみは空文字（数値文字列は前後空白を無視）。`en-US` ロケールは区切り文字（カンマ・ドット）を決めるだけで、小数桁は固定しません。`decimals` を指定するとその桁数で固定します（末尾ゼロ埋めあり。例 `number(1000, 2) → "1,000.00"`）。`decimals` を省略した場合は `Intl.NumberFormat` の既定に従い、整数はそのまま・小数は末尾ゼロ埋めなしで表示し、**小数は最大 3 桁まで（`maximumFractionDigits = 3`）に丸められます**（例 `number(1234.56789) → "1,234.568"`）。4 桁以上をそのまま出したい場合は `decimals` を明示してください。
   - `haori.range(start, end?, step?)`: 整数配列を生成（終端排他）。`range(n)`＝`[0..n-1]`。負の `step` で降順。要素数は上限で打ち切り。
-  - `haori.pages(totalPages, current, {window?, boundary?})`: 省略記号付きの番号ページ列。`current` は 0 始まり。要素は `{page, label, active, ellipsis}`（`page` は 0 始まり、`label` は `page + 1`、省略記号は `{page: null, label: '…', active: false, ellipsis: true}`）。既定 `window: 2` / `boundary: 1`。
+  - `haori.pages(totalPages, current, {window?, boundary?})`: 省略記号付きの番号ページ列。`current` は 0 始まり。要素は `{page, label, active, ellipsis}`（`page` は 0 始まり、`label` は `page + 1`、省略記号は `{page: null, label: '…', active: false, ellipsis: true}`）。既定 `window: 2` / `boundary: 1`。**隠れるページが 1 つだけの場合は省略記号ではなくその番号を表示**する（ギャップが 2 のとき。例 `pages(5, 2, {window: 0})` → `1 2 [3] 4 5`）。
 
 ### 4. Observer (observer.ts)
 
@@ -832,15 +832,20 @@ async handleError(response: Response): Promise<void> {
     }
 
     // { errors: { field1: "...", field2: [...] } }
+    // 配列は改行で連結し、1 フィールドにつき 1 エントリにまとめる
     if (data.errors) {
       Object.entries(data.errors).forEach(([key, value]) => {
         if (Array.isArray(value)) {
-          entries.push(...value.map(m => ({ key, message: m })))
+          entries.push({ key, message: value.join('\n') })
         } else {
           entries.push({ key, message: String(value) })
         }
       })
     }
+
+    // 上記いずれにも該当しない場合のフォールバック（簡略化のため擬似コードでは省略）:
+    // message/messages/errors を除くトップレベルの key:値 を field エラーとして拾い、
+    // それでも空なら `${status} ${statusText}` を全体メッセージにする。
 
     // メッセージを適切な要素に設定
     entries.forEach(({ key, message }) => {
@@ -912,7 +917,7 @@ data-if / data-each / {{variable}} などが自動更新
 
 それ以外の checkbox は従来どおり `value` 属性の文字列値を返し、未チェック時は `null` を返します。
 
-`type="number"` の `<input>` は値を**数値型**として収集・バインドします。HTML の `input.value` は常に文字列ですが、DTO が `Double` / `Integer` 等を期待する場合に文字列で送られるのを避けるため、内部値を数値へ正規化します（`ElementFragment.normalizeValueForElement`）。正規化は値を内部状態へ取り込む両経路、すなわち `syncValue()`（DOM→内部値。`change` および構築時）と `applyValue()`（バインド→内部値）で行われ、`Form.getValues()` の結果や JSON 送信ボディに数値として現れます。
+`type="number"` の `<input>` は値を**数値型**として収集・バインドします。HTML の `input.value` は常に文字列ですが、DTO が `Double` / `Integer` 等を期待する場合に文字列で送られるのを避けるため、内部値を数値へ正規化します（`ElementFragment.normalizeValueForElement`）。正規化は内部値へ値を取り込むすべての経路で行われます。すなわち `syncValue()`（DOM→内部値。`change` および構築時）、`applyValue()`（バインド→内部値）、および `value` 属性のテンプレート評価（`value="{{...}}"`）で正規化され、`Form.getValues()` の結果や JSON 送信ボディに数値として現れます。なお `data-attr-value` は仕様上 `input.value`（内部値）を同期しないため対象外です。フォームで収集したい数値フィールドは `name`＋フォームの `data-bind`（双方向バインド）または `value="{{...}}"` を使ってください。
 
 - 空文字・`null`・数値化できない値は `null`
 - 小数（例 `"2.5"`）はそのまま数値（`2.5`）

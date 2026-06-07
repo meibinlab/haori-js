@@ -1,6 +1,6 @@
 {
   "name": "haori",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "description": "A lightweight HTML-first UI engine powered by declarative data bindings and expressions.",
   "scripts": {
     "dev": "vite",

@@ -1471,7 +1471,8 @@ export class ElementFragment extends Fragment {
       !requiresValuePropertyWrite
     ) {
       if (shouldSyncValueProperty && stringResult !== null) {
-        this.value = stringResult;
+        // 属性評価で value を同期する場合も type="number" は数値へ正規化する
+        this.value = this.normalizeValueForElement(element, stringResult);
       }
       return Promise.resolve();
     }
@@ -1489,7 +1490,8 @@ export class ElementFragment extends Fragment {
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、
         // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
         if (shouldSyncValueProperty) {
-          this.value = stringResult;
+          // 内部値は type="number" のとき数値化し、DOM 表示は文字列のままにする
+          this.value = this.normalizeValueForElement(element, stringResult);
           if (requiresValuePropertyWrite) {
             element.value = stringResult;
           }

@@ -7,6 +7,7 @@
 import Fragment, {ElementFragment} from './fragment';
 import Procedure from './procedure';
 import Log from './log';
+import Env from './env';
 
 /**
  * イベントの振り分けを行うクラスです。
@@ -102,7 +103,7 @@ export default class EventDispatcher {
     // <a href> の遷移など）を抑止する。delegate はイベントリスナー内で同期実行される
     // ため、ここで preventDefault すれば data-click-defer と併用してもデフォルト動作を
     // 確実に止められる（伝播は止めないので他ライブラリのハンドラには影響しない）。
-    if (element.hasAttribute(`data-${type}-prevent`)) {
+    if (element.hasAttribute(`${Env.prefix}${type}-prevent`)) {
       event.preventDefault();
     }
 
@@ -126,7 +127,7 @@ export default class EventDispatcher {
     // タスク）へ遅延する。これにより Bootstrap など他ライブラリの「同一クリック
     // イベント中に同期実行される」ハンドラ（collapse トグル等）が先に完了し、
     // Haori の reset/copy 等による DOM 変更との競合を避けられる。
-    if (type === 'click' && element.hasAttribute('data-click-defer')) {
+    if (type === 'click' && element.hasAttribute(`${Env.prefix}click-defer`)) {
       if (typeof requestAnimationFrame !== 'undefined') {
         requestAnimationFrame(() => runProcedure());
       } else {
@@ -180,8 +181,9 @@ export default class EventDispatcher {
   private findClickableElement(element: HTMLElement): HTMLElement | null {
     let current: HTMLElement | null = element;
     while (current) {
+      const clickPrefix = `${Env.prefix}click-`;
       if (
-        current.getAttributeNames().some(name => name.startsWith('data-click-'))
+        current.getAttributeNames().some(name => name.startsWith(clickPrefix))
       ) {
         return current;
       }

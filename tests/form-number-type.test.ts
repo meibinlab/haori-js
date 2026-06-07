@@ -78,6 +78,15 @@ describe('type="number" の数値型変換', () => {
     expect(values.qty).toBe(42);
   });
 
+  it('value="{{...}}" 経由（属性評価）でも数値として収集する', async () => {
+    const values = await getValues(`
+      <form data-bind='{"q":7}'>
+        <input type="number" name="qty" value="{{q}}">
+      </form>
+    `);
+    expect(values.qty).toBe(7);
+  });
+
   it('数値文字列をバインドした number 入力も数値として収集する', async () => {
     container.innerHTML = `
       <form data-bind='{"qty":"7"}'>

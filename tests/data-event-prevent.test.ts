@@ -7,6 +7,7 @@
  */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import EventDispatcher from '../src/event_dispatcher';
+import Env from '../src/env';
 
 describe('data-{event}-prevent', () => {
   let container: HTMLElement;
@@ -86,5 +87,30 @@ describe('data-{event}-prevent', () => {
     container.appendChild(anchor);
 
     expect(clickAndCheckPrevented(anchor)).toBe(true);
+  });
+
+  it('カスタムプレフィックス（data-prefix）でも委譲と prevent が機能する', () => {
+    const envRef = Env as unknown as {_prefix: string};
+    const original = envRef._prefix;
+    envRef._prefix = 'hr-';
+    try {
+      const button = document.createElement('button');
+      button.type = 'submit';
+      button.setAttribute('hr-click-prevent', '');
+      button.setAttribute('hr-click-fetch', '/api/save');
+      container.appendChild(button);
+      expect(clickAndCheckPrevented(button)).toBe(true);
+    } finally {
+      envRef._prefix = original;
+    }
+  });
+
+  it('change イベントの prevent はキャンセル不可で無害（例外なし）', () => {
+    const input = document.createElement('input');
+    input.setAttribute('data-change-prevent', '');
+    container.appendChild(input);
+    // change はキャンセル不可なので preventDefault は無意味だが害もない
+    const event = new Event('change', {bubbles: true, cancelable: false});
+    expect(() => input.dispatchEvent(event)).not.toThrow();
   });
 });
