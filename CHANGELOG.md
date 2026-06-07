@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## [0.13.0] - 2026-06-07
+
+### Changed
+
+- `type="number"` の `<input>` を**数値型**として収集・バインドするようにした。HTML の入力値は常に文字列だが、バックエンドの DTO が `Double` / `Integer` を期待する場合に文字列で送られて型不一致になるのを防ぐ。空文字・数値化できない値は `null`、小数はそのまま数値になる。`ElementFragment` の内部値正規化（`normalizeValueForElement`）を、DOM→内部値（`syncValue`：`change`・構築時）とバインド→内部値（`applyValue`）の両経路に適用し、`Form.getValues()` の結果や JSON 送信ボディに数値として現れる。**挙動変更**: 0.12.x までは `type="number"` も文字列で収集していた。文字列のまま扱いたい場合は `type="text"` を使う
+
+### Library
+
+- `type="number"` の数値型変換について、静的 value 属性・小数・空値（`null`）・`change` 入力後・数値文字列バインド経由の各ケースを検証する回帰テストを追加した。挙動変更に伴い、既存のフォーム収集テストの期待値（`type="number"` の項目）を数値に更新した
+
+### Documentation
+
+- 既存機能で実現できる利用パターンを文書化した（コード変更なし）:
+  - サーバの 4xx レスポンスが `{"errors": {"フィールド名": "メッセージ"}}`（配列も可）形式のとき、`key` が `name` 一致のフィールドへ自動振り分けされ、haori-bootstrap 併用時は `invalid-feedback` / `is-invalid` が自動描画されること（フィールド別エラー表示。トップレベル配列形式は未対応）
+  - `data-if` + 1つの状態キーで「同時に1つだけ開く」排他パネル／アコーディオンを宣言的に表現できること
+  - `data-click-fetch` を伴わない `data-click-data` + `data-click-bind`（`data-click-bind-merge` 併用可）で、フェッチなしに任意 JSON を state へ反映できること
+  - `data-click-click`（複数要素にマッチ可）で複数の隠し要素のクリックを発火し、各々の `data-click-bind-arg` で同じ要素の別キーへマージすることで、連番属性なしに複数エンドポイントの取得結果を1つの state へ統合できること（取得は非同期で完了は待たない点に注意）
+
 ## [0.12.0] - 2026-06-05
 
 ### Added

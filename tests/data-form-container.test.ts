@@ -95,6 +95,7 @@ describe('data-form コンテナ', () => {
     // 行の id を含む URL と、行内の入力値が送信される。
     expect(calls[0].url).toBe('/api/prices/20');
     expect(calls[0].method).toBe('PUT');
-    expect(calls[0].body).toMatchObject({startMonth: '2026-04', price: '1200'});
+    // price は type="number" のため数値型で送信される
+    expect(calls[0].body).toMatchObject({startMonth: '2026-04', price: 1200});
   });
 });

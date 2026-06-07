@@ -47,7 +47,8 @@ describe('Form', () => {
       const values = Form.getValues(fragment);
 
       expect(values.name).toBe('田中太郎');
-      expect(values.age).toBe('25');
+      // type="number" は数値型として収集される
+      expect(values.age).toBe(25);
       expect(values.email).toBe('tanaka@example.com');
     });
 
@@ -164,9 +165,9 @@ describe('Form', () => {
       const values = Form.getValues(fragment);
 
       expect(values.items).toEqual([
-        {name: '商品A', price: '100'},
-        {name: '商品B', price: '200'},
-        {name: '商品C', price: '300'},
+        {name: '商品A', price: 100},
+        {name: '商品B', price: 200},
+        {name: '商品C', price: 300},
       ]);
     });
 
@@ -206,12 +207,12 @@ describe('Form', () => {
       expect(values.products).toEqual([
         {
           productName: '商品X',
-          quantity: '2',
+          quantity: 2,
           details: {color: '赤', size: 'M'},
         },
         {
           productName: '商品Y',
-          quantity: '1',
+          quantity: 1,
           details: {color: '青', size: 'L'},
         },
       ]);

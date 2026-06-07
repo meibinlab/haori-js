@@ -1184,7 +1184,8 @@ export class ElementFragment extends Fragment {
       element instanceof HTMLTextAreaElement ||
       element instanceof HTMLSelectElement
     ) {
-      this.value = value;
+      // type="number" は内部値を数値へ正規化して保持する（送信時に数値型になる）
+      this.value = this.normalizeValueForElement(element, value);
       this.skipChangeValue = true;
       return Queue.enqueue(() => {
         element.value = value === null ? '' : String(value);
@@ -1229,6 +1230,31 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 入力要素の種別に応じて値を正規化します。
+   *
+   * `type="number"` の input では、文字列の入力値・バインド値を数値へ変換します
+   * （DTO が数値型を期待する場合に文字列で送られるのを防ぐため）。空文字・null・
+   * 数値化できない値は `null` を返します。それ以外の要素では値をそのまま返します。
+   *
+   * @param element 対象の入力要素
+   * @param value 正規化する値
+   * @returns 正規化後の値（`type="number"` なら数値または null）
+   */
+  private normalizeValueForElement(
+    element: HTMLElement,
+    value: string | number | boolean | null,
+  ): string | number | boolean | null {
+    if (element instanceof HTMLInputElement && element.type === 'number') {
+      if (value === null || value === '') {
+        return null;
+      }
+      const numeric = typeof value === 'number' ? value : Number(value);
+      return Number.isNaN(numeric) ? null : numeric;
+    }
+    return value;
+  }
+
+  /**
    * 内部の値をDOMの値と同期します。
    * changeイベント時など、DOM値が変更された後に呼び出されます。
    */
@@ -1259,7 +1285,8 @@ export class ElementFragment extends Fragment {
           }
         }
       } else {
-        this.value = element.value;
+        // type="number" は数値へ正規化し、それ以外は文字列のまま保持する
+        this.value = this.normalizeValueForElement(element, element.value);
       }
     } else if (element instanceof HTMLTextAreaElement) {
       this.value = element.value;

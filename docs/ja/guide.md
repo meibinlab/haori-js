@@ -390,6 +390,27 @@ window.Dates = {
 
 `data-if` の表示判定は JavaScript の falsy 判定に準拠します。`false`・`null`・`undefined`・`NaN` に加えて、**数値 `0` と空文字列 `''` も非表示**になります。たとえば `data-if="items.length"` は要素数が 0 のとき非表示、`data-if="message"` は空文字列のとき非表示です。一方、空配列 `[]` や空オブジェクト `{}` は JavaScript と同様に truthy として扱われ、表示されます（件数で判定したい場合は `data-if="items.length"` を使ってください）。
 
+### 同時に1つだけ開く（排他パネル・アコーディオン）
+
+「状態を1つだけ持たせ、`data-if` で表示を切り替える」だけで、複数パネルの相互排他（同時に1つしか開かない）を JavaScript なしで表現できます。Bootstrap の collapse（`data-bs-parent`）のような仕組みを使わずに済みます。
+
+```html
+<div id="panel-state" data-bind='{"open": ""}'>
+  <!-- 開いているパネル名を state に入れる（同じ値なら閉じたい場合は条件を工夫） -->
+  <button data-click-data='{"open": "add"}' data-click-bind="#panel-state" data-click-bind-merge>
+    ユーザを追加
+  </button>
+  <button data-click-data='{"open": "edit"}' data-click-bind="#panel-state" data-click-bind-merge>
+    ユーザ編集
+  </button>
+
+  <div data-if="open === 'add'">…ユーザ追加フォーム…</div>
+  <div data-if="open === 'edit'">…ユーザ編集フォーム…</div>
+</div>
+```
+
+`open` は1つの値しか持てないため、片方を開くともう片方は自動的に閉じます。開閉アニメーションが必要な場合は、表示要素に CSS の `transition` を定義してください（Bootstrap collapse のスライドが必須の場合のみ、別途その仕組みを併用します）。
+
 ---
 
 ## リストの表示と繰り返し
@@ -784,6 +805,30 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 ```
 
 上の例では、`data-bind` や `data-fetch` によってフォームのバインディングデータが `{ mailImapSsl: true }` へ更新されるとチェックが入り、`{ mailImapSsl: false }` へ更新されるとチェックが外れます。
+
+### 数値フィールド（`type="number"`）は数値型で扱われる
+
+`type="number"` の入力は、値を**数値型**としてバインド・送信します。HTML の入力値は本来すべて文字列ですが、サーバー側の DTO が `Double` や `Integer` を期待する場合に文字列（例 `"2.5"`）で送られて型不一致になるのを防ぎます。
+
+```html
+<form>
+  <input type="number" name="stockFee" value="2.5">
+  <input type="number" name="quantity" value="3">
+  <input type="text" name="code" value="100">
+</form>
+```
+
+このフォームを `data-click-form` などで送信すると、JSON は次のようになります（`stockFee`・`quantity` は数値、`code` は `type="text"` なので文字列のまま）:
+
+```json
+{ "stockFee": 2.5, "quantity": 3, "code": "100" }
+```
+
+- 空の数値フィールドは `null` になります。
+- 数値に変換できない値も `null` になります。
+- 文字列として送りたい項目は `type="text"` を使ってください。
+
+> 補足: この数値化は 0.13.0 からの挙動です。それ以前は `type="number"` も文字列で送信していました。
 
 ### セレクトボックス
 
@@ -1257,6 +1302,75 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
   <p>データ: {{result.value}}</p>
 </div>
 ```
+
+### フェッチなしで state を更新する（`data-click-data` + `data-click-bind`）
+
+`data-click-fetch` を指定しなければ、`data-click-data` に書いたインライン JSON（とフォーム値）が**そのままバインド先へ反映**されます。サーバー通信なしに state を初期化・更新したいときに使えます。`data-click-bind-merge` を併用すれば、既存の state を保持したまま一部キーだけを差し替えられます。
+
+```html
+<!-- API を呼ばずに #page-state を初期化してからモーダルを開く -->
+<button
+  data-click-data='{"detail": {}, "users": []}'
+  data-click-bind="#page-state"
+  data-click-bind-merge
+  data-click-open="#agency-modal"
+>新規追加</button>
+```
+
+「新規追加」でフォームを空にしてからダイアログを開く、といった操作を JavaScript なしで宣言できます。
+
+### サーバーのバリデーションエラーをフィールドに表示する
+
+`data-click-fetch` などの送信に対してサーバーが 4xx を返し、ボディが `{"errors": {"フィールド名": "メッセージ"}}` 形式（配列も可）であれば、Haori は各メッセージを **`name` が一致するフィールドへ自動的に振り分け**ます。フォーム全体に関わるメッセージは `message` / `messages` で返すと、フォーム先頭にまとめて表示されます。
+
+```jsonc
+// 400 レスポンス例
+{
+  "errors": {
+    "code": "コードは必須です",
+    "email": ["形式が不正です"]
+  },
+  "message": "入力内容を確認してください"
+}
+```
+
+```html
+<form>
+  <input name="code">
+  <input name="email" type="email">
+  <button type="submit" data-click-prevent data-click-form
+          data-click-fetch="/api/agencies" data-click-fetch-method="POST">保存</button>
+</form>
+```
+
+haori-bootstrap を併用していれば、エラーのあるフィールド直後に `invalid-feedback` 要素が自動生成され、`is-invalid` クラスが付きます（フィールド側に対応付け用の属性を書く必要はありません）。エラーメッセージ表示そのものの仕組みは「メッセージ表示」の章を参照してください。
+
+> 補足: トップレベルが配列の `[{"key":"code","message":"..."}]` 形式は未対応です。サーバー側を `{"errors": {...}}` 形式に揃えてください。
+
+### 1クリックで複数のエンドポイントを取得して1つの state にまとめる（`data-click-click`）
+
+`data-click-fetch` は1クリックにつき1エンドポイントですが、`data-click-click` で**複数の隠し要素のクリックを発火**すれば、それぞれの `data-click-fetch` を起動できます。各取得先で `data-click-bind-arg` を変えて**同じ要素の別キー**へマージすれば、複数の結果を1つの state にまとめられます。`data-click-click` のセレクタは複数要素にマッチできます。
+
+```html
+<!-- 編集: detail と users を取得してからモーダルを開く -->
+<button data-click-click=".agency-loaders" data-click-open="#agency-modal">編集</button>
+
+<!-- 同じ行（バインドスコープ）内に置き、{{id}} を解決させる -->
+<span hidden class="agency-loaders"
+  data-click-fetch="{{'../api/agencies/' + id + '.json'}}"
+  data-click-bind="#page-state" data-click-bind-arg="detail"></span>
+<span hidden class="agency-loaders"
+  data-click-fetch="{{'../api/agencies/' + id + '/users.json'}}"
+  data-click-bind="#page-state" data-click-bind-arg="users"></span>
+```
+
+`#page-state` には `{ detail: …, users: … }` のように両方の結果が入ります（`data-click-bind-arg` は対象自身の既存データを保ちつつ該当キーだけを更新するため、2本の取得が混ざりません）。
+
+注意点:
+
+- 各取得は**非同期**で、編集ボタン側は完了を待ちません。モーダルは取得前に開き、結果が届くと中身が**リアクティブに**埋まります。「両方そろってから処理」が必要な場合は別の作りにしてください。
+- トリガー要素は対象と同じバインドスコープ（行内など）に置きます（`{{id}}` を解決するため）。
+- トリガーは `<button disabled>` だと `click()` が効かないため、`data-click-fetch` を持つ `<span>` などを使うと確実です。
 
 ---
 

@@ -869,6 +869,10 @@ async handleError(response: Response): Promise<void> {
 }
 ```
 
+サーバが `{ "errors": { "code": "メッセージ", "email": ["...", "..."] } }`（または `message` / `messages` を除くトップレベルの `key: 値`）形式で 4xx を返すと、`key` は `Form.addErrorMessage(baseFragment, key, message)` 経由で**対応する `name` のフィールドへ自動的に振り分け**られます（`name`・`data-form-object`・`data-form-list` のドット区切りキーで解決）。haori-bootstrap を併用している場合は、対象フィールド直後（checkbox/radio は `.form-check` 末尾）に `invalid-feedback` 要素を自動生成し、`is-invalid` クラスを付与します。したがって**フィールド側に `data-message-key` のような対応付け属性を書く必要はありません**。`key` を持たないエントリ（`message` / `messages`）はフォーム全体のエラーとして表示されます。
+
+> 補足: トップレベルが配列の `[{ "key": "code", "message": "..." }]` 形式は現状未対応です。サーバ側を `{ "errors": {...} }` 形式に揃えてください。
+
 ### 6. Form (form.ts)
 
 **役割**: フォーム双方向バインディング
@@ -907,6 +911,14 @@ data-if / data-each / {{variable}} などが自動更新
 - unchecked: `false`
 
 それ以外の checkbox は従来どおり `value` 属性の文字列値を返し、未チェック時は `null` を返します。
+
+`type="number"` の `<input>` は値を**数値型**として収集・バインドします。HTML の `input.value` は常に文字列ですが、DTO が `Double` / `Integer` 等を期待する場合に文字列で送られるのを避けるため、内部値を数値へ正規化します（`ElementFragment.normalizeValueForElement`）。正規化は値を内部状態へ取り込む両経路、すなわち `syncValue()`（DOM→内部値。`change` および構築時）と `applyValue()`（バインド→内部値）で行われ、`Form.getValues()` の結果や JSON 送信ボディに数値として現れます。
+
+- 空文字・`null`・数値化できない値は `null`
+- 小数（例 `"2.5"`）はそのまま数値（`2.5`）
+- `type="number"` 以外の入力（`text` 等）は従来どおり文字列のまま
+
+> 互換性に関する注意: 0.13.0 より前は `type="number"` も文字列で収集していました。0.13.0 以降は数値型になります。文字列のまま扱いたい場合は `type="text"` を使用してください。
 
 #### 主要メソッド
 
@@ -2064,6 +2076,18 @@ Content-Typeを指定します。
 </div>
 ```
 
+`data-{event}-fetch` を指定しない場合、バインドの入力には `data-{event}-data`（インライン JSON）とフォーム値を統合した payload がそのまま使われます。これは内部的に payload から生成した擬似レスポンスを bind 処理へ流すためで（`Procedure` の fetch なし経路）、**フェッチを伴わずに任意の JSON を state（対象要素の `data-bind`）へ反映**できます。`data-{event}-bind-arg` でキー指定、`data-{event}-bind-merge` で既存 binding への浅いマージも併用できます。
+
+```html
+<!-- フェッチなしで #page-state を初期化してからモーダルを開く -->
+<button
+  data-click-data='{"detail": {}, "users": []}'
+  data-click-bind="#page-state"
+  data-click-bind-merge
+  data-click-open="#agency-modal"
+>新規追加</button>
+```
+
 ##### `data-{event}-bind-arg`
 
 バインドキー名を指定します。
@@ -2274,12 +2298,32 @@ Content-Typeを指定します。
 
 ##### `data-{event}-click`
 
-対象要素をクリックします。
+対象要素をクリックします。セレクタは `document.body.querySelectorAll()` で解決するため、**複数要素**にもマッチできます。各対象に対して `Core.evaluateAll()`（最新バインドの反映）を行ってから実 `click()` を発火し、それが委譲経由で対象の `data-click-*` 手続きを起動します。複数対象は直列にクリックされますが、起動された手続き（fetch 等）は**非同期**で、呼び出し元はその完了を待ちません。
 
 ```html
 <button id="submitBtn">送信</button>
 <button data-click-click="#submitBtn">送信 (間接)</button>
 ```
+
+**複数エンドポイントの取得と単一 state への統合**: 連番属性を使わず、複数の隠し要素のクリックを発火し、それぞれが `data-click-bind-arg` で同じ要素の別キーへマージする構成にできます。`data-click-bind-arg` は対象自身の最新 binding を基底に当該キーだけを更新するため、複数の取得を1つの state にまとめられます。
+
+```html
+<!-- 編集: 2 本の取得を起動してからモーダルを開く（処理順 14:click → 15:open） -->
+<button data-click-click=".agency-loaders" data-click-open="#agency-modal">編集</button>
+
+<!-- 同じバインドスコープ（行内など）に置き、{{id}} を解決させる -->
+<span hidden class="agency-loaders"
+  data-click-fetch="{{'../api/agencies/' + id + '.json'}}"
+  data-click-bind="#page-state" data-click-bind-arg="detail"></span>
+<span hidden class="agency-loaders"
+  data-click-fetch="{{'../api/agencies/' + id + '/users.json'}}"
+  data-click-bind="#page-state" data-click-bind-arg="users"></span>
+```
+
+注意点:
+
+- 呼び出し元は子の取得完了を待たないため、モーダルは取得前に開き、`#page-state` への反映で**リアクティブに**中身が埋まります。「両方の取得完了後に処理」が必要な用途には向きません。
+- トリガーは同じバインドスコープに置くこと（`{{id}}` 等の解決のため）。`<button disabled>` は `click()` が無反応になるため、`data-click-fetch` を持つ `<span>` 等を用いるのが安全です（委譲は最も近い `data-click-*` 要素を拾います）。
 
 ##### `data-{event}-open`
 
