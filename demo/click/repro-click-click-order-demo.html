@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>バグ再現: data-click-click の発火タイミング</title>
+</head>
+<body>
+  <h2>バグ2 再現: data-click-click がターゲット再描画前に発火</h2>
+  <div id="dialog-state" data-bind='{"id":null,"rules":[]}'>
+    <span hidden id="load-rules-btn"
+      data-click-fetch="{{'./repro-data/items-' + id + '-rules.json'}}"
+      data-click-bind="#dialog-state"
+      data-click-bind-arg="rules"></span>
+    <div>id: <span id="id-out">{{id}}</span></div>
+    <div>rules: <span id="rules-out">{{rules.join(',')}}</span></div>
+  </div>
+
+  <dialog id="modal">
+    <p>編集モーダル</p>
+  </dialog>
+
+  <div data-bind='{"items":[{"id":1,"name":"Item1"}]}'>
+    <ul data-each="items">
+      <li>
+        <button
+          class="edit"
+          type="button"
+          data-click-fetch="{{'./repro-data/item-' + id + '.json'}}"
+          data-click-bind="#dialog-state"
+          data-click-click="#load-rules-btn"
+          data-click-open="#modal"
+        >編集</button>
+      </li>
+    </ul>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

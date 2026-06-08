@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>バグ再現: fetch なし data-click-confirm</title>
+</head>
+<body>
+  <h2>バグ1 再現: fetch を伴わないローカル更新の confirm</h2>
+  <div id="dialog-state" data-bind='{"rules":["A","B","C"]}'>
+    <ul data-each="rules" data-each-arg="rule" data-each-index="ruleI">
+      <li>
+        <span class="rule-name">{{rule}}</span>
+        <button
+          type="button"
+          class="del"
+          data-click-confirm="このルールを削除しますか？"
+          data-click-data='{"rules": {{rules.filter((r,i) => i !== ruleI)}} }'
+          data-click-bind="#dialog-state"
+          data-click-bind-merge
+        >削除</button>
+      </li>
+    </ul>
+    <div>count: <span id="rules-count">{{rules.length}}</span></div>
+    <div>rules: <span id="rules-out">{{rules.join(',')}}</span></div>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>バグ再現(bootstrap+demo): data-click-click の発火タイミング</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+  <h2>バグ2 再現(bootstrap+demo runtime)</h2>
+  <div id="dialog-state" data-bind='{"id":null,"rules":[]}'>
+    <span hidden id="load-rules-btn"
+      data-click-fetch="{{'./repro-data/items-' + id + '-rules.json'}}"
+      data-click-bind="#dialog-state"
+      data-click-bind-arg="rules"></span>
+    <div>id: <span id="id-out">{{id}}</span></div>
+    <div>rules: <span id="rules-out">{{rules.join(',')}}</span></div>
+  </div>
+
+  <div class="modal fade" id="modal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content"><div class="modal-body">編集モーダル</div></div></div>
+  </div>
+
+  <div data-bind='{"items":[{"id":1,"name":"Item1"}]}'>
+    <ul data-each="items">
+      <li>
+        <button
+          class="edit"
+          type="button"
+          data-click-fetch="{{'./repro-data/item-' + id + '.json'}}"
+          data-click-bind="#dialog-state"
+          data-click-click="#load-rules-btn"
+          data-click-open="#modal"
+        >編集</button>
+      </li>
+    </ul>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/haori@0.15.0/dist/haori.iife.js" data-runtime="demo"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/haori-bootstrap@0.3.2/dist/haori-bootstrap.iife.js"></script>
+</body>
+</html>

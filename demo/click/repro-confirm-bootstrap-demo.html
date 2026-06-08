@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>バグ再現(bootstrap+demo): fetch なし data-click-confirm</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+  <h2>バグ1 再現(bootstrap+demo runtime)</h2>
+  <div id="dialog-state" data-bind='{"rules":["A","B","C"]}'>
+    <ul data-each="rules" data-each-arg="rule" data-each-index="ruleI">
+      <li>
+        <span class="rule-name">{{rule}}</span>
+        <button
+          type="button"
+          class="del"
+          data-click-confirm="このルールを削除しますか？"
+          data-click-data='{"rules": {{rules.filter((r,i) => i !== ruleI)}} }'
+          data-click-bind="#dialog-state"
+          data-click-bind-merge
+        >削除</button>
+      </li>
+    </ul>
+    <div>count: <span id="rules-count">{{rules.length}}</span></div>
+    <div>rules: <span id="rules-out">{{rules.join(',')}}</span></div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/haori@0.15.0/dist/haori.iife.js" data-runtime="demo"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/haori-bootstrap@0.3.2/dist/haori-bootstrap.iife.js"></script>
+</body>
+</html>
