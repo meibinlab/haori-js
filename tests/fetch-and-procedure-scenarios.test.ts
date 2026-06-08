@@ -268,4 +268,56 @@ describe('Fetch and Procedure scenarios', () => {
 
     btn.remove();
   });
+
+  it('data-fetch-bind-transform（非イベント）でレスポンス配列を変換してから bind する', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const target = document.createElement('div');
+    target.id = 'transform-target';
+
+    const source = document.createElement('div');
+    source.setAttribute('data-fetch', 'http://example.test/rules');
+    source.setAttribute('data-fetch-bind', '#transform-target');
+    source.setAttribute('data-fetch-bind-arg', 'rules');
+    source.setAttribute(
+      'data-fetch-bind-transform',
+      'response.map(item => ({...item, id: null}))',
+    );
+
+    container.append(target, source);
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {id: 1, name: 'a'},
+              {id: 2, name: 'b'},
+            ]),
+            {headers: {'Content-Type': 'application/json'}},
+          ),
+        ) as unknown as Promise<Response>,
+    );
+
+    await waitForCondition(
+      () => {
+        const bind = target.getAttribute('data-bind');
+        if (!bind) {
+          return false;
+        }
+        const parsed = JSON.parse(bind);
+        return Array.isArray(parsed.rules) && parsed.rules.length === 2;
+      },
+      {description: '変換後の rules がバインドされる'},
+    );
+
+    const bound = JSON.parse(target.getAttribute('data-bind') as string);
+    expect(bound.rules).toEqual([
+      {id: null, name: 'a'},
+      {id: null, name: 'b'},
+    ]);
+
+    container.remove();
+  });
 });
