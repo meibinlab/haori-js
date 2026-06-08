@@ -3,6 +3,7 @@ import Env from './env';
 import Queue from './queue';
 import {
   date,
+  findBy,
   monthAdd,
   monthRange,
   number,
@@ -301,5 +302,20 @@ export default class Haori {
     visibleCount?: number,
   ): PageSummary {
     return pageSummary(page, visibleCount);
+  }
+
+  /**
+   * 配列から `item[key]` が指定値に一致する最初の要素を返します。
+   *
+   * テンプレート式中の `haori.findBy(...)` と同じ実装です。比較は文字列化して
+   * 行い、一致が無ければ null を返します。
+   *
+   * @param array 検索対象の配列
+   * @param key 比較に使うプロパティ名
+   * @param value 一致させたい値（文字列化して比較）
+   * @returns 一致した最初の要素。無ければ null
+   */
+  public static findBy(array: unknown, key: string, value: unknown): unknown {
+    return findBy(array, key, value);
   }
 }

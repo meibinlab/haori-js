@@ -175,17 +175,30 @@ export default class EventDispatcher {
   /**
    * data-click-* 属性を持つ最も近い祖先要素を返します。
    *
+   * `data-click-passive` を持つ要素は「境界」として扱い、そこより外側（祖先方向）の
+   * `data-click-*` へは遡上しません。フォーム入力欄などを囲むコンテナに
+   * `data-click-passive` を付けると、その内側で発生したクリックが外側のクリック
+   * アクションを誤って発火させるのを防げます（境界より内側に `data-click-*` を持つ
+   * 要素があれば最近接優先でそちらが拾われるため、内側のボタン等は従来どおり動作）。
+   *
    * @param element 探索開始要素
    * @returns 処理対象要素。見つからない場合は null
    */
   private findClickableElement(element: HTMLElement): HTMLElement | null {
+    const clickPrefix = `${Env.prefix}click-`;
+    const passiveAttr = `${Env.prefix}click-passive`;
     let current: HTMLElement | null = element;
     while (current) {
-      const clickPrefix = `${Env.prefix}click-`;
-      if (
-        current.getAttributeNames().some(name => name.startsWith(clickPrefix))
-      ) {
+      // data-click-passive 自体はトリガーではないため除外して判定する。
+      const hasClickTrigger = current
+        .getAttributeNames()
+        .some(name => name.startsWith(clickPrefix) && name !== passiveAttr);
+      if (hasClickTrigger) {
         return current;
+      }
+      // 境界に到達したら、これ以上外側の data-click-* へは遡上しない。
+      if (current.hasAttribute(passiveAttr)) {
+        return null;
       }
       current = current.parentElement;
     }

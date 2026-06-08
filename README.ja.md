@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.14.0
+バージョン: 0.15.0
 
 ---
 
@@ -121,7 +121,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `haori:bindcomplete` — `data-*-bind` / `data-*-bind-arg` によるバインドと、対象要素配下の再評価が完了した後に対象要素で発火します（`detail.bindArg`）。
 - `haori:show` / `haori:hide` — `data-if` 要素の表示・非表示時に発火します。
 
-式中では予約名前空間 `haori` の組み込みヘルパーを利用できます。`haori.date(value, format?)` は ISO 文字列・エポックミリ秒・`Date` を整形し（既定 `yyyy/MM/dd HH:mm`、ローカル時刻）、`haori.number(value, decimals?)` は桁区切り付きで数値を整形、`haori.range(start, end?, step?)` は整数配列を生成し（終端排他）、`haori.pages(totalPages, current, {window?, boundary?})` は省略記号付きの番号ページ列を生成します（`current` は 0 始まり。各要素は `{page, label, active, ellipsis}` を持ち `label` は `page + 1`）。月別 UI 向けに、`haori.monthAdd(value, delta)` は `YYYY-MM` 形式の年月へ月数を加算し（`Date` を介さない整数演算でタイムゾーン非依存。不正な入力は空文字）、`haori.monthRange(count, base?)` は基準月から降順に `count + 1` 個の `{targetMonth, label}` を返します（`base` 省略時は現在月）。ページ件数表示向けに、`haori.pageSummary(page, visibleCount?)` は Spring の `Page` 相当（`number`・`size`・`totalElements`／`totalCount`）から `{start, end, total, empty}` を計算します。これにより番号ページネーション（`data-each="haori.pages(totalPages, number, {window: 2})"`）や値の整形（`{{ haori.date(lastUpdatedAt, 'yyyy/MM/dd HH:mm') }}`）を宣言的に書けます。同じ関数は `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages` / `Haori.monthAdd` / `Haori.monthRange` / `Haori.pageSummary` としても公開されています。`haori` は予約名のため、同名の `data-bind` キーを与えても式中では組み込みが優先されます。
+式中では予約名前空間 `haori` の組み込みヘルパーを利用できます。`haori.date(value, format?)` は ISO 文字列・エポックミリ秒・`Date` を整形し（既定 `yyyy/MM/dd HH:mm`、ローカル時刻）、`haori.number(value, decimals?)` は桁区切り付きで数値を整形、`haori.range(start, end?, step?)` は整数配列を生成し（終端排他）、`haori.pages(totalPages, current, {window?, boundary?})` は省略記号付きの番号ページ列を生成します（`current` は 0 始まり。各要素は `{page, label, active, ellipsis}` を持ち `label` は `page + 1`）。月別 UI 向けに、`haori.monthAdd(value, delta)` は `YYYY-MM` 形式の年月へ月数を加算し（`Date` を介さない整数演算でタイムゾーン非依存。不正な入力は空文字）、`haori.monthRange(count, base?)` は基準月から降順に `count + 1` 個の `{targetMonth, label}` を返します（`base` 省略時は現在月）。ページ件数表示向けに、`haori.pageSummary(page, visibleCount?)` は Spring の `Page` 相当（`number`・`size`・`totalElements`／`totalCount`）から `{start, end, total, empty}` を計算します。`haori.findBy(array, key, value)` は配列から `item[key]` が `value` に一致する最初の要素（文字列化比較）を返し、無ければ `null` を返します。これにより番号ページネーション（`data-each="haori.pages(totalPages, number, {window: 2})"`）や値の整形（`{{ haori.date(lastUpdatedAt, 'yyyy/MM/dd HH:mm') }}`）を宣言的に書けます。同じ関数は `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages` / `Haori.monthAdd` / `Haori.monthRange` / `Haori.pageSummary` / `Haori.findBy` としても公開されています。`haori` は予約名のため、同名の `data-bind` キーを与えても式中では組み込みが優先されます。
 
 テンプレート式では、プロパティアクセス、動的インデックスを含むブラケットアクセス、optional chaining、三項演算子、配列 `map` / `filter` のアロー関数、spread を伴う呼び出しなどの安全な構文を利用できます。一方で、グローバルオブジェクト、`eval` や `arguments`、`constructor`、`__proto__`、`prototype`、`Reflect`、`Object` などの脱出経路は使用できません。`Object` がブロックされるため、`Object.assign` の代わりにスプレッド構文 `{...a, ...b}` を使ってください。ブロックされた識別子を式で参照すると、コンソールに `blocked identifier(s): …` という警告が出力されます。
 

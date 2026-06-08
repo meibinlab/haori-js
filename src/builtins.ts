@@ -451,6 +451,37 @@ export function pageSummary(
 }
 
 /**
+ * 配列から `item[key]` が指定値に一致する最初の要素を返します。
+ *
+ * 比較は文字列化して行うため、数値 ID と文字列 ID のような型差は吸収されます
+ * （例 `findBy(items, 'id', 3)` は `id` が `'3'` の要素にも一致）。一致する要素が
+ * 無い場合は `null` を返します。先頭要素をフォールバックにしたい場合は式側で
+ * `haori.findBy(items, 'id', sel) ?? items[0]` のように書きます。
+ *
+ * @param array 検索対象の配列
+ * @param key 比較に使うプロパティ名
+ * @param value 一致させたい値（文字列化して比較）
+ * @returns 一致した最初の要素。無ければ null（非配列・空配列も null）
+ */
+export function findBy(
+  array: unknown,
+  key: string,
+  value: unknown,
+): unknown {
+  if (!Array.isArray(array) || array.length === 0) {
+    return null;
+  }
+  const target = String(value);
+  const found = array.find(
+    item =>
+      item !== null &&
+      item !== undefined &&
+      String((item as Record<string, unknown>)[key]) === target,
+  );
+  return found === undefined ? null : found;
+}
+
+/**
  * 式中の予約名前空間 `haori` として公開する組み込みヘルパー集合です。
  */
 const Builtins = Object.freeze({
@@ -461,6 +492,7 @@ const Builtins = Object.freeze({
   monthAdd,
   monthRange,
   pageSummary,
+  findBy,
 });
 
 export default Builtins;

@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## [0.15.0] - 2026-06-08
+
+### Added
+
+- 組み込みヘルパー（予約名前空間 `haori`）に `haori.findBy(array, key, value)` を追加した。配列から `item[key]` が `value` に一致する最初の要素を**文字列化比較**で返す（数値 ID と文字列 ID の差を吸収）。一致が無ければ `null`（非配列・空配列も `null`）。先頭フォールバックは式側で `haori.findBy(...) ?? items[0]` と書く。公開 API `Haori.findBy` としても提供。
+- クリックの祖先委譲に境界属性 `data-click-passive` を追加した。これを持つ要素に到達すると、それより外側の `data-click-*` へは遡上しない。フォーム入力欄を囲むコンテナに付けると、入力欄クリックが外側のクリックアクションを誤発火させるのを防げる。境界自体はトリガーではなく、内側に `data-click-*` を持つ要素があれば最近接優先で従来どおり発火する（既定無効・後方互換）。
+- フェッチ結果をバインド前に式変換する `data-{event}-bind-transform`（非イベント: `data-fetch-bind-transform`）を追加した。式中ではレスポンス全体を `response` として参照でき（例 `response.map(item => ({...item, id: null}))`）、戻り値をバインド対象とする。`bind-params` / `bind-arg` / `bind-append` より前に適用される。
+
+### Documentation
+
+- 上記3機能の仕様・用例を specs.md・README に追加した。あわせて、フェッチ結果を状態のサブキーへマージする用途は既存の `data-click-bind-arg`（対象自身の最新 binding を基底に当該キーだけ patch）で実現できること、`type="number"` の入力は 0.13.0 以降すでに数値型で収集されるため `data-form-type` のような追加属性は不要であることを明記した。
+
+### Library
+
+- `findBy`（一致・文字列化比較・不一致 null・非配列/空配列・要素 null 混在）、`data-click-passive`（境界での遡上停止・内側トリガーの発火・対照ケース）、`data-click-bind-transform`（配列の式変換＋ bind-arg キーへの反映と他キー保持）の回帰テストを追加した。
+
 ## [0.14.0] - 2026-06-08
 
 ### Added

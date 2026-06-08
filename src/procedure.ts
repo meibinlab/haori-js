@@ -279,6 +279,14 @@ export interface ProcedureOptions {
   /** レスポンスデータをバインドする際のキー名 */
   bindArg?: string | null;
 
+  /**
+   * バインド前にレスポンスデータへ適用する変換式。
+   * 式の中ではレスポンス全体を `response` として参照できる
+   * （例 `response.map(item => ({...item, id: null}))`）。bind-arg / bind-params /
+   * bind-append より前に適用される。
+   */
+  bindTransform?: string | null;
+
   /** フェッチ後実行スクリプト */
   afterCallback?: (
     response: Response | Record<string, unknown>,
@@ -998,6 +1006,14 @@ ${body}
       : Procedure.attrName(null, 'bind-merge', true);
     if (fragment.hasAttribute(bindMergeAttr)) {
       options.bindMerge = true;
+    }
+    const bindTransformAttr = event
+      ? Procedure.attrName(event, 'bind-transform')
+      : Procedure.attrName(null, 'bind-transform', true);
+    if (fragment.hasAttribute(bindTransformAttr)) {
+      options.bindTransform = fragment.getRawAttribute(bindTransformAttr) as
+        | string
+        | null;
     }
     const copyParamsAttr = event
       ? Procedure.attrName(event, 'copy-params')
@@ -2012,6 +2028,17 @@ ${body}
       ? response.json()
       : response.text();
     return promise.then(data => {
+      // bind-transform: バインド前にレスポンス全体を式変換する（`response` で参照）。
+      // bind-params / bind-arg / bind-append より前に適用する。
+      if (this.options.bindTransform) {
+        try {
+          data = Expression.evaluate(this.options.bindTransform, {
+            response: data,
+          });
+        } catch (e) {
+          Log.error('Haori', `Invalid bind-transform: ${e}`);
+        }
+      }
       if (this.options.bindParams) {
         const newData = {} as Record<string, unknown>;
         this.options.bindParams.forEach(param => {

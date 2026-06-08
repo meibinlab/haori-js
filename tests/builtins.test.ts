@@ -6,6 +6,7 @@
 import {describe, it, expect} from 'vitest';
 import Builtins, {
   date,
+  findBy,
   monthAdd,
   monthRange,
   number,
@@ -247,6 +248,37 @@ describe('Builtins', () => {
     });
   });
 
+  describe('findBy()', () => {
+    const items = [
+      {id: 1, name: 'A'},
+      {id: 2, name: 'B'},
+      {id: 3, name: 'C'},
+    ];
+
+    it('key が一致する最初の要素を返す', () => {
+      expect(findBy(items, 'id', 2)).toEqual({id: 2, name: 'B'});
+    });
+
+    it('文字列化して比較する（数値と文字列の差を吸収）', () => {
+      expect(findBy(items, 'id', '3')).toEqual({id: 3, name: 'C'});
+    });
+
+    it('一致しなければ null を返す（先頭は返さない）', () => {
+      expect(findBy(items, 'id', 99)).toBeNull();
+    });
+
+    it('非配列・空配列は null を返す', () => {
+      expect(findBy(null, 'id', 1)).toBeNull();
+      expect(findBy(undefined, 'id', 1)).toBeNull();
+      expect(findBy([], 'id', 1)).toBeNull();
+      expect(findBy('x', 'id', 1)).toBeNull();
+    });
+
+    it('要素が null/undefined を含んでいても安全に扱う', () => {
+      expect(findBy([null, {id: 1}], 'id', 1)).toEqual({id: 1});
+    });
+  });
+
   describe('Haori 公開 API との共用', () => {
     it('Haori.date / number / range / pages が同じ実装を返す', () => {
       expect(Haori.date('2024-01-05T09:05:03')).toBe('2024/01/05 09:05');
@@ -264,6 +296,11 @@ describe('Builtins', () => {
       expect(
         Haori.pageSummary({number: 0, size: 20, totalElements: 100}),
       ).toEqual({start: 1, end: 20, total: 100, empty: false});
+    });
+
+    it('Haori.findBy が同じ実装を返す', () => {
+      expect(Haori.findBy([{id: 1}, {id: 2}], 'id', 2)).toEqual({id: 2});
+      expect(Haori.findBy([{id: 1}], 'id', 9)).toBeNull();
     });
   });
 
@@ -307,6 +344,26 @@ describe('Builtins', () => {
       }) as Record<string, unknown>;
       expect(result.start).toBe(1);
       expect(result.end).toBe(20);
+    });
+
+    it('式から haori.findBy を呼べる（フォールバックは ?? で表現）', () => {
+      const items = [
+        {id: 1, name: 'A'},
+        {id: 2, name: 'B'},
+      ];
+      expect(
+        Expression.evaluate('haori.findBy(items, "id", sel)?.name', {
+          items,
+          sel: 2,
+        }),
+      ).toBe('B');
+      // 一致なしは null、?? で先頭フォールバック
+      expect(
+        Expression.evaluate('(haori.findBy(items, "id", sel) ?? items[0]).name', {
+          items,
+          sel: 9,
+        }),
+      ).toBe('A');
     });
 
     it('haori はユーザーのバインド値より優先される（上書き不可）', () => {
