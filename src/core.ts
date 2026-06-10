@@ -724,33 +724,39 @@ export default class Core {
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
     const previous = fragment.getRawBindingData();
+    // 内部バインドデータは即時確定する（後続の同期読み取りが最新値を得られるよう）。
     fragment.setBindingData(data);
-    let chain = fragment.setAttribute(
-      `${Env.prefix}bind`,
-      JSON.stringify(data),
-    );
-    if (element.tagName === 'FORM') {
-      const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
-      const formValues =
-        arg &&
-        data[String(arg)] &&
-        typeof data[String(arg)] === 'object' &&
-        !Array.isArray(data[String(arg)])
-          ? (data[String(arg)] as Record<string, unknown>)
-          : arg
-            ? {}
-            : data;
-      chain = chain.then(() => Form.syncValues(fragment, formValues));
-    }
-    chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
-    chain = chain.then(() =>
-      Core.reevaluateReactiveSpecialAttributes(fragment, skipFragments),
-    );
 
-    // bindchangeイベントを発火
+    // bindchangeイベントを発火（従来どおり呼出時点で同期通知する）。
     HaoriEvent.bindChange(element, previous, data, 'manual');
 
-    return chain.then(() => undefined);
+    // 同一要素への並行呼出で適用順が逆転しないよう、DOM 反映・再評価を呼出順
+    // （FIFO）で直列化する。直列化しないと、内部キューの完了順が呼出順と逆転し、
+    // 先に呼んだ古いデータの data-bind 属性が後から確定することがある。
+    return fragment.enqueueBindingWork(() => {
+      let chain = fragment.setAttribute(
+        `${Env.prefix}bind`,
+        JSON.stringify(data),
+      );
+      if (element.tagName === 'FORM') {
+        const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
+        const formValues =
+          arg &&
+          data[String(arg)] &&
+          typeof data[String(arg)] === 'object' &&
+          !Array.isArray(data[String(arg)])
+            ? (data[String(arg)] as Record<string, unknown>)
+            : arg
+              ? {}
+              : data;
+        chain = chain.then(() => Form.syncValues(fragment, formValues));
+      }
+      chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
+      chain = chain.then(() =>
+        Core.reevaluateReactiveSpecialAttributes(fragment, skipFragments),
+      );
+      return chain.then(() => undefined);
+    });
   }
 
   /**

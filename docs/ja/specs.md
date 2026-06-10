@@ -1281,6 +1281,7 @@ data-bind="{JSON | URLSearchParams形式}"
 - 真偽属性 (`disabled`, `checked`, `selected`, `hidden`, `required` など)
   - 単体プレースホルダは、`true` で付与し、`false`、`null`、`undefined`、未解決参照で削除します。
   - 文字列埋め込みは非推奨とし、未解決参照を含む場合は削除します。
+  - `checked`（radio / checkbox）と `selected`（option）は、属性の付与・削除に加えて DOM プロパティ（`element.checked` / `option.selected`）も同期します。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` でチェック状態・選択状態を宣言的にバインドできます。なお `false` 以外の falsy 値（`0`・空文字など）は属性付与（チェック）扱いとなるため、真偽でバインドする場合は式側で真偽へ正規化してください（例: `checked="{{!!flag}}"`）。
 - ブラウザ先行解釈属性 (`src`, `value` など)
   - `data-attr-*` で扱うことを正道とします。
   - 単体プレースホルダは、妥当な文字列のときだけ反映し、`false`、`null`、`undefined`、未解決参照は属性削除とします。
@@ -1310,7 +1311,12 @@ data-attr-{attributeName}="template string"
 
 `src` や `type="number"` の `value` のように、ブラウザが Haori より先に読む属性へ `{{...}}` を直接書くと、警告や不要なアクセスが発生することがあります。そのような属性では `data-attr-*` を使います。
 
-`data-attr-*` は対応する HTML 属性だけを更新します。`data-attr-value` は `value` 属性を変更しますが、`input.value` や `checked` などの DOM property 同期は行いません。
+`data-attr-*` は対応する HTML 属性を更新します。加えて、入力欄の表示・状態と DOM の食い違いを防ぐため、次の対象は DOM property も同期します。
+
+- `value`（テキスト系 input / textarea / select）: `input.value` を同期します。ただし**フォーカス中（ユーザー編集中）の入力**には再適用しません（別要素起因の再評価や `data-fetch` 完了で未コミット入力が巻き戻るのを防ぐため）。コミット済みの値は `change` イベントでバインド側へ反映されます。フォーカスが外れている入力には従来どおり反映します。
+- `checked`（radio / checkbox）・`selected`（option）: それぞれ `element.checked` / `option.selected` を同期します。
+
+これは `value="{{式}}"` のように属性へ直接 `{{...}}` を書いた場合も同様です。
 
 未解決参照の扱いは、上記「プレースホルダ解決規則」のブラウザ先行解釈属性に従います。特に文字列埋め込みで未解決参照が 1 つでも含まれる場合は、属性全体を未反映とします。
 
@@ -1765,8 +1771,18 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 イベント属性は `data-{event}-*` の形式で指定します。`{event}` には以下が使用できます:
 
 - `click`: クリック時
-- `change`: 変更時
+- `change`: 変更時（フォーカスを外した・選択を確定した等）
+- `input`: 逐次入力時（テキスト入力1文字ごと）
 - `load`: ロード時
+
+`input` は逐次（1文字ごと）に発火するため、`data-input-*` を**明示した要素のみ**を対象とします（オプトイン）。`change` と同様に、`data-input-form` の指定がなくても自動的に先祖フォームを検出して入力値を双方向バインディングへ反映します。検索欄の逐次絞り込みなどに利用できます。
+
+```html
+<!-- 入力1文字ごとに q をバインドへ反映し、一覧を逐次絞り込む -->
+<form data-bind='{"q":""}'>
+  <input name="q" data-input-form>
+</form>
+```
 
 #### 処理順序
 

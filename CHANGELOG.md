@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## [0.16.0] - 2026-06-11
+
+### Fixed
+
+- `Core.setBindingData` の並行呼出で適用順が逆転する不具合を修正した。同一要素へ短い間隔で複数回呼ぶと、内部キューの完了順が呼出順と逆転し、先に呼んだ古いデータの `data-bind` 属性が後から確定して新しい値を上書きすることがあった（`skipMutationAttributes` ガードにより2回目以降の属性書き込みがスキップされていた）。修正後は、フラグメント単位で DOM 反映・再評価を呼出順（FIFO）に直列化する。内部バインドデータは従来どおり呼出時点で同期確定し、`data-url-param` 等の再評価中の再入は即時実行してデッドロックを避ける。
+
+### Added
+
+- `data-input-*` を追加した。`data-change-*` と同様の手続きを `input` イベント（1文字ごとの逐次入力）でも起動できる。テキスト系入力での逐次絞り込み等を、`input`→`change` 転送なしに宣言的に書ける。`data-input-*` を明示した要素のみが対象（オプトイン）で、`data-input-form` 等の指定がなくても自動的にフォームを検出して双方向バインディングへ反映する点は `change` と同じ。
+- radio / checkbox の `checked` と option の `selected` を宣言バインドで DOM プロパティまで同期するようにした。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` で、属性だけでなくチェック状態・選択状態（`element.checked` / `option.selected`）が反映される。
+
+### Changed
+
+- `value="{{式}}"` を持つ入力は、フォーカス中（ユーザー編集中）はサブツリーの再評価で式の評価結果を再適用しないようにした。別要素起因の `setBindingData` や `data-fetch` 完了でユーザーの未コミット入力が巻き戻る問題を防ぐ。コミット済みの値は `change` イベントでバインド側へ反映される。フォーカスが外れている入力には従来どおり再適用する（light DOM / Shadow DOM 双方のフォーカスを判定）。
+
+### Library
+
+- 上記の回帰テストを追加した（`tests/binding_serialization.test.ts`・`tests/value_focus_guard.test.ts`・`tests/input_event_trigger.test.ts`・`tests/checked_bind.test.ts`）。
+
 ## [0.15.1] - 2026-06-10
 
 ### Fixed

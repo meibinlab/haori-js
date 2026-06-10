@@ -716,8 +716,9 @@ export default class Procedure {
           // 属性はあるが値が省略された場合は自要素もしくは先祖の form を対象
           options.formFragment = Form.getFormFragment(fragment);
         }
-      } else if (event === 'change') {
-        // changeイベントの場合、data-change-form属性がなくても自動的にフォームを検索
+      } else if (event === 'change' || event === 'input') {
+        // change / input イベントの場合、data-{event}-form 属性がなくても自動的に
+        // フォームを検索し、入力値を双方向バインディングへ反映する。
         options.formFragment = Form.getFormFragment(fragment);
       }
       if (fragment.hasAttribute(`${Env.prefix}${event}-before-run`)) {

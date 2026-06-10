@@ -25,6 +25,9 @@ export default class EventDispatcher {
   /** 変更デリゲータ */
   private readonly onChange = (event: Event) => this.delegate(event, 'change');
 
+  /** 入力デリゲータ（逐次入力。data-input-* を持つ要素のみ対象） */
+  private readonly onInput = (event: Event) => this.delegate(event, 'input');
+
   /** ロードデリゲータ（キャプチャで拾う） */
   private readonly onLoadCapture = (event: Event) =>
     this.delegate(event, 'load');
@@ -68,6 +71,7 @@ export default class EventDispatcher {
   start(): void {
     this.root.addEventListener('click', this.onClick);
     this.root.addEventListener('change', this.onChange);
+    this.root.addEventListener('input', this.onInput);
     // load は非バブルなのでキャプチャで拾う
     this.root.addEventListener('load', this.onLoadCapture, true);
     // ページ全体のロード
@@ -82,6 +86,7 @@ export default class EventDispatcher {
   stop(): void {
     this.root.removeEventListener('click', this.onClick);
     this.root.removeEventListener('change', this.onChange);
+    this.root.removeEventListener('input', this.onInput);
     this.root.removeEventListener('load', this.onLoadCapture, true);
     window.removeEventListener('load', this.onWindowLoad);
     window.removeEventListener('popstate', this.onPopstate);
@@ -99,6 +104,18 @@ export default class EventDispatcher {
       return;
     }
 
+    // input は逐次（1文字ごと）に発火するため、data-input-* を明示した要素だけを
+    // 対象にする（オプトイン）。これにより既存の input 既定動作を変えない。
+    if (type === 'input') {
+      const inputPrefix = `${Env.prefix}input-`;
+      const hasInputTrigger = element
+        .getAttributeNames()
+        .some(name => name.startsWith(inputPrefix));
+      if (!hasInputTrigger) {
+        return;
+      }
+    }
+
     // data-{event}-prevent: ネイティブのデフォルト動作（type="submit" のフォーム送信や
     // <a href> の遷移など）を抑止する。delegate はイベントリスナー内で同期実行される
     // ため、ここで preventDefault すれば data-click-defer と併用してもデフォルト動作を
@@ -112,8 +129,11 @@ export default class EventDispatcher {
       return;
     }
 
-    // changeイベントの場合、DOM値と同期
-    if (type === 'change' && fragment instanceof ElementFragment) {
+    // change / input イベントの場合、DOM値と内部値を同期する
+    if (
+      (type === 'change' || type === 'input') &&
+      fragment instanceof ElementFragment
+    ) {
       fragment.syncValue();
     }
 
