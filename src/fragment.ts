@@ -667,6 +667,9 @@ export class ElementFragment extends Fragment {
   /** バインドデータ */
   private bindingData: Record<string, unknown> | null = null;
 
+  /** 生成時点の data-bind 属性の生値（リセット時の初期状態復元用） */
+  private readonly initialBindAttribute: string | null = null;
+
   /** 子孫要素へ公開する派生バインドデータ */
   private derivedBindingData: Record<string, unknown> | null = null;
 
@@ -724,6 +727,7 @@ export class ElementFragment extends Fragment {
   public constructor(target: HTMLElement) {
     super(target);
     this.syncValue();
+    this.initialBindAttribute = target.getAttribute(`${Env.prefix}bind`);
     target.getAttributeNames().forEach(name => {
       const value = target.getAttribute(name);
       if (value !== null && !this.attributeMap.has(name)) {
@@ -947,6 +951,17 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 生成時点の data-bind 属性の生値を取得します。
+   * 実行時のバインドデータ更新で data-bind 属性が書き換えられた後も、
+   * 宣言時の初期状態（リセット時の復元先）を参照できます。
+   *
+   * @returns 生成時点の data-bind 属性値。宣言がない場合は null。
+   */
+  public getInitialBindAttribute(): string | null {
+    return this.initialBindAttribute;
+  }
+
+  /**
    * 子孫要素向けの派生バインドデータを設定します。
    *
    * @param data 派生バインドデータ。解除する場合は null
@@ -1115,7 +1130,14 @@ export class ElementFragment extends Fragment {
    * @param value 値
    * @returns エレメントの更新のPromise
    */
-  public setValue(value: string | number | boolean | null): Promise<void> {
+  public setValue(
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | Array<string | number | boolean | null>,
+  ): Promise<void> {
     return this.applyValue(value, true);
   }
 
@@ -1127,7 +1149,12 @@ export class ElementFragment extends Fragment {
    * @returns エレメントの更新のPromise
    */
   public syncBindingValue(
-    value: string | number | boolean | null,
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | Array<string | number | boolean | null>,
   ): Promise<void> {
     return this.applyValue(value, false);
   }
@@ -1135,13 +1162,20 @@ export class ElementFragment extends Fragment {
   /**
    * 入力エレメントに値を設定します。
    * 必要に応じて入力系イベントも発火します。
+   * 配列はチェックボックスグループ用で、自身の value が配列に含まれるかで
+   * チェック状態を決定します。
    *
    * @param value 値
    * @param dispatchEvents input/change イベントを発火するかどうか
    * @returns エレメントの更新のPromise
    */
   private applyValue(
-    value: string | number | boolean | null,
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | Array<string | number | boolean | null>,
     dispatchEvents: boolean,
   ): Promise<void> {
     if (this.skipChangeValue) {
@@ -1163,10 +1197,25 @@ export class ElementFragment extends Fragment {
         newChecked = value === true || value === 'true';
       } else if (result === 'false') {
         newChecked = value === false;
+      } else if (Array.isArray(value)) {
+        newChecked = value.map(String).includes(String(result));
       } else {
         newChecked = result === String(value);
       }
-      this.value = isBooleanCheckbox ? newChecked : newChecked ? value : null;
+      // 内部値の決定:
+      // - boolean チェックボックスはチェック状態をそのまま保持する。
+      // - 未チェックは null。
+      // - チェック済みは、配列（チェックボックスグループ）なら自身の value
+      //   （文字列）を、単一指定ならその値を保持する。
+      if (isBooleanCheckbox) {
+        this.value = newChecked;
+      } else if (!newChecked) {
+        this.value = null;
+      } else if (Array.isArray(value)) {
+        this.value = String(result);
+      } else {
+        this.value = value;
+      }
       if (element.checked === newChecked) {
         return Promise.resolve();
       }
@@ -1184,11 +1233,13 @@ export class ElementFragment extends Fragment {
       element instanceof HTMLTextAreaElement ||
       element instanceof HTMLSelectElement
     ) {
+      // チェックボックスグループ以外に配列が渡された場合は文字列化する
+      const scalarValue = Array.isArray(value) ? value.join(',') : value;
       // type="number" は内部値を数値へ正規化して保持する（送信時に数値型になる）
-      this.value = this.normalizeValueForElement(element, value);
+      this.value = this.normalizeValueForElement(element, scalarValue);
       this.skipChangeValue = true;
       return Queue.enqueue(() => {
-        element.value = value === null ? '' : String(value);
+        element.value = scalarValue === null ? '' : String(scalarValue);
         if (dispatchEvents) {
           if (
             (element instanceof HTMLInputElement &&
