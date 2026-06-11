@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [0.17.2] - 2026-06-11
+
+### Fixed
+
+- `form[data-fetch][data-fetch-arg]` 配下の入力を変更したとき、change のフォーム値自動同期がフォーム自身の `data-bind` を確定する際に、フォーム値以外のキー（`data-fetch-arg` で束縛された一覧データ等）が脱落する不具合を修正した。退行すると `data-each` が未解決になり選択肢が placeholder 1個に潰れる（`required` と併用すると submit も止まる）。
+  - 原因: change のフォーム値同期で、フォーム値のみを `data-bind` 属性へ直接書き込む冗長な処理があり、その属性変更を MutationObserver が in-memory へ再取り込みしてフォーム値以外のキーを脱落させていた。従来はその後の再取り込みでエコー復元されていたが、0.17.1 の堅牢化(B)（Observer の自己エコー無視）でエコー復元が止まり顕在化した。修正後はこの冗長な直接書き込みを廃し、フォーム値同期は解決済みスコープへフォーム値を重ねた `setBindingData` のみで行う（`data-fetch-arg` 等のキーを保持）。
+  - 実ブラウザ回帰ガード `playwright/form-fetch-arg-wipe.spec.cjs`（＋フィクスチャ）を追加。報告者提供の再現構成で、修正後は change 後も選択肢と fetch-arg が保持されることを確認（実 Chromium）。
+
 ## [0.17.1] - 2026-06-11
 
 ### Fixed

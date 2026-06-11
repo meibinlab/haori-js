@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>form[data-fetch] fetch-arg がフォーム値同期で消える再現</title>
+  </head>
+  <body>
+    <h2>form[data-fetch] の fetch-arg が change のフォーム値同期で消える（調査用）</h2>
+    <p>?src=cdn-0.17.0 / ?src=cdn-0.17.1 でCDN版、無指定でローカルビルド（/dist）を読み込む。</p>
+
+    <div id="state" data-bind='{"sel1":null}'>
+      <form id="f1" data-fetch="/playwright/form-fetch-arg-wipe.json" data-fetch-arg="shopList">
+        <select
+          id="s1"
+          name="sel1"
+          required
+          data-each="shopList.content ?? shopList"
+          data-each-arg="x"
+          data-each-key="code"
+          data-change-run="window.__pick(event.target.value)"
+        >
+          <option data-each-before value="">-</option>
+          <option value="{{x.code}}" data-attr-selected="{{x.code === sel1}}">{{x.n}}</option>
+        </select>
+      </form>
+    </div>
+
+    <script>
+      // 調査用: ?src= でロードするビルドを切り替える（CDN 0.17.0 との挙動比較のため）
+      (function () {
+        const src = new URLSearchParams(location.search).get('src');
+        const url =
+          src === 'cdn-0.17.0'
+            ? 'https://cdn.jsdelivr.net/npm/haori@0.17.0/dist/haori.iife.js'
+            : src === 'cdn-0.17.1'
+              ? 'https://cdn.jsdelivr.net/npm/haori@0.17.1/dist/haori.iife.js'
+              : '/dist/haori.iife.js';
+        document.write('<script src="' + url + '"><\/script>');
+      })();
+    </script>
+    <script>
+      window.__runs = 0;
+      const state = {sel1: null};
+      window.__pick = v => {
+        window.__runs++;
+        state.sel1 = v || null;
+        Haori.Core.setBindingData(document.getElementById('state'), state);
+      };
+    </script>
+  </body>
+</html>

@@ -1540,8 +1540,6 @@ ${body}
           skipFragments.add(this.options.targetFragment);
         }
 
-        formElement.setAttribute(`${Env.prefix}bind`, JSON.stringify(payload));
-
         const bindingData = formFragment.getBindingData();
         Object.assign(bindingData, payload);
         await Core.setBindingData(formElement, bindingData, skipFragments);
