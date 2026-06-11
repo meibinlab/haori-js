@@ -13,6 +13,7 @@ import Builtins, {
   pageSummary,
   range,
   pages,
+  sum,
 } from '../src/builtins';
 import Expression from '../src/expression';
 import Haori from '../src/haori';
@@ -279,6 +280,39 @@ describe('Builtins', () => {
     });
   });
 
+  describe('sum()', () => {
+    it('key 指定で各要素の数値を合計する', () => {
+      const rows = [{total: 100}, {total: 250}, {total: 50}];
+      expect(sum(rows, 'total')).toBe(400);
+    });
+
+    it('key 省略時は要素自体を合計する', () => {
+      expect(sum([1, 2, 3.5])).toBe(6.5);
+    });
+
+    it('数値化できない値（null/undefined/空文字/非数値）は無視する', () => {
+      const rows = [
+        {v: 10},
+        {v: null},
+        {v: undefined},
+        {v: ''},
+        {v: 'x'},
+        {v: '5'},
+      ];
+      expect(sum(rows, 'v')).toBe(15);
+    });
+
+    it('非配列は 0 を返す', () => {
+      expect(sum(null)).toBe(0);
+      expect(sum(undefined, 'v')).toBe(0);
+      expect(sum('x')).toBe(0);
+    });
+
+    it('要素が null/undefined でも安全に扱う', () => {
+      expect(sum([null, {v: 3}, undefined], 'v')).toBe(3);
+    });
+  });
+
   describe('Haori 公開 API との共用', () => {
     it('Haori.date / number / range / pages が同じ実装を返す', () => {
       expect(Haori.date('2024-01-05T09:05:03')).toBe('2024/01/05 09:05');
@@ -301,6 +335,11 @@ describe('Builtins', () => {
     it('Haori.findBy が同じ実装を返す', () => {
       expect(Haori.findBy([{id: 1}, {id: 2}], 'id', 2)).toEqual({id: 2});
       expect(Haori.findBy([{id: 1}], 'id', 9)).toBeNull();
+    });
+
+    it('Haori.sum が同じ実装を返す', () => {
+      expect(Haori.sum([{total: 1}, {total: 2}], 'total')).toBe(3);
+      expect(Haori.sum([1, 2, 3])).toBe(6);
     });
   });
 
@@ -364,6 +403,20 @@ describe('Builtins', () => {
           sel: 9,
         }),
       ).toBe('A');
+    });
+
+    it('式から haori.sum を呼べる（集計行用途）', () => {
+      expect(
+        Expression.evaluate('haori.sum(rows, "total")', {
+          rows: [{total: 100}, {total: 250}],
+        }),
+      ).toBe(350);
+      // number と組み合わせた合計行の定型
+      expect(
+        Expression.evaluate('haori.number(haori.sum(rows, "total"))', {
+          rows: [{total: 1000}, {total: 2500}],
+        }),
+      ).toBe('3,500');
     });
 
     it('haori はユーザーのバインド値より優先される（上書き不可）', () => {

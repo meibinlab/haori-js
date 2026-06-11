@@ -1580,13 +1580,27 @@ export class ElementFragment extends Fragment {
       (element.type === 'checkbox' || element.type === 'radio');
     const isSelectedTarget =
       targetName === 'selected' && element instanceof HTMLOptionElement;
+    // 操作中（フォーカス中）の要素には選択／チェック状態を再適用しない。value の
+    // skipValueReapply と挙動を統一し、ユーザーが操作中の選択が再評価で巻き戻る
+    // 問題を防ぐ。checkbox/radio は自身が、option は所属する select がフォーカス
+    // 中かで判定する。フォーカスが外れれば次回以降の再評価で宣言状態が反映される。
+    const activeElement = rootNode.activeElement;
+    // activeElement が null のときに closest('select') の null と一致して誤って
+    // スキップしないよう、フォーカス要素が存在する場合のみ判定する。
+    const skipCheckableReapply =
+      activeElement !== null &&
+      ((isCheckedTarget && element === activeElement) ||
+        (isSelectedTarget &&
+          (element as HTMLOptionElement).closest('select') === activeElement));
     // 真偽属性の有無（= stringResult が null でない）が望ましいチェック状態。
     const checkableDesiredState = stringResult !== null;
     const requiresCheckedPropertyWrite =
       isCheckedTarget &&
+      !skipCheckableReapply &&
       (element as HTMLInputElement).checked !== checkableDesiredState;
     const requiresSelectedPropertyWrite =
       isSelectedTarget &&
+      !skipCheckableReapply &&
       (element as HTMLOptionElement).selected !== checkableDesiredState;
     if (
       !requiresRawAttributeWrite &&

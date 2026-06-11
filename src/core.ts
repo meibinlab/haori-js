@@ -760,6 +760,36 @@ export default class Core {
   }
 
   /**
+   * 指定要素のバインディングデータを取得します。`setBindingData` の対となる
+   * 公式の読み取り API です。
+   *
+   * 既定では、その要素自身に設定された生のバインディングデータ（`data-bind` で
+   * 宣言・更新された値そのもの）を返します。`resolved` を `true` にすると、DOM の
+   * ネストをたどって解決済みのスコープ（内側が外側を上書きし、`data-each` の
+   * 行データや派生データを含む、式評価で実際に見える値）を返します。
+   *
+   * 返されるオブジェクトは内部状態のコピーではなく参照のため、呼び出し側で
+   * 直接書き換えないでください（更新は `setBindingData` を使用します）。
+   *
+   * @param element 対象要素
+   * @param options 取得オプション。`resolved` が `true` なら解決済みスコープを返す
+   * @return 既定はその要素の生バインディングデータ（無ければ `null`）。
+   *     `resolved: true` のときは解決済みスコープ（常にオブジェクト）。
+   */
+  public static getBindingData(
+    element: HTMLElement,
+    options: {resolved?: boolean} = {},
+  ): Record<string, unknown> | null {
+    const fragment = Fragment.get(element);
+    if (!(fragment instanceof ElementFragment)) {
+      return null;
+    }
+    return options.resolved
+      ? fragment.getBindingData()
+      : fragment.getRawBindingData();
+  }
+
+  /**
    * 指定要素の式評価で見えるバインディングスコープをダンプします（デバッグ用）。
    *
    * 式（`data-if` / `{{...}}` など）の識別子は、その要素を起点に DOM のネストを

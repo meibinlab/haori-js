@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [0.17.0] - 2026-06-11
+
+### Fixed
+
+- `data-attr-selected` / `data-attr-checked`（および `checked="{{式}}"`）の DOM プロパティ同期が、ユーザー操作中の選択・チェックを再評価で巻き戻す不具合を修正した。0.16.0 で属性に加えてライブプロパティを同期するようにした際、`data-fetch` ラッパ配下のフォーム select などで、change 起因の再評価が `data-attr-selected` の参照キー（select の `name` と別キー等）を未更新のまま `option.selected` を元の値へ戻していた。`value="{{式}}"` のフォーカス中スキップと挙動を統一し、操作中（select / radio / checkbox がフォーカス中）の要素には再適用しないようにした（フォーカスが外れれば次回以降の再評価で宣言状態を反映する）。
+
+### Added
+
+- `Core.getBindingData(element, {resolved?})` を追加した。`setBindingData` の対となるバインドデータの公式読み取り API。既定では要素自身の生バインドデータ（無ければ `null`）を、`resolved: true` で DOM ネストを解決済みのスコープを返す。`Haori.Core.getBindingData(...)` として利用できる。
+- 組み込みヘルパー `haori.sum(array, key?)` を追加した。配列の数値合計を求める（`key` 省略時は要素自体、指定時は `item[key]`、数値化できない値は無視、非配列は `0`）。集計テーブルの合計行を `{{haori.number(haori.sum(rows, 'total'))}}` のように宣言的に書ける。`Haori.sum` としても公開。
+- 任意（カスタム）イベントで手続きを起動する `data-on` を追加した。`data-on="イベント名"` ＋ `data-on-*`（`data-on-run` / `data-on-fetch` / `data-on-bind` …、アクション語彙は `data-{event}-*` と共通）で、`window` / `document` へ dispatch された任意のカスタムイベントを契機に手続きを実行できる。ネイティブ橋の準備完了通知など、click / change / input / load 以外のイベントで初期化処理を宣言的に書ける。イベント名は属性値で保持する（属性名の小文字化で camelCase が壊れないため）。`window` のキャプチャ購読1本で `window` / `document` いずれの dispatch も二重発火なく受け、`data-import` 等で後から挿入された `data-on` も購読対象へ追加する。`click` / `change` / `input` / `load` を `data-on` に指定した場合は警告ログを出し購読しない（組み込みは `data-{event}-*` を使用）。
+- 認証ガード `data-unauthorized-redirect` / `data-forbidden-redirect` を追加した。`<body>` または `<html>` に宣言すると、Haori の fetch 応答が 401（Unauthorized）/ 403（Forbidden）のときに指定 URL へ遷移する（旧 `data-login` 相当）。イベント発火の fetch・宣言的 `data-fetch`・`data-import` の全 fetch 経路に適用し、属性値は `{{...}}` 式で記述できる。ステータス別のオプトイン（属性の有無）で、401/403 で意味の異なる遷移を個別に制御できる。現在ページ自身への遷移は無限ループ防止のため行わない。
+
+### Library
+
+- 上記の回帰テストを追加した（`tests/checked_selected_focus_guard.test.ts`・`tests/repro_report5_full.test.ts`・`tests/get_binding_data.test.ts`・`tests/custom_event_trigger.test.ts`・`tests/auth_guard.test.ts`、`tests/builtins.test.ts` の `sum` ケース）。
+
 ## [0.16.0] - 2026-06-11
 
 ### Fixed

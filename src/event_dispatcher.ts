@@ -16,8 +16,28 @@ export default class EventDispatcher {
   /** Haori が history.state に埋め込む状態キー */
   private static readonly HISTORY_STATE_KEY = '__haoriHistoryState__';
 
+  /**
+   * `data-on` で指定しても受け付けない組み込みイベント名。これらは
+   * `data-{event}-*`（デリゲート方式）を使う。
+   */
+  private static readonly BUILTIN_EVENT_NAMES: ReadonlySet<string> = new Set([
+    'click',
+    'change',
+    'input',
+    'load',
+  ]);
+
   /** ルート要素 */
   private readonly root: Document | HTMLElement;
+
+  /** 購読中のカスタムイベント名とそのリスナーの対応。 */
+  private readonly customEventHandlers = new Map<
+    string,
+    (event: Event) => void
+  >();
+
+  /** `data-on` 宣言の追加（data-import 等）を監視する Observer。 */
+  private customEventObserver: MutationObserver | undefined;
 
   /** クリックデリゲータ */
   private readonly onClick = (event: Event) => this.delegate(event, 'click');
@@ -78,6 +98,9 @@ export default class EventDispatcher {
     window.addEventListener('load', this.onWindowLoad, {once: true});
     // ブラウザの戻る・進む操作
     window.addEventListener('popstate', this.onPopstate);
+    // data-on で宣言されたカスタムイベントの購読を開始
+    this.subscribeDeclaredCustomEvents();
+    this.observeCustomEventDeclarations();
   }
 
   /**
@@ -90,6 +113,135 @@ export default class EventDispatcher {
     this.root.removeEventListener('load', this.onLoadCapture, true);
     window.removeEventListener('load', this.onWindowLoad);
     window.removeEventListener('popstate', this.onPopstate);
+    // カスタムイベント購読を解除
+    for (const [name, handler] of this.customEventHandlers) {
+      window.removeEventListener(name, handler, true);
+    }
+    this.customEventHandlers.clear();
+    this.customEventObserver?.disconnect();
+    this.customEventObserver = undefined;
+  }
+
+  /**
+   * `data-on` 属性名。
+   *
+   * @returns `data-on` 属性名
+   */
+  private get onAttributeName(): string {
+    return `${Env.prefix}on`;
+  }
+
+  /**
+   * ルート配下に存在する `data-on` 宣言を走査し、カスタムイベントを購読します。
+   *
+   * @returns 戻り値はない。
+   */
+  private subscribeDeclaredCustomEvents(): void {
+    const root = this.root as Document | HTMLElement;
+    root
+      .querySelectorAll(`[${this.onAttributeName}]`)
+      .forEach(element =>
+        this.subscribeCustomEvent(
+          element.getAttribute(this.onAttributeName),
+        ),
+      );
+  }
+
+  /**
+   * 指定したカスタムイベント名を購読します。重複購読・組み込みイベント名は無視します。
+   *
+   * window のキャプチャで購読することで、window / document いずれへ dispatch された
+   * イベントも二重発火なく一度だけ拾えます（document へ dispatch されたイベントの
+   * 伝播経路に window が含まれるため）。
+   *
+   * @param name `data-on` の値（イベント名）
+   * @returns 戻り値はない。
+   */
+  private subscribeCustomEvent(name: string | null): void {
+    if (name === null || name === '') {
+      return;
+    }
+    if (EventDispatcher.BUILTIN_EVENT_NAMES.has(name)) {
+      Log.warn(
+        '[Haori]',
+        `data-on="${name}" は組み込みイベントです。` +
+          `data-${name}-* を使用してください（data-on はカスタムイベント専用）。`,
+      );
+      return;
+    }
+    if (this.customEventHandlers.has(name)) {
+      return;
+    }
+    const handler = (event: Event): void =>
+      this.runCustomEventProcedures(name, event);
+    this.customEventHandlers.set(name, handler);
+    window.addEventListener(name, handler, true);
+  }
+
+  /**
+   * カスタムイベント発火時に、対応する `data-on` 要素の手続き（type=`on`）を起動します。
+   *
+   * @param name イベント名
+   * @param event 発火したイベント
+   * @returns 戻り値はない。
+   */
+  private runCustomEventProcedures(name: string, event: Event): void {
+    const root = this.root as Document | HTMLElement;
+    // 属性セレクタの値エスケープ（CSS.escape）に依存せず、値一致で絞り込む。
+    root.querySelectorAll(`[${this.onAttributeName}]`).forEach(element => {
+      if (element.getAttribute(this.onAttributeName) !== name) {
+        return;
+      }
+      const fragment = Fragment.get(element);
+      if (fragment instanceof ElementFragment) {
+        new Procedure(fragment, 'on', event).run().catch(error => {
+          Log.error('[Haori]', 'Procedure execution error:', error);
+        });
+      }
+    });
+  }
+
+  /**
+   * `data-import` 等で後から挿入される `data-on` 宣言を購読対象へ追加するため、
+   * DOM の追加を監視します。
+   *
+   * @returns 戻り値はない。
+   */
+  private observeCustomEventDeclarations(): void {
+    if (typeof MutationObserver === 'undefined') {
+      return;
+    }
+    const doc =
+      this.root instanceof Document
+        ? this.root
+        : (this.root.ownerDocument ?? document);
+    const observeTarget = this.root instanceof Document ? doc.body : this.root;
+    if (!observeTarget) {
+      return;
+    }
+    this.customEventObserver = new MutationObserver(mutations => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach(node => {
+          if (!(node instanceof HTMLElement)) {
+            return;
+          }
+          if (node.hasAttribute(this.onAttributeName)) {
+            this.subscribeCustomEvent(node.getAttribute(this.onAttributeName));
+          }
+          node
+            .querySelectorAll(`[${this.onAttributeName}]`)
+            .forEach(element =>
+              this.subscribeCustomEvent(
+                element.getAttribute(this.onAttributeName),
+              ),
+            );
+        });
+      }
+    });
+    this.customEventObserver.observe(observeTarget, {
+      childList: true,
+      subtree: true,
+    });
   }
 
   /**

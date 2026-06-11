@@ -12,6 +12,7 @@ import Fragment, {ElementFragment} from './fragment';
 import Haori from './haori';
 import Log from './log';
 import HaoriEvent from './event';
+import {checkAuthRedirect} from './auth_guard';
 
 type ProcedureHaoriApi = Pick<
   typeof Haori,
@@ -1627,6 +1628,11 @@ ${body}
     const activeHaori = resolveProcedureHaoriApi();
     // エラー応答時は以後の処理を停止し、メッセージを伝播
     if (!response.ok) {
+      // 認証エラー（401/403）はグローバル属性に従いログイン等へ遷移する。
+      // 遷移する場合は以後の処理（エラー表示等）を行わず停止する。
+      if (checkAuthRedirect(response.status)) {
+        return false;
+      }
       if (this.options.targetFragment && url) {
         HaoriEvent.fetchError(
           this.options.targetFragment.getTarget(),

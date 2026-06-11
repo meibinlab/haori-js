@@ -189,6 +189,7 @@ class Core {
 
   // バインディングデータ
   static setBindingData(element: HTMLElement, data: Record<string, unknown>): Promise<void>
+  static getBindingData(element: HTMLElement, options?: {resolved?: boolean}): Record<string, unknown> | null
   static parseDataBind(data: string): Record<string, unknown>
 
   // DOM操作
@@ -549,6 +550,13 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
   - `haori.monthRange(count, base?)`: 基準月から過去方向へ `count + 1` 個の `{targetMonth, label}`（`targetMonth` は `YYYY-MM`、`label` は `YYYY/MM`）を**降順**（新しい月が先頭）で返す。`base` 省略時は現在月（ローカル時刻）を基準にする。月セレクトや月次ナビゲーションの選択肢生成向け。要素数は上限（約 100 年分）で打ち切り。**`base` 省略時は現在月に依存する**ため、式の再評価で結果を固定したい場合は `base` を明示する。
   - `haori.pageSummary(page, visibleCount?)`: Spring Data の `Page` 相当（`number`・`size`・`totalElements`／`totalCount`）から表示サマリー `{start, end, total, empty}` を返す。`number` は 0 始まり。末尾ページの端数は `visibleCount`（指定時）→ `page.numberOfElements` → `size` の順で算出。総件数 0・非オブジェクトは `{start: 0, end: 0, total: 0, empty: true}`。`1 - 20 / 100 件` のような表示の算出元（例 `haori.pageSummary(view).start`）。
   - `haori.findBy(array, key, value)`: 配列から `item[key]` が `value` に一致する最初の要素を返す。比較は**文字列化**して行うため数値 ID と文字列 ID の差を吸収する。一致が無ければ `null`（非配列・空配列も `null`）。先頭フォールバックは式側で `haori.findBy(items, 'id', sel) ?? items[0]` と書く。
+  - `haori.sum(array, key?)`: 配列の数値合計を返す。`key` 省略時は要素自体、指定時は `item[key]` を合計。数値化できない値（`null`・`undefined`・空文字・非数値・`NaN`）は無視し、数値文字列（例 `'12'`）は数値として扱う。非配列は `0`。集計行は `{{haori.number(haori.sum(rows, 'total'))}}` のように書く。
+
+`haori.date` / `number` / `range` / `pages` / `monthAdd` / `monthRange` / `pageSummary` / `findBy` / `sum` は `Haori.date(...)` のように静的メソッドとしても公開されます。
+
+#### `Core.getBindingData(element, options?)`
+
+`setBindingData` の対となるバインドデータの公式読み取り API です。既定では対象要素**自身**に設定された生のバインドデータ（`data-bind` の宣言・更新値そのもの。無ければ `null`）を返します。`options.resolved` を `true` にすると、DOM のネストを解決済みのスコープ（内側が外側を上書きし、`data-each` の行データ・派生データを含む、式評価で実際に見える値）を返します。返り値は内部状態への参照のため直接書き換えず、更新は `setBindingData` を使います。`Haori.Core.getBindingData(...)` として利用できます。
 
 ### 4. Observer (observer.ts)
 
@@ -1313,8 +1321,10 @@ data-attr-{attributeName}="template string"
 
 `data-attr-*` は対応する HTML 属性を更新します。加えて、入力欄の表示・状態と DOM の食い違いを防ぐため、次の対象は DOM property も同期します。
 
-- `value`（テキスト系 input / textarea / select）: `input.value` を同期します。ただし**フォーカス中（ユーザー編集中）の入力**には再適用しません（別要素起因の再評価や `data-fetch` 完了で未コミット入力が巻き戻るのを防ぐため）。コミット済みの値は `change` イベントでバインド側へ反映されます。フォーカスが外れている入力には従来どおり反映します。
+- `value`（テキスト系 input / textarea / select）: `input.value` を同期します。
 - `checked`（radio / checkbox）・`selected`（option）: それぞれ `element.checked` / `option.selected` を同期します。
+
+いずれも**操作中（フォーカス中）の要素には再適用しません**。別要素起因の再評価や `data-fetch` 完了で、ユーザーの未コミット入力・選択が巻き戻るのを防ぐためです。`value` は対象入力自身、`checked` はその input 自身、`selected` は所属する `<select>` がフォーカス中かで判定します。フォーカスが外れていれば次回以降の再評価で宣言状態を反映します。コミット済みの値は `change`（または `input`）イベントでバインド側へ反映されます。
 
 これは `value="{{式}}"` のように属性へ直接 `{{...}}` を書いた場合も同様です。
 
@@ -1655,6 +1665,23 @@ data-import="url"
 - 評価後 URL が前回と同じ場合は再読み込みしません。
 - 前回が未解決参照により未実行で、後続の bind 更新で URL が確定した場合は、その時点で初回読み込みを実行します。
 
+#### 認証ガード（`data-unauthorized-redirect` / `data-forbidden-redirect`）
+
+Haori の fetch 応答が認証エラーのとき、指定 URL へ遷移するグローバル設定です。`<body>` または `<html>`（`<body>` 優先）に宣言します。
+
+- `data-unauthorized-redirect="URL"`: **401 Unauthorized** 応答時の遷移先。
+- `data-forbidden-redirect="URL"`: **403 Forbidden** 応答時の遷移先。
+
+```html
+<body data-unauthorized-redirect="/login.html">
+```
+
+- **全 fetch 経路**に適用します（イベント発火の fetch・宣言的 `data-fetch`・`data-import`）。
+- 属性値は `{{...}}` 式で記述できます（例 `data-unauthorized-redirect="{{loginUrl}}"`）。
+- **ステータス別オプトイン**: 属性を宣言したステータスでのみ遷移します。401 と 403 は意味が異なる（403 は「認証済みだが権限なし」のことがある）ため、必要なものだけ宣言します。
+- 現在ページ自身への遷移は無限ループ防止のため行いません。
+- アクションは遷移（redirect）のみで、`data-unauthorized-fetch` のような他の手続きはサポートしません（これらはイベントファミリーではなく専用属性です）。
+
 ---
 
 ### URLパラメータ
@@ -1774,6 +1801,7 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 - `change`: 変更時（フォーカスを外した・選択を確定した等）
 - `input`: 逐次入力時（テキスト入力1文字ごと）
 - `load`: ロード時
+- `on`: 任意（カスタム）イベント時（`data-on` でイベント名を指定）
 
 `input` は逐次（1文字ごと）に発火するため、`data-input-*` を**明示した要素のみ**を対象とします（オプトイン）。`change` と同様に、`data-input-form` の指定がなくても自動的に先祖フォームを検出して入力値を双方向バインディングへ反映します。検索欄の逐次絞り込みなどに利用できます。
 
@@ -1782,6 +1810,22 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 <form data-bind='{"q":""}'>
   <input name="q" data-input-form>
 </form>
+```
+
+#### カスタムイベント `data-on`
+
+`data-on="イベント名"` を指定すると、`window` または `document` へ dispatch された**任意のカスタムイベント**を契機に `data-on-*`（`data-on-run` / `data-on-fetch` / `data-on-bind` …）の手続きを実行します。アクション語彙は `data-{event}-*` と共通です。
+
+- **イベント名は属性値で指定**します（属性名は小文字化されるため、`kanadeAPIReady` のような大文字小文字を含む名前を属性名へ埋め込めないため）。
+- `window` のキャプチャ購読1本で、`window` / `document` いずれへ dispatch されたイベントも**二重発火なく**一度だけ受け取ります。
+- `data-import` 等で後から挿入された `data-on` 要素も購読対象に追加されます。
+- **カスタムイベント専用**です。`click` / `change` / `input` / `load` を `data-on` に指定すると警告ログを出し、購読しません（組み込みイベントは `data-{event}-*` を使用）。
+- 注意: Haori が購読を開始する前に発火したイベントは受け取れません（過去のイベントは再生されません）。準備完了通知などは、Haori 初期化後に発火する設計にしてください。
+
+```html
+<!-- ネイティブ橋の準備完了で初期化フェッチを実行 -->
+<body data-on="kanadeAPIReady"
+  data-on-fetch="/api/init.json" data-on-bind="#app"></body>
 ```
 
 #### 処理順序
@@ -2999,6 +3043,7 @@ class Core {
 
   // バインディング
   static setBindingData(element: HTMLElement, data: Record<string, unknown>): Promise<void>
+  static getBindingData(element: HTMLElement, options?: {resolved?: boolean}): Record<string, unknown> | null
   static parseDataBind(data: string): Record<string, unknown>
 
   // DOM操作
