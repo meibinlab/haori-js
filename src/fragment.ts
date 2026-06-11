@@ -673,12 +673,6 @@ export class ElementFragment extends Fragment {
    */
   private bindingWorkChain: Promise<void> = Promise.resolve();
 
-  /**
-   * バインドデータ更新処理を実行中かどうか。更新処理の内部から同一フラグメントへ
-   * 再帰的に呼ばれた場合（data-url-param 等）の自己待機デッドロックを防ぐ。
-   */
-  private processingBindingWork = false;
-
   /** 生成時点の data-bind 属性の生値（リセット時の初期状態復元用） */
   private readonly initialBindAttribute: string | null = null;
 
@@ -944,6 +938,49 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * Haori 自身が `data-bind` 属性へ書き込んだ値の多重集合。MutationObserver が
+   * 自身の書き込みのエコーを in-memory へ再取り込みして、並行更新時に古い値へ
+   * 巻き戻すのを防ぐために使う。外部からの `data-bind` 変更（記録に無い値）は
+   * 従来どおり取り込む。
+   */
+  private readonly selfWrittenBind = new Map<string, number>();
+
+  /**
+   * `data-bind` 属性への自己書き込みを記録します（DOM へ実際に書き込んだ時に呼ぶ）。
+   *
+   * @param value 書き込んだ属性値
+   */
+  public recordSelfWrittenBind(value: string): void {
+    // 取りこぼし（書き込みに対応する mutation が届かない）による無限増加の安全弁。
+    // Fix A により属性は常に最新 in-memory を反映するため、稀なクリアで自己エコーを
+    // 取り込んでも最新値の再適用となり無害。
+    if (this.selfWrittenBind.size > 64) {
+      this.selfWrittenBind.clear();
+    }
+    this.selfWrittenBind.set(value, (this.selfWrittenBind.get(value) ?? 0) + 1);
+  }
+
+  /**
+   * 指定値が Haori 自身の `data-bind` 書き込みのエコーかどうかを判定し、該当すれば
+   * 記録を 1 つ消費します。
+   *
+   * @param value MutationObserver が観測した属性値
+   * @returns 自己書き込みのエコーであれば true（再取り込みをスキップしてよい）
+   */
+  public consumeSelfWrittenBind(value: string): boolean {
+    const count = this.selfWrittenBind.get(value);
+    if (count === undefined) {
+      return false;
+    }
+    if (count <= 1) {
+      this.selfWrittenBind.delete(value);
+    } else {
+      this.selfWrittenBind.set(value, count - 1);
+    }
+    return true;
+  }
+
+  /**
    * 生の派生バインドデータを取得します。
    *
    * @returns 生の派生バインドデータ
@@ -967,27 +1004,18 @@ export class ElementFragment extends Fragment {
    * （FIFO）で直列実行します。並行呼出による適用順の逆転（古いデータが後から
    * 適用されて新しい値を上書きする現象）を防ぎます。
    *
-   * 更新処理の内部から同一フラグメントへ再帰的に呼ばれた場合（data-url-param に
-   * よる再評価中の再設定など）は、自己待機によるデッドロックを避けるため即時
-   * 実行します。
+   * 純粋な FIFO（並行呼出を決して即時インライン実行しない）です。以前は実行中
+   * フラグでの「再入即時実行」を行っていましたが、await をまたいで届く**独立した
+   * 並行呼出**まで再入扱いしてインライン実行し、`skipMutationAttributes` 中の
+   * `data-bind` 書き込みが破棄されて古い値が後勝ちする競合の原因になっていました。
+   * 真の再入（data-url-param 等）は呼出側がキューを介さず実行するため、ここでは
+   * 一律にチェーンへ積みます。
    *
    * @param work 直列化したいバインドデータ更新処理
    * @returns work の完了 Promise
    */
   public enqueueBindingWork(work: () => Promise<void>): Promise<void> {
-    if (this.processingBindingWork) {
-      // 直列化中の処理からの再入は即時実行する（デッドロック防止）。
-      return work();
-    }
-    const run = (): Promise<void> => {
-      this.processingBindingWork = true;
-      return Promise.resolve()
-        .then(work)
-        .finally(() => {
-          this.processingBindingWork = false;
-        });
-    };
-    const next = this.bindingWorkChain.then(run, run);
+    const next = this.bindingWorkChain.then(work, work);
     // 失敗してもチェーンを継続させる（個々の呼出には next で結果を返す）。
     this.bindingWorkChain = next.then(
       () => undefined,
@@ -1629,6 +1657,11 @@ export class ElementFragment extends Fragment {
       } else {
         if (requiresTargetAttributeWrite) {
           element.setAttribute(targetName, stringResult);
+          // data-bind への自己書き込みを記録し、MutationObserver による自身の
+          // エコーの再取り込み（並行更新時の巻き戻し）を防ぐ。
+          if (targetName === `${Env.prefix}bind`) {
+            this.recordSelfWrittenBind(stringResult);
+          }
         }
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、
         // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。

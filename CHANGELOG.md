@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [0.17.1] - 2026-06-11
+
+### Fixed
+
+- `Core.setBindingData` の並行呼出で適用順が逆転し、先に呼んだ古いデータが後から確定する競合（負荷依存）を修正した。**根本原因**は、直列化に用いていた再入バイパス（`processingBindingWork` フラグが true の間の呼出を「再入」とみなし即時インライン実行）が、`await` をまたいで届く**独立した並行呼出**まで再入扱いしてしまう点にあった。push① の `data-bind` 書き込み（`setAttribute`）は `skipMutationAttributes` を同期的に立て、その実 DOM 書き込み（描画キュー）まで解除しない。この間（実測で 5〜10ms）にインライン実行された push② の `data-bind` 書き込みは冒頭の `skipMutationAttributes` ガードで**丸ごと破棄**され、push① の古い値が最終確定していた（重い再描画で窓が広がるほど発生しやすい）。
+  - 修正後は **純粋 FIFO 直列化**に変更し、並行呼出は決して即時インライン実行せず必ず呼出順でキューへ積む。唯一の真の再入（`data-url-param` の再評価が `evaluateAll` 内から同一フラグメントへ再帰する経路）のみ、自己デッドロック防止のため明示的に即時実行する。
+  - あわせて堅牢化として、(A) `data-bind` 属性書き込みを実行時点の最新 in-memory から行い、(B) MutationObserver が Haori 自身の `data-bind` 書き込みのエコーを再取り込みしないようにした（外部からの `data-bind` 変更の取り込みは維持）。
+  - 実ブラウザ回帰ガード `playwright/setbindingdata-stale.spec.cjs`（＋フィクスチャ `playwright/serialization-stale-repro.html`）を追加。報告者提供の再現構成（200行 data-each＋数量 change／検索 input、利用側直列化なし）で、修正前 CDN 0.17.0 が 11/60 失敗、本修正のローカルビルドは 0/60 で再現せず（実 Chromium で確認）。
+
 ## [0.17.0] - 2026-06-11
 
 ### Fixed

@@ -631,6 +631,17 @@ export default class Core {
           fragment.clearBindingDataCache();
           fragment.setBindingData({});
         } else {
+          // MutationObserver 経由（fromObserver）の data-bind 変更が Haori 自身の
+          // 書き込みのエコーなら再取り込みしない。並行 setBindingData 時に古いエコーを
+          // 取り込んで最新の in-memory を巻き戻す競合を防ぐ（in-memory が権威）。
+          // 記録に無い値（外部からの data-bind 変更）は従来どおり取り込む。
+          if (
+            fromObserver &&
+            fragment instanceof ElementFragment &&
+            fragment.consumeSelfWrittenBind(value)
+          ) {
+            break;
+          }
           fragment.setBindingData(Core.parseDataBind(value));
         }
         break;
@@ -678,12 +689,14 @@ export default class Core {
       case `${Env.prefix}url-param`: {
         const arg = fragment.getAttribute(`${Env.prefix}url-arg`);
         const params = Url.readParams();
+        // data-url-param の再評価は evaluateAll（= setBindingData の work）内から
+        // 同一フラグメントへ再帰し得るため reentrant=true で即時実行する。
         if (arg === null) {
-          promises.push(Core.setBindingData(element, params));
+          promises.push(Core.setBindingData(element, params, new Set(), true));
         } else {
           const data = fragment.getRawBindingData() || {};
           data[String(arg)] = params;
-          promises.push(Core.setBindingData(element, data));
+          promises.push(Core.setBindingData(element, data, new Set(), true));
         }
         break;
       }
@@ -721,6 +734,7 @@ export default class Core {
     element: HTMLElement,
     data: Record<string, unknown>,
     skipFragments: ReadonlySet<ElementFragment> = new Set(),
+    reentrant = false,
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
     const previous = fragment.getRawBindingData();
@@ -733,22 +747,31 @@ export default class Core {
     // 同一要素への並行呼出で適用順が逆転しないよう、DOM 反映・再評価を呼出順
     // （FIFO）で直列化する。直列化しないと、内部キューの完了順が呼出順と逆転し、
     // 先に呼んだ古いデータの data-bind 属性が後から確定することがある。
-    return fragment.enqueueBindingWork(() => {
+    //
+    // reentrant=true は、直列化中の処理（evaluateAll → data-url-param 等）の内部から
+    // 同一フラグメントへ再帰呼出された場合に使う。FIFO キューへ積むと現在の work の
+    // 完了を待って自己デッドロックするため、キューを介さず即時実行する。並行呼出
+    // （別イベント由来）は reentrant=false で必ずキューへ積み、適用順を保証する。
+    const work = (): Promise<void> => {
+      // 実行時点の最新 in-memory を基準に DOM 反映する。捕捉スナップショット（data）
+      // だと、並行更新時に古い値を data-bind 属性へ書き込み、それを MutationObserver が
+      // 拾って巻き戻す競合になり得る。in-memory は呼出時に同期確定済み（last-wins）。
+      const current = fragment.getRawBindingData() ?? data;
       let chain = fragment.setAttribute(
         `${Env.prefix}bind`,
-        JSON.stringify(data),
+        JSON.stringify(current),
       );
       if (element.tagName === 'FORM') {
         const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
         const formValues =
           arg &&
-          data[String(arg)] &&
-          typeof data[String(arg)] === 'object' &&
-          !Array.isArray(data[String(arg)])
-            ? (data[String(arg)] as Record<string, unknown>)
+          current[String(arg)] &&
+          typeof current[String(arg)] === 'object' &&
+          !Array.isArray(current[String(arg)])
+            ? (current[String(arg)] as Record<string, unknown>)
             : arg
               ? {}
-              : data;
+              : current;
         chain = chain.then(() => Form.syncValues(fragment, formValues));
       }
       chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
@@ -756,7 +779,9 @@ export default class Core {
         Core.reevaluateReactiveSpecialAttributes(fragment, skipFragments),
       );
       return chain.then(() => undefined);
-    });
+    };
+    // 再入は即時実行（自己デッドロック防止）、通常呼出は FIFO 直列化。
+    return reentrant ? work() : fragment.enqueueBindingWork(work);
   }
 
   /**
