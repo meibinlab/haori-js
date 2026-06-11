@@ -286,8 +286,9 @@ describe('イベント属性: before-run / after-run', () => {
     expect(calls.length).toBe(1);
 
     const options = calls[0][1] as RequestInit;
-    expect(options.body).toBe(JSON.stringify({username: null}));
-    expect(input.value).not.toBe('dirty');
+    // リセット後の値 = HTML の value 属性で宣言された既定値が payload に使われる
+    expect(options.body).toBe(JSON.stringify({username: 'default'}));
+    expect(input.value).toBe('default');
   });
 
   it('data-click-data の JSON 形式で引用符を含む値を壊さず payload に送信する', async () => {

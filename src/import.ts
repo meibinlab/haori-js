@@ -5,6 +5,7 @@
  * 仕様: data-import — 指定したURLの body タグの中身を対象エレメントの innerHTML に設定する。
  */
 import Log from './log';
+import {checkAuthRedirect} from './auth_guard';
 
 /**
  * インポート機能を提供するクラスです。
@@ -32,6 +33,8 @@ export class Import {
     }
 
     if (!response.ok) {
+      // 認証エラー（401/403）はグローバル属性に従いログイン等へ遷移する。
+      checkAuthRedirect(response.status);
       // ネットワーク/HTTP エラーは上位で扱いやすいように例外化
       const status = `${response.status} ${response.statusText}`;
       Log.error('[Haori]', 'Import HTTP error:', url, status);

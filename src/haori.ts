@@ -10,6 +10,7 @@ import {
   pageSummary,
   pages,
   range,
+  sum,
 } from './builtins';
 import type {
   MonthItem,
@@ -317,5 +318,19 @@ export default class Haori {
    */
   public static findBy(array: unknown, key: string, value: unknown): unknown {
     return findBy(array, key, value);
+  }
+
+  /**
+   * 配列の数値合計を返します。
+   *
+   * テンプレート式中の `haori.sum(...)` と同じ実装です。`key` 省略時は要素自体を、
+   * 指定時は `item[key]` を合計し、数値化できない値は無視します。
+   *
+   * @param array 集計対象の配列
+   * @param key 合計するプロパティ名（省略時は要素自体）
+   * @returns 数値の合計。対象が無ければ 0
+   */
+  public static sum(array: unknown, key?: string): number {
+    return sum(array, key);
   }
 }

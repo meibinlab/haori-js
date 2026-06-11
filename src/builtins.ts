@@ -482,6 +482,42 @@ export function findBy(
 }
 
 /**
+ * 配列の数値合計を求めます。集計テーブルの合計行などを式で宣言的に書くための
+ * ヘルパーです。
+ *
+ * `key` を省略すると要素自体を数値として合計し、`key` を指定すると各要素の
+ * `item[key]` を合計します。数値に変換できない値（`null`・`undefined`・空文字・
+ * 非数値文字列・`NaN`）は無視します。文字列の数値（例 `'12'`）は数値として扱います。
+ * 非配列を渡した場合は `0` を返します。
+ *
+ * @param array 集計対象の配列
+ * @param key 合計するプロパティ名（省略時は要素自体を合計）
+ * @returns 数値の合計。対象が無ければ 0
+ */
+export function sum(array: unknown, key?: string): number {
+  if (!Array.isArray(array)) {
+    return 0;
+  }
+  let total = 0;
+  for (const item of array) {
+    const raw =
+      key === undefined || key === null
+        ? item
+        : item === null || item === undefined
+          ? undefined
+          : (item as Record<string, unknown>)[key];
+    if (raw === null || raw === undefined || raw === '') {
+      continue;
+    }
+    const numeric = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isNaN(numeric)) {
+      total += numeric;
+    }
+  }
+  return total;
+}
+
+/**
  * 式中の予約名前空間 `haori` として公開する組み込みヘルパー集合です。
  */
 const Builtins = Object.freeze({
@@ -493,6 +529,7 @@ const Builtins = Object.freeze({
   monthRange,
   pageSummary,
   findBy,
+  sum,
 });
 
 export default Builtins;

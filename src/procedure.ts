@@ -12,6 +12,7 @@ import Fragment, {ElementFragment} from './fragment';
 import Haori from './haori';
 import Log from './log';
 import HaoriEvent from './event';
+import {checkAuthRedirect} from './auth_guard';
 
 type ProcedureHaoriApi = Pick<
   typeof Haori,
@@ -716,8 +717,9 @@ export default class Procedure {
           // 属性はあるが値が省略された場合は自要素もしくは先祖の form を対象
           options.formFragment = Form.getFormFragment(fragment);
         }
-      } else if (event === 'change') {
-        // changeイベントの場合、data-change-form属性がなくても自動的にフォームを検索
+      } else if (event === 'change' || event === 'input') {
+        // change / input イベントの場合、data-{event}-form 属性がなくても自動的に
+        // フォームを検索し、入力値を双方向バインディングへ反映する。
         options.formFragment = Form.getFormFragment(fragment);
       }
       if (fragment.hasAttribute(`${Env.prefix}${event}-before-run`)) {
@@ -1626,6 +1628,11 @@ ${body}
     const activeHaori = resolveProcedureHaoriApi();
     // エラー応答時は以後の処理を停止し、メッセージを伝播
     if (!response.ok) {
+      // 認証エラー（401/403）はグローバル属性に従いログイン等へ遷移する。
+      // 遷移する場合は以後の処理（エラー表示等）を行わず停止する。
+      if (checkAuthRedirect(response.status)) {
+        return false;
+      }
       if (this.options.targetFragment && url) {
         HaoriEvent.fetchError(
           this.options.targetFragment.getTarget(),

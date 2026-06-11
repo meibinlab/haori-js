@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>setBindingData 並行呼出: 古い値の後勝ち（FIFO不完全）自動再現</title>
+    <style>
+      body { font-family: sans-serif; margin: 2rem; max-width: 60rem; }
+      pre { background: #f5f5f5; padding: 0.5rem; max-height: 14em; overflow: auto; }
+      .table-wrap { max-height: 12em; overflow: auto; border: 1px solid #ccc; }
+      td, th { border: 1px solid #ddd; padding: 0 0.5rem; }
+    </style>
+  </head>
+  <body>
+    <h2>setBindingData 並行呼出で古い値が後勝ちする事象の自動再現</h2>
+    <p>
+      手順: HTTP で配信して開き（例: <code>python -m http.server</code>）、
+      「自動再現を実行」を押す。<br />
+      1試行 =「数量入力へ change をディスパッチ（→ data-change-run が
+      setBindingData ①を呼ぶ）→ 直後に検索入力へ input をディスパッチ
+      （→ data-input-run が setBindingData ②を呼ぶ）→ 描画完了を待って
+      data-bind 属性の keyword を検査」。<br />
+      <strong>期待: keyword は ②の値。失敗: ①時点の古い値（空文字）に戻る。</strong>
+      ①②とも呼出順は正しく、run も発火している（呼出ログで確認可能）。
+      行数が多いほど（再評価が重いほど）発生しやすい。発生率はマシン負荷に依存する。
+    </p>
+
+    <div id="state" data-bind='{"items":[],"quantities":{},"keyword":""}'>
+      <p>
+        数量（change → push①）:
+        <input
+          id="qty"
+          type="number"
+          data-change-run="window.__setQty(event.target.value)"
+        />
+        検索（input → push②）:
+        <input
+          id="search"
+          type="text"
+          data-input-run="window.__setKeyword(event.target.value)"
+        />
+      </p>
+      <div
+        class="table-wrap"
+        data-derive="items.filter(m => !(keyword ?? '').trim() || (m.name ?? '').includes((keyword ?? '').trim()))"
+        data-derive-name="filtered"
+      >
+        <table>
+          <tbody id="rows" data-each="filtered" data-each-arg="m" data-each-key="id">
+            <tr>
+              <td>{{m.name}}</td>
+              <td>
+                <input
+                  type="number"
+                  value="{{quantities[m.id]?.qty ?? ''}}"
+                  data-change-run="window.__setQty({{m.id}}, event.target.value)"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      <button type="button" id="run">自動再現を実行（60試行）</button>
+      結果: <span id="result">-</span>
+    </p>
+    <pre id="log"></pre>
+
+    <script src="/dist/haori.iife.js"></script>
+    <script>
+      (() => {
+        "use strict";
+
+        // 実画面（一覧＋検索＋数量入力）を模した状態。シム（直列化）は使わず、
+        // data-*-run から直接 setBindingData を呼ぶ（不具合の対象経路そのまま）。
+        const ROWS = 200;
+        const TRIALS = 60;
+        const state = {
+          items: Array.from({ length: ROWS }, (_, i) => ({
+            id: i + 1,
+            name: (i % 3 === 0 ? "たこ " : "商品 ") + (i + 1),
+          })),
+          quantities: {},
+          keyword: "",
+        };
+        const stateEl = document.getElementById("state");
+        const push = () => Haori.Core.setBindingData(stateEl, state);
+
+        const log = (m) => {
+          document.getElementById("log").textContent += m + "\n";
+        };
+
+        // data-change-run / data-input-run から呼ばれる（実画面の setQuantity /
+        // setKeyword 相当）。state を書き換えて即 push する。
+        window.__setQty = (id, raw) => {
+          state.quantities[id] = { qty: raw === "" ? null : Number(raw) };
+          push(); // push①
+        };
+        window.__setKeyword = (raw) => {
+          state.keyword = raw;
+          push(); // push②
+        };
+        window.__noop = () => {};
+
+        // 初期描画
+        push();
+
+        document.getElementById("run").addEventListener("click", async () => {
+          const qty = document.getElementById("qty");
+          const search = document.getElementById("search");
+          let fails = 0;
+
+          for (let t = 1; t <= TRIALS; t++) {
+            // 状態リセット（keyword を空へ）して落ち着くまで待つ
+            state.keyword = "";
+            state.quantities = {};
+            search.value = "";
+            await push();
+            await Haori.waitForRenders();
+
+            const expected = "たこ"; // 絞り込みが発生する値（再評価を重くする）
+
+            // 1試行: 行内入力へ change（push①）→ 間隔を掃引して input（push②）
+            const rowInput = document.querySelector("#rows tr input");
+            rowInput.value = String(t);
+            rowInput.dispatchEvent(new Event("change", { bubbles: true }));
+            const delay = (t % 10) * 5; // 0〜45ms を掃引
+            if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+            search.value = expected;
+            search.dispatchEvent(new Event("input", { bubbles: true }));
+
+            // すべての描画が終わった後の最終状態を検査
+            await Haori.waitForRenders();
+            await new Promise((r) => setTimeout(r, 50));
+            await Haori.waitForRenders();
+
+            const bindKw = JSON.parse(stateEl.getAttribute("data-bind")).keyword;
+            if (bindKw !== expected) {
+              fails++;
+              log(
+                `trial ${t}: FAIL data-bind keyword=${JSON.stringify(bindKw)}` +
+                  `（②で "${expected}" を設定したが ①時点の古い値が後勝ち）`,
+              );
+            }
+          }
+          const msg = `${fails} / ${TRIALS} 試行で古い値の後勝ちが発生`;
+          document.getElementById("result").textContent = msg;
+          log("done: " + msg);
+        });
+      })();
+    </script>
+  </body>
+</html>

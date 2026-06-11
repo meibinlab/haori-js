@@ -6,7 +6,7 @@
 
 import Core from './core';
 import Env from './env';
-import {ElementFragment} from './fragment';
+import Fragment, {ElementFragment} from './fragment';
 import Haori from './haori';
 import Log from './log';
 import Queue from './queue';
@@ -74,6 +74,23 @@ export default class Form {
           (values[String(name)] as unknown[]).push(fragment.getValue());
         } else {
           values[String(name)] = [fragment.getValue()];
+        }
+      } else if (Form.isGroupedCheckable(fragment)) {
+        // 同名のチェックボックス・ラジオボタングループ:
+        // チェック済みの値だけを集め、未チェック（null）で既存値を上書きしない。
+        // チェックボックスで複数チェックされている場合は配列にする。
+        const value = fragment.getValue();
+        const key = String(name);
+        if (value === null) {
+          if (!(key in values)) {
+            values[key] = null;
+          }
+        } else if (values[key] === null || values[key] === undefined) {
+          values[key] = value;
+        } else if (Array.isArray(values[key])) {
+          (values[key] as unknown[]).push(value);
+        } else {
+          values[key] = [values[key], value];
         }
       } else {
         values[String(name)] = fragment.getValue();
@@ -158,6 +175,28 @@ export default class Form {
   }
 
   /**
+   * 値による上書きをグループ単位で扱うべき入力要素（boolean 型でない
+   * チェックボックス、またはラジオボタン）かどうかを判定します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns グループ扱いの場合 true
+   */
+  private static isGroupedCheckable(fragment: ElementFragment): boolean {
+    const element = fragment.getTarget();
+    if (!(element instanceof HTMLInputElement)) {
+      return false;
+    }
+    if (element.type === 'radio') {
+      return true;
+    }
+    if (element.type !== 'checkbox') {
+      return false;
+    }
+    // value="true" / value="false" は単一の boolean チェックボックスとして扱う
+    return element.value !== 'true' && element.value !== 'false';
+  }
+
+  /**
    * 単一フラグメントへ値を設定します。
    *
    * @param fragment 対象フラグメント
@@ -167,7 +206,12 @@ export default class Form {
    */
   private static applyFragmentValue(
     fragment: ElementFragment,
-    value: string | number | boolean | null,
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | Array<string | number | boolean | null>,
     emitEvents: boolean,
   ): Promise<void> {
     return emitEvents
@@ -205,6 +249,15 @@ export default class Form {
           );
         } else if (typeof value === 'undefined') {
           // 未指定のキーは既存の入力値を維持する。
+        } else if (Array.isArray(value) && Form.isGroupedCheckable(fragment)) {
+          // チェックボックスグループ: 配列に自身の値が含まれるかでチェック状態を決める
+          promises.push(
+            Form.applyFragmentValue(
+              fragment,
+              value as Array<string | number | boolean | null>,
+              emitEvents,
+            ),
+          );
         } else if (
           typeof value === 'string' ||
           typeof value === 'number' ||
@@ -287,6 +340,8 @@ export default class Form {
       if (element instanceof HTMLFormElement) {
         element.reset();
       } else {
+        // 配下のフォームは一時フォームでのリセット対象に含まれないため個別にリセットする
+        element.querySelectorAll('form').forEach(form => form.reset());
         const parent = element.parentElement;
         if (parent) {
           const next = element.nextElementSibling;
@@ -298,8 +353,106 @@ export default class Form {
       }
     });
 
+    // data-bind 属性で宣言された初期バインドデータを復元し、宣言キーを入力欄へ反映する
+    const targetForms = Form.collectBindingTargetForms(fragment);
+    for (const formFragment of targetForms) {
+      const initial = Form.getInitialBindingData(formFragment);
+      if (initial) {
+        await Core.setBindingData(formFragment.getTarget(), initial);
+      }
+    }
+
+    // リセット後の DOM 値（HTML 属性の既定値と初期バインド値）を内部値へ再同期する。
+    // 同期しないと、リセット前に変更イベントで双方向バインディングへ書き込まれた
+    // 値が再評価時に復元され、画面上は既定値なのに古い値が送信される。
+    Form.syncValuesFromDom(fragment);
+
+    // 双方向バインディングのバインドデータをリセット後の値で更新する。
+    // バインドデータを一度も持っていないフォームは対象外とする
+    // （祖先のバインドデータを参照するフォームで不要なシャドーイングを起こさないため）。
+    for (const formFragment of targetForms) {
+      const initial = Form.getInitialBindingData(formFragment);
+      if (formFragment.getRawBindingData() === null && initial === null) {
+        continue;
+      }
+      const values = Form.getValues(formFragment);
+      const arg = formFragment.getAttribute(`${Env.prefix}form-arg`);
+      // 初期 data-bind 宣言を土台にリセット後のフォーム値を重ねる。
+      // change 時の Core.changeValue はフォーム値のみで置き換える（初期宣言の
+      // 非フォームキーは破棄する）が、リセットは「初期状態への復元」が目的のため
+      // 意図的に初期宣言キーを保持したうえでフォーム値を上書きする。
+      const bindingData = {...(initial || {})};
+      if (arg) {
+        bindingData[String(arg)] = values;
+      } else {
+        Object.assign(bindingData, values);
+      }
+      await Core.setBindingData(formFragment.getTarget(), bindingData);
+    }
+
     // 再評価
     await Core.evaluateAll(fragment);
+  }
+
+  /**
+   * data-bind 属性で宣言された初期バインドデータを取得します。
+   *
+   * @param formFragment 対象のフォームフラグメント
+   * @returns 初期バインドデータ。宣言がない場合は null。
+   */
+  private static getInitialBindingData(
+    formFragment: ElementFragment,
+  ): Record<string, unknown> | null {
+    const raw = formFragment.getInitialBindAttribute();
+    return raw === null ? null : Core.parseDataBind(raw);
+  }
+
+  /**
+   * フラグメント配下の入力要素について、内部値を現在の DOM 値と再同期します。
+   *
+   * @param fragment 対象フラグメント
+   */
+  private static syncValuesFromDom(fragment: ElementFragment): void {
+    const element = fragment.getTarget();
+    if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+    ) {
+      fragment.syncValue();
+    }
+    for (const child of fragment.getChildElementFragments()) {
+      Form.syncValuesFromDom(child);
+    }
+  }
+
+  /**
+   * リセット後にバインドデータを更新すべきフォームフラグメントを収集します。
+   * 対象がフォームの場合はそのフォーム、コンテナの場合は配下のすべての
+   * フォームを対象とします。祖先フォームは対象外とします（行リセット等の
+   * 部分リセットでフォーム全体のバインドデータを書き換えないため）。
+   *
+   * @param fragment 対象フラグメント
+   * @returns フォームフラグメントのリスト
+   */
+  private static collectBindingTargetForms(
+    fragment: ElementFragment,
+  ): ElementFragment[] {
+    const element = fragment.getTarget();
+    const forms: HTMLFormElement[] = [];
+    if (element instanceof HTMLFormElement) {
+      forms.push(element);
+    } else {
+      forms.push(...Array.from(element.querySelectorAll('form')));
+    }
+    const fragments: ElementFragment[] = [];
+    for (const form of forms) {
+      const formFragment = Fragment.get(form);
+      if (formFragment instanceof ElementFragment) {
+        fragments.push(formFragment);
+      }
+    }
+    return fragments;
   }
 
   /**

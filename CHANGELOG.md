@@ -1,5 +1,66 @@
 # CHANGELOG
 
+## [0.17.1] - 2026-06-11
+
+### Fixed
+
+- `Core.setBindingData` の並行呼出で適用順が逆転し、先に呼んだ古いデータが後から確定する競合（負荷依存）を修正した。**根本原因**は、直列化に用いていた再入バイパス（`processingBindingWork` フラグが true の間の呼出を「再入」とみなし即時インライン実行）が、`await` をまたいで届く**独立した並行呼出**まで再入扱いしてしまう点にあった。push① の `data-bind` 書き込み（`setAttribute`）は `skipMutationAttributes` を同期的に立て、その実 DOM 書き込み（描画キュー）まで解除しない。この間（実測で 5〜10ms）にインライン実行された push② の `data-bind` 書き込みは冒頭の `skipMutationAttributes` ガードで**丸ごと破棄**され、push① の古い値が最終確定していた（重い再描画で窓が広がるほど発生しやすい）。
+  - 修正後は **純粋 FIFO 直列化**に変更し、並行呼出は決して即時インライン実行せず必ず呼出順でキューへ積む。唯一の真の再入（`data-url-param` の再評価が `evaluateAll` 内から同一フラグメントへ再帰する経路）のみ、自己デッドロック防止のため明示的に即時実行する。
+  - あわせて堅牢化として、(A) `data-bind` 属性書き込みを実行時点の最新 in-memory から行い、(B) MutationObserver が Haori 自身の `data-bind` 書き込みのエコーを再取り込みしないようにした（外部からの `data-bind` 変更の取り込みは維持）。
+  - 実ブラウザ回帰ガード `playwright/setbindingdata-stale.spec.cjs`（＋フィクスチャ `playwright/serialization-stale-repro.html`）を追加。報告者提供の再現構成（200行 data-each＋数量 change／検索 input、利用側直列化なし）で、修正前 CDN 0.17.0 が 11/60 失敗、本修正のローカルビルドは 0/60 で再現せず（実 Chromium で確認）。
+
+## [0.17.0] - 2026-06-11
+
+### Fixed
+
+- `data-attr-selected` / `data-attr-checked`（および `checked="{{式}}"`）の DOM プロパティ同期が、ユーザー操作中の選択・チェックを再評価で巻き戻す不具合を修正した。0.16.0 で属性に加えてライブプロパティを同期するようにした際、`data-fetch` ラッパ配下のフォーム select などで、change 起因の再評価が `data-attr-selected` の参照キー（select の `name` と別キー等）を未更新のまま `option.selected` を元の値へ戻していた。`value="{{式}}"` のフォーカス中スキップと挙動を統一し、操作中（select / radio / checkbox がフォーカス中）の要素には再適用しないようにした（フォーカスが外れれば次回以降の再評価で宣言状態を反映する）。
+
+### Added
+
+- `Core.getBindingData(element, {resolved?})` を追加した。`setBindingData` の対となるバインドデータの公式読み取り API。既定では要素自身の生バインドデータ（無ければ `null`）を、`resolved: true` で DOM ネストを解決済みのスコープを返す。`Haori.Core.getBindingData(...)` として利用できる。
+- 組み込みヘルパー `haori.sum(array, key?)` を追加した。配列の数値合計を求める（`key` 省略時は要素自体、指定時は `item[key]`、数値化できない値は無視、非配列は `0`）。集計テーブルの合計行を `{{haori.number(haori.sum(rows, 'total'))}}` のように宣言的に書ける。`Haori.sum` としても公開。
+- 任意（カスタム）イベントで手続きを起動する `data-on` を追加した。`data-on="イベント名"` ＋ `data-on-*`（`data-on-run` / `data-on-fetch` / `data-on-bind` …、アクション語彙は `data-{event}-*` と共通）で、`window` / `document` へ dispatch された任意のカスタムイベントを契機に手続きを実行できる。ネイティブ橋の準備完了通知など、click / change / input / load 以外のイベントで初期化処理を宣言的に書ける。イベント名は属性値で保持する（属性名の小文字化で camelCase が壊れないため）。`window` のキャプチャ購読1本で `window` / `document` いずれの dispatch も二重発火なく受け、`data-import` 等で後から挿入された `data-on` も購読対象へ追加する。`click` / `change` / `input` / `load` を `data-on` に指定した場合は警告ログを出し購読しない（組み込みは `data-{event}-*` を使用）。
+- 認証ガード `data-unauthorized-redirect` / `data-forbidden-redirect` を追加した。`<body>` または `<html>` に宣言すると、Haori の fetch 応答が 401（Unauthorized）/ 403（Forbidden）のときに指定 URL へ遷移する（旧 `data-login` 相当）。イベント発火の fetch・宣言的 `data-fetch`・`data-import` の全 fetch 経路に適用し、属性値は `{{...}}` 式で記述できる。ステータス別のオプトイン（属性の有無）で、401/403 で意味の異なる遷移を個別に制御できる。現在ページ自身への遷移は無限ループ防止のため行わない。
+
+### Library
+
+- 上記の回帰テストを追加した（`tests/checked_selected_focus_guard.test.ts`・`tests/repro_report5_full.test.ts`・`tests/get_binding_data.test.ts`・`tests/custom_event_trigger.test.ts`・`tests/auth_guard.test.ts`、`tests/builtins.test.ts` の `sum` ケース）。
+
+## [0.16.0] - 2026-06-11
+
+### Fixed
+
+- `Core.setBindingData` の並行呼出で適用順が逆転する不具合を修正した。同一要素へ短い間隔で複数回呼ぶと、内部キューの完了順が呼出順と逆転し、先に呼んだ古いデータの `data-bind` 属性が後から確定して新しい値を上書きすることがあった（`skipMutationAttributes` ガードにより2回目以降の属性書き込みがスキップされていた）。修正後は、フラグメント単位で DOM 反映・再評価を呼出順（FIFO）に直列化する。内部バインドデータは従来どおり呼出時点で同期確定し、`data-url-param` 等の再評価中の再入は即時実行してデッドロックを避ける。
+
+### Added
+
+- `data-input-*` を追加した。`data-change-*` と同様の手続きを `input` イベント（1文字ごとの逐次入力）でも起動できる。テキスト系入力での逐次絞り込み等を、`input`→`change` 転送なしに宣言的に書ける。`data-input-*` を明示した要素のみが対象（オプトイン）で、`data-input-form` 等の指定がなくても自動的にフォームを検出して双方向バインディングへ反映する点は `change` と同じ。
+- radio / checkbox の `checked` と option の `selected` を宣言バインドで DOM プロパティまで同期するようにした。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` で、属性だけでなくチェック状態・選択状態（`element.checked` / `option.selected`）が反映される。
+
+### Changed
+
+- `value="{{式}}"` を持つ入力は、フォーカス中（ユーザー編集中）はサブツリーの再評価で式の評価結果を再適用しないようにした。別要素起因の `setBindingData` や `data-fetch` 完了でユーザーの未コミット入力が巻き戻る問題を防ぐ。コミット済みの値は `change` イベントでバインド側へ反映される。フォーカスが外れている入力には従来どおり再適用する（light DOM / Shadow DOM 双方のフォーカスを判定）。
+
+### Library
+
+- 上記の回帰テストを追加した（`tests/binding_serialization.test.ts`・`tests/value_focus_guard.test.ts`・`tests/input_event_trigger.test.ts`・`tests/checked_bind.test.ts`）。
+
+## [0.15.1] - 2026-06-10
+
+### Fixed
+
+- `Form.reset`（`data-{event}-reset` / `data-{event}-reset-before`）がリセット後に内部値と双方向バインディングのバインドデータを再同期するよう修正した。従来は内部値のクリアとネイティブリセットのみ行っていたため、リセット前に変更イベントでバインドデータへ書き込まれた値が再評価時に復元され、画面上は既定値に戻っているのに古い値が送信される不具合があった。修正後は、(1) `data-bind` 属性で宣言された初期バインドデータの復元、(2) HTML 属性（`value` / `selected` / `checked`）で宣言された既定値の DOM 反映、(3) 内部値とバインドデータの DOM 値への再同期、の順で初期状態へ戻る。
+- コンテナ要素のリセット時、配下の `<form>` がネイティブリセットの対象に含まれない問題を修正した（入れ子フォームを個別にリセットする）。
+- 同名チェックボックスグループの値収集を修正した。従来は `getValues` で最後の同名要素の値が勝つため、未チェックの要素があるとチェック済みの値が `null` で上書きされ、change イベントの双方向バインディング反映でチェックが即座に解除される不具合があった。修正後は、チェック済みの値だけを収集し（複数チェック時は配列）、配列値の反映時は自身の `value` が配列に含まれるかでチェック状態を決定する。`value="true"` / `value="false"` の boolean チェックボックスとラジオボタンの単一値挙動は維持する。なお、リセット後のバインドデータ更新は、バインドデータを一度も持っていないフォームには行わない（祖先バインド参照のシャドーイング防止）。
+
+### Changed
+
+- 上記修正に伴い、`data-{event}-reset-before` 後の payload は `null` ではなく HTML 属性・初期 `data-bind` で宣言された既定値を使用するようになった（仕様書の「リセット後の値を基準に評価します」に準拠）。
+
+### Library
+
+- リセット後の値再同期（セレクトボックスの `selected` 既定値・テキスト入力・入れ子フォーム・`data-form-arg`）の回帰テストを追加した。
+
 ## [0.15.0] - 2026-06-08
 
 ### Added

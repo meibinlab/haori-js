@@ -667,6 +667,15 @@ export class ElementFragment extends Fragment {
   /** バインドデータ */
   private bindingData: Record<string, unknown> | null = null;
 
+  /**
+   * バインドデータ更新（DOM 反映・再評価）を呼出順（FIFO）で直列化するための
+   * チェーン。同一フラグメントへの並行呼出による適用順の逆転を防ぐ。
+   */
+  private bindingWorkChain: Promise<void> = Promise.resolve();
+
+  /** 生成時点の data-bind 属性の生値（リセット時の初期状態復元用） */
+  private readonly initialBindAttribute: string | null = null;
+
   /** 子孫要素へ公開する派生バインドデータ */
   private derivedBindingData: Record<string, unknown> | null = null;
 
@@ -724,6 +733,7 @@ export class ElementFragment extends Fragment {
   public constructor(target: HTMLElement) {
     super(target);
     this.syncValue();
+    this.initialBindAttribute = target.getAttribute(`${Env.prefix}bind`);
     target.getAttributeNames().forEach(name => {
       const value = target.getAttribute(name);
       if (value !== null && !this.attributeMap.has(name)) {
@@ -928,6 +938,49 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * Haori 自身が `data-bind` 属性へ書き込んだ値の多重集合。MutationObserver が
+   * 自身の書き込みのエコーを in-memory へ再取り込みして、並行更新時に古い値へ
+   * 巻き戻すのを防ぐために使う。外部からの `data-bind` 変更（記録に無い値）は
+   * 従来どおり取り込む。
+   */
+  private readonly selfWrittenBind = new Map<string, number>();
+
+  /**
+   * `data-bind` 属性への自己書き込みを記録します（DOM へ実際に書き込んだ時に呼ぶ）。
+   *
+   * @param value 書き込んだ属性値
+   */
+  public recordSelfWrittenBind(value: string): void {
+    // 取りこぼし（書き込みに対応する mutation が届かない）による無限増加の安全弁。
+    // Fix A により属性は常に最新 in-memory を反映するため、稀なクリアで自己エコーを
+    // 取り込んでも最新値の再適用となり無害。
+    if (this.selfWrittenBind.size > 64) {
+      this.selfWrittenBind.clear();
+    }
+    this.selfWrittenBind.set(value, (this.selfWrittenBind.get(value) ?? 0) + 1);
+  }
+
+  /**
+   * 指定値が Haori 自身の `data-bind` 書き込みのエコーかどうかを判定し、該当すれば
+   * 記録を 1 つ消費します。
+   *
+   * @param value MutationObserver が観測した属性値
+   * @returns 自己書き込みのエコーであれば true（再取り込みをスキップしてよい）
+   */
+  public consumeSelfWrittenBind(value: string): boolean {
+    const count = this.selfWrittenBind.get(value);
+    if (count === undefined) {
+      return false;
+    }
+    if (count <= 1) {
+      this.selfWrittenBind.delete(value);
+    } else {
+      this.selfWrittenBind.set(value, count - 1);
+    }
+    return true;
+  }
+
+  /**
    * 生の派生バインドデータを取得します。
    *
    * @returns 生の派生バインドデータ
@@ -944,6 +997,42 @@ export class ElementFragment extends Fragment {
   public setBindingData(data: Record<string, unknown>): void {
     this.bindingData = data;
     this.clearBindingDataCache();
+  }
+
+  /**
+   * バインドデータ更新に伴う DOM 反映・再評価を、同一フラグメントでは呼出順
+   * （FIFO）で直列実行します。並行呼出による適用順の逆転（古いデータが後から
+   * 適用されて新しい値を上書きする現象）を防ぎます。
+   *
+   * 純粋な FIFO（並行呼出を決して即時インライン実行しない）です。以前は実行中
+   * フラグでの「再入即時実行」を行っていましたが、await をまたいで届く**独立した
+   * 並行呼出**まで再入扱いしてインライン実行し、`skipMutationAttributes` 中の
+   * `data-bind` 書き込みが破棄されて古い値が後勝ちする競合の原因になっていました。
+   * 真の再入（data-url-param 等）は呼出側がキューを介さず実行するため、ここでは
+   * 一律にチェーンへ積みます。
+   *
+   * @param work 直列化したいバインドデータ更新処理
+   * @returns work の完了 Promise
+   */
+  public enqueueBindingWork(work: () => Promise<void>): Promise<void> {
+    const next = this.bindingWorkChain.then(work, work);
+    // 失敗してもチェーンを継続させる（個々の呼出には next で結果を返す）。
+    this.bindingWorkChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  /**
+   * 生成時点の data-bind 属性の生値を取得します。
+   * 実行時のバインドデータ更新で data-bind 属性が書き換えられた後も、
+   * 宣言時の初期状態（リセット時の復元先）を参照できます。
+   *
+   * @returns 生成時点の data-bind 属性値。宣言がない場合は null。
+   */
+  public getInitialBindAttribute(): string | null {
+    return this.initialBindAttribute;
   }
 
   /**
@@ -1115,7 +1204,14 @@ export class ElementFragment extends Fragment {
    * @param value 値
    * @returns エレメントの更新のPromise
    */
-  public setValue(value: string | number | boolean | null): Promise<void> {
+  public setValue(
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | Array<string | number | boolean | null>,
+  ): Promise<void> {
     return this.applyValue(value, true);
   }
 
@@ -1127,7 +1223,12 @@ export class ElementFragment extends Fragment {
    * @returns エレメントの更新のPromise
    */
   public syncBindingValue(
-    value: string | number | boolean | null,
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | Array<string | number | boolean | null>,
   ): Promise<void> {
     return this.applyValue(value, false);
   }
@@ -1135,13 +1236,20 @@ export class ElementFragment extends Fragment {
   /**
    * 入力エレメントに値を設定します。
    * 必要に応じて入力系イベントも発火します。
+   * 配列はチェックボックスグループ用で、自身の value が配列に含まれるかで
+   * チェック状態を決定します。
    *
    * @param value 値
    * @param dispatchEvents input/change イベントを発火するかどうか
    * @returns エレメントの更新のPromise
    */
   private applyValue(
-    value: string | number | boolean | null,
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | Array<string | number | boolean | null>,
     dispatchEvents: boolean,
   ): Promise<void> {
     if (this.skipChangeValue) {
@@ -1163,10 +1271,25 @@ export class ElementFragment extends Fragment {
         newChecked = value === true || value === 'true';
       } else if (result === 'false') {
         newChecked = value === false;
+      } else if (Array.isArray(value)) {
+        newChecked = value.map(String).includes(String(result));
       } else {
         newChecked = result === String(value);
       }
-      this.value = isBooleanCheckbox ? newChecked : newChecked ? value : null;
+      // 内部値の決定:
+      // - boolean チェックボックスはチェック状態をそのまま保持する。
+      // - 未チェックは null。
+      // - チェック済みは、配列（チェックボックスグループ）なら自身の value
+      //   （文字列）を、単一指定ならその値を保持する。
+      if (isBooleanCheckbox) {
+        this.value = newChecked;
+      } else if (!newChecked) {
+        this.value = null;
+      } else if (Array.isArray(value)) {
+        this.value = String(result);
+      } else {
+        this.value = value;
+      }
       if (element.checked === newChecked) {
         return Promise.resolve();
       }
@@ -1184,11 +1307,13 @@ export class ElementFragment extends Fragment {
       element instanceof HTMLTextAreaElement ||
       element instanceof HTMLSelectElement
     ) {
+      // チェックボックスグループ以外に配列が渡された場合は文字列化する
+      const scalarValue = Array.isArray(value) ? value.join(',') : value;
       // type="number" は内部値を数値へ正規化して保持する（送信時に数値型になる）
-      this.value = this.normalizeValueForElement(element, value);
+      this.value = this.normalizeValueForElement(element, scalarValue);
       this.skipChangeValue = true;
       return Queue.enqueue(() => {
-        element.value = value === null ? '' : String(value);
+        element.value = scalarValue === null ? '' : String(scalarValue);
         if (dispatchEvents) {
           if (
             (element instanceof HTMLInputElement &&
@@ -1451,6 +1576,13 @@ export class ElementFragment extends Fragment {
         this.INPUT_EVENT_TYPES.includes(element.type)) ||
         element instanceof HTMLTextAreaElement ||
         element instanceof HTMLSelectElement);
+    // フォーカス中（ユーザー編集中）の入力には value を再適用しない。
+    // 別要素起因の再評価や data-fetch 完了で、ユーザーの未コミット入力が
+    // 巻き戻る問題を防ぐ。コミットは change イベントでバインド側へ反映される。
+    // getRootNode().activeElement で light DOM / Shadow DOM 双方のフォーカスを判定する。
+    const rootNode = element.getRootNode() as Document | ShadowRoot;
+    const skipValueReapply =
+      shouldSyncValueProperty && element === rootNode.activeElement;
     const stringResult =
       shouldRemoveTarget || result === null || result === false
         ? null
@@ -1463,14 +1595,53 @@ export class ElementFragment extends Fragment {
         : element.getAttribute(targetName) !== stringResult;
     const requiresValuePropertyWrite =
       shouldSyncValueProperty &&
+      !skipValueReapply &&
       stringResult !== null &&
       element.value !== stringResult;
+    // checked / selected は真偽属性で、setAttribute では DOM プロパティ
+    // （element.checked / option.selected）が変わらない。属性反映に加えて
+    // プロパティも同期し、radio/checkbox の checked と option の selected を
+    // 宣言バインド（checked="{{式}}" / data-attr-checked など）で制御できるようにする。
+    const isCheckedTarget =
+      targetName === 'checked' &&
+      element instanceof HTMLInputElement &&
+      (element.type === 'checkbox' || element.type === 'radio');
+    const isSelectedTarget =
+      targetName === 'selected' && element instanceof HTMLOptionElement;
+    // 操作中（フォーカス中）の要素には選択／チェック状態を再適用しない。value の
+    // skipValueReapply と挙動を統一し、ユーザーが操作中の選択が再評価で巻き戻る
+    // 問題を防ぐ。checkbox/radio は自身が、option は所属する select がフォーカス
+    // 中かで判定する。フォーカスが外れれば次回以降の再評価で宣言状態が反映される。
+    const activeElement = rootNode.activeElement;
+    // activeElement が null のときに closest('select') の null と一致して誤って
+    // スキップしないよう、フォーカス要素が存在する場合のみ判定する。
+    const skipCheckableReapply =
+      activeElement !== null &&
+      ((isCheckedTarget && element === activeElement) ||
+        (isSelectedTarget &&
+          (element as HTMLOptionElement).closest('select') === activeElement));
+    // 真偽属性の有無（= stringResult が null でない）が望ましいチェック状態。
+    const checkableDesiredState = stringResult !== null;
+    const requiresCheckedPropertyWrite =
+      isCheckedTarget &&
+      !skipCheckableReapply &&
+      (element as HTMLInputElement).checked !== checkableDesiredState;
+    const requiresSelectedPropertyWrite =
+      isSelectedTarget &&
+      !skipCheckableReapply &&
+      (element as HTMLOptionElement).selected !== checkableDesiredState;
     if (
       !requiresRawAttributeWrite &&
       !requiresTargetAttributeWrite &&
-      !requiresValuePropertyWrite
+      !requiresValuePropertyWrite &&
+      !requiresCheckedPropertyWrite &&
+      !requiresSelectedPropertyWrite
     ) {
-      if (shouldSyncValueProperty && stringResult !== null) {
+      if (
+        shouldSyncValueProperty &&
+        !skipValueReapply &&
+        stringResult !== null
+      ) {
         // 属性評価で value を同期する場合も type="number" は数値へ正規化する
         this.value = this.normalizeValueForElement(element, stringResult);
       }
@@ -1486,16 +1657,30 @@ export class ElementFragment extends Fragment {
       } else {
         if (requiresTargetAttributeWrite) {
           element.setAttribute(targetName, stringResult);
+          // data-bind への自己書き込みを記録し、MutationObserver による自身の
+          // エコーの再取り込み（並行更新時の巻き戻し）を防ぐ。
+          if (targetName === `${Env.prefix}bind`) {
+            this.recordSelfWrittenBind(stringResult);
+          }
         }
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、
         // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
-        if (shouldSyncValueProperty) {
+        // フォーカス中（編集中）の入力は skipValueReapply で再適用しない。
+        if (shouldSyncValueProperty && !skipValueReapply) {
           // 内部値は type="number" のとき数値化し、DOM 表示は文字列のままにする
           this.value = this.normalizeValueForElement(element, stringResult);
           if (requiresValuePropertyWrite) {
             element.value = stringResult;
           }
         }
+      }
+      // checked / selected の DOM プロパティを真偽属性の有無に合わせて同期する
+      // （属性の付与・削除どちらの場合も反映する）。
+      if (requiresCheckedPropertyWrite) {
+        (element as HTMLInputElement).checked = checkableDesiredState;
+      }
+      if (requiresSelectedPropertyWrite) {
+        (element as HTMLOptionElement).selected = checkableDesiredState;
       }
     }).finally(() => {
       this.skipMutationAttributes = false;
