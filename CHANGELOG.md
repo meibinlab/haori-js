@@ -25,7 +25,7 @@
 
 ### Added
 
-- fetch エラー応答が**トップレベル JSON 配列** `[{ "key": "field", "message": "..." }]`（`meibinlab-spring-boot-wrapper` の `GlobalExceptionHandler` / `ValidationMessage` 等）の形式でも、各要素をフィールド別エラーへ自動振り分けできるようにした。`key` を持つ要素は対応する `name` のフィールドへ（`Form.addErrorMessage` 経由、haori-bootstrap 併用時は `invalid-feedback` 生成＋`is-invalid` 付与）、`key` を持たない（または空）要素はフォーム全体エラーとする。同一 `key` が複数あれば改行で連結する。振り分けは**ステータスコードに依存しない**（`400` だけでなく業務エラーの `409` 等でも振り分く）。既存の `{ "errors": {...} }` / `{ "message" }` / `{ "messages": [] }` 形式は従来どおり（後方互換）。`application/json` 以外（プレーンテキスト等）のエラーボディは従来どおりボディ全文を全体エラーとして表示する。
+- fetch エラー応答が**トップレベル JSON 配列** `[{ "key": "field", "message": "..." }]`（一部のサーバ実装が返す例外ハンドラ／バリデーションメッセージ等）の形式でも、各要素をフィールド別エラーへ自動振り分けできるようにした。`key` を持つ要素は対応する `name` のフィールドへ（`Form.addErrorMessage` 経由、haori-bootstrap 併用時は `invalid-feedback` 生成＋`is-invalid` 付与）、`key` を持たない（または空）要素はフォーム全体エラーとする。同一 `key` が複数あれば改行で連結する。振り分けは**ステータスコードに依存しない**（`400` だけでなく業務エラーの `409` 等でも振り分く）。既存の `{ "errors": {...} }` / `{ "message" }` / `{ "messages": [] }` 形式は従来どおり（後方互換）。`application/json` 以外（プレーンテキスト等）のエラーボディは従来どおりボディ全文を全体エラーとして表示する。
 
 ### Documentation
 

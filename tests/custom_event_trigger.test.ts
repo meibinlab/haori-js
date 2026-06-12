@@ -31,21 +31,21 @@ describe('カスタムイベント起動（data-on）', () => {
 
   it('window へ dispatch されたカスタムイベントで data-on-run が起動する', async () => {
     container.innerHTML = `
-      <div data-on="kanadeAPIReady"
+      <div data-on="appReady"
         data-on-run="window.__onCustom('win')"></div>
     `;
     await Core.scan(container);
     dispatcher.start();
     await waitForDomSettled();
 
-    window.dispatchEvent(new CustomEvent('kanadeAPIReady'));
+    window.dispatchEvent(new CustomEvent('appReady'));
     await waitForCondition(() => ran.length > 0, {description: 'run 起動'});
     expect(ran).toEqual(['win']);
   });
 
   it('document へ dispatch されたカスタムイベントでも起動する（二重発火しない）', async () => {
     container.innerHTML = `
-      <div data-on="kanadeAPIReady"
+      <div data-on="appReady"
         data-on-run="window.__onCustom('doc')"></div>
     `;
     await Core.scan(container);
@@ -53,7 +53,7 @@ describe('カスタムイベント起動（data-on）', () => {
     await waitForDomSettled();
 
     document.dispatchEvent(
-      new CustomEvent('kanadeAPIReady', {bubbles: true}),
+      new CustomEvent('appReady', {bubbles: true}),
     );
     await waitForCondition(() => ran.length > 0, {description: 'run 起動'});
     // window キャプチャ1本で受けるため二重発火しない
@@ -70,7 +70,7 @@ describe('カスタムイベント起動（data-on）', () => {
         ) as unknown as Promise<Response>,
     );
     container.innerHTML = `
-      <div data-on="kanadeAPIReady"
+      <div data-on="appReady"
         data-on-fetch="/api/init.json" data-on-bind="#target"></div>
       <div id="target" data-bind='{}'></div>
     `;
@@ -79,7 +79,7 @@ describe('カスタムイベント起動（data-on）', () => {
     dispatcher.start();
     await waitForDomSettled();
 
-    window.dispatchEvent(new CustomEvent('kanadeAPIReady'));
+    window.dispatchEvent(new CustomEvent('appReady'));
     await waitForCondition(
       () => {
         const bind = JSON.parse(target.getAttribute('data-bind') as string);

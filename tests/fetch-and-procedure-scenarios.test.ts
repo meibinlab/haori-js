@@ -321,7 +321,7 @@ describe('Fetch and Procedure scenarios', () => {
     container.remove();
   });
 
-  // 不具合報告（2026-06-12, kanade-web）: 既定 self-bind が効いている fetch で
+  // 不具合報告（2026-06-12）: 既定 self-bind が効いている fetch で
   // 2xx 空ボディ（204 / 本文なし 200）が返ると bindResult が string("") を bind
   // できず reject し、handleFetchResult の後続（toast/close/click/refetch）が
   // すべて中断されていた。空ボディは「バインド対象なし」として正常スキップする。

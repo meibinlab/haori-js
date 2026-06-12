@@ -893,7 +893,7 @@ async handleError(response: Response): Promise<void> {
 
 サーバが `{ "errors": { "code": "メッセージ", "email": ["...", "..."] } }`（または `message` / `messages` を除くトップレベルの `key: 値`）形式で 4xx を返すと、`key` は `Form.addErrorMessage(baseFragment, key, message)` 経由で**対応する `name` のフィールドへ自動的に振り分け**られます（`name`・`data-form-object`・`data-form-list` のドット区切りキーで解決）。haori-bootstrap を併用している場合は、対象フィールド直後（checkbox/radio は `.form-check` 末尾）に `invalid-feedback` 要素を自動生成し、`is-invalid` クラスを付与します。したがって**フィールド側に `data-message-key` のような対応付け属性を書く必要はありません**。`key` を持たないエントリ（`message` / `messages`）はフォーム全体のエラーとして表示されます。
 
-トップレベルが配列の `[{ "key": "code", "message": "..." }]` 形式（`meibinlab-spring-boot-wrapper` の `GlobalExceptionHandler` / `ValidationMessage` 等）にも対応します。各要素を `errors` と同等に扱い、`key` を持つ要素は対応するフィールドへ振り分け、`key` を持たない（または空の）要素はフォーム全体エラーとします。同一 `key` が複数あれば改行で連結します。`key` は `name`・`data-form-object`・`data-form-list` のドット区切りキーで解決します。
+トップレベルが配列の `[{ "key": "code", "message": "..." }]` 形式（一部のサーバ実装が返す例外ハンドラ／バリデーションメッセージ等）にも対応します。各要素を `errors` と同等に扱い、`key` を持つ要素は対応するフィールドへ振り分け、`key` を持たない（または空の）要素はフォーム全体エラーとします。同一 `key` が複数あれば改行で連結します。`key` は `name`・`data-form-object`・`data-form-list` のドット区切りキーで解決します。
 
 これらの振り分けは**ステータスコードに依存しません**（`400` だけでなく、業務エラーの `409` などカスタムステータスでも同様に振り分けます）。応答ボディが `application/json` 以外（プレーンテキスト等）の場合は、ボディ全文をフォーム全体エラーとして表示します（空の場合は `${status} ${statusText}`）。
 
@@ -1829,7 +1829,7 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 
 `data-on="イベント名"` を指定すると、`window` または `document` へ dispatch された**任意のカスタムイベント**を契機に `data-on-*`（`data-on-run` / `data-on-fetch` / `data-on-bind` …）の手続きを実行します。アクション語彙は `data-{event}-*` と共通です。
 
-- **イベント名は属性値で指定**します（属性名は小文字化されるため、`kanadeAPIReady` のような大文字小文字を含む名前を属性名へ埋め込めないため）。
+- **イベント名は属性値で指定**します（属性名は小文字化されるため、`appReady` のような大文字小文字を含む名前を属性名へ埋め込めないため）。
 - `window` のキャプチャ購読1本で、`window` / `document` いずれへ dispatch されたイベントも**二重発火なく**一度だけ受け取ります。
 - `data-import` 等で後から挿入された `data-on` 要素も購読対象に追加されます。
 - **カスタムイベント専用**です。`click` / `change` / `input` / `load` を `data-on` に指定すると警告ログを出し、購読しません（組み込みイベントは `data-{event}-*` を使用）。
@@ -1837,7 +1837,7 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 
 ```html
 <!-- ネイティブ橋の準備完了で初期化フェッチを実行 -->
-<body data-on="kanadeAPIReady"
+<body data-on="appReady"
   data-on-fetch="/api/init.json" data-on-bind="#app"></body>
 ```
 

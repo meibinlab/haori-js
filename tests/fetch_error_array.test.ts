@@ -2,8 +2,8 @@
 /**
  * @fileoverview
  * fetch エラー応答のトップレベル JSON 配列形式
- * `[{ "key": "field", "message": "..." }]`（meibinlab-spring-boot-wrapper の
- * GlobalExceptionHandler / ValidationMessage 等）への対応のテスト。
+ * `[{ "key": "field", "message": "..." }]`（一部のサーバ実装が返す
+ * 例外ハンドラ／バリデーションメッセージ等）への対応のテスト。
  * - key を持つ要素はフィールド別エラーへ振り分ける
  * - 同一 key は改行連結する
  * - key を持たない要素はフォーム全体エラーとする
