@@ -1554,8 +1554,6 @@ data-each="arrayExpression"
 </div>
 ```
 
-設計経緯の詳細は `docs/ja/data-derive-confirmation-draft.md` を参照します。
-
 ---
 
 ### フェッチとインポート

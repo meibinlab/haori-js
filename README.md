@@ -105,7 +105,7 @@ Haori.mount(document.body, {items: [{name: 'apple'}, {name: 'orange'}]});
 
 Additional binding helpers:
 
-- `data-derive` / `data-derive-name` — define a derived value on an element and expose it to descendants only. This is useful for cases such as parent-child selects; see `docs/ja/data-derive-confirmation-draft.md` for the design background.
+- `data-derive` / `data-derive-name` — define a derived value on an element and expose it to descendants only. This is useful for cases such as parent-child selects.
 - `data-*-bind-merge` (e.g. `data-click-bind-merge`, `data-fetch-bind-merge`) — when binding a result to a target element, shallow-merge it into the target's existing `data-bind` (keys not present in the new data are preserved) instead of replacing the whole binding. Useful for patching a single computed key (such as `selectedId={{items[0].id}}`) into existing state.
 
 Event-driven actions:
@@ -219,7 +219,6 @@ For more detailed usage, attribute specs, and internal design, see:
 
 - `docs/ja/guide.md` — User guide (many examples)
 - `docs/ja/specs.md` — Technical specifications (internal design, API)
-- `docs/ja/data-derive-confirmation-draft.md` — Design background for scoped derived bindings and stable parent-child select composition
 
 ---
 

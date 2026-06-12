@@ -105,7 +105,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 
 追加のバインディング補助:
 
-- `data-derive` / `data-derive-name` — 要素上で派生値を定義し、その要素の子孫にだけ公開します。親子プルダウンのような用途で使えます。設計の整理は `docs/ja/data-derive-confirmation-draft.md` を参照してください。
+- `data-derive` / `data-derive-name` — 要素上で派生値を定義し、その要素の子孫にだけ公開します。親子プルダウンのような用途で使えます。
 - `data-*-bind-merge`（例: `data-click-bind-merge`・`data-fetch-bind-merge`）— 結果をバインド先要素へ反映する際、`data-bind` を全置換せず、既存の値を保持したまま浅くマージします（新しいデータに無いキーは保持）。`selectedId={{items[0].id}}` のような計算値を既存 state に追記したい場合に有用です。
 
 イベント駆動アクション:
@@ -219,7 +219,6 @@ git push origin --tags
 
 - `docs/ja/guide.md` — 利用ガイド（サンプル多数）
 - `docs/ja/specs.md` — 技術仕様書（内部設計・API など）
-- `docs/ja/data-derive-confirmation-draft.md` — 派生値スコープと親子プルダウン構成に関する設計経緯
 
 ---
 
