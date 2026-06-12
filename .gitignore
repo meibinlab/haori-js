@@ -51,3 +51,5 @@ test-*.mjs
 
 # Local agent instructions (kept locally, not tracked)
 CLAUDE.md
+.github/agents/
+.github/instructions/
