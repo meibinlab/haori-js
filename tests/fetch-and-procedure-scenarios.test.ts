@@ -320,4 +320,130 @@ describe('Fetch and Procedure scenarios', () => {
 
     container.remove();
   });
+
+  // 不具合報告（2026-06-12, kanade-web）: 既定 self-bind が効いている fetch で
+  // 2xx 空ボディ（204 / 本文なし 200）が返ると bindResult が string("") を bind
+  // できず reject し、handleFetchResult の後続（toast/close/click/refetch）が
+  // すべて中断されていた。空ボディは「バインド対象なし」として正常スキップする。
+  it('204 空ボディの DELETE でも後続の toast が実行される', async () => {
+    const Haori = await import('../src/haori');
+    const toastSpy = vi
+      .spyOn(Haori.default, 'toast')
+      .mockResolvedValue(undefined as void);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response(null, {status: 204}),
+        ) as unknown as Promise<Response>,
+    );
+
+    // data-click-bind を付けない＝既定 self-bind が走るケース
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/items/1.json');
+    btn.setAttribute('data-click-fetch-method', 'DELETE');
+    btn.setAttribute('data-click-toast', '削除しました');
+    document.body.appendChild(btn);
+
+    btn.click();
+    await waitForCondition(() => toastSpy.mock.calls.length > 0, {
+      description: '空ボディでも toast が呼ばれる',
+    });
+
+    expect(toastSpy).toHaveBeenCalledWith('削除しました', 'info');
+
+    btn.remove();
+  });
+
+  it('200 空ボディ + application/json でも後続の toast が実行される', async () => {
+    const Haori = await import('../src/haori');
+    const toastSpy = vi
+      .spyOn(Haori.default, 'toast')
+      .mockResolvedValue(undefined as void);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response('', {
+            status: 200,
+            headers: {'Content-Type': 'application/json'},
+          }),
+        ) as unknown as Promise<Response>,
+    );
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/items/1.json');
+    btn.setAttribute('data-click-fetch-method', 'DELETE');
+    btn.setAttribute('data-click-toast', '更新しました');
+    document.body.appendChild(btn);
+
+    btn.click();
+    await waitForCondition(() => toastSpy.mock.calls.length > 0, {
+      description: '空 JSON ボディでも toast が呼ばれる',
+    });
+
+    expect(toastSpy).toHaveBeenCalledWith('更新しました', 'info');
+
+    btn.remove();
+  });
+
+  it('既定 self-bind 時は非空の非 JSON 文字列応答でも警告スキップして後続が実行される', async () => {
+    // bind 先を明示していない＝既定 self-bind のケースでは、文字列応答が来ても
+    // ユーザーは bind を意図していないため reject せず警告スキップし、後続を流す。
+    const Haori = await import('../src/haori');
+    const toastSpy = vi
+      .spyOn(Haori.default, 'toast')
+      .mockResolvedValue(undefined as void);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response('OK', {status: 200}),
+        ) as unknown as Promise<Response>,
+    );
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/x');
+    // data-click-bind は付けない（既定 self-bind）
+    btn.setAttribute('data-click-toast', '完了しました');
+    document.body.appendChild(btn);
+
+    btn.click();
+    await waitForCondition(() => toastSpy.mock.calls.length > 0, {
+      description: '文字列応答でも toast が呼ばれる',
+    });
+
+    expect(toastSpy).toHaveBeenCalledWith('完了しました', 'info');
+
+    btn.remove();
+  });
+
+  it('明示 bind 指定時は bindArg 無しの文字列応答が従来どおり reject され後続は実行されない', async () => {
+    // 既定 self-bind ではなく明示的に bind 先を指定したケースでは、bindArg 無しの
+    // 文字列 bind は誤用なので従来どおり reject して気付けるようにする。
+    const Haori = await import('../src/haori');
+    const toastSpy = vi
+      .spyOn(Haori.default, 'toast')
+      .mockResolvedValue(undefined as void);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response('plain text', {status: 200}),
+        ) as unknown as Promise<Response>,
+    );
+
+    const target = document.createElement('div');
+    target.id = 'explicit-bind-target';
+
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-fetch', 'http://api.test/x');
+    btn.setAttribute('data-click-bind', '#explicit-bind-target');
+    btn.setAttribute('data-click-toast', 'should not show');
+    document.body.append(target, btn);
+
+    btn.click();
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(toastSpy).not.toHaveBeenCalled();
+
+    target.remove();
+    btn.remove();
+  });
 });

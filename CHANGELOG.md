@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [0.18.1] - 2026-06-13
+
+### Fixed
+
+- `data-click-fetch`（および `data-fetch` 系）でバインド先を明示せず、サーバが **2xx かつ空ボディ**（`204 No Content` / 本文なしの `200`、Spring の `void` 戻り値等）を返したとき、内部の結果バインドが reject し、後続アクション（`*-toast` / `*-close` / `*-click` による再取得 / refetch 等）がすべて中断されていた不具合を修正した。**根本原因**は、fetch 時にバインド先未指定だと自要素を既定バインド先に補う（既定 self-bind）一方で、空ボディは `response.text()` で空文字（＝文字列）になり、バインドキー名（`data-fetch-arg`）無しの文字列 bind が `bindResult` で reject し、`handleFetchResult` の `Promise.all` を巻き込んで以降の toast/close/click/refetch を止めていた点。`Content-Type: application/json` の空ボディでも `response.json()` のパース失敗で同様に停止していた。症状例として、`204` を返す削除 API の削除自体は成功するのに、成功トーストが出ず一覧も再取得されなかった。
+  - 修正後は、(1) **2xx 空ボディをバインド対象なしとして正常スキップ**するようにした（reject せず後続を実行）。応答ボディは先に `text()` として読み、空ならスキップ、非空のみ `Content-Type` に応じて JSON 解析する（不正 JSON は従来どおりエラー）。(2) **既定 self-bind**（バインド先を明示していない）の場合に限り、JSON オブジェクトでない文字列応答が返ってもバインドを意図していないものとみなし、reject ではなく**警告にとどめてスキップ**するようにした。バインド先を**明示指定**したうえで `data-fetch-arg` 無しの文字列が返るケースは、誤用として従来どおりエラーで停止し気付けるようにしている。
+
+### Documentation
+
+- 仕様書の `data-fetch` 節に「レスポンスのバインド挙動」を追記した（既定 self-bind、`Content-Type` による解釈、2xx 空ボディの正常スキップ、明示 bind 時と既定 self-bind 時の文字列応答の扱いの違い）。
+
+### Library
+
+- 上記の回帰テストを追加した（`tests/fetch-and-procedure-scenarios.test.ts`: `204` 空ボディ、`200` 空ボディ+`application/json`、既定 self-bind の文字列応答での後続実行、明示 bind 時の文字列応答での reject）。
+
 ## [0.18.0] - 2026-06-12
 
 ### Fixed

@@ -265,6 +265,15 @@ export interface ProcedureOptions {
   /** バインド対象フラグメント */
   bindFragments?: ElementFragment[] | null;
 
+  /**
+   * `bindFragments` が明示指定ではなく、fetch 時の既定 self-bind（バインド先
+   * 未指定時に自要素を補う処理）によって設定されたものかどうか。
+   * 既定 self-bind の場合、ユーザーは bind を意図していない（fetch して
+   * toast/close/reload だけしたい）ことが多いため、bind できないデータ
+   * （bindArg 無しの文字列）が返っても reject せず警告スキップする判断に使う。
+   */
+  defaultSelfBind?: boolean;
+
   /** レスポンスデータから抽出するパラメータ名のリスト */
   bindParams?: string[] | null;
 
@@ -1278,6 +1287,8 @@ ${body}
       (!options.bindFragments || options.bindFragments.length === 0)
     ) {
       options.bindFragments = [fragment];
+      // 明示指定ではなく既定で補った self-bind であることを記録する。
+      options.defaultSelfBind = true;
     }
     return options;
   }
@@ -2091,12 +2102,21 @@ ${body}
     ) {
       return Promise.resolve();
     }
-    const promise = response.headers
+    const isJson = response.headers
       .get('Content-Type')
-      ?.includes('application/json')
-      ? response.json()
-      : response.text();
-    return promise.then(data => {
+      ?.includes('application/json');
+    return response.text().then(text => {
+      // 2xx 空ボディ（204 No Content / 本文なし 200 / Spring の void 戻り値等）は
+      // バインド対象が無いものとして正常スキップする。fetch 時の既定 self-bind
+      // により bindFragments が自要素へ設定されていても、ここで reject すると
+      // handleFetchResult の後続処理（toast / close / click / refetch）まで
+      // Promise.all 経由で巻き込んで止めてしまうため、空ボディは resolve で抜ける。
+      if (text === '') {
+        return undefined;
+      }
+      // 非空ボディのみパースする。非 JSON はそのまま文字列として扱い、
+      // 不正 JSON は JSON.parse の throw により従来どおり reject させる。
+      let data = isJson ? JSON.parse(text) : text;
       // bind-transform: バインド前にレスポンス全体を式変換する（`response` で参照）。
       // bind-params / bind-arg / bind-append より前に適用する。
       if (this.options.bindTransform) {
@@ -2158,6 +2178,19 @@ ${body}
           );
         });
       } else if (typeof data === 'string') {
+        // 既定 self-bind（バインド先未指定で自要素を補ったケース）では、ユーザーは
+        // bind を意図していない（fetch して toast/close/reload だけしたい）ことが
+        // 多い。bind できない文字列応答が返っても reject すると handleFetchResult
+        // の後続（toast / close / click / refetch）を巻き込んで止めてしまうため、
+        // 警告にとどめてスキップする。一方、明示的に bind 先を指定した場合は
+        // bindArg 無しの文字列 bind は誤用なので従来どおり reject して気付けるようにする。
+        if (this.options.defaultSelfBind) {
+          Log.warn(
+            'Haori',
+            'string data is not bound because no bind target was specified.',
+          );
+          return undefined;
+        }
         Log.error('Haori', 'string data cannot be bound without a bindArg.');
         return Promise.reject(
           new Error('string data cannot be bound without a bindArg.'),
