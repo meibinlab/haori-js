@@ -905,6 +905,54 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 
 ポイントは「`.checked` を直接いじらず、`permissions` 配列を更新する」ことです。`data-attr-checked` は配列を参照しているため、`setBindingData` 後の再評価で各チェックボックスの状態が正しく反映され、以降の再評価でも保持されます。読み取りには `Core.getBindingData(element, { resolved: true })`、書き込みには `Core.setBindingData(element, data)` を使います。
 
+### レシピ: `name` 付き select / checkbox では「参照スコープ」を「書込スコープ」に揃える
+
+`name` を持つ select / checkbox は、フォームの双方向バインディングによって**バインドデータ ↔ 選択状態**が双方向に同期します（選択状態の単一の真実源は `name` のバインドデータです）。ここに `data-attr-selected` / `data-attr-checked` を**別のスコープ（キー）を参照する形で**併用すると、真実源が二つになって衝突します。
+
+典型的なアンチパターンは「フォームは `name` で flat なキー（例 `category`）に書き込むのに、`data-attr-selected` の式は別オブジェクト（例 親フラグメントの `correspondenceItem.category`）を読む」構成です。ユーザーが select を変更して `change` が確定しても、`correspondenceItem.category`（読取先）は更新されないため、フォーカスが外れた後の再評価で `option.selected` が読取先（空のまま）基準に戻り、**選択が巻き戻ります**（`required` 検証も落ちます）。0.15.1 では属性のみ同期で live 値を戻さなかったため顕在化しませんでしたが、0.16.0 以降は live プロパティまで同期するため表面化します。
+
+```html
+<!-- ❌ アンチパターン: 書込先（form 自身の category）と読取先（親の correspondenceItem.category）が異なる -->
+<div data-bind='{"correspondenceItem":{"category":""}}'>
+  <form>
+    <select name="category" required>
+      <option value=""></option>
+      <option value="BILLING_OTHER"
+        data-attr-selected="{{correspondenceItem?.category === 'BILLING_OTHER' && 'selected'}}">請求その他</option>
+    </select>
+  </form>
+</div>
+```
+
+解決は「参照スコープを書込スコープに揃える」ことです。次のいずれかにします（どちらも巻き戻りません）。
+
+**推奨①: `name` 束縛に選択状態を任せ、`data-attr-selected` を使わない。** `name` 付き select の選択は `name` のバインドデータで決まるため、`data-attr-selected` は不要です。初期値はフォームの `data-bind` / `data-fetch` で `category` を投入しておけば、初期表示も編集後の保持も両立します。
+
+```html
+<!-- ✅ 推奨①: 単一の真実源（name 束縛のみ） -->
+<form data-bind='{"category":""}'>
+  <select name="category" required>
+    <option value=""></option>
+    <option value="BILLING_OTHER">請求その他</option>
+  </select>
+</form>
+```
+
+**推奨②: `data-attr-selected` を残すなら、書込先と同じキーを読む。** select の `name`（= `category`）が書き込むキーと同じキーを式で参照します。
+
+```html
+<!-- ✅ 推奨②: 読取先 = 書込先（同じ category） -->
+<form data-bind='{"category":""}'>
+  <select name="category" required>
+    <option value=""></option>
+    <option value="BILLING_OTHER"
+      data-attr-selected="{{category === 'BILLING_OTHER' && 'selected'}}">請求その他</option>
+  </select>
+</form>
+```
+
+レコード（例 `correspondenceItem`）を編集するフォームでは、フォームの `data-bind` をそのオブジェクトのフィールドで初期化する（`category` に `correspondenceItem.category` を入れて束縛する）か、フォームをそのオブジェクトへ束縛して `name` をそのフィールドに対応させると、初期表示・編集・保存が一貫します。要は **`data-attr-selected` / `data-attr-checked` の式が参照するキーと、その要素の `name` がフォームへ書き込むキーを一致させる**ことです。
+
 ### 数値フィールド（`type="number"`）は数値型で扱われる
 
 `type="number"` の入力は、値を**数値型**としてバインド・送信します。HTML の入力値は本来すべて文字列ですが、サーバー側の DTO が `Double` や `Integer` を期待する場合に文字列（例 `"2.5"`）で送られて型不一致になるのを防ぎます。

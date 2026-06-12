@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>data-attr-selected の選択状態保持（アンチパターンと推奨レシピ）</title>
+  </head>
+  <body>
+    <h2>data-attr-selected の参照スコープと name 双方向束縛の書込スコープ</h2>
+    <p>?src=cdn-0.15.1 / cdn-0.18.0 でCDN版、無指定でローカルビルド。</p>
+
+    <!-- アンチパターン: form は name で flat に category を書くが、option の
+         data-attr-selected は別スコープ（親の correspondenceItem.category）を読む。
+         change 後フォーカスが外れた再評価で selected が読取先（未追従）基準に
+         巻き戻る。 -->
+    <div id="rootA" data-bind='{"correspondenceItem":{"category":""}}'>
+      <form id="formA">
+        <select id="selA" name="category" required>
+          <option value=""></option>
+          <option value="BILLING_OTHER"
+            data-attr-selected="{{correspondenceItem?.category === 'BILLING_OTHER' && 'selected'}}">請求その他</option>
+          <option value="OTHER"
+            data-attr-selected="{{correspondenceItem?.category === 'OTHER' && 'selected'}}">その他</option>
+        </select>
+      </form>
+    </div>
+
+    <!-- 推奨①: name 付き select では data-attr-selected を使わず、name 双方向束縛に
+         選択状態を任せる（単一の真実源）。 -->
+    <form id="formBase" data-bind='{"category":""}'>
+      <select id="selBase" name="category" required>
+        <option value=""></option>
+        <option value="BILLING_OTHER">請求その他</option>
+        <option value="OTHER">その他</option>
+      </select>
+    </form>
+
+    <!-- 推奨②: data-attr-selected を残すなら、書込先と同じ flat キー category を読む。 -->
+    <form id="formD" data-bind='{"category":""}'>
+      <select id="selD" name="category" required>
+        <option value=""></option>
+        <option value="BILLING_OTHER"
+          data-attr-selected="{{category === 'BILLING_OTHER' && 'selected'}}">請求その他</option>
+        <option value="OTHER"
+          data-attr-selected="{{category === 'OTHER' && 'selected'}}">その他</option>
+      </select>
+    </form>
+
+    <button id="elsewhere" type="button">フォーカス外し用</button>
+
+    <script>
+      (function () {
+        const src = new URLSearchParams(location.search).get('src');
+        const url =
+          src === 'cdn-0.15.1'
+            ? 'https://cdn.jsdelivr.net/npm/haori@0.15.1/dist/haori.iife.js'
+            : src === 'cdn-0.18.0'
+              ? 'https://cdn.jsdelivr.net/npm/haori@0.18.0/dist/haori.iife.js'
+              : '/dist/haori.iife.js';
+        document.write('<script src="' + url + '"><\/script>');
+      })();
+    </script>
+  </body>
+</html>
