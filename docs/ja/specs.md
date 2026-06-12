@@ -855,6 +855,11 @@ async handleError(response: Response): Promise<void> {
       })
     }
 
+    // トップレベルが配列 [{ "key": "field", "message": "..." }] の場合:
+    // 各要素を errors と同等に扱い、key へ振り分ける（同一 key は改行連結、
+    // key 省略要素は全体エラー）。配列も typeof === 'object' のため最初に判定する。
+    // （擬似コードでは簡略化。実装は src/procedure.ts handleFetchError を参照）
+
     // 上記いずれにも該当しない場合のフォールバック（簡略化のため擬似コードでは省略）:
     // message/messages/errors を除くトップレベルの key:値 を field エラーとして拾い、
     // それでも空なら `${status} ${statusText}` を全体メッセージにする。
@@ -888,7 +893,9 @@ async handleError(response: Response): Promise<void> {
 
 サーバが `{ "errors": { "code": "メッセージ", "email": ["...", "..."] } }`（または `message` / `messages` を除くトップレベルの `key: 値`）形式で 4xx を返すと、`key` は `Form.addErrorMessage(baseFragment, key, message)` 経由で**対応する `name` のフィールドへ自動的に振り分け**られます（`name`・`data-form-object`・`data-form-list` のドット区切りキーで解決）。haori-bootstrap を併用している場合は、対象フィールド直後（checkbox/radio は `.form-check` 末尾）に `invalid-feedback` 要素を自動生成し、`is-invalid` クラスを付与します。したがって**フィールド側に `data-message-key` のような対応付け属性を書く必要はありません**。`key` を持たないエントリ（`message` / `messages`）はフォーム全体のエラーとして表示されます。
 
-> 補足: トップレベルが配列の `[{ "key": "code", "message": "..." }]` 形式は現状未対応です。サーバ側を `{ "errors": {...} }` 形式に揃えてください。
+トップレベルが配列の `[{ "key": "code", "message": "..." }]` 形式（`meibinlab-spring-boot-wrapper` の `GlobalExceptionHandler` / `ValidationMessage` 等）にも対応します。各要素を `errors` と同等に扱い、`key` を持つ要素は対応するフィールドへ振り分け、`key` を持たない（または空の）要素はフォーム全体エラーとします。同一 `key` が複数あれば改行で連結します。`key` は `name`・`data-form-object`・`data-form-list` のドット区切りキーで解決します。
+
+これらの振り分けは**ステータスコードに依存しません**（`400` だけでなく、業務エラーの `409` などカスタムステータスでも同様に振り分けます）。応答ボディが `application/json` 以外（プレーンテキスト等）の場合は、ボディ全文をフォーム全体エラーとして表示します（空の場合は `${status} ${statusText}`）。
 
 ### 6. Form (form.ts)
 

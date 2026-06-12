@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [0.18.0] - 2026-06-12
+
+### Fixed
+
+- `data-click-bind` の対象が `data-url-param` 要素のとき、同一クリック内の後続アクション `data-click-open`（modal を開く）が発火しない退行（0.17.1〜0.17.2）を修正した。**根本原因**は 0.17.1 の純粋 FIFO 直列化との相互作用による**自己デッドロック**。バインドワーク（`Core.setBindingData` の work）は `reevaluateReactiveSpecialAttributes` 内で配下の `data-fetch` を起動・await するが、その `data-fetch-bind` が**同一フラグメント自身を指す**（例: `#invoice-dialog-state` 配下の charges 取得が `data-fetch-bind="#invoice-dialog-state"`）と、その bind が同じ FIFO チェーンへ次のワークを積むため、実行中ワークと相互に待ち合って永久にブロックし、`await` していたクリック処理が `data-click-open` へ到達しなかった（0.17.0 までは旧再入バイパスがこの bind をインライン実行していたため顕在化しなかった）。
+  - 修正後は、マネージド `data-fetch`（`Core.executeManagedFetch`）から起動された bind を、**bind 先フラグメントが実行中のバインドワークを持つ（= その bind を await している自己再入の）場合に限り** reentrant（即時実行）するようにした。reentrant 実行は FIFO チェーンを占有せず即時完了するためデッドロックしない。bind 先が実行中でない（一般的な別コンテナへの bind 等）場合は従来どおり FIFO でキューへ積むため適用順を保証する。独立した並行呼出（ユーザー入力起点等）も純粋 FIFO のままで、0.17.1 で修正した「古い値の後勝ち」競合は再発しない。
+  - 実ブラウザ回帰ガード `playwright/urlparam-open-repro.spec.cjs`（＋フィクスチャ）を追加。`data-url-param` 要素へ `data-click-bind`→`data-click-open` する構成（配下に同一フラグメントへ bind-back する `data-fetch` を含む）で、修正前 CDN 0.17.2 は modal が開かず、本修正のローカルビルドでは開くことを確認（実 Chromium）。既存の `setbindingdata-stale.spec.cjs`（古い値後勝ち）・`form-fetch-arg-wipe.spec.cjs` も引き続き緑。
+
+### Added
+
+- fetch エラー応答が**トップレベル JSON 配列** `[{ "key": "field", "message": "..." }]`（`meibinlab-spring-boot-wrapper` の `GlobalExceptionHandler` / `ValidationMessage` 等）の形式でも、各要素をフィールド別エラーへ自動振り分けできるようにした。`key` を持つ要素は対応する `name` のフィールドへ（`Form.addErrorMessage` 経由、haori-bootstrap 併用時は `invalid-feedback` 生成＋`is-invalid` 付与）、`key` を持たない（または空）要素はフォーム全体エラーとする。同一 `key` が複数あれば改行で連結する。振り分けは**ステータスコードに依存しない**（`400` だけでなく業務エラーの `409` 等でも振り分く）。既存の `{ "errors": {...} }` / `{ "message" }` / `{ "messages": [] }` 形式は従来どおり（後方互換）。`application/json` 以外（プレーンテキスト等）のエラーボディは従来どおりボディ全文を全体エラーとして表示する。
+
+### Documentation
+
+- ガイドに「チェック状態はバインドデータで操作する（手書き `.checked` を避ける）」レシピを追記した。`data-attr-checked` で束縛したチェックボックス群を、別要素の `change` から `Core.getBindingData` / `Core.setBindingData` で配列を集合更新して宣言的に保持する書き方（権限セット連動の集合加算の例）を示す。
+- 仕様書のエラーハンドリング節を、トップレベル配列形式・ステータス非依存・プレーンテキスト対応の記述に更新した（旧「配列は未対応」の補足を削除）。
+
+### Library
+
+- 上記の回帰テストを追加した（`tests/fetch_error_array.test.ts`、`playwright/urlparam-open-repro.spec.cjs`）。
+
 ## [0.17.2] - 2026-06-11
 
 ### Fixed

@@ -1302,6 +1302,22 @@ ${body}
   /** オプション */
   private readonly options: ProcedureOptions;
 
+  /**
+   * bind 結果の反映（`Core.setBindingData`）を reentrant（即時実行）の候補とするか。
+   * マネージド `data-fetch` の自動再評価（`Core.executeManagedFetch`）から生成
+   * された Procedure に対して立てる。マネージド fetch はバインドワークの内部
+   * （`reevaluateReactiveSpecialAttributes`）から起動・await されるため、その
+   * bind が同一フラグメントを指す（`data-fetch-bind` が自身を指す等）場合に
+   * FIFO キューへ積むと、実行中のバインドワークと相互に待ち合って自己
+   * デッドロックする（0.17.1〜0.17.2 の `data-click-open` 不発の退行）。
+   *
+   * 実際に reentrant 実行するのは、このフラグに加えて bind 先フラグメントが
+   * 実行中のバインドワークを持つ（`isExecutingBindingWork()`）場合に限る。これで
+   * 自己デッドロックのみを解消し、idle なフラグメントへの bind は従来どおり FIFO で
+   * 適用順を保証する。
+   */
+  private reentrantBind = false;
+
   /** reset-before 後に確定した historyData スナップショット */
   private historyDataSnapshot: Record<string, unknown> | null | undefined;
 
@@ -1369,6 +1385,14 @@ ${body}
    */
   run(): Promise<void> {
     return this.runWithResult().then(() => undefined);
+  }
+
+  /**
+   * bind 結果の反映を reentrant（即時実行）で行うよう指定します。マネージド
+   * `data-fetch` の自動再評価から生成した Procedure に対して使います。
+   */
+  public markReentrantBind(): void {
+    this.reentrantBind = true;
   }
 
   /**
@@ -1860,7 +1884,47 @@ ${body}
         const data = await response.json();
         // 代表的な形式に対応
         const entries: Array<{key?: string; message: string}> = [];
-        if (data && typeof data === 'object') {
+        if (Array.isArray(data)) {
+          // トップレベル JSON 配列 [{ "key": "field", "message": "..." }] 形式
+          // （meibinlab-spring-boot-wrapper の GlobalExceptionHandler /
+          // ValidationMessage 等）。各要素を errors と同等に扱い、key へ振り分ける。
+          // 同一 key は改行連結し、key 省略要素はフォーム全体エラーとする。
+          // ステータスコードには依存しない（400 だけでなく 409 等でも振り分く）。
+          const byKey = new Map<string, string[]>();
+          const general: string[] = [];
+          for (const item of data) {
+            if (item && typeof item === 'object' && !Array.isArray(item)) {
+              const rawKey = (item as Record<string, unknown>).key;
+              const rawMessage = (item as Record<string, unknown>).message;
+              const key =
+                typeof rawKey === 'string' && rawKey.length > 0 ? rawKey : null;
+              const message =
+                typeof rawMessage === 'string'
+                  ? rawMessage
+                  : rawMessage != null
+                    ? String(rawMessage)
+                    : '';
+              if (message.length === 0) {
+                continue;
+              }
+              if (key !== null) {
+                const list = byKey.get(key) ?? [];
+                list.push(message);
+                byKey.set(key, list);
+              } else {
+                general.push(message);
+              }
+            } else if (typeof item === 'string' && item.length > 0) {
+              general.push(item);
+            }
+          }
+          for (const [k, msgs] of byKey) {
+            entries.push({key: k, message: msgs.join('\n')});
+          }
+          for (const m of general) {
+            entries.push({message: m});
+          }
+        } else if (data && typeof data === 'object') {
           if (typeof data.message === 'string') {
             entries.push({message: data.message});
           }
@@ -2080,7 +2144,18 @@ ${body}
           } else {
             bindingData[bindArg] = data;
           }
-          promises.push(Core.setBindingData(fragment.getTarget(), bindingData));
+          promises.push(
+            Core.setBindingData(
+              fragment.getTarget(),
+              bindingData,
+              new Set(),
+              // マネージド fetch の bind かつ、bind 先が実行中のバインドワークを
+              // 持つ（= 自分自身を await している）ときだけ reentrant（即時実行）に
+              // する。これで自己デッドロックのみを解消し、idle なフラグメントへの
+              // bind は従来どおり FIFO で適用順を保証する。
+              this.reentrantBind && fragment.isExecutingBindingWork(),
+            ),
+          );
         });
       } else if (typeof data === 'string') {
         Log.error('Haori', 'string data cannot be bound without a bindArg.');
@@ -2098,7 +2173,15 @@ ${body}
           const finalData = this.options.bindMerge
             ? {...(fragment.getRawBindingData() ?? {}), ...resolvedData}
             : resolvedData;
-          promises.push(Core.setBindingData(fragment.getTarget(), finalData));
+          promises.push(
+            Core.setBindingData(
+              fragment.getTarget(),
+              finalData,
+              new Set(),
+              // 自己デッドロックのみを解消する限定 reentrant（上の bindArg 分岐と同様）。
+              this.reentrantBind && fragment.isExecutingBindingWork(),
+            ),
+          );
         });
       }
       return Promise.all(promises).then(() => {

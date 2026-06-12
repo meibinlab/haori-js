@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>data-url-param 要素へバインド後の data-click-open 不発の再現</title>
+  </head>
+  <body>
+    <h2>data-url-param 要素へ data-click-bind → data-click-open が発火するか（調査用）</h2>
+    <p>?src=cdn-0.17.0 / ?src=cdn-0.16.0 でCDN版、無指定でローカルビルド（/dist）を読み込む。</p>
+
+    <!-- ケースA: バインド先が data-url-param 要素（報告構成） -->
+    <button
+      id="btnA"
+      data-click-data="id=1&customerId=2"
+      data-click-bind="#stateA"
+      data-click-bind-arg="dialog"
+      data-click-open="#modalA"
+    >
+      詳細A
+    </button>
+    <div id="stateA" data-url-param data-url-arg="view">
+      <!-- 同一フラグメント(#stateA)へ bind-back する data-fetch（報告構成の charges 相当）。
+           dialog.id がセットされると発火する。これが自己デッドロックの引き金。 -->
+      <div
+        class="d-none"
+        data-fetch="{{dialog && dialog.id ? '/playwright/urlparam-open-charges.json' : ''}}"
+        data-fetch-bind="#stateA"
+        data-fetch-bind-arg="charges"
+      ></div>
+      <dialog id="modalA">
+        <p>A id={{dialog.id}} charges={{(charges || []).length}}</p>
+      </dialog>
+    </div>
+
+    <!-- ケースB: バインド先が通常の div（url-param 無し・対照） -->
+    <button
+      id="btnB"
+      data-click-data="id=9&customerId=8"
+      data-click-bind="#stateB"
+      data-click-bind-arg="dialog"
+      data-click-open="#modalB"
+    >
+      詳細B
+    </button>
+    <div id="stateB">
+      <dialog id="modalB">
+        <p>B id={{dialog.id}}</p>
+      </dialog>
+    </div>
+
+    <script>
+      // 調査用: ?src= でロードするビルドを切り替える（CDN との挙動比較のため）
+      (function () {
+        const src = new URLSearchParams(location.search).get('src');
+        const url =
+          src === 'cdn-0.17.0'
+            ? 'https://cdn.jsdelivr.net/npm/haori@0.17.0/dist/haori.iife.js'
+            : src === 'cdn-0.16.0'
+              ? 'https://cdn.jsdelivr.net/npm/haori@0.16.0/dist/haori.iife.js'
+              : src === 'cdn-0.17.2'
+                ? 'https://cdn.jsdelivr.net/npm/haori@0.17.2/dist/haori.iife.js'
+                : '/dist/haori.iife.js';
+        document.write('<script src="' + url + '"><\/script>');
+      })();
+    </script>
+  </body>
+</html>

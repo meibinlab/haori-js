@@ -862,6 +862,49 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 
 上の例では、`data-bind` や `data-fetch` によってフォームのバインディングデータが `{ mailImapSsl: true }` へ更新されるとチェックが入り、`{ mailImapSsl: false }` へ更新されるとチェックが外れます。
 
+### レシピ: チェック状態は「バインドデータ」で操作する（手書き `.checked` を避ける）
+
+`data-attr-checked="{{...}}"`（または `checked="{{...}}"`）で束縛したチェックボックスは、評価結果が `element.checked`（DOM プロパティ）まで同期されます。これにより、別要素の `change` などでフォームが再評価されると、チェック状態は**常にバインドデータ基準**へ戻ります。
+
+このとき、JavaScript で `element.checked = true` のように DOM を直接書き換えると、次回の再評価で**バインドデータ基準に巻き戻り**ます（フォーカス保護は操作中の当該要素のみが対象のため、別要素起因の再評価では効きません）。これは宣言バインドと手書き DOM 操作の混在によるアンチパターンです。
+
+連動（例: 「権限セット」をチェックすると対応する個別権限を一括で ON にする）も、**バインドデータ側を更新**すれば再評価をまたいで保持されます。集合演算（加算・他セット保持）も、配列をマージしてから `Core.setBindingData` で書き戻すだけで宣言的に表現できます。
+
+```html
+<div id="perm-state" data-bind='{"permissions":["DASHBOARD_VIEW"]}'>
+  <!-- 個別権限: チェック状態はバインドデータ（permissions 配列）に従う -->
+  <label>
+    <input type="checkbox" name="permissions" value="DASHBOARD_VIEW"
+      data-attr-checked="{{(permissions || []).includes('DASHBOARD_VIEW')}}">
+    ダッシュボード閲覧
+  </label>
+  <label>
+    <input type="checkbox" name="permissions" value="REPORT_VIEW"
+      data-attr-checked="{{(permissions || []).includes('REPORT_VIEW')}}">
+    レポート閲覧
+  </label>
+
+  <!-- 権限セット: change で個別権限を「加算」する（他セットの権限は解除しない） -->
+  <label>
+    <input type="checkbox" value="VIEWER_SET"
+      data-change-run="window.applyPermissionSet(['DASHBOARD_VIEW','REPORT_VIEW'])">
+    閲覧者セット
+  </label>
+</div>
+
+<script>
+  window.applyPermissionSet = added => {
+    const el = document.getElementById('perm-state')
+    // 現在の解決済みスコープから permissions を読み、集合加算してから書き戻す
+    const current = Haori.Core.getBindingData(el, { resolved: true }) || {}
+    const next = new Set([...(current.permissions || []), ...added])
+    Haori.Core.setBindingData(el, { ...current, permissions: [...next] })
+  }
+</script>
+```
+
+ポイントは「`.checked` を直接いじらず、`permissions` 配列を更新する」ことです。`data-attr-checked` は配列を参照しているため、`setBindingData` 後の再評価で各チェックボックスの状態が正しく反映され、以降の再評価でも保持されます。読み取りには `Core.getBindingData(element, { resolved: true })`、書き込みには `Core.setBindingData(element, data)` を使います。
+
 ### 数値フィールド（`type="number"`）は数値型で扱われる
 
 `type="number"` の入力は、値を**数値型**としてバインド・送信します。HTML の入力値は本来すべて文字列ですが、サーバー側の DTO が `Double` や `Integer` を期待する場合に文字列（例 `"2.5"`）で送られて型不一致になるのを防ぎます。

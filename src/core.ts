@@ -338,7 +338,13 @@ export default class Core {
 
     state.lastSignature = resolved.signature;
     state.running = true;
-    return new Procedure(fragment, null)
+    // マネージド fetch はバインドワーク（reevaluateReactiveSpecialAttributes）の
+    // 内部から起動・await される。その bind が同一フラグメントを指すと FIFO へ
+    // 積んだ場合に実行中ワークと相互に待ち合って自己デッドロックするため、bind を
+    // reentrant（即時実行）で行う。
+    const procedure = new Procedure(fragment, null);
+    procedure.markReentrantBind();
+    return procedure
       .runWithResult()
       .then(() => undefined)
       .finally(() => {
@@ -753,6 +759,10 @@ export default class Core {
     // 完了を待って自己デッドロックするため、キューを介さず即時実行する。並行呼出
     // （別イベント由来）は reentrant=false で必ずキューへ積み、適用順を保証する。
     const work = (): Promise<void> => {
+      // ワーク実行中（await をまたぐ全期間）であることを記録する。配下の
+      // マネージド fetch の bind-back が同一フラグメントを指すとき、この状態を見て
+      // reentrant 実行へ切り替え自己デッドロックを避ける（Procedure.bindResult）。
+      fragment.markBindingWorkStart();
       // 実行時点の最新 in-memory を基準に DOM 反映する。捕捉スナップショット（data）
       // だと、並行更新時に古い値を data-bind 属性へ書き込み、それを MutationObserver が
       // 拾って巻き戻す競合になり得る。in-memory は呼出時に同期確定済み（last-wins）。
@@ -778,7 +788,13 @@ export default class Core {
       chain = chain.then(() =>
         Core.reevaluateReactiveSpecialAttributes(fragment, skipFragments),
       );
-      return chain.then(() => undefined);
+      return chain.then(
+        () => fragment.markBindingWorkEnd(),
+        e => {
+          fragment.markBindingWorkEnd();
+          throw e;
+        },
+      );
     };
     // 再入は即時実行（自己デッドロック防止）、通常呼出は FIFO 直列化。
     return reentrant ? work() : fragment.enqueueBindingWork(work);

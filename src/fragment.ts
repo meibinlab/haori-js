@@ -673,6 +673,16 @@ export class ElementFragment extends Fragment {
    */
   private bindingWorkChain: Promise<void> = Promise.resolve();
 
+  /**
+   * 実行中のバインドワーク（`Core.setBindingData` の work）の入れ子数。
+   * await をまたぐワークの全期間にわたって 0 より大きくなる。`> 0` の間は、
+   * このフラグメントのバインドワークが（配下の `data-fetch` 等を）await しながら
+   * 実行中であることを表す。マネージド fetch の bind-back が同一フラグメントを
+   * 指す場合に、FIFO キューへ積むと自己デッドロックするため、この状態を見て
+   * 即時実行（reentrant）へ切り替える判定に使う。
+   */
+  private bindingWorkActive = 0;
+
   /** 生成時点の data-bind 属性の生値（リセット時の初期状態復元用） */
   private readonly initialBindAttribute: string | null = null;
 
@@ -1008,12 +1018,40 @@ export class ElementFragment extends Fragment {
    * フラグでの「再入即時実行」を行っていましたが、await をまたいで届く**独立した
    * 並行呼出**まで再入扱いしてインライン実行し、`skipMutationAttributes` 中の
    * `data-bind` 書き込みが破棄されて古い値が後勝ちする競合の原因になっていました。
-   * 真の再入（data-url-param 等）は呼出側がキューを介さず実行するため、ここでは
-   * 一律にチェーンへ積みます。
+   * 真の再入（`data-url-param` の再評価、マネージド `data-fetch` の同一フラグメント
+   * への bind-back）は呼出側が `reentrant=true` でキューを介さず実行するため、
+   * ここでは一律にチェーンへ積みます。
    *
    * @param work 直列化したいバインドデータ更新処理
    * @returns work の完了 Promise
    */
+  /**
+   * このフラグメントのバインドワークが実行中（await をまたぐ期間を含む）かどうかを
+   * 返します。マネージド `data-fetch` の bind-back を reentrant 実行へ切り替えるべきか
+   * の判定に使います。
+   *
+   * @return 実行中なら true
+   */
+  public isExecutingBindingWork(): boolean {
+    return this.bindingWorkActive > 0;
+  }
+
+  /**
+   * バインドワークの実行開始を記録します（`Core.setBindingData` の work 開始時に呼ぶ）。
+   */
+  public markBindingWorkStart(): void {
+    this.bindingWorkActive++;
+  }
+
+  /**
+   * バインドワークの実行終了を記録します（work 完了時に呼ぶ）。
+   */
+  public markBindingWorkEnd(): void {
+    if (this.bindingWorkActive > 0) {
+      this.bindingWorkActive--;
+    }
+  }
+
   public enqueueBindingWork(work: () => Promise<void>): Promise<void> {
     const next = this.bindingWorkChain.then(work, work);
     // 失敗してもチェーンを継続させる（個々の呼出には next で結果を返す）。
