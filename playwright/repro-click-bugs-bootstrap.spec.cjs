@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* global require, console */
-// バグ報告の実ブラウザ再現（earth-core 同等: haori@0.15.0 + runtime=demo + haori-bootstrap）。
+// バグ報告の実ブラウザ再現（haori@0.15.0 + runtime=demo + haori-bootstrap）。
 const {test, expect} = require('@playwright/test');
 
 test.describe('click バグ再現（bootstrap + demo runtime）', () => {

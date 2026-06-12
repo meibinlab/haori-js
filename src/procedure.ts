@@ -1897,8 +1897,8 @@ ${body}
         const entries: Array<{key?: string; message: string}> = [];
         if (Array.isArray(data)) {
           // トップレベル JSON 配列 [{ "key": "field", "message": "..." }] 形式
-          // （meibinlab-spring-boot-wrapper の GlobalExceptionHandler /
-          // ValidationMessage 等）。各要素を errors と同等に扱い、key へ振り分ける。
+          // （一部のサーバ実装が返す例外ハンドラ／バリデーションメッセージ等）。
+          // 各要素を errors と同等に扱い、key へ振り分ける。
           // 同一 key は改行連結し、key 省略要素はフォーム全体エラーとする。
           // ステータスコードには依存しない（400 だけでなく 409 等でも振り分く）。
           const byKey = new Map<string, string[]>();
