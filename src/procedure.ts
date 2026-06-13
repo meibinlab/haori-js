@@ -13,6 +13,7 @@ import Haori from './haori';
 import Log from './log';
 import HaoriEvent from './event';
 import {checkAuthRedirect} from './auth_guard';
+import Url from './url';
 
 type ProcedureHaoriApi = Pick<
   typeof Haori,
@@ -376,6 +377,16 @@ export interface ProcedureOptions {
 
   /** リダイレクトURL */
   redirectUrl?: string | null;
+
+  /**
+   * 戻り先リダイレクトに用いる URL クエリ名。
+   *
+   * `redirectUrl`（`data-{event}-redirect`）が指定されている場合のみ有効で、
+   * 成功後の遷移直前に現在ページの当該クエリ値を読み取り、安全な同一オリジンの
+   * ローカルパスであればその値へ遷移します（オープンリダイレクト対策）。安全で
+   * ない／値が無い場合は `redirectUrl` へフォールバックします。
+   */
+  redirectReturnParam?: string | null;
 
   /** エラー時に最初のエラー要素へスクロールするかどうか */
   scrollOnError?: boolean | null;
@@ -1120,6 +1131,16 @@ ${body}
         options.redirectUrl = fragment.getAttribute(
           Procedure.attrName(event, 'redirect'),
         ) as string;
+        // 戻り先クエリ名は redirect が指定されている場合のみ有効とする。
+        const returnParamAttr = Procedure.attrName(
+          event,
+          'redirect-return-param',
+        );
+        if (fragment.hasAttribute(returnParamAttr)) {
+          options.redirectReturnParam = fragment.getAttribute(
+            returnParamAttr,
+          ) as string;
+        }
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'scroll-error'))) {
         options.scrollOnError = true;
@@ -1781,7 +1802,27 @@ ${body}
       el?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
     }
     if (this.options.redirectUrl) {
-      window.location.href = this.options.redirectUrl;
+      let destination = this.options.redirectUrl;
+      // 戻り先クエリ名が指定されていれば、安全なローカルパスのみ遷移先に採用する。
+      const returnParam = this.options.redirectReturnParam;
+      if (returnParam) {
+        // クエリ値は URLSearchParams で1回だけデコードして読み取る（二重デコード回避）。
+        const params = new URLSearchParams(window.location.search);
+        const raw = params.get(returnParam);
+        if (raw !== null) {
+          const trimmed = raw.trim();
+          if (Url.isSafeLocalPath(trimmed)) {
+            destination = trimmed;
+          } else {
+            Log.warn(
+              'Haori',
+              '戻り先パスが安全なローカルパスではないため、既定の遷移先へ' +
+                `フォールバックします: ${raw}`,
+            );
+          }
+        }
+      }
+      window.location.href = destination;
     }
     return true;
   }

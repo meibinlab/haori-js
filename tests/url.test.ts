@@ -185,4 +185,36 @@ describe('Url', () => {
       expect(typeof params.enabled).toBe('string');
     });
   });
+
+  describe('isSafeLocalPath', () => {
+    it('単一の / で始まるローカルパスは安全と判定する', () => {
+      expect(Url.isSafeLocalPath('/admin/user.html?a=1#x')).toBe(true);
+      expect(Url.isSafeLocalPath('/')).toBe(true);
+      expect(Url.isSafeLocalPath('/index.html')).toBe(true);
+    });
+
+    it('前後の空白は除去して判定する', () => {
+      expect(Url.isSafeLocalPath('  /admin  ')).toBe(true);
+    });
+
+    it('絶対 URL（スキーム付き）は拒否する', () => {
+      expect(Url.isSafeLocalPath('https://evil.com')).toBe(false);
+      expect(Url.isSafeLocalPath('http://evil.com/path')).toBe(false);
+    });
+
+    it('プロトコル相対（//・/\\）は拒否する', () => {
+      expect(Url.isSafeLocalPath('//evil.com')).toBe(false);
+      expect(Url.isSafeLocalPath('/\\evil.com')).toBe(false);
+    });
+
+    it('相対パス（/ で始まらない）は拒否する', () => {
+      expect(Url.isSafeLocalPath('relative/path')).toBe(false);
+      expect(Url.isSafeLocalPath('dashboard.html')).toBe(false);
+    });
+
+    it('空文字・空白のみは拒否する', () => {
+      expect(Url.isSafeLocalPath('')).toBe(false);
+      expect(Url.isSafeLocalPath('   ')).toBe(false);
+    });
+  });
 });

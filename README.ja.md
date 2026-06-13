@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.19.0
+バージョン: 0.20.0
 
 ---
 
@@ -102,6 +102,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `data-import` — 外部 HTML を読み込んで挿入
 - `data-url-param` — URL のクエリパラメータをバインディングに取り込む
 - `data-unauthorized-redirect` / `data-forbidden-redirect` — `<body>`/`<html>` に宣言する認証ガード。Haori の fetch 応答が 401／403 のとき指定 URL（式可）へ遷移します。全 fetch 経路（`data-fetch`・イベント fetch・`data-import`）に適用。ステータス別オプトイン。`*-return-param="クエリ名"` を併用すると、ログイン後復帰用に現在の `pathname+search+hash` を戻り先クエリとして自動付与します（遷移先に同名クエリがあればそちらを優先）。
+- `data-{event}-redirect-return-param="クエリ名"` — 上記の対称な受け手側。手続きの成功後リダイレクト先を URL クエリから解決し、**安全な同一オリジンのローカルパス**のときのみそこへ遷移します（オープンリダイレクト対策を内蔵）。安全でない／値が無い場合は `data-{event}-redirect` へフォールバック。認証ガードの `*-return-param` と同名クエリで使えば付与 → 消費が対称になり、従来必要だった手書きの検証 JS が不要になります。
 
 追加のバインディング補助:
 

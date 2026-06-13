@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.19.0
+Version: 0.20.0
 
 ---
 
@@ -102,6 +102,7 @@ Haori.mount(document.body, {items: [{name: 'apple'}, {name: 'orange'}]});
 - `data-import` — load external HTML and insert it
 - `data-url-param` — import URL query parameters into bindings
 - `data-unauthorized-redirect` / `data-forbidden-redirect` — auth guard declared on `<body>`/`<html>`. When a Haori fetch responds 401/403, navigate to the given URL (expressions allowed). Applies to all fetch paths (`data-fetch`, event fetches, `data-import`); per-status opt-in. Pair with `*-return-param="name"` to auto-append the current `pathname+search+hash` as a return query for post-login restoration (an existing same-name query on the target URL wins).
+- `data-{event}-redirect-return-param="name"` — the symmetric receiver side. On a successful procedure, resolve the post-redirect destination from the given URL query, navigating there only when it is a safe same-origin local path (open-redirect protection is built in); otherwise fall back to `data-{event}-redirect`. Used with the auth guard's `*-return-param`, append → consume becomes symmetric and the hand-written validation JS is no longer needed.
 
 Additional binding helpers:
 
