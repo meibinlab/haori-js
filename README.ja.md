@@ -101,7 +101,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `data-fetch` — サーバーからデータを取得してバインド
 - `data-import` — 外部 HTML を読み込んで挿入
 - `data-url-param` — URL のクエリパラメータをバインディングに取り込む
-- `data-unauthorized-redirect` / `data-forbidden-redirect` — `<body>`/`<html>` に宣言する認証ガード。Haori の fetch 応答が 401／403 のとき指定 URL（式可）へ遷移します。全 fetch 経路（`data-fetch`・イベント fetch・`data-import`）に適用。ステータス別オプトイン（旧 `data-login` 相当）。
+- `data-unauthorized-redirect` / `data-forbidden-redirect` — `<body>`/`<html>` に宣言する認証ガード。Haori の fetch 応答が 401／403 のとき指定 URL（式可）へ遷移します。全 fetch 経路（`data-fetch`・イベント fetch・`data-import`）に適用。ステータス別オプトイン。`*-return-param="クエリ名"` を併用すると、ログイン後復帰用に現在の `pathname+search+hash` を戻り先クエリとして自動付与します（遷移先に同名クエリがあればそちらを優先）。
 
 追加のバインディング補助:
 

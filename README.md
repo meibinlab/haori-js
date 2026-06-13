@@ -101,7 +101,7 @@ Haori.mount(document.body, {items: [{name: 'apple'}, {name: 'orange'}]});
 - `data-fetch` — fetch data from a server and bind the result
 - `data-import` — load external HTML and insert it
 - `data-url-param` — import URL query parameters into bindings
-- `data-unauthorized-redirect` / `data-forbidden-redirect` — auth guard declared on `<body>`/`<html>`. When a Haori fetch responds 401/403, navigate to the given URL (expressions allowed). Applies to all fetch paths (`data-fetch`, event fetches, `data-import`); per-status opt-in (the `data-login` equivalent).
+- `data-unauthorized-redirect` / `data-forbidden-redirect` — auth guard declared on `<body>`/`<html>`. When a Haori fetch responds 401/403, navigate to the given URL (expressions allowed). Applies to all fetch paths (`data-fetch`, event fetches, `data-import`); per-status opt-in. Pair with `*-return-param="name"` to auto-append the current `pathname+search+hash` as a return query for post-login restoration (an existing same-name query on the target URL wins).
 
 Additional binding helpers:
 
