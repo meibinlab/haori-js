@@ -724,6 +724,7 @@ describe('Procedure action operations', () => {
       openDialog: openSpy,
       closeDialog: closeSpy,
       addErrorMessage: vi.fn().mockResolvedValue(undefined as void),
+      clearMessages: vi.fn().mockResolvedValue(undefined as void),
     };
 
     const modal = document.createElement('div');

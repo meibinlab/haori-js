@@ -18,6 +18,7 @@ import Url from './url';
 type ProcedureHaoriApi = Pick<
   typeof Haori,
   | 'addErrorMessage'
+  | 'clearMessages'
   | 'closeDialog'
   | 'confirm'
   | 'dialog'
@@ -27,6 +28,7 @@ type ProcedureHaoriApi = Pick<
 
 const PROCEDURE_HAORI_METHOD_NAMES = [
   'addErrorMessage',
+  'clearMessages',
   'closeDialog',
   'confirm',
   'dialog',
@@ -1907,6 +1909,17 @@ ${body}
         Form.getFormFragment(this.options.targetFragment) ||
         this.options.targetFragment;
     }
+
+    // フェッチ単位で既存メッセージを1度だけクリアする。
+    // 再試行のたびにエラー表示が積み増される（累積する）のを防ぐため、
+    // メッセージ描画を始める前に対象スコープを初期化する。
+    // 同一応答内の複数メッセージはクリア後に追加されるため従来どおり並ぶ。
+    // baseFragment が無い場合は document.body を対象とし、ページ全体の
+    // 管理メッセージをクリアする（広く許容する方針）。
+    const clearTarget = baseFragment
+      ? baseFragment.getTarget()
+      : document.body;
+    await resolveProcedureHaoriApi().clearMessages(clearTarget);
 
     const addGeneralMessage = async (message: string) => {
       const targetEl = baseFragment ? baseFragment.getTarget() : document.body;

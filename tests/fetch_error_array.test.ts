@@ -82,9 +82,12 @@ describe('fetch エラー応答: トップレベル JSON 配列形式', () => {
     );
     const {form, nameWrapper, emailWrapper} = await setupAndSubmit();
 
+    // 全体エラー（form 自身）は最後に書き込まれるため、これを待機条件に含める。
     await waitForCondition(
-      () => nameWrapper.getAttribute('data-message') !== null,
-      {description: 'name フィールドにエラーが付く'},
+      () =>
+        nameWrapper.getAttribute('data-message') !== null &&
+        form.getAttribute('data-message') !== null,
+      {description: 'name フィールドとフォーム全体エラーが付く'},
     );
 
     expect(nameWrapper.getAttribute('data-message')).toBe(
@@ -122,5 +125,64 @@ describe('fetch エラー応答: トップレベル JSON 配列形式', () => {
       description: 'text/plain ボディが全体エラーになる',
     });
     expect(form.getAttribute('data-message')).toBe('処理に失敗しました');
+  });
+
+  // 不具合報告（2026-06-14）: 再試行のたびにエラーメッセージが累積する。
+  // handleFetchError は描画前に既存メッセージをクリアしないため、
+  // 前回応答のメッセージが残り続ける（bootstrap の append 方式では
+  // 同一コンテナに積み増され、コアの上書き方式でも前回応答にしか
+  // 含まれないフィールドのメッセージが残留する）。
+  // 修正により、フェッチ単位でスコープ内の既存メッセージが1度クリアされ、
+  // 表示は常に最新の1応答分へ置き換わる。
+  it('再試行時に既存メッセージをクリアし、常に最新の1応答へ置き換える', async () => {
+    // 連続するエラー応答を順に返すモック。
+    const bodies = [
+      JSON.stringify([
+        {key: 'name', message: '名前は必須です'},
+        {key: 'email', message: 'メール形式が不正です'},
+        {message: '入力内容に誤りがあります'},
+      ]),
+      JSON.stringify([{key: 'name', message: '名前は必須です'}]),
+    ];
+    let call = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response(bodies[Math.min(call++, bodies.length - 1)], {
+            status: 400,
+            statusText: 'Bad Request',
+            headers: {'Content-Type': 'application/json'},
+          }),
+        ) as unknown as Promise<Response>,
+    );
+
+    const {form, nameWrapper, emailWrapper} = await setupAndSubmit();
+
+    // 1回目: name / email / フォーム全体の3箇所に表示される。
+    await waitForCondition(
+      () =>
+        nameWrapper.getAttribute('data-message') !== null &&
+        emailWrapper.getAttribute('data-message') !== null &&
+        form.getAttribute('data-message') !== null,
+      {description: '1回目で3箇所にエラーが付く'},
+    );
+    expect(emailWrapper.getAttribute('data-message')).toBe(
+      'メール形式が不正です',
+    );
+    expect(form.getAttribute('data-message')).toBe('入力内容に誤りがあります');
+
+    // 2回目: name のみの応答。前回の email / 全体エラーは残ってはならない。
+    (form.querySelector('#save') as HTMLElement).click();
+
+    await waitForCondition(
+      () =>
+        emailWrapper.getAttribute('data-message') === null &&
+        form.getAttribute('data-message') === null,
+      {description: '2回目で前回の email / 全体エラーがクリアされる'},
+    );
+    // 最新応答の name エラーは表示されたまま。
+    expect(nameWrapper.getAttribute('data-message')).toBe('名前は必須です');
+    expect(emailWrapper.getAttribute('data-message-level')).toBeNull();
+    expect(form.getAttribute('data-message-level')).toBeNull();
   });
 });
