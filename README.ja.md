@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.20.1
+バージョン: 0.21.0
 
 ---
 
@@ -93,7 +93,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 
 ## よく使う属性（概要）
 
-- `data-bind` — 要素にバインディングデータを設定（JSON またはパラメータ形式）
+- `data-bind` — 要素にバインディングデータを設定（JSON またはパラメータ形式）。**トップレベルキーの予約名**: グローバルと衝突するデータ／ナビゲーション／ストレージ系の名前（`location`・`history`・`document`・`navigator`・`localStorage`・`sessionStorage`）は**トップレベルキーとして利用でき**、式中ではバインド値が同名グローバルを遮蔽します（例 `{"history":[…]}` を `data-each="history"` で利用可）。実行系・プロトタイプ脱出名（`window`・`self`・`globalThis`・`Object`・`Function`・`eval`・`constructor`・`__proto__`・`prototype`・`setTimeout` など）は**使えません**。その場合、該当キーだけが無視され（式中では `undefined`）、残りのキーは通常どおり描画され、無視したキー名が `error` ログに出力されます。ネストしたオブジェクト／配列要素のプロパティ名には制約はありません。
 - `{{ ... }}` — テンプレート式（式評価により挿入）
 - `data-if` — 条件に応じて要素を表示 / 非表示
 - `data-each` — 配列を繰り返し表示（`data-each-key`, `data-each-arg`, `data-each-index` など）

@@ -1,6 +1,13 @@
 # CHANGELOG
 
-## [Unreleased]
+## [0.21.0] - 2026-06-14
+
+### Changed
+
+- バインド対象オブジェクトのトップレベルキーが予約名（禁止識別子）と衝突したときの挙動を改善した。
+  - **粒度改善**: これまでは禁止名キーが 1 つでもあるとバインド**全体**が破棄され、配下の `data-each`・`{{ }}` がすべて無言で空になっていた。今後は**該当キーのみ無視**し、残りの正常なキーはそのまま評価・描画する。無視したキーがある場合は原因特定のため `Log.warn` ではなく **`Log.error` で該当キー名を明示**する（`Binding keys are reserved and ignored: …`）。
+  - **名前空間衝突名の再バインド許可**: `history` / `document` / `navigator` / `localStorage` / `sessionStorage` / `IndexedDB`（`location` は従来から許可）を、トップレベルのバインドキーとして利用できるようにした（`REBINDABLE_FORBIDDEN_NAMES`）。式中ではバインド値が同名グローバルを遮蔽するため実グローバルへは到達せず安全。これにより `{ "history": [ … ] }` を `data-each="history"` でそのまま繰り返せる。`window` / `self` / `globalThis` / `Object` / `Function` / `eval` / `constructor` / `__proto__` / `prototype` / `setTimeout` などの**実行系・プロトタイプ脱出名は引き続き禁止**（該当キーは無視）。
+  - バインド値に実ホストオブジェクト等の**危険な値**が含まれる場合の拒否（再帰チェック）は従来どおり維持する。README / 仕様書に予約名のトップレベルキー方針を明記した。
 
 ### Added
 

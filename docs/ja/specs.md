@@ -484,6 +484,23 @@ private static readonly STRICT_FORBIDDEN_NAMES = ['eval', 'arguments']
 
 `Object` も禁止識別子のため、`Object.assign({}, a, b)` のような式は使えません（`Object` が `undefined` になり `TypeError` で失敗します）。オブジェクトの合成はスプレッド構文 `{...a, ...b}` を使ってください。式がこれらの禁止識別子を独立した識別子として参照して評価に失敗した場合、コンソールに「`blocked identifier(s): …`」という警告が出力され、原因を特定できます（`foo.Object` のようなプロパティアクセスは誤検出しません）。
 
+##### バインドのトップレベルキーと予約名
+
+バインド対象オブジェクトの**トップレベルキー**が予約名（禁止識別子）と衝突する場合の扱いは、名前の種類で 2 つに分かれます。
+
+- **再バインド可能な名前**（`location` / `history` / `document` / `navigator` / `localStorage` / `sessionStorage` / `IndexedDB`）: 名前空間衝突はするが「実行系・プロトタイプ脱出」ではないデータ／ナビゲーション／ストレージ系の名前です。これらは**トップレベルのバインドキーとして利用でき**、式中ではバインド値が同名のグローバルを遮蔽します（関数引数として渡されるため実グローバルへは到達しません）。例えば `{ "history": [ … ] }` をバインドして `data-each="history"` で繰り返せます。
+
+  ```typescript
+  private static readonly REBINDABLE_FORBIDDEN_NAMES = new Set([
+    'location', 'history', 'document', 'navigator',
+    'localStorage', 'sessionStorage', 'IndexedDB',
+  ])
+  ```
+
+- **実行系・プロトタイプ脱出名**（`window` / `self` / `globalThis` / `frames` / `parent` / `top` / `Function` / `Object` / `eval` / `arguments` / `constructor` / `__proto__` / `prototype` / `Reflect` / `setTimeout` 等）: トップレベルのバインドキーとしては**使えません**。これらのキーは**そのキーだけが無視**され（引数から除外され、式中では `undefined` に遮蔽）、**残りの正常なキーはそのまま評価・描画されます**（バインド全体は破棄しません）。無視したキーがある場合は、原因特定のためコンソールに **`error`** ログで該当キー名を明示します（`Binding keys are reserved and ignored: …`）。
+
+> ネストしたオブジェクトや配列要素の中のプロパティ名（例 `{ project: { location: '…' } }` の `location`）は識別子として評価されないため、**どの名前でも制約なく**利用できます。制約はトップレベルキーにのみ適用されます。
+
 #### 評価メカニズム
 
 ```typescript
@@ -493,14 +510,17 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
     return null
   }
 
-  // 2. バインド値に禁止キーが含まれていないかチェック
-  if (this.containsForbiddenKeys(bindedValues)) {
-    return null
+  // 2. トップレベルキーの予約名衝突を検査。再バインド不可の禁止キーがあっても
+  //    バインド全体は破棄せず、該当キー名を error ログに出して続行する
+  //    （該当キーは後段で引数から除外・undefined 遮蔽される）。
+  const forbiddenKeys = this.collectForbiddenKeys(bindedValues)
+  if (forbiddenKeys.length > 0) {
+    Log.error('[Haori]', `Binding keys are reserved and ignored: ${...}`)
   }
 
-  // 3. 禁止識別子を除外したバインドキーでキャッシュキーを作成
+  // 3. 再バインド不可の禁止識別子を除外したバインドキーでキャッシュキーを作成
   const bindKeys = Object.keys(bindedValues)
-    .filter(key => !FORBIDDEN_NAMES.includes(key))
+    .filter(key => !FORBIDDEN_BINDING_NAMES.has(key))
     .sort()
   const cacheKey = `${expression}:${bindKeys.join(',')}`
 
@@ -530,7 +550,7 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 1. トークン解析で許可された式構文かどうかを検証
 2. 正規表現で `eval()` や `arguments` 参照などの危険パターンを検出
 3. 禁止識別子を `undefined` で上書きし、strict モードで `eval` と `arguments` を抑止
-4. バインド値を再帰的にチェックし、禁止キーを含む入力を拒否
+4. トップレベルキーが再バインド不可の予約名と衝突する場合は**該当キーのみ無視**（引数から除外＋`undefined` 遮蔽）し、`error` ログにキー名を明示。バインド値を再帰的にチェックし、実ホストオブジェクト等の**危険な値**を含む入力は拒否
 5. plain object / array / function を Proxy でラップし、`constructor`、`__proto__`、`prototype` へのアクセスを遮断
 6. 評価中のみ prototype 系プロパティの生アクセスを一時的に遮断
 

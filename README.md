@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.20.1
+Version: 0.21.0
 
 ---
 
@@ -93,7 +93,7 @@ Haori.mount(document.body, {items: [{name: 'apple'}, {name: 'orange'}]});
 
 ## Common attributes (summary)
 
-- `data-bind` — set binding data for an element (JSON or parameter format)
+- `data-bind` — set binding data for an element (JSON or parameter format). **Reserved top-level keys:** data/navigation/storage names that collide with globals (`location`, `history`, `document`, `navigator`, `localStorage`, `sessionStorage`) **can** be used as top-level keys and shadow the global inside expressions (e.g. `{"history":[…]}` works with `data-each="history"`). Execution/prototype-escape names (`window`, `self`, `globalThis`, `Object`, `Function`, `eval`, `constructor`, `__proto__`, `prototype`, `setTimeout`, …) **cannot**: such a key is ignored (it resolves to `undefined` in expressions) while the other keys still render, and an `error` is logged naming the ignored key. Nested object/array property names are unrestricted.
 - `{{ ... }}` — template expressions (evaluated and inserted)
 - `data-if` — show/hide an element based on a condition
 - `data-each` — repeat an element for items in an array (`data-each-key`, `data-each-arg`, `data-each-index`)

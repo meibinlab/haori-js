@@ -201,29 +201,39 @@ describe('Expression', () => {
   });
 
   describe('セキュリティ: バインド値内の禁止識別子チェック', () => {
-    it('バインド値にwindowキーが含まれるとnullを返す', () => {
+    it('実行系・脱出名キー（window）があってもバインド全体は破棄せず他キーを評価する', () => {
+      // window はハード禁止（再バインド不可）。該当キーのみ無視し x は評価される。
       const result = Expression.evaluate('x', {x: 1, window: {}});
-      expect(result).toBeNull();
+      expect(result).toBe(1);
     });
 
-    it('バインド値にdocumentキーが含まれるとnullを返す', () => {
-      const result = Expression.evaluate('x', {x: 1, document: {}});
-      expect(result).toBeNull();
-    });
-
-    it('バインド値にevalキーが含まれるとnullを返す', () => {
+    it('eval キーがあっても他キーは評価される（該当キーのみ無視）', () => {
       const result = Expression.evaluate('x', {x: 1, eval: () => {}});
-      expect(result).toBeNull();
+      expect(result).toBe(1);
     });
 
-    it('バインド値にargumentsキーが含まれるとnullを返す', () => {
+    it('arguments キーがあっても他キーは評価される（該当キーのみ無視）', () => {
       const result = Expression.evaluate('x', {x: 1, arguments: []});
-      expect(result).toBeNull();
+      expect(result).toBe(1);
     });
 
-    it('バインド値に constructor キーが含まれると null を返す', () => {
+    it('constructor キーがあっても他キーは評価される（該当キーのみ無視）', () => {
       const result = Expression.evaluate('x', {x: 1, constructor: {}});
-      expect(result).toBeNull();
+      expect(result).toBe(1);
+    });
+
+    it('実行系・脱出名キー自体は式中で undefined に遮蔽される', () => {
+      // window はハード禁止のため、バインドしても式中ではグローバル遮蔽の undefined。
+      const result = Expression.evaluate('window', {window: {label: 'x'}});
+      expect(result).toBeUndefined();
+    });
+
+    it('名前空間衝突名（history / document / navigator）は明示バインドで利用できる', () => {
+      expect(Expression.evaluate('history', {history: [{name: 'A'}]})).toEqual([
+        {name: 'A'},
+      ]);
+      expect(Expression.evaluate('document', {document: 'doc'})).toBe('doc');
+      expect(Expression.evaluate('navigator', {navigator: 'nav'})).toBe('nav');
     });
 
     it('バインド値に location キーが含まれる場合は明示バインド値を利用できる', () => {

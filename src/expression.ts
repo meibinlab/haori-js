@@ -65,6 +65,12 @@ export default class Expression {
   /** 危険値チェックキャッシュのクリア予約済みフラグ */
   private static forbiddenBindingValueCacheResetScheduled = false;
 
+  /** 同一 microtask 内で重複出力を抑止する、出力済み禁止キー署名の集合 */
+  private static readonly loggedForbiddenKeySignatures = new Set<string>();
+
+  /** 禁止キーログ抑止集合のクリア予約済みフラグ */
+  private static loggedForbiddenKeyResetScheduled = false;
+
   /** Haoriで禁止すべき識別子一覧（eval と arguments は strict モードで無効化） */
   private static readonly FORBIDDEN_NAMES = [
     // グローバルオブジェクト
@@ -103,8 +109,25 @@ export default class Expression {
   /** strict モードで禁止される識別子 */
   private static readonly STRICT_FORBIDDEN_NAMES = ['eval', 'arguments'];
 
-  /** 明示バインド時のみ利用を許可する衝突名 */
-  private static readonly REBINDABLE_FORBIDDEN_NAMES = new Set(['location']);
+  /**
+   * 明示バインド時のみ利用を許可する衝突名。
+   *
+   * グローバル名前空間と衝突するが「実行系・プロトタイプ脱出」ではない、データ/
+   * ナビゲーション/ストレージ系の名前を列挙します。これらはバインドキーとして渡すと
+   * 関数引数が式中でグローバルを遮蔽するため、実グローバルへは到達できず安全です
+   * （`history` のようなトップレベルキーをそのまま `data-each` で使えるようにする）。
+   * `window`/`self`/`globalThis`/`Object`/`Function`/`eval`/`constructor` などの
+   * 実行系・プロトタイプ脱出名は再バインドを許可しません。
+   */
+  private static readonly REBINDABLE_FORBIDDEN_NAMES = new Set([
+    'location',
+    'history',
+    'document',
+    'navigator',
+    'localStorage',
+    'sessionStorage',
+    'IndexedDB',
+  ]);
 
   /** バインド識別子としては拒否する名前 */
   private static readonly FORBIDDEN_BINDING_NAMES = new Set([
@@ -175,6 +198,23 @@ export default class Expression {
     queueMicrotask(() => {
       this.forbiddenBindingValueCache = new WeakMap<object, boolean>();
       this.forbiddenBindingValueCacheResetScheduled = false;
+    });
+  }
+
+  /**
+   * 禁止キー警告の重複抑止用集合を次の microtask で破棄します。
+   *
+   * 禁止キーは継承スコープを通じて配下の全式評価に現れ得るため、同一キー集合の
+   * エラーが氾濫しないよう microtask 単位で 1 回だけ出力するための仕組みです。
+   */
+  private static scheduleForbiddenKeyLogReset(): void {
+    if (this.loggedForbiddenKeyResetScheduled) {
+      return;
+    }
+    this.loggedForbiddenKeyResetScheduled = true;
+    queueMicrotask(() => {
+      this.loggedForbiddenKeySignatures.clear();
+      this.loggedForbiddenKeyResetScheduled = false;
     });
   }
 
@@ -323,9 +363,28 @@ export default class Expression {
       }
       return {value: null, unresolvedReference: false};
     }
-    if (this.containsForbiddenKeys(bindedValues)) {
-      Log.warn('[Haori]', bindedValues, 'Binded values contain forbidden keys');
-      return {value: null, unresolvedReference: false};
+    // トップレベルキーに拒否名（実行系・プロトタイプ脱出名など、明示バインドでも
+    // 許可しない名前）が含まれていても、バインド全体を破棄せず該当キーのみ無視する。
+    // 該当キーは prepareEvaluator で引数から除外され buildAssignments で undefined に
+    // 遮蔽されるため、残りの正常なキーはそのまま評価・描画される。原因特定のため
+    // error ログに該当キー名を明示する（無言の空描画を避ける）。
+    const forbiddenKeys = this.collectForbiddenKeys(bindedValues);
+    if (forbiddenKeys.length > 0) {
+      // 同一キー集合のエラーは microtask 単位で 1 回だけ出力し、継承スコープ経由の
+      // 多発（配下の全式評価で再発火）によるログの氾濫を防ぐ。
+      const signature = forbiddenKeys.join(',');
+      if (!this.loggedForbiddenKeySignatures.has(signature)) {
+        this.loggedForbiddenKeySignatures.add(signature);
+        this.scheduleForbiddenKeyLogReset();
+        Log.error(
+          '[Haori]',
+          'Binding keys are reserved and ignored: ' +
+            forbiddenKeys.join(', ') +
+            '. These collide with blocked global/prototype names and cannot' +
+            ' be used as top-level binding keys; the remaining keys are still' +
+            ' evaluated.',
+        );
+      }
     }
     const forbiddenBindingValues = this.getForbiddenBindingValueSet();
     if (
@@ -361,9 +420,20 @@ export default class Expression {
           ' helpers; the bound value is ignored in expressions.',
       );
     }
-    const runtimeBindings: Record<string, unknown> = referencesBuiltins
-      ? {...bindedValues, [this.BUILTIN_NAMESPACE]: this.BUILTIN_HELPERS}
-      : {...bindedValues};
+    // 多層防御: 拒否名（再バインド不可）のキーは評価用の作業オブジェクトから物理的に
+    // 取り除く。引数除外（prepareEvaluator）・undefined 遮蔽（buildAssignments）に加え、
+    // 危険キーが Proxy ラップや Function の引数空間へ一切入らないようにする
+    // （下流レイヤのいずれかが将来退行しても安全側に倒す）。`__proto__` 等は
+    // FORBIDDEN_BINDING_NAMES に含まれるため、ここでの代入経路にも乗らない。
+    const runtimeBindings: Record<string, unknown> = {};
+    for (const key of Object.keys(bindedValues)) {
+      if (!this.FORBIDDEN_BINDING_NAMES.has(key)) {
+        runtimeBindings[key] = (bindedValues as Record<string, unknown>)[key];
+      }
+    }
+    if (referencesBuiltins) {
+      runtimeBindings[this.BUILTIN_NAMESPACE] = this.BUILTIN_HELPERS;
+    }
     const allowMissingIdentifierRecovery =
       this.canAttemptMissingIdentifierRecovery(expression);
 
@@ -1194,17 +1264,24 @@ export default class Expression {
    * @return 禁止識別子が含まれていればtrue
    */
   protected static containsForbiddenKeys(obj: unknown): boolean {
+    return this.collectForbiddenKeys(obj).length > 0;
+  }
+
+  /**
+   * トップレベルのバインドキーのうち、拒否対象名（実行系・プロトタイプ脱出名など、
+   * 明示バインドでも許可しない名前）を列挙します。ネストしたオブジェクトのプロパティ名は
+   * 識別子として評価されないため対象外です。
+   *
+   * @param obj チェック対象のオブジェクト
+   * @return 拒否対象のトップレベルキー名の配列
+   */
+  protected static collectForbiddenKeys(obj: unknown): string[] {
     if (!obj || typeof obj !== 'object') {
-      return false;
+      return [];
     }
-
-    for (const key of Object.keys(obj as object)) {
-      if (this.FORBIDDEN_BINDING_NAMES.has(key)) {
-        return true;
-      }
-    }
-
-    return false;
+    return Object.keys(obj as object).filter(key =>
+      this.FORBIDDEN_BINDING_NAMES.has(key),
+    );
   }
 
   /**
