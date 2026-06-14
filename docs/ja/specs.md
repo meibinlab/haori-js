@@ -572,7 +572,7 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
   - `haori.findBy(array, key, value)`: 配列から `item[key]` が `value` に一致する最初の要素を返す。比較は**文字列化**して行うため数値 ID と文字列 ID の差を吸収する。一致が無ければ `null`（非配列・空配列も `null`）。先頭フォールバックは式側で `haori.findBy(items, 'id', sel) ?? items[0]` と書く。
   - `haori.sum(array, key?)`: 配列の数値合計を返す。`key` 省略時は要素自体、指定時は `item[key]` を合計。数値化できない値（`null`・`undefined`・空文字・非数値・`NaN`）は無視し、数値文字列（例 `'12'`）は数値として扱う。非配列は `0`。集計行は `{{haori.number(haori.sum(rows, 'total'))}}` のように書く。
   - `haori.distinct(array, key?)`: 配列から重複を取り除いた新しい配列を返す。`key` 省略時は要素自体、指定時は `item[key]` で重複を判定する。比較は **`findBy`・`sum` と同様に文字列化**して行い、数値 ID と文字列 ID の差を吸収する（例 `1` と `'1'` は同一）。同じキーは**最初に出現した要素だけ**を残し、元の順序を保つ。非配列は空配列。明細レスポンスを「1 件 = 1 行」にまとめる用途（例 `data-each="haori.distinct(rows, 'orderId')"`）。
-  - `haori.groupBy(array, key)`: 配列を `item[key]` ごとのグループへ分け、`{key, items}` の配列を返す。グループは**最初の出現順**、各グループ内の要素も元の順序を保つ。グループ判定は**文字列化**して行うが、`key` には最初に出現した要素の**生値**を格納する。非配列は空配列。`data-each` でグループ見出しと明細を宣言的に描画できる（外側 `data-each="haori.groupBy(rows, 'date')"`、内側 `data-each="[[items]]"`）。
+  - `haori.groupBy(array, key)`: 配列を `item[key]` ごとのグループへ分け、`{key, items}` の配列を返す。グループは**最初の出現順**、各グループ内の要素も元の順序を保つ。グループ判定は**文字列化**して行うが、`key` には最初に出現した要素の**生値**を格納する。非配列は空配列。`data-each` でグループ見出しと明細を宣言的に描画できる（外側 `data-each="haori.groupBy(rows, 'date')"`、内側 `data-each="items"`）。
 
 `haori.date` / `number` / `range` / `pages` / `monthAdd` / `monthRange` / `pageSummary` / `findBy` / `sum` / `distinct` / `groupBy` は `Haori.date(...)` のように静的メソッドとしても公開されます。
 
@@ -1536,7 +1536,7 @@ data-each="arrayExpression"
 **例**:
 
 ```html
-<div data-fetch="/api/items?page=[[page]]">
+<div data-fetch="/api/items?page={{page}}">
   <ul data-each="content" data-each-key="id"
       data-each-visible="vr" data-each-visible-root="#list-scroll">
     <li>{{name}}</li>
