@@ -541,8 +541,8 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 - **注入条件**: 式が `haori` を独立した識別子として参照する場合のみ注入します（`/(^|[^\w$.])haori(?![\w$])/`）。参照しない式には引数も Proxy ラップも追加しません。`foo.haori` のようなプロパティアクセスは注入対象外です。
 - **優先順位**: `data-bind` に `haori` キーがあっても、式中では組み込みが優先されます（バインド値は無視。開発モードでは `Log.warn` で警告）。
 - **凍結との関係**: 公開 API 用の `Builtins` は `Object.freeze` 済みですが、凍結オブジェクトをそのまま注入すると評価時の Proxy ラップが Proxy 不変条件（read-only プロパティに別値を返せない）に違反するため、注入には非凍結の浅いコピーを用います。
-- **提供関数**（公開 API `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages` / `Haori.monthAdd` / `Haori.monthRange` / `Haori.pageSummary` / `Haori.findBy` としても同一実装を提供。`monthRange` を `base` 省略で呼ぶ場合のみ現在月に依存し、それ以外は副作用なし・冪等）:
-  - `haori.date(value, format?)`: ISO 文字列・エポックミリ秒・`Date` を整形（既定 `yyyy/MM/dd HH:mm`、ローカル時刻）。トークン `yyyy yy MM M dd d HH H mm ss`。空・不正値は空文字。**トークンに使う英字（`y M d H m s`）はフォーマット中のどこにあってもトークンとして解釈される**ため、リテラルとして出したい英字はシングルクォートで囲む（例 `yyyy-MM-dd'T'HH:mm`、`''` はシングルクォート1文字）。`/ : -`・日本語などトークン外の文字はそのまま出力。
+- **提供関数**（公開 API `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages` / `Haori.monthAdd` / `Haori.monthRange` / `Haori.pageSummary` / `Haori.findBy` / `Haori.sum` / `Haori.distinct` / `Haori.groupBy` としても同一実装を提供。`monthRange` を `base` 省略で呼ぶ場合のみ現在月に依存し、それ以外は副作用なし・冪等）:
+  - `haori.date(value, format?, timeZone?)`: ISO 文字列・エポックミリ秒・`Date` を整形（既定 `yyyy/MM/dd HH:mm`）。トークン `yyyy yy MM M dd d HH H mm ss`。空・不正値は空文字。`timeZone` を省略するとブラウザのローカル時刻で整形し、IANA タイムゾーン名（例 `Asia/Tokyo`）を指定するとそのタイムゾーンの時刻で整形する（`Intl.DateTimeFormat` を利用、24 時間表記）。`timeZone` が不正な名前の場合は空文字を返す。**トークンに使う英字（`y M d H m s`）はフォーマット中のどこにあってもトークンとして解釈される**ため、リテラルとして出したい英字はシングルクォートで囲む（例 `yyyy-MM-dd'T'HH:mm`、`''` はシングルクォート1文字）。`/ : -`・日本語などトークン外の文字はそのまま出力。
   - `haori.number(value, decimals?)`: 桁区切り付きで数値を整形（`Intl.NumberFormat`、`en-US`）。非数値・null・空文字・空白のみは空文字（数値文字列は前後空白を無視）。`en-US` ロケールは区切り文字（カンマ・ドット）を決めるだけで、小数桁は固定しません。`decimals` を指定するとその桁数で固定します（末尾ゼロ埋めあり。例 `number(1000, 2) → "1,000.00"`）。`decimals` を省略した場合は `Intl.NumberFormat` の既定に従い、整数はそのまま・小数は末尾ゼロ埋めなしで表示し、**小数は最大 3 桁まで（`maximumFractionDigits = 3`）に丸められます**（例 `number(1234.56789) → "1,234.568"`）。4 桁以上をそのまま出したい場合は `decimals` を明示してください。
   - `haori.range(start, end?, step?)`: 整数配列を生成（終端排他）。`range(n)`＝`[0..n-1]`。負の `step` で降順。要素数は上限で打ち切り。
   - `haori.pages(totalPages, current, {window?, boundary?})`: 省略記号付きの番号ページ列。`current` は 0 始まり。要素は `{page, label, active, ellipsis}`（`page` は 0 始まり、`label` は `page + 1`、省略記号は `{page: null, label: '…', active: false, ellipsis: true}`）。既定 `window: 2` / `boundary: 1`。**隠れるページが 1 つだけの場合は省略記号ではなくその番号を表示**する（ギャップが 2 のとき。例 `pages(5, 2, {window: 0})` → `1 2 [3] 4 5`）。
@@ -551,8 +551,10 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
   - `haori.pageSummary(page, visibleCount?)`: Spring Data の `Page` 相当（`number`・`size`・`totalElements`／`totalCount`）から表示サマリー `{start, end, total, empty}` を返す。`number` は 0 始まり。末尾ページの端数は `visibleCount`（指定時）→ `page.numberOfElements` → `size` の順で算出。総件数 0・非オブジェクトは `{start: 0, end: 0, total: 0, empty: true}`。`1 - 20 / 100 件` のような表示の算出元（例 `haori.pageSummary(view).start`）。
   - `haori.findBy(array, key, value)`: 配列から `item[key]` が `value` に一致する最初の要素を返す。比較は**文字列化**して行うため数値 ID と文字列 ID の差を吸収する。一致が無ければ `null`（非配列・空配列も `null`）。先頭フォールバックは式側で `haori.findBy(items, 'id', sel) ?? items[0]` と書く。
   - `haori.sum(array, key?)`: 配列の数値合計を返す。`key` 省略時は要素自体、指定時は `item[key]` を合計。数値化できない値（`null`・`undefined`・空文字・非数値・`NaN`）は無視し、数値文字列（例 `'12'`）は数値として扱う。非配列は `0`。集計行は `{{haori.number(haori.sum(rows, 'total'))}}` のように書く。
+  - `haori.distinct(array, key?)`: 配列から重複を取り除いた新しい配列を返す。`key` 省略時は要素自体、指定時は `item[key]` で重複を判定する。比較は **`findBy`・`sum` と同様に文字列化**して行い、数値 ID と文字列 ID の差を吸収する（例 `1` と `'1'` は同一）。同じキーは**最初に出現した要素だけ**を残し、元の順序を保つ。非配列は空配列。明細レスポンスを「1 件 = 1 行」にまとめる用途（例 `data-each="haori.distinct(rows, 'orderId')"`）。
+  - `haori.groupBy(array, key)`: 配列を `item[key]` ごとのグループへ分け、`{key, items}` の配列を返す。グループは**最初の出現順**、各グループ内の要素も元の順序を保つ。グループ判定は**文字列化**して行うが、`key` には最初に出現した要素の**生値**を格納する。非配列は空配列。`data-each` でグループ見出しと明細を宣言的に描画できる（外側 `data-each="haori.groupBy(rows, 'date')"`、内側 `data-each="[[items]]"`）。
 
-`haori.date` / `number` / `range` / `pages` / `monthAdd` / `monthRange` / `pageSummary` / `findBy` / `sum` は `Haori.date(...)` のように静的メソッドとしても公開されます。
+`haori.date` / `number` / `range` / `pages` / `monthAdd` / `monthRange` / `pageSummary` / `findBy` / `sum` / `distinct` / `groupBy` は `Haori.date(...)` のように静的メソッドとしても公開されます。
 
 #### `Core.getBindingData(element, options?)`
 
@@ -1414,6 +1416,7 @@ data-each="arrayExpression"
 - `data-each-before`: ループ前に表示する要素をマーク
 - `data-each-after`: ループ後に表示する要素をマーク
 - `data-row`: 各行に自動付与されるキー (手動変更禁止)
+- `data-each-visible`: スクロール追従の可視行範囲を組み込み変数として公開（後述）
 - `data-each-done`: 全行の描画が安定して完了したときに **Haori が自動付与**するマーカー（手動指定不可）。新しい描画サイクルの開始時に外され、完了時に再付与されます。E2E テスト等で `[data-each-done]` の出現を待って描画完了を検知できます
 
 **例**:
@@ -1477,6 +1480,52 @@ data-each="arrayExpression"
 - `haori:rowadd` (行追加時)
 - `haori:rowremove` (行削除時)
 - `haori:rowmove` (行移動時)
+
+#### `data-each-visible`（スクロール追従の可視行範囲）
+
+無限スクロールなどで「いまビューポートに見えている行範囲（x - y）」を、JavaScript なしで宣言的に表示するための仕組みです。`data-each` コンテナに付与すると、各行を `IntersectionObserver` で監視し、可視行範囲を**指定名の組み込み変数**として**最近接の上位 `data-bind` スコープ**へ公開します。実装は `src/visible_range.ts`。
+
+**属性**:
+- `data-each-visible="<変数名>"`: 機能を有効化し、公開する変数名を指定（必須。値が無い場合は警告して無視）。
+- `data-each-visible-root`: スクロール枠（`IntersectionObserver` の root）のセレクタ。省略時はビューポート。
+- `data-each-visible-margin`: rootMargin。省略時は `0px`。
+
+**公開される変数の形**（変数名 `vr` の場合 `vr.first` 等で参照）:
+
+| プロパティ | 内容 |
+|---|---|
+| `first` | 可視先頭行の **0 始まり**論理インデックス（可視 0 件のとき `-1`） |
+| `last` | 可視末尾行の **0 始まり**論理インデックス（可視 0 件のとき `-1`） |
+| `firstLabel` | 表示用の先頭番号（`first + 1`。可視 0 件のとき `0`） |
+| `lastLabel` | 表示用の末尾番号（`last + 1`。可視 0 件のとき `0`） |
+| `count` | 可視行数 |
+| `total` | **読込済（描画済み）の行数**（＝現在 DOM に存在する行数。グランド総数ではない） |
+| `empty` | 可視行が 0 件のとき `true` |
+
+> **注意**: `total` は「読込済行数」であり、サーバ側の総件数（グランド総数）ではありません。`1 - 20 / 100 件` のような**総件数 100** を出すには、`page` 情報と `haori.pageSummary(page).total` を併用してください。
+
+**仕様の要点**:
+- **可視判定**: しきい値 `0`（1px でも見えていれば可視）。
+- **公開先**: 最近接の**上位** `data-bind` スコープ（一覧本体とフッタの共通祖先）。上位に無い場合のみコンテナ自身へフォールバックし、見つからなければ警告して公開しません。
+- **行インデックス**: 描画順（`content` 配列の添字、`data-each-index` と一致）。
+- **更新の合体**: 多発する交差イベントは `requestAnimationFrame` で 1 回にまとめて集計し、前回と異なるときだけ公開します。
+- **性能**: 公開は in-memory スコープのみ更新し、`data-bind` 属性への全データ直列化（`JSON.stringify`）は**抑止**します（`Core.setBindingData(..., reflectToAttribute=false)`）。これにより公開先スコープが `content` などの大配列を保持していても、スクロールのたびに大配列が再直列化されることはありません。再評価は一覧本体フラグメントを `skipFragments` で枝刈りするため、コストはフッタ側（行数非依存）のみです。監視コールバックは境界を跨いだ行のみ発火（スクロール停止中はゼロ）。各行を監視するため監視登録メモリは描画済み行数に比例し、極端な大量行では行仮想化の併用を推奨します。
+- **属性ミラー・通知**: 可視範囲変数は実行時の一時値のため `data-bind` 属性には反映されません（`Haori.Core.getBindingData(...)` の in-memory 値では参照可能）。属性は次回の通常バインド更新時に最新 in-memory から反映されます。また高頻度更新による通知の氾濫を避けるため、公開時に **`haori:bindchange` イベントは発火しません**（公開先要素で `data-on` 等のバインド変更通知は受け取れません）。
+- **初期値**: 変数は初回フレームで公開されるため、最初の描画直後の一瞬は未定義になり得ます。フッタ式は `{{vr.firstLabel}}`（未定義時は空表示）か `data-if` でガードしてください。
+
+**例**:
+
+```html
+<div data-fetch="/api/items?page=[[page]]">
+  <ul data-each="content" data-each-key="id"
+      data-each-visible="vr" data-each-visible-root="#list-scroll">
+    <li>{{name}}</li>
+  </ul>
+  <footer>
+    {{vr.firstLabel}} - {{vr.lastLabel}} / {{haori.pageSummary(page).total}} 件
+  </footer>
+</div>
+```
 
 #### `data-derive` / `data-derive-name`
 

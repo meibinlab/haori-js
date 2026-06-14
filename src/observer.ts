@@ -9,6 +9,7 @@ import EventDispatcher from './event_dispatcher';
 import IntersectObserver from './intersect';
 import Log from './log';
 import Queue from './queue';
+import VisibleRangeObserver from './visible_range';
 
 /**
  * 監視対象の要素を管理するためのクラスです。
@@ -56,6 +57,7 @@ export class Observer {
     Observer.observe(document.body);
     new EventDispatcher().start();
     IntersectObserver.syncTree(document.body);
+    VisibleRangeObserver.syncTree(document.body);
   }
 
   /**
@@ -94,11 +96,13 @@ export class Observer {
                 true,
               );
               IntersectObserver.syncElement(element);
+              VisibleRangeObserver.syncElement(element);
               break;
             }
             case 'childList': {
               Array.from(mutation.removedNodes).forEach(node => {
                 IntersectObserver.cleanupTree(node);
+                VisibleRangeObserver.cleanupTree(node);
                 Core.removeNode(node);
               });
               Array.from(mutation.addedNodes).forEach(node => {
@@ -107,7 +111,15 @@ export class Observer {
                 }
                 Core.addNode(node.parentElement, node);
                 IntersectObserver.syncTree(node);
+                VisibleRangeObserver.syncTree(node);
               });
+              // 行の増減があったコンテナ自身の監視対象を取り直す
+              // （data-each-visible は親コンテナに付与され、行はその子のため）。
+              if (mutation.target instanceof Element) {
+                VisibleRangeObserver.syncElement(
+                  mutation.target as HTMLElement,
+                );
+              }
               break;
             }
             case 'characterData': {

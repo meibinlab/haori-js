@@ -27,6 +27,96 @@ function pad2(value: number): string {
 }
 
 /**
+ * 年月日時分秒の整数から date() のフォーマット用トークンを生成します。
+ *
+ * @param year 年（西暦）
+ * @param month 月（1〜12）
+ * @param day 日（1〜31）
+ * @param hour 時（0〜23）
+ * @param minute 分（0〜59）
+ * @param second 秒（0〜59）
+ * @returns トークン名から置換文字列へのマップ
+ */
+function buildDateTokens(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+): Record<string, string> {
+  return {
+    yyyy: String(year).padStart(4, '0'),
+    yy: pad2(year % 100),
+    MM: pad2(month),
+    M: String(month),
+    dd: pad2(day),
+    d: String(day),
+    HH: pad2(hour),
+    H: String(hour),
+    mm: pad2(minute),
+    ss: pad2(second),
+  };
+}
+
+/**
+ * 指定タイムゾーンでの年月日時分秒を求め、date() 用トークンを生成します。
+ *
+ * `Intl.DateTimeFormat` の `formatToParts` で対象タイムゾーンの各要素を取り出し、
+ * 24 時間表記（`h23`）で整形します。タイムゾーン名が不正で `Intl.DateTimeFormat`
+ * が例外を投げる場合や、要素を取得できない場合は null を返します。
+ *
+ * @param parsed 対象の日時
+ * @param timeZone IANA タイムゾーン名（例 `Asia/Tokyo`）
+ * @returns date() 用トークン。整形できない場合は null
+ */
+function resolveZonedTokens(
+  parsed: Date,
+  timeZone: string,
+): Record<string, string> | null {
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    parts = formatter.formatToParts(parsed);
+  } catch {
+    // 不正なタイムゾーン名（RangeError）など。
+    return null;
+  }
+  const map: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') {
+      map[part.type] = part.value;
+    }
+  }
+  const year = Number(map.year);
+  const month = Number(map.month);
+  const day = Number(map.day);
+  const hour = Number(map.hour);
+  const minute = Number(map.minute);
+  const second = Number(map.second);
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second)
+  ) {
+    return null;
+  }
+  return buildDateTokens(year, month, day, hour, minute, second);
+}
+
+/**
  * ページネーション補助 `pages()` の動作を調整するオプションです。
  */
 export interface PagesOptions {
@@ -57,21 +147,25 @@ export interface PageItem {
 /**
  * ISO 文字列・エポックミリ秒・Date を指定フォーマットの文字列へ整形します。
  *
- * 解釈はブラウザのローカルタイムゾーンで行います。空・null・不正な日時は空文字を
- * 返します。利用できるトークン（いずれもローカル時刻）:
- * `yyyy`（4桁年）`yy`（2桁年）`MM`/`M`（月）`dd`/`d`（日）`HH`/`H`（時・24時間）
- * `mm`（分）`ss`（秒）。`/ : - ` や日本語など、これらのトークンに該当しない文字は
- * そのまま出力されます。`y M d H m s` などトークンに使う英字をそのまま出したい場合は
- * シングルクォートで囲みます（例 `'T'`）。`''`（連続するシングルクォート2つ）は
- * リテラルのシングルクォート1文字になります（例 `HH'h'mm` → `09h05`）。
+ * 解釈は既定でブラウザのローカルタイムゾーンで行います。`timeZone` を指定した場合は
+ * その IANA タイムゾーン（例 `Asia/Tokyo`）での時刻として整形します。空・null・
+ * 不正な日時は空文字を返します。`timeZone` が不正な名前の場合も空文字を返します。
+ * 利用できるトークン: `yyyy`（4桁年）`yy`（2桁年）`MM`/`M`（月）`dd`/`d`（日）
+ * `HH`/`H`（時・24時間）`mm`（分）`ss`（秒）。`/ : - ` や日本語など、これらの
+ * トークンに該当しない文字はそのまま出力されます。`y M d H m s` などトークンに使う
+ * 英字をそのまま出したい場合はシングルクォートで囲みます（例 `'T'`）。`''`（連続する
+ * シングルクォート2つ）はリテラルのシングルクォート1文字になります（例 `HH'h'mm`
+ * → `09h05`）。
  *
  * @param value 整形対象の日時（ISO 文字列・エポックミリ秒・Date）
  * @param format フォーマット文字列（省略時は `yyyy/MM/dd HH:mm`）
+ * @param timeZone IANA タイムゾーン名（例 `Asia/Tokyo`）。省略時はローカルタイムゾーン
  * @returns 整形済み文字列。整形できない場合は空文字
  */
 export function date(
   value: string | number | Date | null | undefined,
   format: string = DEFAULT_DATE_FORMAT,
+  timeZone?: string,
 ): string {
   if (value === null || value === undefined || value === '') {
     return '';
@@ -80,18 +174,24 @@ export function date(
   if (Number.isNaN(parsed.getTime())) {
     return '';
   }
-  const tokens: Record<string, string> = {
-    yyyy: String(parsed.getFullYear()).padStart(4, '0'),
-    yy: pad2(parsed.getFullYear() % 100),
-    MM: pad2(parsed.getMonth() + 1),
-    M: String(parsed.getMonth() + 1),
-    dd: pad2(parsed.getDate()),
-    d: String(parsed.getDate()),
-    HH: pad2(parsed.getHours()),
-    H: String(parsed.getHours()),
-    mm: pad2(parsed.getMinutes()),
-    ss: pad2(parsed.getSeconds()),
-  };
+  let tokens: Record<string, string> | null;
+  if (typeof timeZone === 'string' && timeZone.trim() !== '') {
+    tokens = resolveZonedTokens(parsed, timeZone.trim());
+    if (tokens === null) {
+      // 不正なタイムゾーン名は整形不能として空文字を返す。
+      return '';
+    }
+  } else {
+    tokens = buildDateTokens(
+      parsed.getFullYear(),
+      parsed.getMonth() + 1,
+      parsed.getDate(),
+      parsed.getHours(),
+      parsed.getMinutes(),
+      parsed.getSeconds(),
+    );
+  }
+  const resolvedTokens = tokens;
   // 先頭の `'...'` はリテラルとして取り出し、トークン置換から除外する（`''` は ' 1文字）。
   // 長いトークンを先に並べ、`yyyy` が `yy` より、`MM` が `M` より優先されるようにする。
   return format.replace(
@@ -100,7 +200,7 @@ export function date(
       if (literal !== undefined) {
         return literal === '' ? '\'' : literal;
       }
-      return tokens[matched];
+      return resolvedTokens[matched];
     },
   );
 }
@@ -518,6 +618,107 @@ export function sum(array: unknown, key?: string): number {
 }
 
 /**
+ * 要素から重複排除・グルーピングに用いる比較キー文字列を求めます。
+ *
+ * `key` 省略時は要素自体を、指定時は `item[key]` を文字列化します。`findBy`・`sum`
+ * と同様に文字列化して比較するため、数値と数値文字列（例 `3` と `'3'`）の差を
+ * 吸収します。要素が `null`・`undefined` の場合はそれ自体を文字列化します。
+ *
+ * @param item 対象要素
+ * @param key 比較に使うプロパティ名（省略時は要素自体）
+ * @returns 比較キー文字列
+ */
+function toGroupingKey(item: unknown, key?: string): string {
+  if (key === undefined || key === null) {
+    return String(item);
+  }
+  if (item === null || item === undefined) {
+    return String(item);
+  }
+  return String((item as Record<string, unknown>)[key]);
+}
+
+/**
+ * 配列から重複を取り除いた新しい配列を返します。
+ *
+ * `key` 省略時は要素自体で、指定時は `item[key]` で重複を判定します。比較は
+ * `findBy`・`sum` と同様に**文字列化**して行うため、数値 ID と文字列 ID の差を
+ * 吸収します（例 `1` と `'1'` は同一とみなす）。同じキーの要素は**最初に出現した
+ * ものだけ**を残し、元の順序を保ちます。非配列を渡した場合は空配列を返します。
+ *
+ * 明細単位のレスポンスを「1 件 = 1 行」にまとめる用途を想定しています
+ * （例 `data-each="haori.distinct(rows, 'orderId')"`）。
+ *
+ * @param array 対象の配列
+ * @param key 重複判定に使うプロパティ名（省略時は要素自体）
+ * @returns 重複排除後の新しい配列。非配列は空配列
+ */
+export function distinct(array: unknown, key?: string): unknown[] {
+  if (!Array.isArray(array)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const result: unknown[] = [];
+  for (const item of array) {
+    const groupingKey = toGroupingKey(item, key);
+    if (seen.has(groupingKey)) {
+      continue;
+    }
+    seen.add(groupingKey);
+    result.push(item);
+  }
+  return result;
+}
+
+/**
+ * `groupBy()` が返す 1 グループ分の情報です。
+ */
+export interface GroupItem {
+  /** グループのキー（最初に出現した要素の `item[key]` の生値） */
+  key: unknown;
+
+  /** そのグループに属する要素（元の順序を保つ） */
+  items: unknown[];
+}
+
+/**
+ * 配列を `item[key]` ごとのグループへ分けて返します。
+ *
+ * 戻り値は `{key, items}` の配列で、`data-each` で繰り返してグループ見出しと
+ * 明細を宣言的に描画できます（例 外側 `data-each="haori.groupBy(rows, 'date')"`、
+ * 内側 `data-each="[[items]]"`）。グループは**最初に出現した順序**で並び、各
+ * グループ内の要素も元の順序を保ちます。グループの判定は `findBy`・`sum` と同様に
+ * **文字列化**して行いますが、`key` には最初に出現した要素の**生値**を格納します。
+ * 非配列を渡した場合は空配列を返します。
+ *
+ * @param array 対象の配列
+ * @param key グループ分けに使うプロパティ名
+ * @returns グループ情報（{@link GroupItem}）の配列。非配列は空配列
+ */
+export function groupBy(array: unknown, key: string): GroupItem[] {
+  if (!Array.isArray(array)) {
+    return [];
+  }
+  const indexByKey = new Map<string, number>();
+  const groups: GroupItem[] = [];
+  for (const item of array) {
+    const groupingKey = toGroupingKey(item, key);
+    const existingIndex = indexByKey.get(groupingKey);
+    if (existingIndex === undefined) {
+      const rawKey =
+        item === null || item === undefined
+          ? item
+          : (item as Record<string, unknown>)[key];
+      indexByKey.set(groupingKey, groups.length);
+      groups.push({key: rawKey, items: [item]});
+    } else {
+      groups[existingIndex].items.push(item);
+    }
+  }
+  return groups;
+}
+
+/**
  * 式中の予約名前空間 `haori` として公開する組み込みヘルパー集合です。
  */
 const Builtins = Object.freeze({
@@ -530,6 +731,8 @@ const Builtins = Object.freeze({
   pageSummary,
   findBy,
   sum,
+  distinct,
+  groupBy,
 });
 
 export default Builtins;

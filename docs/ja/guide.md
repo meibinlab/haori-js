@@ -290,7 +290,7 @@ window.Dates = {
 金額: 1,234,567 円
 ```
 
-- `haori.date(value, format?)`: ISO 文字列・エポックミリ秒・`Date` をローカル時刻で整形します（既定は `yyyy/MM/dd HH:mm`）。利用できるトークンは `yyyy`（4桁年）`yy`（2桁年）`MM`/`M`（月）`dd`/`d`（日）`HH`/`H`（時・24時間）`mm`（分）`ss`（秒）です。空・不正な値は空文字になります。`y M d H m s` などトークンに使う英字をそのまま文字として出したい場合はシングルクォートで囲みます（例 `{{ haori.date(t, "yyyy-MM-dd'T'HH:mm") }}` → `2024-01-15T10:30`）。
+- `haori.date(value, format?, timeZone?)`: ISO 文字列・エポックミリ秒・`Date` を整形します（既定は `yyyy/MM/dd HH:mm`）。利用できるトークンは `yyyy`（4桁年）`yy`（2桁年）`MM`/`M`（月）`dd`/`d`（日）`HH`/`H`（時・24時間）`mm`（分）`ss`（秒）です。空・不正な値は空文字になります。`y M d H m s` などトークンに使う英字をそのまま文字として出したい場合はシングルクォートで囲みます（例 `{{ haori.date(t, "yyyy-MM-dd'T'HH:mm") }}` → `2024-01-15T10:30`）。`timeZone` を省略するとブラウザのローカル時刻で整形し、IANA タイムゾーン名（例 `'Asia/Tokyo'`）を渡すと端末のタイムゾーンに依存せずその地域の時刻で整形します（例 `{{ haori.date(updatedAt, 'yyyy/MM/dd HH:mm', 'Asia/Tokyo') }}`）。不正なタイムゾーン名は空文字になります。
 - `haori.number(value, decimals?)`: 桁区切りを付けて整形します。`decimals` を指定すると小数桁を固定できます（例 `{{ haori.number(rate, 2) }}`）。数値文字列の前後空白は無視し、空・空白のみ・数値化できない値は空文字になります。
 
 > `haori` は予約名です。`data-bind` で `haori` というキーを与えても、式の中では組み込みヘルパーが優先されます。同じ関数は JavaScript からも `Haori.date(...)` / `Haori.number(...)` として呼べます。
@@ -593,6 +593,29 @@ window.Dates = {
 1 - 20 / 100 件
 ```
 
+### 無限スクロールで「いま見えている行範囲」を出す（`data-each-visible`）
+
+無限スクロールのフッタで「いま画面に見えている行範囲（例 `21 - 40 / 100 件`）」を出したいとき、`data-each` コンテナに `data-each-visible="<変数名>"` を付けると、可視行範囲を JavaScript なしで取得できます。各行を監視し、指定名の変数を**最近接の上位 `data-bind` スコープ**へ公開します。
+
+```html
+<div data-bind='{"page":{"totalElements":100}}'>
+  <ul data-each="content" data-each-key="id"
+      data-each-visible="vr" data-each-visible-root="#list-scroll">
+    <li>{{name}}</li>
+  </ul>
+  <footer>
+    {{vr.firstLabel}} - {{vr.lastLabel}} / {{ haori.pageSummary(page).total }} 件
+  </footer>
+</div>
+```
+
+- 公開される変数（上の例では `vr`）は `first` / `last`（0 始まりの可視行インデックス）、`firstLabel` / `lastLabel`（表示用に +1 した番号）、`count`（可視行数）、`total`（**読込済の行数**）、`empty`（可視 0 件で true）を持ちます。
+- `data-each-visible-root` にスクロール枠のセレクタを指定します（省略時はビューポート）。1px でも見えていれば可視として扱います。
+- `total` は読込済の行数です。サーバ側のグランド総数（例 100 件）は上の例のように `page` 情報と `haori.pageSummary(page).total` を併用して表示してください。
+- 変数は初回スクロール/描画後に公開されるため、表示直後の一瞬は未定義になり得ます。フッタは `{{vr.firstLabel}}`（未定義時は空表示）か `data-if` でガードしてください。
+
+> 性能上の理由から、可視範囲の公開では `data-bind` 属性への書き戻しと `haori:bindchange` イベントの発火を行いません（公開先要素でバインド変更通知は受け取れません）。値は `Haori.Core.getBindingData(...)` の in-memory 値として参照でき、式・表示には通常どおり反映されます。
+
 ### 配列から要素を探す（`haori.findBy`）
 
 `haori.findBy(array, key, value)` は、配列から `item[key]` が `value` に一致する最初の要素を返します。比較は**文字列化**して行うため、数値 ID と文字列 ID の差を気にせず書けます。一致が無ければ `null` を返します。
@@ -603,6 +626,31 @@ window.Dates = {
 ```
 
 先頭要素をフォールバックにしたいときは `?? array[0]` を付けます（`findBy` 自体は一致が無いと `null` を返します）。
+
+### 配列の重複排除・グルーピング（`haori.distinct` / `haori.groupBy`）
+
+明細単位のレスポンスを一覧で「1 件 = 1 行」にまとめたり、見出しごとにグループ化したりする処理は、自前の JavaScript を書かずに組み込みヘルパーで宣言的に書けます。いずれも比較は**文字列化**して行い（数値 ID と文字列 ID の差を吸収）、元の順序を保ちます。
+
+- `haori.distinct(array, key?)`: 重複を取り除いた新しい配列を返します。`key` を省略すると要素自体で、指定すると `item[key]` で重複を判定し、最初に出現した要素だけを残します。
+
+```html
+<!-- orderId が重複する明細を 1 行にまとめる -->
+<ul data-each="haori.distinct(rows, 'orderId')" data-each-key="orderId">
+  <li>{{orderId}}</li>
+</ul>
+```
+
+- `haori.groupBy(array, key)`: `item[key]` ごとに `{key, items}` の配列へ分けます。`data-each` を入れ子にすると、グループ見出しと明細を宣言的に描画できます。
+
+```html
+<!-- 日付ごとにグループ化して見出し＋明細を表示 -->
+<div data-each="haori.groupBy(rows, 'date')" data-each-key="key">
+  <h3>{{key}}</h3>
+  <ul data-each="items" data-each-arg="item">
+    <li>{{item.name}}</li>
+  </ul>
+</div>
+```
 
 ### 月次の選択肢・ナビゲーションを作る（`haori.monthRange` / `haori.monthAdd`）
 

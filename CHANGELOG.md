@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Added
+
+- 組み込みヘルパー（予約名前空間 `haori`）に **`haori.distinct(array, key?)`** と **`haori.groupBy(array, key)`** を追加した。`distinct` は重複を取り除いた配列を返し（`key` 省略時は要素自体、指定時は `item[key]` で判定。`findBy`／`sum` と同じく文字列化比較で最初の出現を保持）、`groupBy` は `item[key]` ごとに `{key, items}` の配列へ分ける（グループ・要素とも出現順を保持。`key` には最初の要素の生値を格納）。明細レスポンスを「1 件 = 1 行」にまとめたり、入れ子の `data-each` でグループ描画したりを JavaScript なしで宣言的に書ける。`Haori.distinct` / `Haori.groupBy` としても同一実装を公開。
+- **`haori.date` に第3引数 `timeZone` を追加**した。省略時は従来どおりブラウザのローカル時刻で整形し、IANA タイムゾーン名（例 `'Asia/Tokyo'`）を渡すと端末のタイムゾーンに依存せずその地域の時刻で整形する（`Intl.DateTimeFormat` を利用、24 時間表記）。不正なタイムゾーン名は空文字を返す。後方互換（既存の 2 引数呼び出しは挙動不変）。
+- **スクロール追従の可視行範囲を公開する `data-each-visible` を追加**した。`data-each` コンテナに `data-each-visible="<変数名>"` を付けると、いまビューポートに見えている行範囲を**最近接の上位 `data-bind` スコープ**へ指定名の変数（`first` / `last` / `firstLabel` / `lastLabel` / `count` / `total`（読込済行数）/ `empty`）として公開する。無限スクロールのフッタ「x - y / z 件」を JavaScript なしで実現できる。`data-each-visible-root`（スクロール枠）・`data-each-visible-margin`（rootMargin）で調整可能。各行を `IntersectionObserver`（しきい値 0＝1px でも見えたら可視）で監視し、交差変化を `requestAnimationFrame` でまとめて集計する。公開は前回値と異なるときだけ行い、再評価では一覧本体を `skipFragments` で枝刈りするため行数に依存しない。
+  - 可視範囲は実行時の一時変数のため、公開時は `data-bind` 属性への全データ直列化（`JSON.stringify`）を抑止し、`haori:bindchange` イベントも発火しない（高頻度更新でのコスト・通知の氾濫を避ける。値は `Haori.Core.getBindingData(...)` の in-memory 値で参照可能）。この一時更新用に内部 API `Core.setBindingData` へ `reflectToAttribute` 引数を追加した（既定 `true` で既存挙動は不変）。
+
 ## [0.20.1] - 2026-06-14
 
 ### Fixed

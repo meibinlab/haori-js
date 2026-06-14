@@ -729,11 +729,21 @@ export default class Core {
   }
 
   /**
-   * エレメントに属性を設定し、評価を行います。
+   * 要素のバインドデータを更新し、配下を再評価します。
    *
-   * @param element エレメント
-   * @param name 属性名
-   * @param value 属性値
+   * `reflectToAttribute` を `false` にすると `data-bind` 属性へのミラー
+   * （`JSON.stringify` による全データ直列化）を抑止します。スクロール追従の
+   * 可視範囲のように高頻度で更新される一時的なエンジン管理変数では、属性ミラーの
+   * 直列化コスト（保持データ量に比例）が支配的になるため、これを省いて in-memory
+   * 更新と再評価だけを行います。属性は次回の通常更新時に最新の in-memory から
+   * 反映されます。あわせて外部向けの `haori:bindchange` イベントも発火しません
+   * （非ミラーの一時更新は外部通知もしない、という方針で意味を揃えるため）。
+   *
+   * @param element 対象要素
+   * @param data 設定するバインドデータ
+   * @param skipFragments 再評価をスキップするフラグメント集合
+   * @param reentrant 直列化中の再帰呼出で即時実行するか
+   * @param reflectToAttribute `data-bind` 属性へミラーするか（既定 true）
    * @returns Promise (DOM操作が完了したときに解決される)
    */
   public static setBindingData(
@@ -741,6 +751,7 @@ export default class Core {
     data: Record<string, unknown>,
     skipFragments: ReadonlySet<ElementFragment> = new Set(),
     reentrant = false,
+    reflectToAttribute = true,
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
     const previous = fragment.getRawBindingData();
@@ -748,7 +759,12 @@ export default class Core {
     fragment.setBindingData(data);
 
     // bindchangeイベントを発火（従来どおり呼出時点で同期通知する）。
-    HaoriEvent.bindChange(element, previous, data, 'manual');
+    // reflectToAttribute=false は属性ミラーすら行わない一時的なエンジン管理更新
+    // （可視範囲など）のため、外部向け bindchange も発火しない（高頻度更新による
+    // 通知の氾濫を避け、「非ミラーの一時更新は外部通知もしない」と意味を揃える）。
+    if (reflectToAttribute) {
+      HaoriEvent.bindChange(element, previous, data, 'manual');
+    }
 
     // 同一要素への並行呼出で適用順が逆転しないよう、DOM 反映・再評価を呼出順
     // （FIFO）で直列化する。直列化しないと、内部キューの完了順が呼出順と逆転し、
@@ -767,10 +783,11 @@ export default class Core {
       // だと、並行更新時に古い値を data-bind 属性へ書き込み、それを MutationObserver が
       // 拾って巻き戻す競合になり得る。in-memory は呼出時に同期確定済み（last-wins）。
       const current = fragment.getRawBindingData() ?? data;
-      let chain = fragment.setAttribute(
-        `${Env.prefix}bind`,
-        JSON.stringify(current),
-      );
+      // reflectToAttribute=false のときは data-bind 属性への全データ直列化を抑止する
+      // （一時変数の高頻度更新での直列化コストを避ける。in-memory が権威）。
+      let chain = reflectToAttribute
+        ? fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(current))
+        : Promise.resolve();
       if (element.tagName === 'FORM') {
         const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
         const formValues =

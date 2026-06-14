@@ -6,7 +6,9 @@
 import {describe, it, expect} from 'vitest';
 import Builtins, {
   date,
+  distinct,
   findBy,
+  groupBy,
   monthAdd,
   monthRange,
   number,
@@ -42,6 +44,29 @@ describe('Builtins', () => {
       expect(date(null)).toBe('');
       expect(date(undefined)).toBe('');
       expect(date('not-a-date')).toBe('');
+    });
+
+    it('timeZone 指定で対象タイムゾーンの時刻に整形する', () => {
+      // UTC 00:00 は Asia/Tokyo では同日 09:00、America/New_York では前日 19:00。
+      const utc = '2024-01-05T00:00:00Z';
+      expect(date(utc, 'yyyy/MM/dd HH:mm', 'Asia/Tokyo')).toBe(
+        '2024/01/05 09:00',
+      );
+      expect(date(utc, 'yyyy/MM/dd HH:mm', 'America/New_York')).toBe(
+        '2024/01/04 19:00',
+      );
+      expect(date(utc, 'yyyy/MM/dd HH:mm', 'UTC')).toBe('2024/01/05 00:00');
+    });
+
+    it('timeZone 省略・空文字はローカルタイムゾーンで整形する', () => {
+      const local = new Date(2024, 0, 5, 9, 5, 3);
+      expect(date(local, 'yyyy/MM/dd HH:mm')).toBe('2024/01/05 09:05');
+      expect(date(local, 'yyyy/MM/dd HH:mm', '')).toBe('2024/01/05 09:05');
+      expect(date(local, 'yyyy/MM/dd HH:mm', '  ')).toBe('2024/01/05 09:05');
+    });
+
+    it('不正な timeZone 名は空文字を返す', () => {
+      expect(date('2024-01-05T00:00:00Z', 'yyyy/MM/dd', 'Not/AZone')).toBe('');
     });
   });
 
@@ -313,6 +338,92 @@ describe('Builtins', () => {
     });
   });
 
+  describe('distinct()', () => {
+    it('key 指定で item[key] の重複を排除し、最初の出現を残す', () => {
+      const rows = [
+        {orderId: 1, line: 'A'},
+        {orderId: 1, line: 'B'},
+        {orderId: 2, line: 'C'},
+      ];
+      expect(distinct(rows, 'orderId')).toEqual([
+        {orderId: 1, line: 'A'},
+        {orderId: 2, line: 'C'},
+      ]);
+    });
+
+    it('key 省略時は要素自体で重複を排除する', () => {
+      expect(distinct([1, 2, 2, 3, 1])).toEqual([1, 2, 3]);
+      expect(distinct(['a', 'a', 'b'])).toEqual(['a', 'b']);
+    });
+
+    it('文字列化して比較する（数値と文字列の差を吸収）', () => {
+      const rows = [{id: 1}, {id: '1'}, {id: 2}];
+      expect(distinct(rows, 'id')).toEqual([{id: 1}, {id: 2}]);
+    });
+
+    it('元の順序を保つ', () => {
+      expect(distinct([3, 1, 3, 2, 1])).toEqual([3, 1, 2]);
+    });
+
+    it('非配列は空配列を返す', () => {
+      expect(distinct(null)).toEqual([]);
+      expect(distinct(undefined, 'id')).toEqual([]);
+      expect(distinct('x')).toEqual([]);
+    });
+
+    it('要素が null/undefined を含んでいても安全に扱う', () => {
+      expect(distinct([null, null, undefined], 'id')).toEqual([null, undefined]);
+    });
+  });
+
+  describe('groupBy()', () => {
+    it('item[key] ごとに {key, items} へまとめる', () => {
+      const rows = [
+        {date: '2026-06-14', name: 'A'},
+        {date: '2026-06-14', name: 'B'},
+        {date: '2026-06-15', name: 'C'},
+      ];
+      expect(groupBy(rows, 'date')).toEqual([
+        {
+          key: '2026-06-14',
+          items: [
+            {date: '2026-06-14', name: 'A'},
+            {date: '2026-06-14', name: 'B'},
+          ],
+        },
+        {key: '2026-06-15', items: [{date: '2026-06-15', name: 'C'}]},
+      ]);
+    });
+
+    it('グループは最初の出現順、要素も元の順序を保つ', () => {
+      const rows = [
+        {g: 'x', n: 1},
+        {g: 'y', n: 2},
+        {g: 'x', n: 3},
+      ];
+      const result = groupBy(rows, 'g');
+      expect(result.map(group => group.key)).toEqual(['x', 'y']);
+      expect(result[0].items.map(item => (item as {n: number}).n)).toEqual([
+        1, 3,
+      ]);
+    });
+
+    it('key には最初の要素の生値を格納する（文字列化で比較）', () => {
+      const rows = [{id: 1}, {id: '1'}, {id: 2}];
+      const result = groupBy(rows, 'id');
+      expect(result.length).toBe(2);
+      expect(result[0].key).toBe(1);
+      expect(result[0].items).toEqual([{id: 1}, {id: '1'}]);
+      expect(result[1].key).toBe(2);
+    });
+
+    it('非配列は空配列を返す', () => {
+      expect(groupBy(null, 'id')).toEqual([]);
+      expect(groupBy(undefined, 'id')).toEqual([]);
+      expect(groupBy('x', 'id')).toEqual([]);
+    });
+  });
+
   describe('Haori 公開 API との共用', () => {
     it('Haori.date / number / range / pages が同じ実装を返す', () => {
       expect(Haori.date('2024-01-05T09:05:03')).toBe('2024/01/05 09:05');
@@ -340,6 +451,20 @@ describe('Builtins', () => {
     it('Haori.sum が同じ実装を返す', () => {
       expect(Haori.sum([{total: 1}, {total: 2}], 'total')).toBe(3);
       expect(Haori.sum([1, 2, 3])).toBe(6);
+    });
+
+    it('Haori.distinct / groupBy が同じ実装を返す', () => {
+      expect(Haori.distinct([1, 1, 2])).toEqual([1, 2]);
+      expect(Haori.groupBy([{g: 'x'}, {g: 'x'}, {g: 'y'}], 'g')).toEqual([
+        {key: 'x', items: [{g: 'x'}, {g: 'x'}]},
+        {key: 'y', items: [{g: 'y'}]},
+      ]);
+    });
+
+    it('Haori.date が timeZone 引数を受け付ける', () => {
+      expect(
+        Haori.date('2024-01-05T00:00:00Z', 'yyyy/MM/dd HH:mm', 'Asia/Tokyo'),
+      ).toBe('2024/01/05 09:00');
     });
   });
 
@@ -417,6 +542,42 @@ describe('Builtins', () => {
           rows: [{total: 1000}, {total: 2500}],
         }),
       ).toBe('3,500');
+    });
+
+    it('式から haori.distinct を呼べる（一覧の重複排除用途）', () => {
+      const rows = [
+        {orderId: 1, line: 'A'},
+        {orderId: 1, line: 'B'},
+        {orderId: 2, line: 'C'},
+      ];
+      const result = Expression.evaluate("haori.distinct(rows, 'orderId')", {
+        rows,
+      }) as Array<Record<string, unknown>>;
+      expect(result.map(item => item.orderId)).toEqual([1, 2]);
+    });
+
+    it('式から haori.groupBy を呼べる（data-each 用途）', () => {
+      const rows = [
+        {date: '2026-06-14', name: 'A'},
+        {date: '2026-06-14', name: 'B'},
+        {date: '2026-06-15', name: 'C'},
+      ];
+      const result = Expression.evaluate("haori.groupBy(rows, 'date')", {
+        rows,
+      }) as Array<{key: unknown; items: unknown[]}>;
+      expect(result.map(group => group.key)).toEqual([
+        '2026-06-14',
+        '2026-06-15',
+      ]);
+      expect(result[0].items.length).toBe(2);
+    });
+
+    it('式から haori.date を timeZone 付きで呼べる', () => {
+      const result = Expression.evaluate(
+        "haori.date(d, 'yyyy/MM/dd HH:mm', 'Asia/Tokyo')",
+        {d: '2024-01-05T00:00:00Z'},
+      );
+      expect(result).toBe('2024/01/05 09:00');
     });
 
     it('haori はユーザーのバインド値より優先される（上書き不可）', () => {

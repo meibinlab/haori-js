@@ -3,7 +3,9 @@ import Env from './env';
 import Queue from './queue';
 import {
   date,
+  distinct,
   findBy,
+  groupBy,
   monthAdd,
   monthRange,
   number,
@@ -13,6 +15,7 @@ import {
   sum,
 } from './builtins';
 import type {
+  GroupItem,
   MonthItem,
   PageItem,
   PageSummary,
@@ -203,13 +206,15 @@ export default class Haori {
    *
    * @param value 整形対象の日時（ISO 文字列・エポックミリ秒・Date）
    * @param format フォーマット文字列（省略時は `yyyy/MM/dd HH:mm`）
+   * @param timeZone IANA タイムゾーン名（例 `Asia/Tokyo`）。省略時はローカルタイムゾーン
    * @returns 整形済み文字列。整形できない場合は空文字
    */
   public static date(
     value: string | number | Date | null | undefined,
     format?: string,
+    timeZone?: string,
   ): string {
-    return date(value, format);
+    return date(value, format, timeZone);
   }
 
   /**
@@ -332,5 +337,33 @@ export default class Haori {
    */
   public static sum(array: unknown, key?: string): number {
     return sum(array, key);
+  }
+
+  /**
+   * 配列から重複を取り除いた新しい配列を返します。
+   *
+   * テンプレート式中の `haori.distinct(...)` と同じ実装です。`key` 省略時は要素
+   * 自体で、指定時は `item[key]` で重複を判定します（比較は文字列化）。
+   *
+   * @param array 対象の配列
+   * @param key 重複判定に使うプロパティ名（省略時は要素自体）
+   * @returns 重複排除後の新しい配列。非配列は空配列
+   */
+  public static distinct(array: unknown, key?: string): unknown[] {
+    return distinct(array, key);
+  }
+
+  /**
+   * 配列を `item[key]` ごとのグループへ分けて返します。
+   *
+   * テンプレート式中の `haori.groupBy(...)` と同じ実装です。戻り値は
+   * `{key, items}` の配列で、`data-each` で繰り返してグループ描画できます。
+   *
+   * @param array 対象の配列
+   * @param key グループ分けに使うプロパティ名
+   * @returns グループ情報の配列。非配列は空配列
+   */
+  public static groupBy(array: unknown, key: string): GroupItem[] {
+    return groupBy(array, key);
   }
 }
