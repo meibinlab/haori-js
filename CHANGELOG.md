@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [0.22.1] - 2026-06-15
+
+### Fixed
+
+- **`data-{event}-run` の戻り値が `return` 省略時に捕捉されず、async ハンドラが await されない不具合を修正**。0.22.0 で「Promise を返した run は完了まで await（多重実行防止）」を導入したが、run スクリプトは `new Function('event', "use strict"; body)` で生成され**暗黙の `return` が無い**ため、`data-click-run="save()"` のような **`return` を書かない素の async 関数呼び出しでは戻り値が `undefined` となり await されず**、2 度押し防止が効いていなかった（`return save()` と明示した場合のみ機能していた）。本体が**単一式**として評価できる場合に `return (body)` で戻り値を捕捉するようにし、`return` 省略でも Promise が await され、同期 `false` で `preventDefault()` が働くようにした。
+  - 複数文・`if` 文・明示 `return` を含む本体は従来どおり文ブロックとして実行され、戻り値は本体内の明示的な `return` に従う。
+  - **挙動差の注意**: 単一式の本体がその式自体で同期的に `false` を評価する場合（例: `checkSomething()` が `false` を返す）、`return` を書かなくても `preventDefault()` が働く（素の `onclick="checkSomething()"` とは異なる）。
+
+### Tests
+
+- `return` 省略の単一式 async run が await されロックを保持すること、複数文（明示 return）でも await されること、を `tests/procedure-run-await.test.ts` に追加。
+
 ## [0.22.0] - 2026-06-15
 
 ### Changed

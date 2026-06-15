@@ -81,6 +81,58 @@ describe('data-{event}-run の Promise 戻り値', () => {
     await waitForDomSettled();
   });
 
+  it('return を書かない単一式の async run でも await されロックを保持する', async () => {
+    // 素の関数呼び出し（return 省略）。式として自動 return され戻り値の Promise が
+    // 捕捉されるため、多重実行防止ロックが保持される。
+    container.innerHTML = `
+      <button id="b2" data-click-run="window.__tick()">保存</button>`;
+    await Core.scan(container);
+    await waitForDomSettled();
+    const btn = container.querySelector('#b2') as HTMLButtonElement;
+
+    btn.click();
+    expect(win.__runCount).toBe(1);
+    // await 中はロックが保持される。
+    expect(btn.hasAttribute('disabled')).toBe(true);
+    expect(btn.hasAttribute('data-haori-click-lock')).toBe(true);
+
+    // 実行中の 2 度目クリックは多重実行されない。
+    btn.click();
+    await waitForDomSettled();
+    expect(win.__runCount).toBe(1);
+
+    // 解決でロック解放、再クリックで再実行可能。
+    win.__resolveTick?.();
+    await waitForDomSettled();
+    expect(btn.hasAttribute('disabled')).toBe(false);
+    btn.click();
+    expect(win.__runCount).toBe(2);
+    win.__resolveTick?.();
+    await waitForDomSettled();
+  });
+
+  it('複数文（式化不可）の run は明示 return に従って await される', async () => {
+    // 複数文は従来の文ブロックとして生成される。本体内で明示的に return した
+    // Promise は await され、ロックを保持する。
+    container.innerHTML = `
+      <button id="b3" data-click-run="const p = window.__tick(); return p;">保存</button>`;
+    await Core.scan(container);
+    await waitForDomSettled();
+    const btn = container.querySelector('#b3') as HTMLButtonElement;
+
+    btn.click();
+    expect(win.__runCount).toBe(1);
+    expect(btn.hasAttribute('disabled')).toBe(true);
+
+    btn.click();
+    await waitForDomSettled();
+    expect(win.__runCount).toBe(1);
+
+    win.__resolveTick?.();
+    await waitForDomSettled();
+    expect(btn.hasAttribute('disabled')).toBe(false);
+  });
+
   it('同期 run（非 thenable）は従来どおり即時にロックが解放される', async () => {
     (win as unknown as {__syncCount?: number}).__syncCount = 0;
     (

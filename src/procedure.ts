@@ -769,16 +769,31 @@ ${body}
       const runAttrName = Procedure.attrName(event, 'run');
       if (fragment.hasAttribute(runAttrName)) {
         const body = String(fragment.getAttribute(runAttrName) ?? '');
+        // まず本体を「単一式」として評価できるか試す。式化できる場合は
+        // `return (body)` で戻り値を捕捉し、`return` を明示しない素の関数呼び出し
+        // （例: data-click-run="save()"）でも、戻り値の Promise を await（多重実行
+        // 防止）し、同期的な false で preventDefault できるようにする。複数文・明示
+        // return・if 文などは式化に失敗するため、従来どおりの文ブロックとして生成し、
+        // その場合の戻り値は本体内の明示的な return に従う。末尾の `\n` は本体末尾の
+        // 行コメントが閉じ括弧を巻き込まないようにするため。
+        let runScript: ((event: Event | null) => unknown) | null = null;
         try {
-          options.runScript = new Function(
+          runScript = new Function(
             'event',
-            `
-"use strict";
-${body}
-`,
+            `"use strict"; return (\n${body}\n);`,
           ) as (event: Event | null) => unknown;
-        } catch (e) {
-          Log.error('Haori', `Invalid run script: ${e}`);
+        } catch {
+          try {
+            runScript = new Function(
+              'event',
+              `"use strict";\n${body}\n`,
+            ) as (event: Event | null) => unknown;
+          } catch (e) {
+            Log.error('Haori', `Invalid run script: ${e}`);
+          }
+        }
+        if (runScript) {
+          options.runScript = runScript;
         }
       }
     }
