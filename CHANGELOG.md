@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## [0.22.0] - 2026-06-15
+
+### Changed
+
+- **`data-{event}-run` が Promise（thenable）を返した場合、その完了まで `await` するようにした**。`click` 手続きでは await の間も多重実行防止ロック（対象要素の `disabled` 付与・`RUNNING_CLICK_TARGETS` 登録）を保持するため、**async ハンドラ（保存 POST 等）でも 2 度押しによる重複送信を防げる**ようになった。これまでは戻り値の Promise を await せず切り離していたため、`execute()` が合成レスポンスで即完了してロックが数マイクロ秒で解放され、数百 ms 間隔の 2 度押しでハンドラが 2 回実行され得た（重複レコード等）。利用側で再入ガード変数を持つ必要がなくなる。
+  - **後方互換**: 同期戻り値（非 thenable）の挙動は不変（即時にロック解放、`false` で `preventDefault()`）。
+  - **run + fetch 併用時は run の完了後に fetch が直列実行**される（仕様の「run → fetch の順」と整合。従来は実質並行だった）。
+  - 多重実行防止ロックは `click` のみ。クリック以外（`data-change-run` 等）でも await による直列化は行われるが、多重実行そのものは防止しない。
+  - **注意（async ハンドラ）**: `async` 関数や Promise を返すハンドラは戻り値が常に Promise（truthy）になるため `return false` では `preventDefault()` できない（`preventDefault()` は同期段でしか効かない）。既定動作を抑止する場合はハンドラ先頭で同期的に `event.preventDefault()` を呼ぶか `data-{event}-prevent` を併用する。返した Promise が settle しないとボタンが `disabled` のままになるため、必ず settle する Promise を返すこと。reject 時は `Log.error` で報告し例外は外へ投げず、後続処理は継続する。
+
+### Documentation
+
+- 仕様書 `data-{event}-run` 節に、Promise 戻り値時の多重実行防止・run → fetch 直列化・async での `preventDefault` の扱い・必ず settle すること・ロックは `click` のみ、を追記した。
+
+### Library
+
+- 回帰テストを追加した（`tests/procedure-run-await.test.ts`: async run 実行中の 2 度押しで 1 回のみ実行、解決後の再クリック実行、同期 run の即時ロック解放）。
+
 ## [0.21.0] - 2026-06-14
 
 ### Changed

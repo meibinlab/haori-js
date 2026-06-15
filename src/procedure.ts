@@ -1460,8 +1460,12 @@ ${body}
         return false;
       }
       // data-{event}-run: 任意 JS を同期実行する。await を挟む前に実行することで、
-      // クリックイベント中の event.preventDefault() が間に合う。本体が false を
-      // 返した場合はデフォルト動作（リンク遷移・フォーム送信）を抑止する。
+      // クリックイベント中の event.preventDefault() が間に合う。本体が同期的に
+      // false を返した場合はデフォルト動作（リンク遷移・フォーム送信）を抑止する。
+      // 戻り値が Promise（thenable）の場合は完了まで await し、その間ロック
+      // （disabled / RUNNING_CLICK_TARGETS）を保持することで、async ハンドラでも
+      // 多重実行（2 度押しによる重複送信等）を防ぐ。await 後に後続処理（fetch 等）へ
+      // 進むため、run と fetch を併用した場合は run 完了後に fetch が直列実行される。
       if (this.options.runScript) {
         const sourceElement = this.options.targetFragment?.getTarget() ?? null;
         try {
@@ -1471,6 +1475,14 @@ ${body}
           );
           if (result === false && this.domEvent) {
             this.domEvent.preventDefault();
+          }
+          // 戻り値が thenable の場合のみ完了を待つ。preventDefault は同期段で確定
+          // 済みのため、ここでの await は多重実行防止（ロック保持）のためだけに行う。
+          if (
+            result != null &&
+            typeof (result as {then?: unknown}).then === 'function'
+          ) {
+            await result;
           }
         } catch (e) {
           Log.error('Haori', `Run script execution error: ${e}`);

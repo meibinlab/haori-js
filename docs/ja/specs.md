@@ -2142,8 +2142,13 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 
 - **実行方式**: 属性値を本体として `new Function('event', "use strict"; body)` で実行します（`before-run` / `after-run` と同じ実 JS 実行。サンドボックス式評価ではありません）。`this` は起点要素、引数 `event` は起点の DOM イベントです。
 - **`{{...}}` の展開**: 属性値に含まれる `{{...}}` は、他の属性と同様にレンダリング時に評価・展開され、展開後の文字列が本体として実行されます（`{{...}}` 部分のみバインディングスコープを参照できます）。
-- **戻り値による既定動作の抑止**: 本体が **`false` を返したときだけ `event.preventDefault()`** を呼びます（`onclick="return false"` / jQuery と同じ慣習）。`<a href>` や `type="submit"` の既定動作を抑止したい場合は `return false` を返してください。`type="button"` など既定動作が無い要素では不要です。
-- **実行タイミング**: 手続きの同期実行中（`await` を挟む前）に実行されるため、`event.preventDefault()` が間に合います。`data-click-fetch` と併用した場合は **run を実行してから fetch** を継続します（run の `false` は preventDefault のみを制御し、fetch は中止しません。fetch を中止する場合は `data-{event}-before-run` を使用）。
+- **戻り値による既定動作の抑止**: 本体が**同期的に `false` を返したときだけ `event.preventDefault()`** を呼びます（`onclick="return false"` / jQuery と同じ慣習）。`<a href>` や `type="submit"` の既定動作を抑止したい場合は `return false` を返してください。`type="button"` など既定動作が無い要素では不要です。
+  - **⚠️ async ハンドラでの注意**: `async` 関数や Promise を返すハンドラは戻り値が**常に Promise（truthy）**になるため、`return false` では `preventDefault()` できません（`preventDefault()` はクリックイベント処理中の同期段でしか効かず、await 後では既定動作が既に走っています）。async ハンドラで既定動作を抑止する場合は、ハンドラの**先頭で同期的に `event.preventDefault()` を呼ぶ**か、`data-{event}-prevent` を併用してください。
+- **実行タイミング**: 手続きの同期実行中（`await` を挟む前）に実行されるため、`event.preventDefault()` が間に合います。`data-click-fetch` と併用した場合は **run を実行してから fetch** を継続します（run の同期的な `false` は preventDefault のみを制御し、fetch は中止しません。fetch を中止する場合は `data-{event}-before-run` を使用）。
+- **戻り値が Promise の場合（多重実行防止）**: 本体が **Promise（thenable）を返した場合は、その完了まで `await`** します。`click` 手続きでは await の間も多重実行防止ロック（対象要素の `disabled` 付与・`RUNNING_CLICK_TARGETS` 登録）を保持するため、**async ハンドラ（保存 POST 等）でも 2 度押しによる重複送信を防げます**。`data-click-fetch` と併用した場合は **run の完了後に fetch** が直列実行されます。
+  - **多重実行防止ロックは `click` のみ**です（`data-change-run` などクリック以外のイベントにはロックがありません）。クリック以外でも await による run → fetch の直列化は行われますが、同一イベントの多重実行そのものは防止しません。
+  - **⚠️ 必ず settle する Promise を返すこと**: 返した Promise が解決も拒否もしない（`new Promise(() => {})`、タイムアウトの無いハング fetch、発火しないイベント待ち等）と、await が終わらず**ボタンが `disabled` のままになります**。run が返す Promise は必ず settle するようにしてください（これは `data-{event}-fetch` でハングする endpoint を指定した場合と同じ性質です）。
+  - 拒否（reject）された場合は `Log.error` でコンソールに報告し、例外は外へ投げません。後続処理は継続します。
 - **エラー時**: 評価・実行エラーは `Log.error` でコンソールに報告し、例外は外へ投げません。
 - **注意**: `data-click-defer` と併用すると手続きが次フレームへ遅延し同期実行でなくなるため、`return false` による `preventDefault()` は間に合いません。
 - **⚠️ セキュリティ（重要）**: `{{...}}` の展開結果は**実行コードへ文字列結合**されます。他属性の `{{...}}` は結果を「データ」として扱いますが、本属性は結果を「コード」として再実行するため、**`{{...}}` に入れた値が JavaScript として実行されます**。例えば `data-click-run="greet('{{name}}')"` で `name` が信頼できない文字列（`'); evilCode(); ('` 等）の場合、`greet(''); evilCode(); ('')` となり任意コードが実行されます（XSS）。`{{...}}` には**自分で制御する信頼できる値（数値 index・自前採番 ID など）のみ**を入れ、**API レスポンスやユーザー入力などの信頼できない文字列を差し込まないでください**。信頼できない値は `{{...}}` で結合せず、`data-bind` でスコープに置いて呼び出す関数の内部で参照する構成にします。
