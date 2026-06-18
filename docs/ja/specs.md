@@ -2527,6 +2527,8 @@ Content-Typeを指定します。
 <button data-click-open="#myDialog">開く</button>
 ```
 
+- 値を省略した場合は、自要素の祖先方向で最も近い `<dialog>`（`closest('dialog')` 相当）を対象にします。祖先に `<dialog>` が無い場合はログ出力してスキップします。
+
 ##### `data-{event}-close`
 
 対象ダイアログを閉じます。
@@ -2535,6 +2537,16 @@ Content-Typeを指定します。
 <dialog id="myDialog">
   <p>ダイアログ内容</p>
   <button data-click-close="#myDialog">閉じる</button>
+</dialog>
+```
+
+- 値を省略した場合は、自要素の祖先方向で最も近い `<dialog>`（`closest('dialog')` 相当）を対象にします。ダイアログ内の閉じるボタンに値なしで付与すれば、ボタン自身ではなくダイアログ本体が閉じます。祖先に `<dialog>` が無い場合はログ出力してスキップします。
+
+```html
+<!-- 値を省略するとボタンを囲む <dialog> が対象になる -->
+<dialog id="myDialog">
+  <p>ダイアログ内容</p>
+  <button data-click-close>閉じる</button>
 </dialog>
 ```
 

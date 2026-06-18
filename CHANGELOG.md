@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [0.22.2] - 2026-06-19
+
+### Fixed
+
+- **`data-{event}-close` / `data-{event}-open` の対象省略時、自要素ではなく祖先 `<dialog>` を対象にするよう修正**。従来は値を省略すると「トリガー要素自身」を対象にしていたため、`<dialog><button data-click-close>閉じる</button></dialog>` のようにダイアログ内の閉じるボタンへ値なしで付与すると、ダイアログ本体ではなくボタン自身が `closeDialog` に渡され、`HTMLDialogElement` でないため「Element is not a dialog」のログだけ出てダイアログが閉じなかった。値を省略した場合は `triggerElement.closest('dialog')` 相当で自要素の祖先方向に最も近い `<dialog>` を対象にする。祖先に `<dialog>` が無い場合はログ出力してスキップする。明示セレクタ指定時の挙動は不変（後方互換維持）。
+  - **挙動差の注意**: `<dialog>` でない要素（例: `.modal` の `div`）内で値を省略した場合、従来は自要素を対象にしていたが、本修正後は祖先 `<dialog>` が無いためスキップ（ログ出力）する。
+
+### Tests
+
+- 値省略の `data-click-close` / `data-click-open` が祖先 `<dialog>` を対象にすること、祖先 `<dialog>` が無い場合にログ出力してスキップすること、を `tests/procedure-action-operations.test.ts` に追加。
+
 ## [0.22.1] - 2026-06-15
 
 ### Fixed

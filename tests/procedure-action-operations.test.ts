@@ -5,6 +5,7 @@
 import {describe, it, expect, beforeEach, vi} from 'vitest';
 import Form from '../src/form';
 import Haori from '../src/haori';
+import Log from '../src/log';
 import {waitForCondition, waitForDomSettled} from './helpers/async';
 
 describe('Procedure action operations', () => {
@@ -707,6 +708,76 @@ describe('Procedure action operations', () => {
     expect(openSpy).toHaveBeenCalled();
     expect(closeSpy).toHaveBeenCalled();
     dialog.remove();
+    container.remove();
+  });
+
+  it('close with omitted value targets the ancestor <dialog>', async () => {
+    const closeSpy = vi.spyOn(Haori, 'closeDialog');
+    closeSpy.mockResolvedValue(undefined as void);
+
+    const dialog = document.createElement('dialog');
+    dialog.id = 'omit-dlg';
+    const btn = document.createElement('button');
+    // 値を省略した data-click-close
+    btn.setAttribute('data-click-close', '');
+    dialog.appendChild(btn);
+    document.body.appendChild(dialog);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => closeSpy.mock.calls.length > 0, {
+      description: 'close action',
+    });
+
+    // ボタン自身ではなく祖先 <dialog> が対象になること
+    expect(closeSpy).toHaveBeenCalledWith(dialog);
+    dialog.remove();
+  });
+
+  it('open with omitted value targets the ancestor <dialog>', async () => {
+    const openSpy = vi.spyOn(Haori, 'openDialog');
+    openSpy.mockResolvedValue(undefined as void);
+
+    const dialog = document.createElement('dialog');
+    dialog.id = 'omit-dlg-open';
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-open', '');
+    dialog.appendChild(btn);
+    document.body.appendChild(dialog);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => openSpy.mock.calls.length > 0, {
+      description: 'open action',
+    });
+
+    expect(openSpy).toHaveBeenCalledWith(dialog);
+    dialog.remove();
+  });
+
+  it('close with omitted value and no ancestor <dialog> logs an error', async () => {
+    const closeSpy = vi.spyOn(Haori, 'closeDialog');
+    closeSpy.mockResolvedValue(undefined as void);
+    const errorSpy = vi.spyOn(Log, 'error').mockImplementation(() => {});
+
+    const container = document.createElement('div');
+    const btn = document.createElement('button');
+    btn.setAttribute('data-click-close', '');
+    container.appendChild(btn);
+    document.body.appendChild(container);
+
+    await waitForDomSettled();
+    btn.click();
+    await waitForCondition(() => errorSpy.mock.calls.length > 0, {
+      description: 'error log for missing ancestor dialog',
+    });
+
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Haori',
+      expect.stringContaining('Ancestor <dialog> not found'),
+    );
+    errorSpy.mockRestore();
     container.remove();
   });
 

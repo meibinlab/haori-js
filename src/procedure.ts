@@ -1227,6 +1227,17 @@ ${body}
           if (list.length === 0) {
             Log.error('Haori', `Element not found: ${selector} (${attrName})`);
           }
+        } else if (attrKey === 'open' || attrKey === 'close') {
+          // open/close で値が省略されている場合は、自要素ではなく自要素の
+          // 祖先方向で最も近い <dialog> を対象にする。ダイアログ内の閉じる
+          // ボタンに data-click-close を値なしで付与しても、ボタン自身では
+          // なくダイアログ本体が閉じられるようにするため。
+          const dialog = fragment.getTarget().closest('dialog');
+          if (dialog) {
+            list.push(Fragment.get(dialog));
+          } else {
+            Log.error('Haori', `Ancestor <dialog> not found (${attrName})`);
+          }
         } else {
           // 値が省略されている場合は自要素を対象
           list.push(fragment);
