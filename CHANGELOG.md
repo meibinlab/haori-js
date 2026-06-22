@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [0.22.3] - 2026-06-22
+
+### Fixed
+
+- **`Haori.openDialog()`（`data-{event}-open`）でダイアログを開く際、対象ダイアログ内に残った `data-message` / `data-message-level` をクリアするよう修正**。従来は `showModal()` を呼ぶだけで前回のメッセージ属性を除去しなかったため、エラー表示後に閉じたダイアログを再度開くと前回の `data-message` / `data-message-level` が残っていた。開く前に対象ダイアログ自身とその子孫のメッセージ属性を `clearMessages` 相当で除去してから開くようにした。`closeDialog()` は従来どおりクリアしない（閉じても表示中メッセージは保持）。
+  - 内部的に同期版ヘルパー `clearMessagesSync()` を抽出し、`clearMessages()` と `openDialog()` で共有することで重複を排し、`openDialog` の enqueue ブロック内で `showModal()` との実行順を保証する。
+
+### Tests
+
+- メッセージ付与済みダイアログを `openDialog` で開くと自身・子孫のメッセージ属性が除去されること、`closeDialog` では除去されないこと、を `tests/haori.test.ts` に追加。
+
 ## [0.22.2] - 2026-06-19
 
 ### Fixed

@@ -1189,6 +1189,7 @@ class Haori {
   static async confirm(message: string): Promise<boolean>
 
   // <dialog> 要素の制御
+  // openDialog は開く前に対象内のメッセージ属性をクリアする
   static async openDialog(element: HTMLElement): Promise<void>
   static async closeDialog(element: HTMLElement): Promise<void>
 
@@ -1250,12 +1251,29 @@ static async addErrorMessage(target: HTMLElement | HTMLFormElement, message: str
 // メッセージクリア (再帰的。data-message-level も削除する)
 static async clearMessages(parent: HTMLElement): Promise<void> {
   return Queue.enqueue(() => {
-    parent.removeAttribute('data-message')
-    parent.removeAttribute('data-message-level')
-    parent.querySelectorAll('[data-message]').forEach(el => {
-      el.removeAttribute('data-message')
-      el.removeAttribute('data-message-level')
-    })
+    Haori.clearMessagesSync(parent)
+  })
+}
+
+// メッセージクリアの同期処理 (clearMessages / openDialog の共通処理)
+private static clearMessagesSync(parent: HTMLElement): void {
+  parent.removeAttribute('data-message')
+  parent.removeAttribute('data-message-level')
+  parent.querySelectorAll('[data-message]').forEach(el => {
+    el.removeAttribute('data-message')
+    el.removeAttribute('data-message-level')
+  })
+}
+
+// ダイアログを開く (showModal の前に対象内のメッセージ属性をクリアする)
+static async openDialog(element: HTMLElement): Promise<void> {
+  return Queue.enqueue(() => {
+    if (element instanceof HTMLDialogElement) {
+      Haori.clearMessagesSync(element)
+      element.showModal()
+    } else {
+      Log.error('[Haori]', 'Element is not a dialog: ', element)
+    }
   })
 }
 ```
@@ -2528,6 +2546,7 @@ Content-Typeを指定します。
 ```
 
 - 値を省略した場合は、自要素の祖先方向で最も近い `<dialog>`（`closest('dialog')` 相当）を対象にします。祖先に `<dialog>` が無い場合はログ出力してスキップします。
+- ダイアログを開く際、対象ダイアログ自身とその子孫に残った `data-message` / `data-message-level`（`clearMessages` 相当）を除去してから開きます。これにより、エラー表示後に閉じたダイアログを再度開いても前回のメッセージが残りません。
 
 ##### `data-{event}-close`
 

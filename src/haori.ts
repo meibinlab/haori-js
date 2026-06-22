@@ -121,6 +121,8 @@ export default class Haori {
   public static openDialog(element: HTMLElement): Promise<void> {
     return Queue.enqueue(() => {
       if (element instanceof HTMLDialogElement) {
+        // 再表示時に前回のメッセージが残らないよう、開く前にクリアする。
+        Haori.clearMessagesSync(element);
         element.showModal();
       } else {
         Log.error('[Haori]', 'Element is not a dialog: ', element);
@@ -190,13 +192,25 @@ export default class Haori {
    */
   public static clearMessages(parent: HTMLElement): Promise<void> {
     return Queue.enqueue(() => {
-      parent.removeAttribute('data-message');
-      parent.removeAttribute('data-message-level');
-      parent.querySelectorAll('[data-message]').forEach(element => {
-        element.removeAttribute('data-message');
-        element.removeAttribute('data-message-level');
-      });
+      Haori.clearMessagesSync(parent);
     }, true) as Promise<void>;
+  }
+
+  /**
+   * 対象のエレメントおよびその子要素のメッセージ属性を同期的に除去します。
+   *
+   * Queue を介さないため、別の enqueue ブロック内から実行順を保ったまま
+   * 呼び出せます。{@link clearMessages} および {@link openDialog} の共通処理です。
+   *
+   * @param parent メッセージをクリアする親要素
+   */
+  private static clearMessagesSync(parent: HTMLElement): void {
+    parent.removeAttribute('data-message');
+    parent.removeAttribute('data-message-level');
+    parent.querySelectorAll('[data-message]').forEach(element => {
+      element.removeAttribute('data-message');
+      element.removeAttribute('data-message-level');
+    });
   }
 
   /**

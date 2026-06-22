@@ -180,6 +180,47 @@ describe('Haori.clearMessages', () => {
   });
 });
 
+describe('Haori.openDialog / closeDialog', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    // jsdom は showModal/close を実装しないためモックする。
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    HTMLDialogElement.prototype.close = vi.fn();
+  });
+
+  it('openDialog はダイアログ自身と子孫のメッセージ属性をクリアしてから開く', async () => {
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('data-message', '前回エラー');
+    dialog.setAttribute('data-message-level', 'error');
+    const field = document.createElement('div');
+    field.setAttribute('data-message', '項目エラー');
+    field.setAttribute('data-message-level', 'warning');
+    dialog.appendChild(field);
+    document.body.appendChild(dialog);
+
+    await Haori.openDialog(dialog);
+
+    expect(dialog.hasAttribute('data-message')).toBe(false);
+    expect(dialog.hasAttribute('data-message-level')).toBe(false);
+    expect(field.hasAttribute('data-message')).toBe(false);
+    expect(field.hasAttribute('data-message-level')).toBe(false);
+    expect(dialog.showModal).toHaveBeenCalledTimes(1);
+  });
+
+  it('closeDialog はメッセージ属性をクリアしない', async () => {
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('data-message', '残すべきメッセージ');
+    dialog.setAttribute('data-message-level', 'info');
+    document.body.appendChild(dialog);
+
+    await Haori.closeDialog(dialog);
+
+    expect(dialog.getAttribute('data-message')).toBe('残すべきメッセージ');
+    expect(dialog.getAttribute('data-message-level')).toBe('info');
+    expect(dialog.close).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('Haori.addErrorMessage', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
