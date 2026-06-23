@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## [0.23.0] - 2026-06-23
+
+### Added
+
+- **`data-external`: 外部管理サブツリーの監視除外を宣言する公開属性を追加**。指定要素とその子孫で発生した DOM 変更（属性・ノード・テキスト）を Haori の自動監視（MutationObserver）対象から除外する。Choices.js など「元要素を隠して独自 DOM を生成・随時更新する」select 拡張ライブラリの生成 DOM に Haori が干渉しないようにするためのもの。`data-each` による `<option>` 生成はバインド評価パイプラインが駆動するため監視除外下でも維持される。外部生成 DOM とバインド対象を内側に含む**外側コンテナ**への付与を推奨。
+- **`data-each-rendered-run`: 描画確定フックを追加**。`data-each` の再描画が安定し `data-each-done` が付与されるたびに、コンテナ単位で一度だけ任意 JS を実行する（`data-{event}-run` と同じ式評価、本体内 `this` はコンテナ要素に束縛）。外部ウィジェットの再同期フック（例: `data-each-rendered-run="window.__choicesRefresh(this)"`）として利用できる。
+- **`<select multiple>` の配列値対応**。複数選択 select の値を選択済み `option` の文字列配列として扱うようにした。フォーム値収集では `name` キーに配列が格納され（例: `{"plans":["A","C"]}`）、バインドデータの配列を与えると各 `option` の選択状態へ反映される。外部ウィジェットが native `<select>` を更新して発火する `change` も同様に配列として双方向同期される。単一選択 select の挙動は不変（後方互換維持）。
+
+### Changed
+
+- **`data-each-done` の発火保証を仕様として明文化**。初回描画・再 fetch・再バインドのたびに、コンテナ単位で「除去 → 再付与」が必ず一度行われる（差分で実 DOM 変更がない場合も安定時に再付与）。外部ウィジェットの再同期契機として利用できることを保証。
+
+### Removed
+
+- **未発火だった `haori:render` イベント（`HaoriEvent.render`）を削除**。仕様書・guide に記載があったが実描画では一度も発火していないデッドコードだった。描画完了の検知は `data-each-done`（描画確定ごとに付与）または `data-each-rendered-run` に一本化した。
+
+### Docs
+
+- `docs/ja/specs.md`: `data-external` 節、`<select multiple>` の配列値、`data-each-rendered-run`、`data-each-done` 発火保証を追記。`haori:render` を整理。
+- `docs/ja/guide.md`: Choices.js 連携の最小レシピ（`data-external` + `data-each-rendered-run` + `<select multiple>`）を追加。`haori:render` を整理。
+
+### Tests
+
+- `tests/external-select-integration.test.ts` を追加（複数選択 select の配列収集・change 同期・バインド反映、`data-external` 配下の監視除外と対照、`data-each-rendered-run` の描画確定ごとの一度実行）。
+
 ## [0.22.3] - 2026-06-22
 
 ### Fixed

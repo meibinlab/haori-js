@@ -61,15 +61,6 @@ export default class HaoriEvent {
   }
 
   /**
-   * renderイベントを発火します。
-   *
-   * @param target 評価対象要素
-   */
-  public static render(target: HTMLElement): void {
-    HaoriEvent.dispatch(target, 'render', {target});
-  }
-
-  /**
    * importstartイベントを発火します。
    *
    * @param target data-import要素

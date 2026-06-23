@@ -1455,7 +1455,8 @@ data-each="arrayExpression"
 - `data-each-after`: ループ後に表示する要素をマーク
 - `data-row`: 各行に自動付与されるキー (手動変更禁止)
 - `data-each-visible`: スクロール追従の可視行範囲を組み込み変数として公開（後述）
-- `data-each-done`: 全行の描画が安定して完了したときに **Haori が自動付与**するマーカー（手動指定不可）。新しい描画サイクルの開始時に外され、完了時に再付与されます。E2E テスト等で `[data-each-done]` の出現を待って描画完了を検知できます
+- `data-each-done`: 全行の描画が安定して完了したときに **Haori が自動付与**するマーカー（手動指定不可）。新しい描画サイクルの開始時に外され、完了時に再付与されます。E2E テスト等で `[data-each-done]` の出現を待って描画完了を検知できます。**発火保証**: 初回描画・再 fetch・再バインドなど描画サイクルが走るたびに、コンテナ単位で「除去 → 再付与」が必ず一度行われます。差分更新で実際の DOM 変更がない場合でも、サイクルが安定した時点で再付与されます。これにより外部ウィジェットの再同期契機として利用できます
+- `data-each-rendered-run`: 描画が確定し `data-each-done` が付与されるたびに、**コンテナ単位で一度だけ**実行する任意の JS（`data-{event}-run` と同じ式評価）。本体内の `this` は対象コンテナ要素に束縛されます。外部の select 拡張ライブラリ（Choices.js 等）の再同期フック（例: `data-each-rendered-run="window.__choicesRefresh(this)"`）として利用できます
 
 **例**:
 
@@ -1615,6 +1616,13 @@ data-each="arrayExpression"
 - 固定の先頭 `option` は `data-each-before`、固定の末尾 `option` は `data-each-after` で表現する
 - `option` 自身に `data-each` を付ける書き方は採用しない
 
+**複数選択（`<select multiple>`）**:
+
+- `multiple` を指定した `select` の値は、選択済み `option` の値を集めた**文字列配列**として扱う
+- フォーム値収集では `name` のキーに配列がそのまま格納される（例: `{"electricPlanName": ["A", "B"]}`）
+- `data-bind` 側に配列を与えると、各 `option` の選択状態へ反映される
+- 外部ウィジェット（Choices.js 等）が native `<select>` を更新して `change` を発火した場合も、上記の配列として収集・双方向同期される
+
 **未解決参照時**:
 
 - `data-derive` の式に未解決参照があるサイクルでは、その導出名は未供給として扱う
@@ -1655,6 +1663,48 @@ data-each="arrayExpression"
   </select>
 </div>
 ```
+
+---
+
+### 外部ライブラリ連携
+
+#### `data-external`
+
+指定した要素とその子孫で発生した DOM 変更を、Haori の自動監視（MutationObserver）対象から除外します。外部の select 拡張ライブラリ（Choices.js 等）が「元の要素を隠して独自 DOM を生成・随時更新する」場合に、その生成 DOM へ Haori が干渉しないようにするための宣言属性です。
+
+**構文**:
+```html
+<div data-external> ... </div>
+```
+
+**挙動**:
+
+- `data-external` を持つ要素の配下で起きた属性変更・ノード追加削除・テキスト変更を、Haori は無視する
+- `data-each` による `<option>` の配列バインドは Haori のバインド評価パイプラインが駆動するため、監視除外下でも維持される
+- Choices.js のように元 `<select>` を生成コンテナの内側へ**再配置**するライブラリでも、その移動や再生成が Haori に破壊されない
+
+**付与位置**:
+
+- 外部ライブラリが生成する DOM とバインド対象の要素（`<select>` 等）の**両方を内側に含む外側コンテナ**へ付与することを推奨する
+- 元の要素自身に付けても、ライブラリが生成する親側 DOM までは除外できないため、外側コンテナでの宣言を基本とする
+
+**最小例（Choices.js）**:
+```html
+<div data-external>
+  <select
+    name="electricPlanName"
+    multiple
+    data-each="electricPlans.content"
+    data-each-key="id"
+    data-each-arg="ep"
+    data-each-rendered-run="window.__choicesRefresh(this)"
+  >
+    <option value="{{ ep.planName }}">{{ ep.planName }}</option>
+  </select>
+</div>
+```
+
+`<option>` は `data-each` で配列バインドし、外部生成 DOM は `data-external` で監視除外、描画確定のたびに `data-each-rendered-run` で外部ウィジェットを再同期します。選択結果は `<select multiple>` の配列値としてフォーム送信値（`data-click-form` 等）に反映されます。任意の select 拡張ライブラリへ一般化できます。
 
 ---
 
@@ -2907,15 +2957,9 @@ document.addEventListener('haori:ready', (event) => {
 { version: string }
 ```
 
-#### `haori:render`
-
-要素がレンダリングされた時に発火します。
-
-```javascript
-element.addEventListener('haori:render', (event) => {
-  console.log('レンダリング完了')
-})
-```
+> **補足**: `data-each` の描画完了を検知したい場合は、専用の完了マーカー
+> `data-each-done`（描画確定ごとに付与）や宣言フック `data-each-rendered-run`
+> を利用してください。詳細は「`data-each`」の関連属性を参照してください。
 
 ### バインディング
 

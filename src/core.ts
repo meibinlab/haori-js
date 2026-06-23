@@ -1460,7 +1460,11 @@ export default class Core {
         } while (state.rerunRequested);
         // 全行の描画が安定して完了したことを示すマーカーを付与する。
         // 外部テストは `[data-each-done]` を待機して描画完了を検知できる。
-        fragment.getTarget().setAttribute(`${Env.prefix}each-done`, '');
+        const target = fragment.getTarget();
+        target.setAttribute(`${Env.prefix}each-done`, '');
+        // data-each-rendered-run: 描画確定ごとに一度、任意 JS を実行する。
+        // 外部の select 拡張ライブラリ（Choices.js 等）の再同期フックに使える。
+        Core.runEachRenderedScript(target);
       } finally {
         state.running = false;
         state.settled = null;
@@ -1468,6 +1472,45 @@ export default class Core {
     })();
     state.settled = settled;
     return settled;
+  }
+
+  /**
+   * data-each-rendered-run 属性に指定された JS を、描画確定後に一度実行します。
+   *
+   * data-each の再描画が安定し `data-each-done` が付与されるたびに呼び出され、
+   * 再 fetch・再バインドのたびに確実な再同期契機を提供します。本体内の `this`
+   * は対象コンテナ要素に束縛され、外部の select 拡張ライブラリ（Choices.js 等）
+   * の再同期フック（例: `window.__choicesRefresh(this)`）として利用できます。
+   *
+   * @param target data-each コンテナ要素
+   */
+  private static runEachRenderedScript(target: HTMLElement): void {
+    const attrName = `${Env.prefix}each-rendered-run`;
+    if (!target.hasAttribute(attrName)) {
+      return;
+    }
+    const body = String(target.getAttribute(attrName) ?? '');
+    // data-{event}-run と同様に、まず単一式として評価できるか試し、失敗した
+    // 場合は文ブロックとして生成する。末尾の改行は行コメント対策。
+    let script: (() => unknown) | null = null;
+    try {
+      script = new Function(
+        `"use strict"; return (\n${body}\n);`,
+      ) as () => unknown;
+    } catch {
+      try {
+        script = new Function(`"use strict";\n${body}\n`) as () => unknown;
+      } catch (e) {
+        Log.error('Haori', `Invalid each-rendered-run script: ${e}`);
+      }
+    }
+    if (script) {
+      try {
+        script.call(target);
+      } catch (e) {
+        Log.error('Haori', `each-rendered-run execution error: ${e}`);
+      }
+    }
   }
 
   /**

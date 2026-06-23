@@ -197,6 +197,17 @@ export default class Form {
   }
 
   /**
+   * 複数選択の select 要素かどうかを判定します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns `<select multiple>` の場合 true
+   */
+  private static isMultipleSelect(fragment: ElementFragment): boolean {
+    const element = fragment.getTarget();
+    return element instanceof HTMLSelectElement && element.multiple;
+  }
+
+  /**
    * 単一フラグメントへ値を設定します。
    *
    * @param fragment 対象フラグメント
@@ -251,6 +262,15 @@ export default class Form {
           // 未指定のキーは既存の入力値を維持する。
         } else if (Array.isArray(value) && Form.isGroupedCheckable(fragment)) {
           // チェックボックスグループ: 配列に自身の値が含まれるかでチェック状態を決める
+          promises.push(
+            Form.applyFragmentValue(
+              fragment,
+              value as Array<string | number | boolean | null>,
+              emitEvents,
+            ),
+          );
+        } else if (Array.isArray(value) && Form.isMultipleSelect(fragment)) {
+          // 複数選択 select: 配列をそのまま選択状態へ反映する
           promises.push(
             Form.applyFragmentValue(
               fragment,

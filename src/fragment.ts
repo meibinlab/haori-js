@@ -725,8 +725,8 @@ export class ElementFragment extends Fragment {
   /** fresh clone 初期化を subtree ごと省略できるかどうか */
   private freshInitializationSkippable = false;
 
-  /** valueプロパティの値 */
-  private value: string | number | boolean | null = null;
+  /** valueプロパティの値（複数選択 select は文字列配列を保持する） */
+  private value: string | number | boolean | string[] | null = null;
 
   /** 属性更新スキップフラグ（オブザーバーによる無限ループ対応） */
   private skipMutationAttributes = false;
@@ -1341,6 +1341,33 @@ export class ElementFragment extends Fragment {
         this.skipChangeValue = false;
       }) as Promise<void>;
     } else if (
+      element instanceof HTMLSelectElement &&
+      element.multiple
+    ) {
+      // 複数選択 select は配列（または単一値・null）を option の選択状態へ反映する。
+      // option を都度走査して冪等に適用し、実際に選択が変化した場合のみ change を
+      // 発火する（バインド反映ループでの不要な再発火を防ぐ）。
+      const selectedValues = (
+        Array.isArray(value) ? value : value === null ? [] : [value]
+      ).map(String);
+      this.value = selectedValues.slice();
+      this.skipChangeValue = true;
+      return Queue.enqueue(() => {
+        let changed = false;
+        Array.from(element.options).forEach(option => {
+          const shouldSelect = selectedValues.includes(option.value);
+          if (option.selected !== shouldSelect) {
+            option.selected = shouldSelect;
+            changed = true;
+          }
+        });
+        if (changed && dispatchEvents) {
+          element.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+      }).finally(() => {
+        this.skipChangeValue = false;
+      }) as Promise<void>;
+    } else if (
       element instanceof HTMLInputElement ||
       element instanceof HTMLTextAreaElement ||
       element instanceof HTMLSelectElement
@@ -1381,7 +1408,7 @@ export class ElementFragment extends Fragment {
    *
    * @returns 入力エレメントの値
    */
-  public getValue(): string | number | boolean | null {
+  public getValue(): string | number | boolean | string[] | null {
     return this.value;
   }
 
@@ -1454,7 +1481,15 @@ export class ElementFragment extends Fragment {
     } else if (element instanceof HTMLTextAreaElement) {
       this.value = element.value;
     } else if (element instanceof HTMLSelectElement) {
-      this.value = element.value;
+      // 複数選択 select は選択済み option の値を文字列配列として保持する
+      // （外部ウィジェットを含む選択変更をフォーム値へ配列で反映するため）。
+      if (element.multiple) {
+        this.value = Array.from(element.selectedOptions).map(
+          option => option.value,
+        );
+      } else {
+        this.value = element.value;
+      }
     }
   }
 

@@ -95,19 +95,6 @@ describe('HaoriEvent', () => {
     });
   });
 
-  describe('render', () => {
-    it('haori:renderイベントを発火する', () => {
-      const handler = vi.fn();
-      container.addEventListener('haori:render', handler);
-
-      HaoriEvent.render(container);
-
-      expect(handler).toHaveBeenCalledTimes(1);
-      const event = handler.mock.calls[0][0] as CustomEvent;
-      expect(event.detail).toEqual({target: container});
-    });
-  });
-
   describe('importStart', () => {
     it('haori:importstartイベントを発火する', () => {
       const handler = vi.fn();

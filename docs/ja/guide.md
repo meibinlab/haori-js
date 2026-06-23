@@ -2709,12 +2709,10 @@ document.addEventListener('haori:ready', (event) => {
   console.log('Haori.js バージョン:', event.detail.version)
   // 初期化処理
 })
-
-// 要素がレンダリングされた
-element.addEventListener('haori:render', () => {
-  console.log('レンダリング完了')
-})
 ```
+
+> `data-each` の描画完了を検知したい場合は、完了マーカー `data-each-done`
+> （描画確定ごとに付与）や宣言フック `data-each-rendered-run` を利用してください。
 
 ### バインディングイベント
 
@@ -3138,6 +3136,51 @@ class ProgressManager {
 // 初期化
 new ProgressManager()
 ```
+
+### select 拡張ライブラリ（Choices.js）との連携
+
+API から取得した選択肢を `data-each` で動的生成しつつ、検索可能なタグ型マルチセレクト（[Choices.js](https://github.com/Choices-js/Choices) など。MIT ライセンス）で表示するレシピです。任意の select 拡張ライブラリへ一般化できます。
+
+ポイントは次の 3 点です。
+
+- **`data-external`**: Choices.js は元の `<select>` を隠して独自 DOM を生成・随時更新します。外側コンテナに `data-external` を付け、その生成 DOM を Haori の自動監視から除外します（`data-each` による `<option>` 生成は監視除外下でも維持されます）。
+- **`data-each-rendered-run`**: `data-each` で `<option>` を再生成した後、Choices.js を再同期する必要があります。描画確定ごとに一度だけ実行されるこのフックで `refresh()` を呼びます。
+- **`<select multiple>` の配列値**: Choices.js での選択は native `<select>` を更新して `change` を発火するため、Haori は選択値を**配列**としてフォーム値に取り込みます。
+
+```html
+<!-- option は data-each で配列バインド、外部DOMは監視除外、描画確定で refresh -->
+<div data-external>
+  <select
+    name="electricPlanName"
+    multiple
+    data-each="electricPlans.content"
+    data-each-key="id"
+    data-each-arg="ep"
+    data-each-rendered-run="window.__choicesRefresh(this)"
+  >
+    <option value="{{ ep.planName }}">{{ ep.planName }}</option>
+  </select>
+</div>
+```
+
+```javascript
+// select 要素ごとに Choices インスタンスを保持し、再同期できるようにする
+const choicesMap = new WeakMap()
+
+window.__choicesRefresh = (selectEl) => {
+  let choices = choicesMap.get(selectEl)
+  if (!choices) {
+    // 初回のみ初期化（生成 DOM は data-external 配下なので Haori は無視する）
+    choices = new Choices(selectEl, {removeItemButton: true})
+    choicesMap.set(selectEl, choices)
+  } else {
+    // data-each による option 再生成後に Choices 側の表示を作り直す
+    choices.refresh()
+  }
+}
+```
+
+選択結果は `electricPlanName` の配列として、`data-click-form` などの送信値に反映されます（例: `{"electricPlanName": ["プランA", "プランB"]}`）。
 
 ---
 

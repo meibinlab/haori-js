@@ -5,6 +5,7 @@
  * MutationObserverを使用して、属性の変更、ノードの追加・削除、テキストノードの変更を監視します。
  */
 import Core from './core';
+import Env from './env';
 import EventDispatcher from './event_dispatcher';
 import IntersectObserver from './intersect';
 import Log from './log';
@@ -61,6 +62,25 @@ export class Observer {
   }
 
   /**
+   * 指定ノードが「外部管理」サブツリーに属するかどうかを判定します。
+   *
+   * `data-external` 属性を持つ要素とその子孫で発生した DOM 変更は、外部の
+   * select 拡張ライブラリ（Choices.js など）が生成・更新する DOM とみなし、
+   * Haori の監視・自動更新の対象から除外します。これにより、外部生成 DOM が
+   * Haori に破壊・干渉されることを防ぎます。`data-each` による `<option>` の
+   * 配列バインドは Haori のバインド評価パイプラインが駆動するため、監視除外
+   * 下でも維持されます。
+   *
+   * @param node 判定対象のノード（要素・テキスト・コメントいずれも可）
+   * @returns 外部管理サブツリーに属する場合 true
+   */
+  private static isExternallyManaged(node: Node | null): boolean {
+    const element =
+      node instanceof Element ? node : (node?.parentElement ?? null);
+    return element?.closest(`[${Env.prefix}external]`) != null;
+  }
+
+  /**
    * 指定された要素を監視します。
    *
    * @param root 監視対象の要素
@@ -69,6 +89,11 @@ export class Observer {
     const observer = new MutationObserver(async mutations => {
       for (const mutation of mutations) {
         try {
+          // 外部管理サブツリー（data-external 配下）で発生した変更は、外部の
+          // select 拡張ライブラリ等が生成・更新する DOM とみなして無視する。
+          if (Observer.isExternallyManaged(mutation.target)) {
+            continue;
+          }
           switch (mutation.type) {
             case 'attributes': {
               const element = mutation.target as HTMLElement;
