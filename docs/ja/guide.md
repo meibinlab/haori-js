@@ -3146,6 +3146,7 @@ API から取得した選択肢を `data-each` で動的生成しつつ、検索
 - **`data-external`**: Choices.js は元の `<select>` を隠して独自 DOM を生成・随時更新します。外側コンテナに `data-external` を付け、その生成 DOM を Haori の自動監視から除外します（`data-each` による `<option>` 生成は監視除外下でも維持されます）。
 - **`data-each-rendered-run`**: `data-each` で `<option>` を再生成した後、Choices.js を再同期する必要があります。描画確定ごとに一度だけ実行されるこのフックで `refresh()` を呼びます。
 - **`<select multiple>` の配列値**: Choices.js での選択は native `<select>` を更新して `change` を発火するため、Haori は選択値を**配列**としてフォーム値に取り込みます。
+- **空の初回描画では初期化しない**: 選択肢を `data-fetch` 等で非同期取得する場合、fetch 完了前の空 `<option>` 状態でも `data-each-rendered-run` は発火します。この時点で Choices.js を初期化すると、空の `<select>` を取り込んでしまい、後から選択肢を描画しても「No choices」のままになることがあります。初回初期化は `selectEl.options.length > 0` を確認してから行ってください。
 
 ```html
 <!-- option は data-each で配列バインド、外部DOMは監視除外、描画確定で refresh -->
@@ -3170,7 +3171,9 @@ const choicesMap = new WeakMap()
 window.__choicesRefresh = (selectEl) => {
   let choices = choicesMap.get(selectEl)
   if (!choices) {
-    // 初回のみ初期化（生成 DOM は data-external 配下なので Haori は無視する）
+    // fetch 完了前の空描画では初期化しない（空のまま取り込むと「No choices」が固定化するため）
+    if (selectEl.options.length === 0) return
+    // 選択肢が揃った最初の描画で初期化（生成 DOM は data-external 配下なので Haori は無視する）
     choices = new Choices(selectEl, {removeItemButton: true})
     choicesMap.set(selectEl, choices)
   } else {
