@@ -79,7 +79,15 @@ export default class Form {
         // 同名のチェックボックス・ラジオボタングループ:
         // チェック済みの値だけを集め、未チェック（null）で既存値を上書きしない。
         // チェックボックスで複数チェックされている場合は配列にする。
-        const value = fragment.getValue();
+        //
+        // 内部値（this.value）は、ラジオの排他制御で未チェックになった同名要素では
+        // change が発火せず古いまま残ることがある。その古い値をチェック済みとして
+        // 収集すると同一キーに複数値が集まり配列累積を起こすため、DOM の checked を
+        // 真として未チェック要素は null（未選択）扱いにする。
+        const element = fragment.getTarget();
+        const checked =
+          element instanceof HTMLInputElement ? element.checked : true;
+        const value = checked ? fragment.getValue() : null;
         const key = String(name);
         if (value === null) {
           if (!(key in values)) {

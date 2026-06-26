@@ -289,6 +289,13 @@ export interface ProcedureOptions {
    */
   bindMerge?: boolean;
 
+  /**
+   * フェッチ状態（loading/success/error）を `_fetch` として注入する対象要素群。
+   * `data-fetch-state` / `data-{event}-fetch-state` で指定する。値が空の場合は
+   * 自要素を対象とし、CSS セレクタ指定時は該当要素群を対象とする。
+   */
+  fetchStateFragments?: ElementFragment[] | null;
+
   /** レスポンスデータをバインドする際のキー名 */
   bindArg?: string | null;
 
@@ -1330,6 +1337,39 @@ ${body}
       }
     }
 
+    // fetch-state（フェッチ状態 _fetch の注入先。イベント・非イベント双方で
+    // 解釈する。値省略時は自要素、CSS セレクタ指定時は該当要素群を対象とする）
+    const fetchStateAttrName = event
+      ? Procedure.attrName(event, 'fetch-state')
+      : Procedure.attrName(null, 'state', true);
+    if (fragment.hasAttribute(fetchStateAttrName)) {
+      const selector = fragment.getRawAttribute(fetchStateAttrName) as
+        | string
+        | null;
+      const list: ElementFragment[] = [];
+      if (selector) {
+        const elements = document.body.querySelectorAll(selector);
+        elements.forEach(el => {
+          const frag = Fragment.get(el);
+          if (frag) {
+            list.push(frag as ElementFragment);
+          }
+        });
+        if (list.length === 0) {
+          Log.error(
+            'Haori',
+            `Element not found: ${selector} (${fetchStateAttrName})`,
+          );
+        }
+      } else {
+        // 値が省略されている場合は自要素を対象
+        list.push(fragment);
+      }
+      if (list.length > 0) {
+        options.fetchStateFragments = list;
+      }
+    }
+
     // fetch が指定されているのにバインド先が無い場合、デフォルトで自要素にバインド
     if (
       hasFetchAttr &&
@@ -1593,6 +1633,9 @@ ${body}
             fetchStartMetadata,
           );
 
+          // フェッチ開始: loading 状態を注入する。
+          await this.injectFetchState('loading');
+
           return fetch(fetchUrl, finalOptions)
             .then(response => {
               return this.handleFetchResult(
@@ -1601,7 +1644,7 @@ ${body}
                 startedAt,
               );
             })
-            .catch(error => {
+            .catch(async error => {
               if (fetchUrl) {
                 HaoriEvent.fetchError(
                   this.options.targetFragment!.getTarget(),
@@ -1609,6 +1652,12 @@ ${body}
                   error,
                 );
               }
+              // ネットワーク断・タイムアウト等: error 状態を注入する。
+              await this.injectFetchState(
+                'error',
+                null,
+                error instanceof Error ? error.message : String(error),
+              );
               throw error;
             });
         }
@@ -1737,6 +1786,12 @@ ${body}
         );
       }
       await this.handleFetchError(response);
+      // HTTP エラー応答（4xx/5xx）: error 状態を注入する。
+      await this.injectFetchState(
+        'error',
+        response.status,
+        response.statusText || null,
+      );
       return false;
     }
 
@@ -1771,6 +1826,10 @@ ${body}
     promises.push(this.movePrevRow());
     promises.push(this.moveNextRow());
     await Promise.all(promises);
+
+    // フェッチ成功: success 状態を注入する（bind 反映後に行い、注入先が
+    // bind 対象自身でも _fetch が最新データへ載るようにする）。
+    await this.injectFetchState('success', response.status, null);
 
     if (this.options.resetFragments && this.options.resetFragments.length > 0) {
       await Promise.all(
@@ -2800,5 +2859,48 @@ ${body}
       return Promise.resolve();
     }
     return parent.insertAfter(rowFragment, nextFragment);
+  }
+
+  /**
+   * フェッチ状態を `_fetch` として対象要素群のバインディングデータへ注入します。
+   *
+   * `data-fetch-state` / `data-{event}-fetch-state` で指定された要素に対し、
+   * `loading` / `success` / `error` の各状態を `_fetch` キーで設定します。
+   * `reflectToAttribute=false` で呼ぶため data-bind 属性は汚さず、bindchange
+   * イベントも発火しませんが、対象要素の再評価（data-if 等）は実行されます。
+   * 指定要素が無い場合は何もしません。
+   *
+   * @param status フェッチ状態（'loading' | 'success' | 'error'）
+   * @param statusCode HTTP ステータスコード（無い場合は null）
+   * @param message エラーメッセージ等（無い場合は null）
+   * @returns 注入完了の Promise
+   */
+  private async injectFetchState(
+    status: 'loading' | 'success' | 'error',
+    statusCode: number | null = null,
+    message: string | null = null,
+  ): Promise<void> {
+    const targets = this.options.fetchStateFragments;
+    if (!targets || targets.length === 0) {
+      return;
+    }
+    const state = {
+      status,
+      loading: status === 'loading',
+      success: status === 'success',
+      error: status === 'error',
+      statusCode,
+      message,
+    };
+    await Promise.all(
+      targets.map(fragment => {
+        const element = fragment.getTarget();
+        const data = {
+          ...(fragment.getRawBindingData() ?? {}),
+          _fetch: state,
+        };
+        return Core.setBindingData(element, data, new Set(), false, false);
+      }),
+    );
   }
 }

@@ -1729,6 +1729,7 @@ data-fetch="url"
 - `data-fetch-arg`: バインドキー名（`data-fetch-bind-arg` と同義。こちらが優先）
 - `data-fetch-bind-arg`: バインドキー名（`data-fetch-arg` の別名。`data-fetch-arg` が無い場合に参照）
 - `data-fetch-bind-params`: 抽出パラメータ (&区切り)
+- `data-fetch-state`: フェッチ状態 `_fetch` の注入先セレクタ（省略時は自要素）
 
 **未解決参照と再評価**:
 - プレースホルダ単体では、評価結果が空でない文字列のときだけ実行します。`false`、`null`、`undefined`、空文字、未解決参照は未実行とします。
@@ -2394,6 +2395,40 @@ Content-Typeを指定します。
 ```
 
 追記対象キーについて、既存値と新規値の両方が配列である場合は `existing.concat(incoming)` 相当で結合します。いずれかが配列でない場合は新規値で上書きします。
+
+##### `data-fetch-state` / `data-{event}-fetch-state`
+
+フェッチの進行状況を `_fetch` というキーで対象要素のバインディングデータへ注入します。画面個別の JavaScript を書かずに、`data-if` や式からフェッチ状態（読み込み中・成功・失敗）を参照するための属性です。
+
+**構文**:
+```html
+data-fetch-state            <!-- 非イベント data-fetch 用。値省略で自要素が対象 -->
+data-fetch-state="#panel"   <!-- CSS セレクタで別要素を対象にできる -->
+data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fetch-state -->
+```
+
+**注入される `_fetch` の構造**:
+
+| キー | 型 | 内容 |
+|---|---|---|
+| `status` | string | `"loading"` / `"success"` / `"error"` |
+| `loading` | boolean | 読み込み中なら `true` |
+| `success` | boolean | 成功なら `true` |
+| `error` | boolean | 失敗なら `true` |
+| `statusCode` | number \| null | HTTP ステータスコード。取得できない場合は `null` |
+| `message` | string \| null | エラーメッセージ。HTTP エラー時は `statusText`、ネットワーク断時は例外メッセージ。無い場合は `null` |
+
+**注入タイミング**:
+- フェッチ開始直前に `status="loading"`
+- HTTP エラー応答（4xx/5xx）で `status="error"`（`statusCode` に HTTP ステータス、`message` に `statusText`）
+- ネットワーク断・タイムアウト等の例外で `status="error"`（`statusCode` は `null`、`message` に例外メッセージ）
+- バインド反映後に `status="success"`（`statusCode` に HTTP ステータス）
+
+**仕様**:
+- 値を省略した場合は自要素、CSS セレクタを指定した場合は該当要素群を注入先とします。
+- `_fetch` は最初のフェッチが行われるまで存在しません。初期表示での参照エラーを避けるには、注入先要素の `data-bind` に `"_fetch":null` を宣言し、式では `_fetch?.loading` のようにオプショナルチェーンで参照します。
+- `_fetch` は内部バインディングデータにのみ設定し、`data-bind` 属性へは書き出しません（`bindchange` イベントも発火しません）。注入先要素の再評価（`data-if` 等）は実行されます。
+- 自動リトライは行いません。再取得は `data-click-fetch` 等で手動導線を宣言します。
 
 #### その他のアクション
 

@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Added
+
+- **`data-fetch-state` / `data-{event}-fetch-state`: フェッチ状態の宣言的参照を追加**。`data-fetch` / `data-{event}-fetch` の進行状況を `_fetch` というキーで対象要素のバインディングデータへ注入し、画面個別の JavaScript を書かずに `data-if="_fetch.error"` などで読み込み中・成功・失敗を出し分けられるようにした。`_fetch` は `{status, loading, success, error, statusCode, message}` を持つ（`status` は `"loading"` / `"success"` / `"error"`）。注入タイミングはフェッチ開始直前（loading）、HTTP エラー応答（error: `statusCode`=HTTP ステータス、`message`=`statusText`）、ネットワーク断・タイムアウト等の例外（error: `statusCode`=`null`、`message`=例外メッセージ）、バインド反映後（success: `statusCode`=HTTP ステータス）。値を省略すると自要素、CSS セレクタ指定で別要素を注入先にできる。`_fetch` は内部バインディングデータにのみ設定し `data-bind` 属性へは書き出さない（`bindchange` も発火しない）が、注入先要素の再評価（`data-if` 等）は行う。自動リトライは行わず、再取得は `data-click-fetch` 等で手動導線を宣言する。
+
+### Fixed
+
+- **同一 `name` のラジオボタン群を `data-change-bind` で1キーへ書く際、値が配列累積していた不具合を修正**。ラジオは排他制御で他要素が未チェックになるがその要素では `change` が発火しないため、フォーム値収集（`Form.getPartValues`）が未チェック要素の古い内部値もチェック済みとして集め、同一キーに複数値が集まり配列（例: `["none","fixed","ratio"]`）になっていた。これにより `data-if="x === 'fixed'"` のスカラ比較が当たらず、`ratio→none` など前の選択へ戻しても依存欄の `data-if` が再評価されず再非表示にならなかった。グループ収集では DOM の `checked` を真とし、未チェック要素の内部値を無視してスカラで上書きするよう修正（チェックボックスの複数チェック→配列収集は不変）。あわせて `change`/`input` 時に同一フォームスコープの同名ラジオの内部値も同期し、収集前の不整合を根治した。
+
+### Docs
+
+- `docs/ja/guide.md`: 「フェッチの状態を画面に表示する（`data-fetch-state`）」節を追加（`_fetch` 構造、自要素／別要素への注入例、手動再取得導線、401/403 は対象外・自動リトライなしの補足）。
+- `docs/ja/specs.md`: `data-fetch` 関連属性に `data-fetch-state` を追記し、`data-fetch-state` / `data-{event}-fetch-state` の専用仕様（`_fetch` 構造・注入タイミング・`data-bind` へ書き出さない等）を追加。
+
+### Tests
+
+- `tests/fetch-state-binding.test.ts` を追加（成功時の `_fetch.success`/`statusCode`、HTTP 500 の `_fetch.error`/`statusCode`、別要素 `#panel` への注入、`data-bind` 属性を汚さないこと）。
+- `tests/radio-group-scalar-bind.test.ts` を追加（別要素のネストキーへ書く構成で `none→fixed→ratio` の前進と `ratio→none` の後退の双方でスカラ更新・依存 `data-if` の再評価を検証）。
+- `tests/checkbox-group-collection.test.ts` を追加（チェックボックス群の複数チェック→配列・単一→スカラ・未チェック→null・`change` 後の最新 DOM 反映の回帰）。
+
 ## [0.23.0] - 2026-06-23
 
 ### Added

@@ -287,6 +287,30 @@ export default class EventDispatcher {
       fragment instanceof ElementFragment
     ) {
       fragment.syncValue();
+      // ラジオボタンは排他制御で他要素が未チェックになるが、その要素では
+      // change が発火しないため内部値が古いまま残る。同一フォームスコープの
+      // 同名ラジオを併せて同期し、値収集時の不整合（配列累積）を防ぐ。
+      if (
+        element instanceof HTMLInputElement &&
+        element.type === 'radio' &&
+        element.name
+      ) {
+        const group = document.getElementsByName(element.name);
+        for (const member of Array.from(group)) {
+          if (
+            member === element ||
+            !(member instanceof HTMLInputElement) ||
+            member.type !== 'radio' ||
+            member.form !== element.form
+          ) {
+            continue;
+          }
+          const memberFragment = Fragment.get(member);
+          if (memberFragment instanceof ElementFragment) {
+            memberFragment.syncValue();
+          }
+        }
+      }
     }
 
     const runProcedure = () => {

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-fetch-state デモ</title>
+  <script src="../../dist/haori.iife.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+      max-width: 720px;
+    }
+    .demo-card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      background: #fafafa;
+    }
+    .state-loading {
+      color: #92400e;
+      background: #fef3c7;
+      border-radius: 6px;
+      padding: 8px 12px;
+    }
+    .state-error {
+      color: #991b1b;
+      background: #fee2e2;
+      border-radius: 6px;
+      padding: 8px 12px;
+    }
+    .state-success {
+      color: #166534;
+    }
+    button {
+      padding: 8px 14px;
+      border: 0;
+      border-radius: 6px;
+      background: #0d6efd;
+      color: white;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+    button:hover {
+      background: #0b5ed7;
+    }
+    button.danger {
+      background: #dc2626;
+    }
+    button.danger:hover {
+      background: #b91c1c;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+    pre {
+      background: #111827;
+      color: #d1fae5;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>data-fetch-state デモ</h1>
+  <p>
+    フェッチの状態（読み込み中・成功・失敗）を <code>_fetch</code> として参照し、
+    画面個別の JavaScript を書かずに <code>data-if</code> だけで表示を出し分けるデモです。
+  </p>
+
+  <!--
+    取得領域自身に data-fetch-state を付け、状態を _fetch に注入する。
+    成功ボタンは存在する JSON を、失敗ボタンは存在しない URL（404）を取得する。
+    どちらも同じ #result 領域にバインドし、状態でメッセージを出し分ける。
+  -->
+  <div class="demo-card">
+    <p>
+      <button
+        data-click-fetch="./data-fetch-state-demo.json"
+        data-click-bind="#result"
+        data-click-fetch-state="#result"
+        type="button"
+      >成功するフェッチ</button>
+      <button
+        class="danger"
+        data-click-fetch="./not-found-404.json"
+        data-click-bind="#result"
+        data-click-fetch-state="#result"
+        type="button"
+      >失敗するフェッチ（404）</button>
+    </p>
+
+    <!--
+      _fetch は初期状態（フェッチ前）では存在しないため、参照エラーを避けるよう
+      data-bind で _fetch を null として宣言しておき、式では _fetch?.xxx と
+      オプショナルチェーンで安全に参照する。
+    -->
+    <div id="result" data-bind='{"items":[],"_fetch":null}'>
+      <!-- 読み込み中 -->
+      <p class="state-loading" data-if="_fetch?.loading">読み込み中...</p>
+
+      <!-- 失敗時: メッセージと再取得ボタンを宣言的に表示 -->
+      <div class="state-error" data-if="_fetch?.error">
+        <p>読み込みに失敗しました（ステータス: {{_fetch?.statusCode}}）。再試行してください。</p>
+        <!-- 手動リトライ: 同じ領域を再取得する -->
+        <button
+          data-click-fetch="./data-fetch-state-demo.json"
+          data-click-bind="#result"
+          data-click-fetch-state="#result"
+          type="button"
+        >再取得</button>
+      </div>
+
+      <!-- 成功時: 取得した一覧を表示 -->
+      <div class="state-success" data-if="_fetch?.success">
+        <p>取得に成功しました。</p>
+        <ul data-each="items">
+          <li>{{name}}</li>
+        </ul>
+      </div>
+
+      <!-- 初期表示（まだフェッチしていない）: _fetch?.status が未定義のときだけ表示 -->
+      <p data-if="!_fetch?.status">「成功するフェッチ」または「失敗するフェッチ」を押してください。</p>
+    </div>
+  </div>
+
+  <div class="demo-card">
+    <h2><code>_fetch</code> の中身</h2>
+    <p>注入される状態オブジェクトの構造:</p>
+    <pre><code>{
+  "status": "loading" | "success" | "error",
+  "loading": boolean,
+  "success": boolean,
+  "error": boolean,
+  "statusCode": number | null,
+  "message": string | null
+}</code></pre>
+    <p>
+      <code>_fetch</code> は表示制御用の内部状態で <code>data-bind</code> 属性には書き出されず、
+      送信ペイロードにも含まれません。自動リトライは行わず、再取得は
+      <code>data-click-fetch</code> で手動導線を宣言します。
+    </p>
+  </div>
+
+  <div class="demo-card">
+    <h2>マークアップ例</h2>
+    <pre><code>&lt;button
+  data-click-fetch="./data-fetch-state-demo.json"
+  data-click-bind="#result"
+  data-click-fetch-state="#result"
+&gt;成功するフェッチ&lt;/button&gt;
+
+&lt;div id="result" data-bind='{"items":[],"_fetch":null}'&gt;
+  &lt;p data-if="_fetch?.loading"&gt;読み込み中...&lt;/p&gt;
+  &lt;div data-if="_fetch?.error"&gt;
+    読み込みに失敗しました（{{_fetch?.statusCode}}）。
+    &lt;button data-click-fetch="..." data-click-bind="#result"
+            data-click-fetch-state="#result"&gt;再取得&lt;/button&gt;
+  &lt;/div&gt;
+  &lt;ul data-if="_fetch?.success" data-each="items"&gt;&lt;li&gt;{{name}}&lt;/li&gt;&lt;/ul&gt;
+&lt;/div&gt;</code></pre>
+  </div>
+</body>
+</html>

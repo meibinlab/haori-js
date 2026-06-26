@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>同一 name ラジオの data-change-bind デモ</title>
+  <script src="../../dist/haori.iife.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+      max-width: 720px;
+    }
+    .demo-card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      background: #fafafa;
+    }
+    .panel {
+      background: #eff6ff;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-top: 8px;
+    }
+    label {
+      display: block;
+      margin: 4px 0;
+    }
+    .state-view {
+      background: #111827;
+      color: #d1fae5;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+    pre {
+      background: #111827;
+      color: #d1fae5;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>同一 name ラジオの data-change-bind デモ</h1>
+  <p>
+    同じ <code>name</code> のラジオを <code>data-change-bind</code> で別要素の1キーへ書き込み、
+    選択値に応じて依存欄を <code>data-if</code> で出し分けるデモです。
+    選択を前後どちらに変えても、最後に選んだスカラ値で上書きされ、依存欄が即座に切り替わります。
+  </p>
+
+  <!-- 状態保持要素（フォームとは別要素）。ここの payment.method を更新する -->
+  <div id="payment-state" data-bind='{"payment":{"method":"cash"}}'>
+    <div class="demo-card">
+      <h2>支払い方法</h2>
+
+      <!-- 送信用フォーム。バインド先は form ではなく #payment-state -->
+      <form id="payment-form">
+        <label>
+          <input type="radio" name="method" value="cash" checked
+            data-change-bind="#payment-state" data-change-bind-arg="payment"> 現金
+        </label>
+        <label>
+          <input type="radio" name="method" value="credit"
+            data-change-bind="#payment-state" data-change-bind-arg="payment"> クレジットカード
+        </label>
+        <label>
+          <input type="radio" name="method" value="bank"
+            data-change-bind="#payment-state" data-change-bind-arg="payment"> 銀行振込
+        </label>
+
+        <!-- 依存欄: 選択値に応じて表示（スカラ比較で書ける） -->
+        <div class="panel" data-if="payment.method === 'credit'">
+          <label>カード番号
+            <input type="text" name="cardNumber" placeholder="0000 0000 0000 0000">
+          </label>
+        </div>
+        <div class="panel" data-if="payment.method === 'bank'">
+          <label>振込名義
+            <input type="text" name="bankHolder" placeholder="ヤマダ タロウ">
+          </label>
+        </div>
+      </form>
+
+      <p>選択中の支払い方法: <strong>{{payment.method}}</strong></p>
+    </div>
+
+    <div class="demo-card">
+      <h2>#payment-state の現在値</h2>
+      <pre class="state-view">{{payment}}</pre>
+      <p>
+        値は配列に累積せず、常に最後の選択（スカラ）になります。
+        <code>credit → bank → cash</code> のように戻しても、依存欄は正しく再非表示になります。
+      </p>
+    </div>
+  </div>
+
+  <div class="demo-card">
+    <h2>マークアップ例</h2>
+    <pre><code>&lt;div id="payment-state" data-bind='{"payment":{"method":"cash"}}'&gt;
+  &lt;form id="payment-form"&gt;
+    &lt;input type="radio" name="method" value="cash" checked
+      data-change-bind="#payment-state" data-change-bind-arg="payment"&gt;
+    &lt;input type="radio" name="method" value="credit"
+      data-change-bind="#payment-state" data-change-bind-arg="payment"&gt;
+    &lt;input type="radio" name="method" value="bank"
+      data-change-bind="#payment-state" data-change-bind-arg="payment"&gt;
+
+    &lt;div data-if="payment.method === 'credit'"&gt;...&lt;/div&gt;
+    &lt;div data-if="payment.method === 'bank'"&gt;...&lt;/div&gt;
+  &lt;/form&gt;
+&lt;/div&gt;</code></pre>
+  </div>
+</body>
+</html>
