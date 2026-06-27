@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-if 非表示分岐のフォーム送信除外 デモ</title>
+  <script src="../../dist/haori.iife.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+      max-width: 720px;
+    }
+    .demo-card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      background: #fafafa;
+    }
+    .field {
+      margin: 12px 0;
+    }
+    label.mode {
+      margin-right: 16px;
+    }
+    input[type="text"] {
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 200px;
+    }
+    .branch {
+      border-left: 3px solid #0d6efd;
+      padding: 8px 12px;
+      background: #eff6ff;
+      border-radius: 4px;
+    }
+    .result {
+      background: #111827;
+      color: #d1fae5;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      white-space: pre;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+    pre {
+      background: #111827;
+      color: #d1fae5;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>data-if 非表示分岐のフォーム送信除外 デモ</h1>
+  <p>
+    同じ <code>name="value"</code> の入力を設定型（モード）ごとに <code>data-if</code> で
+    出し分けるデモです。<code>data-if</code> が <code>false</code> の分岐は DOM から消えず
+    <code>data-if-false</code> 属性付きで残りますが、フォーム値収集（<code>data-click-form</code> 等）の
+    対象からは自動的に除外されます。表示中の分岐の値だけが収集され、配列累積や値の競合は起きません。
+  </p>
+
+  <!--
+    フォーム自身に data-bind を置き、双方向バインディングで mode / value を保持する。
+    式で参照するキー（mode, value）は必ず data-bind に宣言しておき、初回描画での
+    参照エラーを避ける。mode はラジオで切り替え、value は表示中の分岐の入力だけが収集される。
+    収集結果の表示はフォーム配下に置き、フォームのバインドデータを継承して {{}} で参照する
+    （画面個別の JavaScript は不要）。
+  -->
+  <div class="demo-card">
+    <form id="plan-form" data-bind='{"mode":"fixed","value":"100"}'>
+      <div class="field">
+        <strong>割引モード:</strong>
+        <label class="mode"><input type="radio" name="mode" value="fixed" checked>固定額（円）</label>
+        <label class="mode"><input type="radio" name="mode" value="ratio">割合（倍率）</label>
+      </div>
+
+      <!-- 固定額モードのときだけ表示・収集される -->
+      <div class="branch field" data-if="mode === 'fixed'">
+        <label>固定割引額: <input type="text" name="value"></label>
+        <p>例: <code>100</code>（円）</p>
+      </div>
+
+      <!-- 割合モードのときだけ表示・収集される（非表示時は data-if-false で収集対象外） -->
+      <div class="branch field" data-if="mode === 'ratio'">
+        <label>割引倍率: <input type="text" name="value"></label>
+        <p>例: <code>0.5</code>（50% 割引）</p>
+      </div>
+
+      <!--
+        フォームの change ごとに data-bind が Form.getValues() の結果で更新され、
+        配下のこの表示も再評価される。非表示分岐の同名入力は除外されるため、
+        value は常にスカラ1値となり配列にならない。
+      -->
+      <div class="field">
+        <strong>収集されるフォーム値:</strong>
+        <div class="result">mode  = {{mode}}
+value = {{value}}</div>
+      </div>
+    </form>
+  </div>
+
+  <div class="demo-card">
+    <h2>ポイント</h2>
+    <ul>
+      <li>モードを切り替えると、表示される入力（固定額／割合）が <code>data-if</code> で入れ替わります。</li>
+      <li><code>value</code> は常に単一値です。非表示分岐の同名入力は収集されないため、<code>["100","0.5"]</code> のような配列累積は発生しません。</li>
+      <li>送信値からは除外されますが、同名の入力要素自体は DOM 上に残ります。</li>
+    </ul>
+  </div>
+
+  <div class="demo-card">
+    <h2>マークアップ例</h2>
+    <pre><code>&lt;form data-bind='{"mode":"fixed","value":"100"}'&gt;
+  &lt;input type="radio" name="mode" value="fixed" checked&gt; 固定額
+  &lt;input type="radio" name="mode" value="ratio"&gt; 割合
+
+  &lt;!-- 表示中の分岐だけが収集される --&gt;
+  &lt;div data-if="mode === 'fixed'"&gt;
+    &lt;input type="text" name="value"&gt;
+  &lt;/div&gt;
+  &lt;!-- 非表示（data-if-false）のあいだは収集対象外 --&gt;
+  &lt;div data-if="mode === 'ratio'"&gt;
+    &lt;input type="text" name="value"&gt;
+  &lt;/div&gt;
+&lt;/form&gt;</code></pre>
+    <p>
+      セレクタで「1要素だけ」を前提にしたい場合は、入力を1つに統一し <code>type</code> /
+      <code>step</code> / <code>max</code> 等を <code>{{}}</code> 式で切り替える運用も検討してください。
+    </p>
+  </div>
+</body>
+</html>

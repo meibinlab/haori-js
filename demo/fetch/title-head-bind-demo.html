@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    <head> は Haori のスキャン・監視対象（observer が Core.scan(document.head) し
+    MutationObserver で監視する）。<title> のテキストも TextFragment として {{}} 補間
+    される。スコープは <title> 自身に持たせる必要があるため、data-fetch を title へ
+    直接付与する（兄弟の <meta> 等のスコープは継承されない）。
+    company は応答で上書きされるが、初回描画での未解決参照を避けるため data-bind で
+    空文字を種まきしておく。
+  -->
+  <title data-bind='{"company":""}' data-fetch="./title-head-bind-demo.json">{{company}} - ログイン</title>
+  <script src="../../dist/haori.iife.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+      max-width: 720px;
+    }
+    .demo-card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      background: #fafafa;
+    }
+    .result {
+      background: #111827;
+      color: #d1fae5;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+    pre {
+      background: #111827;
+      color: #d1fae5;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+    }
+    .hint {
+      color: #b45309;
+    }
+  </style>
+</head>
+<body>
+  <h1>&lt;title&gt; への実行時バインド デモ</h1>
+  <p class="hint">
+    ブラウザのタブ（または上部のタイトルバー）を見てください。読み込み後に
+    <code>data-fetch</code> で取得した会社名が <code>&lt;title&gt;</code> に反映され、
+    「明文堂株式会社 - ログイン」になります。
+  </p>
+
+  <!--
+    画面側でも同じ JSON を取得して、title に表示されている内容を可視化する
+    （title はタブにしか出ないため）。これはデモ表示用で、title 反映とは独立。
+  -->
+  <div class="demo-card" data-bind='{"company":"","unit":""}' data-fetch="./title-head-bind-demo.json">
+    <h2>取得結果</h2>
+    <div class="result">company = {{company}}
+unit    = {{unit}}</div>
+    <p>現在の <code>document.title</code> はこの <code>company</code> を使って組み立てられています。</p>
+  </div>
+
+  <div class="demo-card">
+    <h2>ポイント</h2>
+    <ul>
+      <li><code>&lt;head&gt;</code> はスキャン・監視対象なので、<code>&lt;title&gt;</code> のテキストでも <code>{{}}</code> 補間が効きます。</li>
+      <li>スコープは <strong><code>&lt;title&gt;</code> 自身</strong>に持たせます。<code>data-bind</code> / <code>data-fetch</code> を title へ直接付与してください。</li>
+      <li>兄弟要素（例: <code>&lt;meta data-bind&gt;</code>）のスコープは <code>&lt;title&gt;</code> に継承されません。</li>
+      <li><code>data-fetch-bind</code> や <code>data-{event}-copy</code> のセレクタは <code>document.body</code> 配下を探すため、<code>&lt;head&gt;</code> 内の要素は対象にできません。</li>
+    </ul>
+  </div>
+
+  <!--
+    このページはライブの Haori ページなので、<pre> 内のテキストも走査対象となる。
+    マークアップ例として字面の {{...}} を見せたいだけなので、{{ の間にコメントを
+    挟んでテキストノードを分割し、補間（評価）されないようにしている。
+  -->
+  <div class="demo-card">
+    <h2>マークアップ例</h2>
+    <pre><code>&lt;head&gt;
+  &lt;!-- 応答 {"company":"..."} を title 自身にバインド --&gt;
+  &lt;title data-bind='{"company":""}' data-fetch="/api/site"&gt;{<!---->{company}} - ログイン&lt;/title&gt;
+&lt;/head&gt;
+
+&lt;!-- ネストキーで受けたい場合は data-fetch-arg --&gt;
+&lt;title data-fetch="/api/site" data-fetch-arg="site"&gt;{<!---->{site.company}} - ログイン&lt;/title&gt;</code></pre>
+  </div>
+</body>
+</html>

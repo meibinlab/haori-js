@@ -231,6 +231,7 @@ Core.setAttributeは以下の優先順位で属性を処理します：
   - `data-if-false` 属性を付与
   - 子要素をDOMから除去 (unmount)
   - `haori:hide` イベント発火
+  - 自要素および配下の入力は `Form.getValues()`（`data-click-form` 等のフォーム値収集）の対象外となる。詳細は[フォーム送信での扱い](#data-if-false-分岐とフォーム送信)を参照
 - 表示時:
   - `style.display` を復元
   - `data-if-false` 属性を削除
@@ -948,6 +949,29 @@ async handleError(response: Response): Promise<void> {
 4. **DOM更新**: `Core.setBindingData()`で関連する要素（`{{variable}}`、`data-if`など）を自動更新
 
 これにより、`data-bind`属性を明示的に記述しなくても、フォーム要素内の入力変更が自動的にバインディングデータとして反映され、リアクティブな更新が実現されます。
+
+##### `data-if-false` 分岐とフォーム送信
+
+`data-if` が `false` の要素は DOM から削除されず、`style.display: none` と `data-if-false` 属性が付いた状態で残ります。そのため、同一 `name` の入力を設定型ごとに `data-if` で出し分けると、非表示分岐の入力も DOM 上に同名で共存します。
+
+`Form.getValues()`（`data-click-form`・双方向バインド・履歴フォーム収集を含むすべてのフォーム値収集経路）は、`data-if-false` 属性を持つ要素とその配下を**収集対象から除外**します。これにより、表示中の分岐の入力値だけが直列化され、非表示分岐の値との競合は発生しません。
+
+```html
+<form data-bind='{"mode":"fixed"}'>
+  <!-- mode が fixed のときだけ収集される -->
+  <div data-if="mode === 'fixed'">
+    <input name="value" value="100">
+  </div>
+  <!-- mode が ratio のとき以外は data-if-false となり収集されない -->
+  <div data-if="mode === 'ratio'">
+    <input name="value" value="0.5">
+  </div>
+</form>
+```
+
+- 除外はサブツリー全体に及び、`data-form-object` / `data-form-list` 配下の入力も非表示分岐なら丸ごと除外されます。
+- `data-if` が `true` に切り替わって表示されれば、その分岐の入力は通常どおり収集対象になります。
+- 同名入力の DOM 上の共存自体（セレクタの strict mode 違反など）は解消されません。DOM に1要素だけ存在させたい場合は、入力を1つに統一し `type` / `step` / `max` 等を `{{}}` 式で切り替えてください。
 
 また、フォーム要素自身に対して `Core.setBindingData()` や `data-fetch` が実行された場合は、フォーム配下の入力要素へ無イベントで逆方向同期します。このとき text input / textarea / select は `value` を更新し、checkbox / radio は `Form.setValues()` と同じ規則で checked 状態を反映します。
 
@@ -1725,7 +1749,7 @@ data-fetch="url"
 - `data-fetch-headers`: リクエストヘッダー (JSON or URLSearchParams)
 - `data-fetch-data`: 送信データ
 - `data-fetch-form`: フォーム要素のセレクタ
-- `data-fetch-bind`: バインド先セレクタ (デフォルト: 自要素)
+- `data-fetch-bind`: バインド先セレクタ (デフォルト: 自要素)。セレクタは `document.body` 配下を探すため、`<head>` 内の要素（`<title>` など）はバインド先に指定できない
 - `data-fetch-arg`: バインドキー名（`data-fetch-bind-arg` と同義。こちらが優先）
 - `data-fetch-bind-arg`: バインドキー名（`data-fetch-arg` の別名。`data-fetch-arg` が無い場合に参照）
 - `data-fetch-bind-params`: 抽出パラメータ (&区切り)
@@ -1797,6 +1821,22 @@ data-fetch="url"
 - **2xx で空ボディ**（`204 No Content`、本文なしの `200` 等）の場合は、**バインド対象なしとして正常にスキップ**します。バインドエラーにはならず、後続アクション（`*-toast` / `*-close` / `*-click` / 再取得など）は通常どおり実行されます。REST 慣習で空応答を返す削除・更新系（`DELETE` 等）でも、`*-toast` や再取得を問題なく併用できます。
 - バインド先を**明示指定**したうえで、JSON オブジェクトでない文字列応答が返り、かつ `data-fetch-arg` / `data-fetch-bind-arg`（バインドキー名）が無い場合は、バインドできないため**エラーとして停止**します（バインドキー名を指定するか、応答を JSON オブジェクトにしてください）。
 - 一方、**既定 self-bind**（バインド先を明示していない）で同様の文字列応答が返った場合は、バインドを意図していないものとみなして**警告にとどめてスキップ**し、後続アクションは実行されます。
+
+**`<head>` / `<title>` への実行時バインド**:
+
+`<head>` も初期化時に `Core.scan(document.head)` でスキャンされ、`MutationObserver` で監視されます。`<title>` のテキストも他のテキストノードと同様に `{{...}}` 補間の対象となるため、`<title>` 自身に `data-bind` / `data-fetch` を付与すればスコープが確立され、テキストが実行時に更新されます。
+
+```html
+<head>
+  <!-- 応答 {"company":"..."} を title 自身へ self-bind -->
+  <title data-bind='{"company":""}' data-fetch="/api/site">{{company}} - ログイン</title>
+</head>
+```
+
+- スコープは `<title>` 自身（または同一サブツリーの祖先）に持たせる必要があります。兄弟要素（例: `<meta data-bind>`）のスコープは `<title>` に継承されません。
+- 初回描画で未解決参照を避けるため、`{{}}` で参照するキーは `data-bind` に種まきしておくことを推奨します（上例の `company:""`）。
+- ネストキーで受けたい場合は `data-fetch-arg` を併用します（例: `data-fetch-arg="site"` → `{{site.company}}`）。
+- `data-fetch-bind` や `data-{event}-copy` の対象セレクタは `document.body` 配下のみを探索するため、これらで `<head>` 内の要素（`<title>` 等）を対象にすることはできません。`<head>` への実行時バインドは「対象要素自身への直接付与」で行ってください。
 
 #### `data-import`
 

@@ -425,6 +425,18 @@
             <p>同じ <code>name</code> のラジオを <code>data-change-bind</code> で別要素の1キーへ書き、選択値で依存欄を <code>data-if</code> 出し分け。前後どちらの遷移でもスカラ更新・即時再評価されます。</p>
             <a class="demo-link" href="./form/data-change-bind-radio-demo.html">同一 name ラジオ デモを開く</a>
         </div>
+
+        <h2>15. data-if 非表示分岐はフォーム送信対象外</h2>
+        <div class="demo-section">
+            <p>同じ <code>name</code> の入力を <code>data-if</code> で出し分けても、非表示分岐（<code>data-if-false</code>）の値はフォーム値収集の対象外。表示中の分岐の値だけが送信されます。</p>
+            <a class="demo-link" href="./form/data-if-form-exclusion-demo.html">data-if 送信除外 デモを開く</a>
+        </div>
+
+        <h2>16. &lt;title&gt; への実行時バインド</h2>
+        <div class="demo-section">
+            <p><code>&lt;head&gt;</code> もスキャン対象なので、<code>&lt;title&gt;</code> 自身に <code>data-fetch</code> / <code>data-bind</code> を付ければテキストの <code>{{}}</code> 補間が効きます。タブのタイトルに会社名を実行時取得で反映します。</p>
+            <a class="demo-link" href="./fetch/title-head-bind-demo.html">title 実行時バインド デモを開く</a>
+        </div>
     </div>
 
         <script>

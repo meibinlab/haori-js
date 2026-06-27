@@ -65,6 +65,14 @@ export default class Form {
     fragment: ElementFragment,
     values: Record<string, unknown>,
   ): Record<string, unknown> {
+    // data-if が false の分岐（data-if-false 属性付き）配下の入力は値収集の
+    // 対象外とする。非表示分岐の要素は DOM に残るため、同名入力を出し分けると
+    // フォーム直列化で値が競合する。サブツリーごとスキップして除外を保証する。
+    // data-if-false は hide() が DOM へ直接付与するため、属性マップを参照する
+    // fragment.hasAttribute ではなく実 DOM 属性を確認する。
+    if (fragment.getTarget().hasAttribute(`${Env.prefix}if-false`)) {
+      return values;
+    }
     const name = fragment.getAttribute('name');
     const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);

@@ -390,6 +390,27 @@ window.Dates = {
 
 `data-if` の表示判定は JavaScript の falsy 判定に準拠します。`false`・`null`・`undefined`・`NaN` に加えて、**数値 `0` と空文字列 `''` も非表示**になります。たとえば `data-if="items.length"` は要素数が 0 のとき非表示、`data-if="message"` は空文字列のとき非表示です。一方、空配列 `[]` や空オブジェクト `{}` は JavaScript と同様に truthy として扱われ、表示されます（件数で判定したい場合は `data-if="items.length"` を使ってください）。
 
+### 非表示にした入力はフォーム送信に含まれない
+
+`data-if` が `false` の要素は DOM から消えるのではなく、`data-if-false` 属性が付いて非表示で残ります。そのため、同じ `name` の入力を設定型ごとに `data-if` で出し分けると、画面に見えていない分岐の入力も DOM 上に同名で残ります。
+
+フォーム値の収集（`data-click-form` など）は、`data-if` が `false` の要素とその配下を**自動的に対象外**にします。表示中の分岐の値だけが送信され、非表示分岐の値が混ざる心配はありません。
+
+```html
+<form data-bind='{"mode":"fixed"}'>
+  <!-- mode が fixed のときだけ送信される -->
+  <div data-if="mode === 'fixed'">
+    <input name="value" value="100">
+  </div>
+  <!-- 非表示のあいだは送信されない -->
+  <div data-if="mode === 'ratio'">
+    <input name="value" value="0.5">
+  </div>
+</form>
+```
+
+なお、送信値からは除外されますが、同名の入力要素自体は DOM 上に残ります。Playwright などのセレクタで「1要素だけ」を前提にしたい場合は、入力を1つにまとめ `type` / `step` / `max` などを `{{}}` 式で切り替える方法も検討してください。
+
 ### 同時に1つだけ開く（排他パネル・アコーディオン）
 
 「状態を1つだけ持たせ、`data-if` で表示を切り替える」だけで、複数パネルの相互排他（同時に1つしか開かない）を JavaScript なしで表現できます。Bootstrap の collapse（`data-bs-parent`）のような仕組みを使わずに済みます。
@@ -1266,6 +1287,29 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 ページ読み込み時に`/api/user`からデータを取得し、自動的に表示します。
 
 `data-fetch` の URL や `data-fetch-data` などにテンプレート式を含めることもできます。これらの評価で未解決参照が 1 つでもある場合、その評価サイクルではフェッチは実行されません。後続の `data-bind` 更新などで参照が解決し、評価後のリクエスト内容が変わったときに初めて実行されます。
+
+### `<title>` などページタイトルを実行時に変える
+
+`<head>` も Haori のスキャン・監視対象です。`<title>` のテキストでも `{{}}` 補間が効くので、`<title>` 自身に `data-bind` / `data-fetch` を付ければ、会社名などを実行時に取得してタブのタイトルへ反映できます。
+
+```html
+<head>
+  <!-- 応答 {"company":"..."} を <title> 自身にバインド -->
+  <title data-bind='{"company":""}' data-fetch="/api/site">{{company}} - ログイン</title>
+</head>
+```
+
+ネストしたキーで受けたいときは `data-fetch-arg` を使います。
+
+```html
+<title data-fetch="/api/site" data-fetch-arg="site">{{site.company}} - ログイン</title>
+```
+
+ポイントは次の通りです。
+
+- スコープは **`<title>` 自身**に持たせます。`<meta data-bind>` のような**兄弟要素のスコープは `<title>` に継承されません**。
+- 初回描画で `{{company}}` が未解決にならないよう、参照するキーは `data-bind` に空値で**種まき**しておくと安全です（上例の `company:""`）。
+- `data-fetch-bind` や `data-click-copy` などの**対象セレクタは `<body>` 配下しか探さない**ため、別要素から `<head>` 内の `<title>` を狙ってバインドすることはできません。`<head>` への実行時バインドは必ず「対象要素自身に直接付与」してください。
 
 ### data-fetch の関連属性
 

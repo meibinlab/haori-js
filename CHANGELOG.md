@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [Unreleased]
+## [0.24.0] - 2026-06-27
 
 ### Added
 
@@ -9,17 +9,24 @@
 ### Fixed
 
 - **同一 `name` のラジオボタン群を `data-change-bind` で1キーへ書く際、値が配列累積していた不具合を修正**。ラジオは排他制御で他要素が未チェックになるがその要素では `change` が発火しないため、フォーム値収集（`Form.getPartValues`）が未チェック要素の古い内部値もチェック済みとして集め、同一キーに複数値が集まり配列（例: `["none","fixed","ratio"]`）になっていた。これにより `data-if="x === 'fixed'"` のスカラ比較が当たらず、`ratio→none` など前の選択へ戻しても依存欄の `data-if` が再評価されず再非表示にならなかった。グループ収集では DOM の `checked` を真とし、未チェック要素の内部値を無視してスカラで上書きするよう修正（チェックボックスの複数チェック→配列収集は不変）。あわせて `change`/`input` 時に同一フォームスコープの同名ラジオの内部値も同期し、収集前の不整合を根治した。
+- **`data-if` が `false` の分岐（`data-if-false`）配下のフォーム入力を、フォーム値収集の対象から除外するよう修正**。`data-if` が `false` の要素は DOM から削除されず `data-if-false` 属性付きで残るため、同一 `name` の入力を設定型ごとに `data-if` で出し分けると非表示分岐の入力も同名で DOM に共存し、`data-click-form` の直列化で送信値が競合する懸念があった。`Form.getValues`（`data-click-form`・双方向バインド・履歴フォーム収集を含む全経路）が `data-if-false` 属性を持つ要素とその配下をサブツリーごとスキップするようにし、表示中の分岐の値だけを収集することを保証した（`data-form-object` / `data-form-list` 配下も非表示なら除外）。なお同名要素の DOM 上の共存自体は解消されないため、セレクタの strict mode を避けたい場合は入力を1つに統一し `type` / `step` / `max` 等を `{{}}` 式で切り替える運用を推奨する。
 
 ### Docs
 
 - `docs/ja/guide.md`: 「フェッチの状態を画面に表示する（`data-fetch-state`）」節を追加（`_fetch` 構造、自要素／別要素への注入例、手動再取得導線、401/403 は対象外・自動リトライなしの補足）。
 - `docs/ja/specs.md`: `data-fetch` 関連属性に `data-fetch-state` を追記し、`data-fetch-state` / `data-{event}-fetch-state` の専用仕様（`_fetch` 構造・注入タイミング・`data-bind` へ書き出さない等）を追加。
+- `docs/ja/guide.md`: 「非表示にした入力はフォーム送信に含まれない」節を追加（`data-if-false` 配下の入力がフォーム値収集対象外であること、同名要素は DOM に残る旨の補足）。
+- `docs/ja/specs.md`: `data-if` の動作と双方向バインディング節に「`data-if-false` 分岐とフォーム送信」を追加（`Form.getValues` がサブツリーごと除外する仕様）。
+- `docs/ja/guide.md`: 「`<title>` などページタイトルを実行時に変える」節を追加（`<head>` もスキャン対象であり、`<title>` 自身への `data-bind` / `data-fetch` 付与で `{{}}` 補間が効くこと、兄弟スコープは継承されないこと、`data-fetch-bind` / `*-copy` の対象セレクタは `<body>` 配下限定で `<head>` を狙えないことの補足）。
+- `docs/ja/specs.md`: `data-fetch` 節に「`<head>` / `<title>` への実行時バインド」を追加し、`data-fetch-bind` の対象セレクタが `<body>` 配下限定である旨を明記。
 
 ### Tests
 
 - `tests/fetch-state-binding.test.ts` を追加（成功時の `_fetch.success`/`statusCode`、HTTP 500 の `_fetch.error`/`statusCode`、別要素 `#panel` への注入、`data-bind` 属性を汚さないこと）。
 - `tests/radio-group-scalar-bind.test.ts` を追加（別要素のネストキーへ書く構成で `none→fixed→ratio` の前進と `ratio→none` の後退の双方でスカラ更新・依存 `data-if` の再評価を検証）。
 - `tests/checkbox-group-collection.test.ts` を追加（チェックボックス群の複数チェック→配列・単一→スカラ・未チェック→null・`change` 後の最新 DOM 反映の回帰）。
+- `tests/if-false-form-exclusion.test.ts` を追加（`data-if-false` 配下の同名入力が `Form.getValues` の対象外になること、`mode` 切替で表示分岐の値だけが収集されること、`data-form-object` 配下も除外されることを検証）。
+- `tests/title-head-bind.test.ts` を追加（`<title>` 自身への `data-bind` / `data-fetch` でテキストが補間・実行時更新されること、`data-fetch-arg` のネスト、兄弟スコープ非継承、`data-fetch-bind` では `<head>` 内要素を対象にできないことを検証）。
 
 ## [0.23.0] - 2026-06-23
 
