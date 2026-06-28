@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [0.25.0] - 2026-06-29
+
+### Added
+
+- **組み込みヘルパー `haori.now` / `haori.today` を追加**。`data-bind` は JSON 専用で `{{}}` を解釈しないため、初期バインド値に動的な日付を宣言的に入れる手段がなかった。`haori.now(format?, timeZone?)` は評価時点の現在日時を `haori.date` と同じ規則で整形し（既定 `yyyy/MM/dd HH:mm`）、`haori.today(offsetDays?, format?, timeZone?)` は現在日付に日数を加減して整形する（既定 `offsetDays`=0、既定フォーマット `yyyy-MM-dd`＝`input[type=date]` 互換）。日付の加減算は UTC 基準のカレンダー演算で行うため月跨ぎ・年跨ぎを自動処理し DST の影響を受けない。`timeZone` 指定時はそのゾーンの現在日付を起点に計算する。両関数とも現在時刻に依存するため**冪等ではない**（式の再評価ごとに更新される）。`Haori.now(...)` / `Haori.today(...)` として静的メソッドでも公開。一覧の絞り込み初期値（前日・当日など）を非公式な `new Date()` ではなく宣言的に書けるようにするのが狙い。
+
+### Docs
+
+- `docs/ja/guide.md`: 「現在日時・相対日付を入れる（`haori.now` / `haori.today`）」節を追加。`data-attr-value` が初期値ではなく再評価される点（日跨ぎ・再描画で値が変わりうる）の注意も明記。
+- `docs/ja/specs.md`: 組み込みヘルパー節に `haori.now` / `haori.today` を追記し、非冪等であること・`data-attr-value` の再評価注意を追加。
+
+### Tests
+
+- `tests/builtins.test.ts`: `vi.setSystemTime` で本日を固定し、`now` / `today` の既定書式・offset・月跨ぎ／年跨ぎ・`timeZone`・不正値、および `Haori.now` / `Haori.today` の共用を検証するケースを追加。
+
 ## [0.24.0] - 2026-06-27
 
 ### Added

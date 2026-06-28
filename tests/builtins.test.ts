@@ -3,7 +3,7 @@
  * @fileoverview 組み込みヘルパー（haori.date / number / range / pages）の単体テストと、
  * 式評価エンジンへの予約名前空間 `haori` 注入の統合テストです。
  */
-import {describe, it, expect} from 'vitest';
+import {describe, it, expect, vi, afterEach} from 'vitest';
 import Builtins, {
   date,
   distinct,
@@ -11,11 +11,13 @@ import Builtins, {
   groupBy,
   monthAdd,
   monthRange,
+  now,
   number,
   pageSummary,
   range,
   pages,
   sum,
+  today,
 } from '../src/builtins';
 import Expression from '../src/expression';
 import Haori from '../src/haori';
@@ -67,6 +69,82 @@ describe('Builtins', () => {
 
     it('不正な timeZone 名は空文字を返す', () => {
       expect(date('2024-01-05T00:00:00Z', 'yyyy/MM/dd', 'Not/AZone')).toBe('');
+    });
+  });
+
+  describe('now()', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('既定フォーマットで現在日時を整形する', () => {
+      // ローカル時刻でシステム時刻を固定し、実行環境のタイムゾーンに依存させない。
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 5, 28, 12, 34, 56));
+      expect(now()).toBe('2026/06/28 12:34');
+    });
+
+    it('カスタムフォーマットを受け付ける', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 5, 28, 12, 34, 56));
+      expect(now('yyyy-MM-dd HH:mm:ss')).toBe('2026-06-28 12:34:56');
+    });
+
+    it('timeZone 指定で対象タイムゾーンの現在日時を整形する', () => {
+      // UTC 23:30 は Asia/Tokyo では翌日 08:30。
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-28T23:30:00Z'));
+      expect(now('yyyy/MM/dd HH:mm', 'Asia/Tokyo')).toBe('2026/06/29 08:30');
+      expect(now('yyyy/MM/dd HH:mm', 'UTC')).toBe('2026/06/28 23:30');
+    });
+  });
+
+  describe('today()', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('既定フォーマット yyyy-MM-dd で当日を返す', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 5, 28, 12, 0, 0));
+      expect(today()).toBe('2026-06-28');
+      expect(today(0)).toBe('2026-06-28');
+    });
+
+    it('offsetDays で前後の日付を返す', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 5, 28, 12, 0, 0));
+      expect(today(-1)).toBe('2026-06-27');
+      expect(today(1, 'yyyy/MM/dd')).toBe('2026/06/29');
+    });
+
+    it('月跨ぎ・年跨ぎをカレンダー演算で処理する', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 5, 30, 12, 0, 0));
+      expect(today(1)).toBe('2026-07-01');
+      vi.setSystemTime(new Date(2026, 11, 31, 12, 0, 0));
+      expect(today(1)).toBe('2027-01-01');
+    });
+
+    it('timeZone 指定でそのゾーンの暦日を起点に加減算する', () => {
+      // UTC 23:30 は Asia/Tokyo では翌日（2026-06-29）。
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-28T23:30:00Z'));
+      expect(today(0, 'yyyy-MM-dd', 'Asia/Tokyo')).toBe('2026-06-29');
+      expect(today(-1, 'yyyy-MM-dd', 'Asia/Tokyo')).toBe('2026-06-28');
+      expect(today(0, 'yyyy-MM-dd', 'UTC')).toBe('2026-06-28');
+    });
+
+    it('不正な timeZone 名は空文字を返す', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-28T23:30:00Z'));
+      expect(today(0, 'yyyy-MM-dd', 'Not/AZone')).toBe('');
+    });
+
+    it('offsetDays が非有限なら 0 として扱う', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 5, 28, 12, 0, 0));
+      expect(today(Number.NaN)).toBe('2026-06-28');
     });
   });
 
@@ -425,11 +503,24 @@ describe('Builtins', () => {
   });
 
   describe('Haori 公開 API との共用', () => {
+    afterEach(() => {
+      // フェイクタイマーを使うケースの後始末（失敗時も含めて確実に戻す）。
+      vi.useRealTimers();
+    });
+
     it('Haori.date / number / range / pages が同じ実装を返す', () => {
       expect(Haori.date('2024-01-05T09:05:03')).toBe('2024/01/05 09:05');
       expect(Haori.number(1234567)).toBe('1,234,567');
       expect(Haori.range(3)).toEqual([0, 1, 2]);
       expect(Haori.pages(3, 0).length).toBe(3);
+    });
+
+    it('Haori.now / today が同じ実装を返す', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 5, 28, 12, 34, 56));
+      expect(Haori.now()).toBe('2026/06/28 12:34');
+      expect(Haori.today()).toBe('2026-06-28');
+      expect(Haori.today(-1)).toBe('2026-06-27');
     });
 
     it('Haori.monthAdd / monthRange / pageSummary が同じ実装を返す', () => {

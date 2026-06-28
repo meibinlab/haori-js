@@ -205,6 +205,83 @@ export function date(
   );
 }
 
+/** today() の既定フォーマット（input[type=date] の value と互換） */
+const DEFAULT_DAY_FORMAT = 'yyyy-MM-dd';
+
+/**
+ * 現在日時を指定フォーマットの文字列へ整形します。
+ *
+ * 評価時点の現在時刻（`new Date()`）を {@link date} と同じ規則で整形します。
+ * トークン・`timeZone`・不正値の扱いは {@link date} に準拠します。
+ *
+ * 注意: 戻り値は呼び出し時刻に依存するため**冪等ではありません**。式が再評価
+ * されるたびに最新時刻へ更新されます（他の組み込みヘルパーの冪等性とは異なります）。
+ *
+ * @param format フォーマット文字列（省略時は `yyyy/MM/dd HH:mm`）
+ * @param timeZone IANA タイムゾーン名（例 `Asia/Tokyo`）。省略時はローカルタイムゾーン
+ * @returns 整形済みの現在日時文字列
+ */
+export function now(
+  format: string = DEFAULT_DATE_FORMAT,
+  timeZone?: string,
+): string {
+  return date(new Date(), format, timeZone);
+}
+
+/**
+ * 現在日付に日数を加減した日付を指定フォーマットの文字列へ整形します。
+ *
+ * 既定フォーマットは `input[type=date]` の `value` と互換の `yyyy-MM-dd` です。
+ * 日付の加減算は UTC 基準のカレンダー演算で行うため、月跨ぎ・年跨ぎを自動処理し、
+ * 夏時間（DST）の影響を受けません。時刻成分は常に 00:00:00 として整形します。
+ *
+ * `timeZone` を指定した場合は、そのタイムゾーンでの「現在日付」を起点に加減算します
+ * （例 UTC 23:00 でも `Asia/Tokyo` では翌日として扱う）。`timeZone` が不正な名前の
+ * 場合は {@link date} と同様に空文字を返します。
+ *
+ * 注意: 戻り値は呼び出し日に依存するため**冪等ではありません**。式が再評価される
+ * たびに最新日付へ更新されます（他の組み込みヘルパーの冪等性とは異なります）。
+ *
+ * @param offsetDays 現在日付に加減する日数（負数で過去方向、省略時は 0）
+ * @param format フォーマット文字列（省略時は `yyyy-MM-dd`）
+ * @param timeZone IANA タイムゾーン名（例 `Asia/Tokyo`）。省略時はローカルタイムゾーン
+ * @returns 整形済みの日付文字列。timeZone が不正な場合は空文字
+ */
+export function today(
+  offsetDays: number = 0,
+  format: string = DEFAULT_DAY_FORMAT,
+  timeZone?: string,
+): string {
+  const offset = Number.isFinite(offsetDays) ? Math.trunc(offsetDays) : 0;
+  const zone =
+    typeof timeZone === 'string' && timeZone.trim() !== ''
+      ? timeZone.trim()
+      : '';
+  // 起点となる現在日付の年月日を求める。timeZone 指定時はそのゾーンの暦日を採用する。
+  let year: number;
+  let month: number;
+  let day: number;
+  if (zone !== '') {
+    const tokens = resolveZonedTokens(new Date(), zone);
+    if (tokens === null) {
+      // 不正なタイムゾーン名は date() と同様に整形不能として空文字を返す。
+      return '';
+    }
+    year = Number(tokens.yyyy);
+    month = Number(tokens.MM);
+    day = Number(tokens.dd);
+  } else {
+    const local = new Date();
+    year = local.getFullYear();
+    month = local.getMonth() + 1;
+    day = local.getDate();
+  }
+  // UTC 上でカレンダー加減算する（UTC は DST を持たないため日付演算が安定する）。
+  const shifted = new Date(Date.UTC(year, month - 1, day + offset));
+  // 算出した暦日をそのまま出力するため UTC として整形する（時刻成分は 00:00:00）。
+  return date(shifted, format, 'UTC');
+}
+
 /**
  * 数値を桁区切り・小数桁付きの文字列へ整形します。
  *
@@ -723,6 +800,8 @@ export function groupBy(array: unknown, key: string): GroupItem[] {
  */
 const Builtins = Object.freeze({
   date,
+  now,
+  today,
   number,
   pages,
   range,

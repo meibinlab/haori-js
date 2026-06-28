@@ -10,7 +10,8 @@
 <body>
   <h1>haori built-in helpers demo</h1>
   <p>
-    組み込みヘルパー（<code>haori.date</code> / <code>haori.number</code> /
+    組み込みヘルパー（<code>haori.date</code> / <code>haori.now</code> /
+    <code>haori.today</code> / <code>haori.number</code> /
     <code>haori.pages</code>）と <code>data-click-prevent</code> の最小確認ページです。
   </p>
 
@@ -37,6 +38,16 @@
         </tr>
       </tbody>
     </table>
+
+    <!-- 現在日時・相対日付（haori.now / haori.today） -->
+    <section id="now-today">
+      <p>本日: <span id="today">{{ haori.today() }}</span></p>
+      <p>前日: <span id="yesterday">{{ haori.today(-1) }}</span></p>
+      <p>翌日: <span id="tomorrow">{{ haori.today(1, 'yyyy/MM/dd') }}</span></p>
+      <p>現在日時: <span id="now">{{ haori.now() }}</span></p>
+      <!-- 絞り込み初期値の例: 既定で前日を設定 -->
+      <input id="work-date" type="date" data-attr-value="{{ haori.today(-1) }}" />
+    </section>
 
     <!-- 番号ページネーション（H2） -->
     <nav id="pagination-nav" aria-label="ページネーション">

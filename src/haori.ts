@@ -8,11 +8,13 @@ import {
   groupBy,
   monthAdd,
   monthRange,
+  now,
   number,
   pageSummary,
   pages,
   range,
   sum,
+  today,
 } from './builtins';
 import type {
   GroupItem,
@@ -229,6 +231,39 @@ export default class Haori {
     timeZone?: string,
   ): string {
     return date(value, format, timeZone);
+  }
+
+  /**
+   * 現在日時を指定フォーマットの文字列へ整形します。
+   *
+   * テンプレート式中の `haori.now(...)` と同じ実装です。戻り値は呼び出し時刻に
+   * 依存するため冪等ではありません。
+   *
+   * @param format フォーマット文字列（省略時は `yyyy/MM/dd HH:mm`）
+   * @param timeZone IANA タイムゾーン名（例 `Asia/Tokyo`）。省略時はローカルタイムゾーン
+   * @returns 整形済みの現在日時文字列
+   */
+  public static now(format?: string, timeZone?: string): string {
+    return now(format, timeZone);
+  }
+
+  /**
+   * 現在日付に日数を加減した日付を指定フォーマットの文字列へ整形します。
+   *
+   * テンプレート式中の `haori.today(...)` と同じ実装です。戻り値は呼び出し日に
+   * 依存するため冪等ではありません。
+   *
+   * @param offsetDays 現在日付に加減する日数（負数で過去方向、省略時は 0）
+   * @param format フォーマット文字列（省略時は `yyyy-MM-dd`）
+   * @param timeZone IANA タイムゾーン名（例 `Asia/Tokyo`）。省略時はローカルタイムゾーン
+   * @returns 整形済みの日付文字列。timeZone が不正な場合は空文字
+   */
+  public static today(
+    offsetDays?: number,
+    format?: string,
+    timeZone?: string,
+  ): string {
+    return today(offsetDays, format, timeZone);
   }
 
   /**

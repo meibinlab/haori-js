@@ -562,8 +562,10 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 - **注入条件**: 式が `haori` を独立した識別子として参照する場合のみ注入します（`/(^|[^\w$.])haori(?![\w$])/`）。参照しない式には引数も Proxy ラップも追加しません。`foo.haori` のようなプロパティアクセスは注入対象外です。
 - **優先順位**: `data-bind` に `haori` キーがあっても、式中では組み込みが優先されます（バインド値は無視。開発モードでは `Log.warn` で警告）。
 - **凍結との関係**: 公開 API 用の `Builtins` は `Object.freeze` 済みですが、凍結オブジェクトをそのまま注入すると評価時の Proxy ラップが Proxy 不変条件（read-only プロパティに別値を返せない）に違反するため、注入には非凍結の浅いコピーを用います。
-- **提供関数**（公開 API `Haori.date` / `Haori.number` / `Haori.range` / `Haori.pages` / `Haori.monthAdd` / `Haori.monthRange` / `Haori.pageSummary` / `Haori.findBy` / `Haori.sum` / `Haori.distinct` / `Haori.groupBy` としても同一実装を提供。`monthRange` を `base` 省略で呼ぶ場合のみ現在月に依存し、それ以外は副作用なし・冪等）:
+- **提供関数**（公開 API `Haori.date` / `Haori.now` / `Haori.today` / `Haori.number` / `Haori.range` / `Haori.pages` / `Haori.monthAdd` / `Haori.monthRange` / `Haori.pageSummary` / `Haori.findBy` / `Haori.sum` / `Haori.distinct` / `Haori.groupBy` としても同一実装を提供。`now` / `today`、および `monthRange` を `base` 省略で呼ぶ場合は現在時刻・現在月に依存して非冪等。それ以外は副作用なし・冪等）:
   - `haori.date(value, format?, timeZone?)`: ISO 文字列・エポックミリ秒・`Date` を整形（既定 `yyyy/MM/dd HH:mm`）。トークン `yyyy yy MM M dd d HH H mm ss`。空・不正値は空文字。`timeZone` を省略するとブラウザのローカル時刻で整形し、IANA タイムゾーン名（例 `Asia/Tokyo`）を指定するとそのタイムゾーンの時刻で整形する（`Intl.DateTimeFormat` を利用、24 時間表記）。`timeZone` が不正な名前の場合は空文字を返す。**トークンに使う英字（`y M d H m s`）はフォーマット中のどこにあってもトークンとして解釈される**ため、リテラルとして出したい英字はシングルクォートで囲む（例 `yyyy-MM-dd'T'HH:mm`、`''` はシングルクォート1文字）。`/ : -`・日本語などトークン外の文字はそのまま出力。
+  - `haori.now(format?, timeZone?)`: 評価時点の現在日時を `haori.date` と同じ規則で整形する（既定 `yyyy/MM/dd HH:mm`）。トークン・`timeZone`・不正値の扱いは `haori.date` に準拠（不正な `timeZone` 名は空文字）。**現在時刻に依存するため冪等ではなく、式の再評価ごとに最新時刻へ更新される**。
+  - `haori.today(offsetDays?, format?, timeZone?)`: 現在日付に `offsetDays` 日を加減して整形する（既定 `offsetDays` 0、既定フォーマット `yyyy-MM-dd` ＝ `input[type=date]` 互換、時刻成分は常に 00:00:00）。日付の加減算は UTC 基準のカレンダー演算で行うため**月跨ぎ・年跨ぎを自動処理し DST の影響を受けない**。`timeZone` 指定時はそのゾーンの「現在日付」を起点に加減算する（例 UTC 23:30 でも `Asia/Tokyo` では翌日扱い）。`offsetDays` が非有限なら 0、`timeZone` が不正な名前なら空文字。**現在日付に依存するため冪等ではなく、式の再評価ごとに最新日付へ更新される**。一覧の絞り込み初期値などに利用するが、`data-attr-value` は初期値ではなく再評価されるため（下記注意参照）日跨ぎや再描画で値が変わりうる。
   - `haori.number(value, decimals?)`: 桁区切り付きで数値を整形（`Intl.NumberFormat`、`en-US`）。非数値・null・空文字・空白のみは空文字（数値文字列は前後空白を無視）。`en-US` ロケールは区切り文字（カンマ・ドット）を決めるだけで、小数桁は固定しません。`decimals` を指定するとその桁数で固定します（末尾ゼロ埋めあり。例 `number(1000, 2) → "1,000.00"`）。`decimals` を省略した場合は `Intl.NumberFormat` の既定に従い、整数はそのまま・小数は末尾ゼロ埋めなしで表示し、**小数は最大 3 桁まで（`maximumFractionDigits = 3`）に丸められます**（例 `number(1234.56789) → "1,234.568"`）。4 桁以上をそのまま出したい場合は `decimals` を明示してください。
   - `haori.range(start, end?, step?)`: 整数配列を生成（終端排他）。`range(n)`＝`[0..n-1]`。負の `step` で降順。要素数は上限で打ち切り。
   - `haori.pages(totalPages, current, {window?, boundary?})`: 省略記号付きの番号ページ列。`current` は 0 始まり。要素は `{page, label, active, ellipsis}`（`page` は 0 始まり、`label` は `page + 1`、省略記号は `{page: null, label: '…', active: false, ellipsis: true}`）。既定 `window: 2` / `boundary: 1`。**隠れるページが 1 つだけの場合は省略記号ではなくその番号を表示**する（ギャップが 2 のとき。例 `pages(5, 2, {window: 0})` → `1 2 [3] 4 5`）。
@@ -575,7 +577,9 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
   - `haori.distinct(array, key?)`: 配列から重複を取り除いた新しい配列を返す。`key` 省略時は要素自体、指定時は `item[key]` で重複を判定する。比較は **`findBy`・`sum` と同様に文字列化**して行い、数値 ID と文字列 ID の差を吸収する（例 `1` と `'1'` は同一）。同じキーは**最初に出現した要素だけ**を残し、元の順序を保つ。非配列は空配列。明細レスポンスを「1 件 = 1 行」にまとめる用途（例 `data-each="haori.distinct(rows, 'orderId')"`）。
   - `haori.groupBy(array, key)`: 配列を `item[key]` ごとのグループへ分け、`{key, items}` の配列を返す。グループは**最初の出現順**、各グループ内の要素も元の順序を保つ。グループ判定は**文字列化**して行うが、`key` には最初に出現した要素の**生値**を格納する。非配列は空配列。`data-each` でグループ見出しと明細を宣言的に描画できる（外側 `data-each="haori.groupBy(rows, 'date')"`、内側 `data-each="items"`）。
 
-`haori.date` / `number` / `range` / `pages` / `monthAdd` / `monthRange` / `pageSummary` / `findBy` / `sum` / `distinct` / `groupBy` は `Haori.date(...)` のように静的メソッドとしても公開されます。
+`haori.date` / `now` / `today` / `number` / `range` / `pages` / `monthAdd` / `monthRange` / `pageSummary` / `findBy` / `sum` / `distinct` / `groupBy` は `Haori.date(...)` のように静的メソッドとしても公開されます。
+
+> **`data-attr-value` と再評価について**: `<input data-attr-value="{{ haori.today(-1) }}">` のような記述は「初期値」ではなく、バインドスコープの変化のたびに**再評価**されます。`haori.now` / `haori.today` は非冪等なため、日跨ぎや再描画でユーザーが編集した値が上書きされる場合があります。一度だけ設定したい場合は、初期スコープを `data-bind` でシードする（例 `data-bind` に算出済みの日付文字列を入れる）か、再描画で再適用されてよい用途に限定してください。
 
 #### `Core.getBindingData(element, options?)`
 

@@ -295,6 +295,26 @@ window.Dates = {
 
 > `haori` は予約名です。`data-bind` で `haori` というキーを与えても、式の中では組み込みヘルパーが優先されます。同じ関数は JavaScript からも `Haori.date(...)` / `Haori.number(...)` として呼べます。
 
+#### 現在日時・相対日付を入れる（`haori.now` / `haori.today`）
+
+「画面を開いた日」を基準にした初期値（当日・前日・当月初など）は、`haori.now` / `haori.today` で宣言的に書けます。`data-bind` は JSON 専用で `{{}}` を解釈しないため、動的な日付の埋め込みにはこれらを使います。
+
+**記述するHTML**:
+```html
+<!-- 勤務日の絞り込み: 既定で前日を設定 -->
+<input type="date" name="workDateFrom" data-attr-value="{{ haori.today(-1) }}">
+<input type="date" name="workDateTo"   data-attr-value="{{ haori.today(-1) }}">
+
+<p>本日: {{ haori.today() }}</p>
+<p>翌日: {{ haori.today(1, 'yyyy/MM/dd') }}</p>
+<p>現在時刻: {{ haori.now('yyyy/MM/dd HH:mm', 'Asia/Tokyo') }}</p>
+```
+
+- `haori.now(format?, timeZone?)`: 評価時点の現在日時を整形します（既定 `yyyy/MM/dd HH:mm`）。トークン・`timeZone` の扱いは `haori.date` と同じです。
+- `haori.today(offsetDays?, format?, timeZone?)`: 現在日付に `offsetDays` 日を加減して整形します（既定の `offsetDays` は 0、既定フォーマットは `input[type=date]` 互換の `yyyy-MM-dd`）。加減算はカレンダー演算で行うため月跨ぎ・年跨ぎを自動処理し、夏時間の影響を受けません。`timeZone` を渡すとそのタイムゾーンでの当日を起点に計算します。
+
+> **注意**: `haori.now` / `haori.today` は現在時刻に依存するため、他の組み込みヘルパーと違い**冪等ではありません**。また `data-attr-value` は「初期値」ではなく、スコープ変化のたびに再評価され入力欄へ再適用されます。そのため日跨ぎや再描画で、ユーザーが編集した値が初期日付へ戻ることがあります。一度だけ設定したい場合は再評価されない初期スコープ（`data-bind` のシード値）を使ってください。
+
 ### データの継承
 
 親要素のデータは子要素でも使えます：
