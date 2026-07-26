@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>連続編集の競合（後から操作した入力が古い収集値で巻き戻る）自動再現</title>
+    <style>
+      body { font-family: sans-serif; margin: 2rem; max-width: 60rem; }
+      pre { background: #f5f5f5; padding: 0.5rem; max-height: 20em; overflow: auto; }
+      .rows { max-height: 8em; overflow: auto; border: 1px solid #ccc; }
+    </style>
+  </head>
+  <body>
+    <h2>連続編集の競合の自動再現</h2>
+    <p>
+      1 試行 =「select へ change → d1 ms 後に checkbox を ON して change →
+      d2 ms 後に別のテキスト入力へ input/change → 描画安定を待って検証」。<br />
+      期待: DOM の checked が true、収集値（Form.getValues）と data-bind の
+      hasContactInformation がいずれも true。<br />
+      修正前は、select のコミットが「コミット開始時点の古い収集値」を
+      フレーム跨ぎ後に入力へ書き戻し、後続の入力操作がその汚染された値を
+      再収集して確定させるため巻き戻る。
+    </p>
+
+    <form
+      id="f"
+      data-bind='{"status":"","hasContactInformation":false,"rows":[]}'
+    >
+      <select id="status" name="status">
+        <option value="">-</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+      </select>
+      <label>
+        <input
+          id="cb"
+          type="checkbox"
+          name="hasContactInformation"
+          value="true"
+        />
+        連絡先あり
+      </label>
+      <input id="staff" name="staffName" type="text" />
+      <div class="rows">
+        <div data-each="rows" data-each-arg="row">
+          <span>{{row.a}}</span> / <span>{{row.b}}</span> /
+          <span>{{row.a + row.b}}</span>
+        </div>
+      </div>
+    </form>
+
+    <p><button id="run" type="button">自動再現を実行</button></p>
+    <p>結果: <span id="result">-</span></p>
+    <pre id="log"></pre>
+
+    <script src="/dist/haori.iife.js"></script>
+    <script>
+      /* global Haori */
+      const $ = id => document.getElementById(id);
+      const api = () => (Haori && Haori.default ? Haori : {default: Haori});
+
+      /** 現在の収集値（送信される値）を取得する。 */
+      function collected() {
+        const ns = api();
+        const fragment = ns.Fragment.get($('f'));
+        return ns.Form.getValues(fragment);
+      }
+
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+      /** 描画が安定するまで待つ。 */
+      async function settle() {
+        await api().Queue.waitForIdle();
+        await sleep(120);
+        await api().Queue.waitForIdle();
+      }
+
+      /** テキスト入力へユーザー入力相当のイベントを送る。 */
+      function type(id, text) {
+        const el = $(id);
+        el.value = text;
+        el.dispatchEvent(new Event('input', {bubbles: true}));
+        el.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+
+      /** 1 試行を実行し、失敗内容を返す（成功なら null）。 */
+      async function trial(d1, d2) {
+        // 初期状態へ戻す
+        $('cb').checked = false;
+        $('cb').dispatchEvent(new Event('change', {bubbles: true}));
+        $('status').value = '';
+        $('status').dispatchEvent(new Event('change', {bubbles: true}));
+        type('staff', '');
+        await settle();
+
+        // 1) select を変更（双方向コミット①が走る）
+        $('status').value = 'A';
+        $('status').dispatchEvent(new Event('change', {bubbles: true}));
+        // 2) その直後にチェックボックスを ON（ユーザー操作を模倣）
+        await sleep(d1);
+        $('cb').checked = true;
+        $('cb').dispatchEvent(new Event('change', {bubbles: true}));
+        // 3) さらに後続の入力を行う（実手順の staffName 入力に相当）
+        await sleep(d2);
+        type('staff', '山田');
+
+        await settle();
+
+        const values = collected();
+        const domChecked = $('cb').checked;
+        const bound = JSON.parse($('f').getAttribute('data-bind') || '{}');
+        if (
+          domChecked === true &&
+          values.hasContactInformation === true &&
+          bound.hasContactInformation === true &&
+          values.status === 'A'
+        ) {
+          return null;
+        }
+        return {
+          d1,
+          d2,
+          domChecked,
+          collected: values.hasContactInformation,
+          bound: bound.hasContactInformation,
+          status: values.status,
+        };
+      }
+
+      $('run').addEventListener('click', async () => {
+        const ns = api();
+        // 再評価を重くして競合窓を広げる（実画面の一覧描画に相当）
+        const rows = [];
+        for (let i = 0; i < 300; i++) {
+          rows.push({a: i, b: i * 2});
+        }
+        const base = ns.Core.getBindingData($('f'));
+        await ns.Core.setBindingData($('f'), {...base, rows});
+        await settle();
+
+        const failures = [];
+        let total = 0;
+        for (let d1 = 0; d1 <= 22; d1 += 2) {
+          for (const d2 of [6, 12, 18, 24]) {
+            total++;
+            const f = await trial(d1, d2);
+            if (f) {
+              failures.push(f);
+            }
+          }
+        }
+        $('log').textContent = JSON.stringify(failures, null, 1);
+        $('result').textContent = `${failures.length} / ${total} 失敗`;
+      });
+    </script>
+  </body>
+</html>

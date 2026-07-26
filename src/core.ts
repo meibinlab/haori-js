@@ -793,9 +793,14 @@ export default class Core {
       // マネージド fetch の bind-back が同一フラグメントを指すとき、この状態を見て
       // reentrant 実行へ切り替え自己デッドロックを避ける（Procedure.bindResult）。
       fragment.markBindingWorkStart();
-      // 実行時点の最新 in-memory を基準に DOM 反映する。捕捉スナップショット（data）
-      // だと、並行更新時に古い値を data-bind 属性へ書き込み、それを MutationObserver が
-      // 拾って巻き戻す競合になり得る。in-memory は呼出時に同期確定済み（last-wins）。
+      // DOM 反映の基準時点は 2 つに分かれる。
+      // (1) data-bind 属性のミラー: ワーク開始時点の最新 in-memory を使う。捕捉
+      //     スナップショット（data）だと、並行更新時に古い値を data-bind 属性へ
+      //     書き込み、それを MutationObserver が拾って巻き戻す競合になり得る。
+      //     in-memory は呼出時に同期確定済み（last-wins）。
+      // (2) 入力欄への書き戻し: 適用直前に読み直す（後述の Form.syncValues 参照）。
+      //     属性書き込みの完了を待つ間にユーザー操作が挟まるため、ワーク開始時点の
+      //     値では古くなる。
       const current = fragment.getRawBindingData() ?? data;
       // reflectToAttribute=false のときは data-bind 属性への全データ直列化を抑止する
       // （一時変数の高頻度更新での直列化コストを避ける。in-memory が権威）。
@@ -803,17 +808,26 @@ export default class Core {
         ? fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(current))
         : Promise.resolve();
       if (element.tagName === 'FORM') {
-        const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
-        const formValues =
-          arg &&
-          current[String(arg)] &&
-          typeof current[String(arg)] === 'object' &&
-          !Array.isArray(current[String(arg)])
-            ? (current[String(arg)] as Record<string, unknown>)
-            : arg
-              ? {}
-              : current;
-        chain = chain.then(() => Form.syncValues(fragment, formValues));
+        // 入力欄への書き戻しは、適用直前に読み直した最新の in-memory を基準にする
+        // （上記 (2)）。ワーク開始時点のスナップショットを使うと、data-bind 属性の
+        // 書き込み（Queue = requestAnimationFrame バッチ）を待っている間にユーザーが
+        // 別の入力を操作した場合、その編集を古い収集値で上書きして巻き戻してしまう。
+        // さらに、巻き戻された内部値を後続の入力操作が再収集して確定させるため、
+        // 誤った値が最終的に残る。
+        chain = chain.then(() => {
+          const latest = fragment.getRawBindingData() ?? data;
+          const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
+          const formValues =
+            arg &&
+            latest[String(arg)] &&
+            typeof latest[String(arg)] === 'object' &&
+            !Array.isArray(latest[String(arg)])
+              ? (latest[String(arg)] as Record<string, unknown>)
+              : arg
+                ? {}
+                : latest;
+          return Form.syncValues(fragment, formValues);
+        });
       }
       chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
       chain = chain.then(() =>
