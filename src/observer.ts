@@ -21,6 +21,9 @@ export class Observer {
   /** 稼働中の MutationObserver 一覧 */
   private static readonly _mutationObservers: MutationObserver[] = [];
 
+  /** 稼働中の EventDispatcher（初期化中モードの解除に使用） */
+  private static _dispatcher: EventDispatcher | null = null;
+
   /**
    * 既存の MutationObserver をすべて停止します。
    */
@@ -41,24 +44,57 @@ export class Observer {
     }
     Observer._initialized = true;
     Observer.disconnectMutationObservers();
-    const results = await Promise.allSettled([
-      Core.scan(document.head),
-      Core.scan(document.body),
-    ]);
-    const [headResult, bodyResult] = results;
-    if (headResult.status !== 'fulfilled') {
-      Log.error('[Haori]', 'Failed to build head fragment:', headResult.reason);
+    // 初期スキャンより先にイベントリスナーを登録する。初期スキャン中に
+    // data-each-rendered-run 等から同期的に発火されたイベント（select の既定選択を
+    // 確定する change など）は、リスナー未登録のままだと手続きが実行されずに
+    // 失われるため、リスナー登録だけを先行させ、手続きの実行は初期化完了後
+    // （data-haori-ready 付与後）まで保留する。
+    const dispatcher = new EventDispatcher();
+    Observer._dispatcher = dispatcher;
+    dispatcher.startDeferred();
+    // 初期化のどこで失敗しても保留モードを必ず解除する。解除し損ねると以降
+    // すべてのイベントで手続きが実行されなくなり（data-{event}-prevent は
+    // 同期段で効くため）「押しても何も起きない」状態になる。
+    try {
+      const results = await Promise.allSettled([
+        Core.scan(document.head),
+        Core.scan(document.body),
+      ]);
+      const [headResult, bodyResult] = results;
+      if (headResult.status !== 'fulfilled') {
+        Log.error(
+          '[Haori]',
+          'Failed to build head fragment:',
+          headResult.reason,
+        );
+      }
+      if (bodyResult.status !== 'fulfilled') {
+        Log.error(
+          '[Haori]',
+          'Failed to build body fragment:',
+          bodyResult.reason,
+        );
+      }
+      await Queue.wait();
+      document.body.setAttribute('data-haori-ready', '');
+      Observer.observe(document.head);
+      Observer.observe(document.body);
+      IntersectObserver.syncTree(document.body);
+      VisibleRangeObserver.syncTree(document.body);
+    } finally {
+      // 監視と表示範囲の同期をすべて整えてから、保留していた手続きを実行する。
+      dispatcher.release();
     }
-    if (bodyResult.status !== 'fulfilled') {
-      Log.error('[Haori]', 'Failed to build body fragment:', bodyResult.reason);
-    }
-    await Queue.wait();
-    document.body.setAttribute('data-haori-ready', '');
-    Observer.observe(document.head);
-    Observer.observe(document.body);
-    new EventDispatcher().start();
-    IntersectObserver.syncTree(document.body);
-    VisibleRangeObserver.syncTree(document.body);
+  }
+
+  /**
+   * 稼働中の EventDispatcher を返します。
+   *
+   * @internal テストからの購読停止に使用します。
+   * @returns 稼働中の EventDispatcher。未初期化の場合は null。
+   */
+  public static getDispatcher(): EventDispatcher | null {
+    return Observer._dispatcher;
   }
 
   /**

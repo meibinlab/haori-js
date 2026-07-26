@@ -606,27 +606,33 @@ class Observer {
 
 ```typescript
 async init(): Promise<void> {
-  // 1. document.head と document.body をスキャン（初期フェッチを含む）
+  // 1. EventDispatcher の購読を「保留モード」で開始する。
+  //    リスナー登録だけを先に行い、手続きの実行は release() まで保留する。
+  const dispatcher = new EventDispatcher(document)
+  dispatcher.startDeferred()
+
+  // 2. document.head と document.body をスキャン（初期フェッチを含む）
   await Promise.allSettled([
     Core.scan(document.head),
     Core.scan(document.body)
   ])
 
-  // 2. Queue に積まれた DOM 操作をすべて完了させる
+  // 3. Queue に積まれた DOM 操作をすべて完了させる
   await Queue.wait()
 
-  // 3. 初期化完了を示す属性を body に付与
+  // 4. 初期化完了を示す属性を body に付与
   document.body.setAttribute('data-haori-ready', '')
 
-  // 4. それぞれに MutationObserver を設定
+  // 5. それぞれに MutationObserver を設定
   Observer.observe(document.head)
   Observer.observe(document.body)
 
-  // 5. EventDispatcher を開始
-  new EventDispatcher(document).start()
-
-  // 6. IntersectObserver でツリーを同期
+  // 6. IntersectObserver / VisibleRangeObserver でツリーを同期
   IntersectObserver.syncTree(document.body)
+  VisibleRangeObserver.syncTree(document.body)
+
+  // 7. 保留していた手続きを発火順に実行する
+  dispatcher.release()
 }
 
 // DOMContentLoaded または即座に実行
@@ -652,6 +658,21 @@ body:not([data-haori-ready]) .page-content {
 - MutationObserver 開始前に付与されるため、observer が余分に反応しない
 - 属性値は常に空文字列
 
+#### 初期スキャン中に発火したイベントの扱い
+
+イベントリスナーの登録は初期スキャンより**前**に行われますが、手続きの実行は `data-haori-ready` の付与後まで保留され、そのあと発火順に実行されます。
+
+これにより、初期スキャン中に発火したイベント（`data-each-rendered-run` や `data-each-rendered-change` から発火する `change`、外部ウィジェットの初期化に伴う `change` など）でも `data-{event}-fetch` などの手続きが確実に実行されます。リスナー登録が初期スキャン後だった 0.25.0 以前は、この経路のイベントが警告もなく失われていました。
+
+保留の対象は `click` / `change` / `input` / `load`（ページ全体の `load` を含む）と、初期 HTML に宣言済みの `data-on` カスタムイベントです。
+
+制約と仕様上の注意:
+
+- `preventDefault`（`data-{event}-prevent`）と対象要素の解決は**イベント発生時に同期で**行われるため、保留の影響を受けません。
+- 保留中に DOM から外れた要素のイベントは再生されません（その要素の状態は既に失われているため）。この判定は再生時のみで、通常のイベント処理では行いません（他ライブラリのハンドラが同一イベント中に対象要素を差し替える構成でも手続きが実行されます）。
+- 再生時に参照される入力値は「イベント発生時の値」ではなく「再生時点の DOM 値」です。初期化中に同一要素で複数回変更した場合、同じ最終値で複数回手続きが走ります。
+- 初期スキャン中に `data-import` 等で**後から追加された** `data-on` 宣言は、初期化完了時にまとめて購読されます。そのためスキャン中に発火したその宣言向けのカスタムイベントは取りこぼします（初期スキャン中の大量ノード追加に対する走査コストを避けるための割り切りです）。
+
 ### 5. Procedure (procedure.ts)
 
 **役割**: イベントベースの手続き的処理管理
@@ -666,6 +687,7 @@ interface ProcedureOptions {
   data?: Record<string, unknown> | null     // 送信データ
   beforeCallback?: Function                 // フェッチ前コールバック
   formFragment?: ElementFragment | null     // フォーム要素
+  selfValueFragment?: ElementFragment | null // フォーム外 change/input の値収集対象
   fetchUrl?: string | null                  // フェッチURL
   fetchOptions?: RequestInit | null         // フェッチオプション
   bindFragments?: ElementFragment[] | null  // バインド先
@@ -841,10 +863,16 @@ buildFetchOptions(payload: Record<string, unknown>): RequestInit {
     })
     this.fetchUrl += `?${params.toString()}`
   } else if (contentType.includes('multipart/form-data')) {
-    // FormData
+    // FormData（配列要素が Blob / File の場合も実体のまま個別エントリとして追加）
     const formData = new FormData()
     Object.entries(payload).forEach(([key, value]) => {
-      formData.append(key, value instanceof Blob ? value : String(value))
+      if (Array.isArray(value)) {
+        value.forEach(item =>
+          formData.append(key, item instanceof Blob ? item : String(item))
+        )
+      } else {
+        formData.append(key, value instanceof Blob ? value : String(value))
+      }
     })
     return { ...this.fetchOptions, body: formData }
   } else if (contentType.includes('application/x-www-form-urlencoded')) {
@@ -1086,6 +1114,54 @@ class Form {
   { name: "Item2", price: "2000" }
 ] } -->
 ```
+
+#### `input[type=file]` の値収集
+
+`input[type=file]` は選択されたファイルを **File オブジェクトとして**収集します。`element.value` は `C:\fakepath\...` の擬似パスにしかならず送信に使えないため、DOM の `files` から直接取得します。
+
+| 状態 | 収集される値 |
+| ---- | ------------ |
+| 単一選択・選択済み | `File` |
+| 単一選択・未選択 | `null` |
+| `multiple`・選択済み | `File[]` |
+| `multiple`・未選択 | `[]`（空配列） |
+
+送信時は `data-{event}-fetch-content-type="multipart/form-data"` と body を持つメソッド（POST 等）を併用してください。`multiple` の `File[]` は同一キーの個別エントリとして FormData へ追加されます。`data-form-list` と `multiple` を併用した場合も 1 次元配列として収集されます。
+
+**File は収集結果のトップレベルに置いてください。** `data-form-object` / `data-form-list` コンテナ配下の file input は、FormData 構築時に JSON 文字列化され `{}` になるため送信できません。この構成を検出した場合は警告を出力します。
+
+multipart 以外（JSON・`application/x-www-form-urlencoded`・GET のクエリ）で File を含む送信を行おうとした場合も、`[object File]` や `{}` になって原因が分かりにくいため**警告を出力**します。
+
+内部値（`data-if` 等の式から参照される値）には File 自体ではなく、選択済みならファイル名、未選択なら `null` を保持します。選択有無の判定に利用できます。双方向バインディングでバインドデータへ反映される値も同様にファイル名へ正規化されます（File をそのまま入れると `JSON.stringify` で `{}` に潰れ `data-bind` 属性が壊れるため）。history クエリ（`data-{event}-history-form`）や `data-{event}-copy` のコピー先でも同様に正規化されます。
+
+選択有無を式で参照する場合は、フォームに `data-bind='{"csvFile":null}'` のように**初期値を宣言してください**。宣言がないと初回評価時に未定義のトップレベル識別子となり、`ReferenceError` によるコンソールエラーが出るうえ、条件式が評価されません。
+
+なお `input[type=file]` はセキュリティ上、任意の値を設定できません（非空文字を代入するとブラウザが例外を投げます）。バインドデータからの書き戻しは**クリア（`null` / 空文字）のみ**反映し、それ以外の値は静かに無視します（`Fragment.setValue` で直接設定した場合のみ警告します）。
+
+#### フォームコンテナを持たない入力の値収集
+
+`change` / `input` イベントの手続きは、既定でフォームコンテナ（`<form>` または `data-form` を持つ要素）の値をまとめて収集します。
+
+フォームコンテナが祖先に存在しない場合は、**イベント発生元の入力要素自身**を収集対象とし、その `name` と値だけを送信データにします。これにより、`<form>` の外に置いた単独の入力（同意チェックボックス等）でも値をバインドへ書き戻せます。
+
+- 対象は `name` 属性を持つ `<input>` / `<select>` / `<textarea>` **自身**に限ります。コンテナ要素で `change` が発生した場合は収集しません（`data-form` を宣言していない要素の配下を意図せず収集しないため）。
+- 収集値は bind だけでなく**送信データ全体**に反映されます。したがって `data-change-fetch` のクエリやボディにも含まれます（例: フォーム外の `<select name="kind">` の change で `/api/list?kind=B` になる）。フォーム内の入力と同じ扱いに揃えたものです。
+
+```html
+<div id="gate" data-bind='{"agreed":false,"keep":"KEEP"}'></div>
+
+<!-- フォーム外の単独 boolean チェックボックス -->
+<input type="checkbox" name="agreed" value="true"
+  data-change-bind="#gate" data-change-bind-merge>
+<!-- ON  → { agreed: true }  を #gate へマージ -->
+<!-- OFF → { agreed: false } を #gate へマージ -->
+```
+
+> `data-{event}-bind` は既定でバインド先を**全置換**します。上例のように既存キーを保持したい場合は `data-{event}-bind-merge` を併用してください。
+
+この経路で収集値が空になる場合（`name` の付け忘れなど）、バインド先を空オブジェクトで全置換して既存データを破壊することを避けるため、**キー指定（`data-{event}-bind-arg`）もマージ指定（`data-{event}-bind-merge`）も無い全置換のみ**、警告を出してバインドをスキップします。
+
+この抑止はフォームコンテナを持たない `change` / `input` に限定されます。`data-click-bind` などで意図的にバインド先を空オブジェクトへクリアする使い方は従来どおり有効です。
 
 #### キー検索アルゴリズム
 
@@ -1485,6 +1561,11 @@ data-each="arrayExpression"
 - `data-each-visible`: スクロール追従の可視行範囲を組み込み変数として公開（後述）
 - `data-each-done`: 全行の描画が安定して完了したときに **Haori が自動付与**するマーカー（手動指定不可）。新しい描画サイクルの開始時に外され、完了時に再付与されます。E2E テスト等で `[data-each-done]` の出現を待って描画完了を検知できます。**発火保証**: 初回描画・再 fetch・再バインドなど描画サイクルが走るたびに、コンテナ単位で「除去 → 再付与」が必ず一度行われます。差分更新で実際の DOM 変更がない場合でも、サイクルが安定した時点で再付与されます。これにより外部ウィジェットの再同期契機として利用できます
 - `data-each-rendered-run`: 描画が確定し `data-each-done` が付与されるたびに、**コンテナ単位で一度だけ**実行する任意の JS（`data-{event}-run` と同じ式評価）。本体内の `this` は対象コンテナ要素に束縛されます。外部の select 拡張ライブラリ（Choices.js 等）の再同期フック（例: `data-each-rendered-run="window.__choicesRefresh(this)"`）として利用できます
+- `data-each-rendered-change`: 描画確定後に、対象コンテナ要素へ `change` イベント（バブリングあり）を発火します。API から取得した候補を `data-each` で流し込んだ `<select>` について、「既定選択を確定して初期データを取得する」パターンをインライン JS なしで宣言できます。`<select>` はブラウザが先頭 `<option>` を自動選択するため、描画確定後の `change` がそのまま既定選択の確定になります。`data-each-rendered-run` より後に実行されるため、外部ウィジェットの再同期を先に済ませた状態で発火します
+  - 属性値を省略、または `once`: 描画行が 1 件以上ある**最初の描画確定時のみ**発火します（既定）
+  - `always`: 描画確定ごとに毎回発火します
+  - 描画行が 0 件のときは発火しません（確定すべき既定値が存在しないため）。この場合は初回発火の判定も消費しないため、行が入った最初の描画で発火します
+  - 既定を `once` にしているのは、`change` の手続きが `data-each` の取得元を再バインドする構成（候補取得 → 選択確定 → 明細取得 → 再描画）で、毎回発火させると再帰的な発火ループになり得るためです
 
 **例**:
 
@@ -1943,6 +2024,34 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
   <p>年齢: {{params.age}}</p>
 </div>
 ```
+
+**`data-url-arg` の有無による違い（重要）**:
+
+| 指定 | バインディングデータへの反映 |
+| ---- | ---------------------------- |
+| `data-url-arg` なし | クエリパラメータで**全置換**する |
+| `data-url-arg="キー名"` | 既存のバインディングデータへ、そのキー配下として**マージ**する |
+
+`data-url-arg` を省略すると全置換になるため、**同一要素の `data-bind` で宣言した既定値は消えます**。既定値と併用する場合は `data-url-arg` を指定してください。
+
+```html
+<!-- NG: data-bind の defaultKey が data-url-param の全置換で消える -->
+<div data-url-param data-bind='{"defaultKey":"DEF"}'>
+  <p>{{defaultKey}}</p>  <!-- 空になる -->
+</div>
+
+<!-- OK: data-url-arg 配下へマージされるため既定値が保持される -->
+<div data-url-param data-url-arg="params" data-bind='{"defaultKey":"DEF"}'>
+  <p>{{defaultKey}}</p>      <!-- DEF -->
+  <p>{{params.name}}</p>
+</div>
+```
+
+**未定義キーの直接参照を避ける**:
+
+クエリに含まれないパラメータを `{{name}}` のようにトップレベル識別子として直接参照すると、評価時に `ReferenceError` となり**コンソールエラーが出力されます**（値は `undefined` として扱われ、`data-if` は falsy と判定されるため機能自体は動作します）。
+
+`data-url-arg` を指定してプロパティ参照（`{{params.name}}`）にすれば、`params` は常に定義済みオブジェクトになるためエラーになりません。クエリの有無が不定なパラメータを扱う場合は `data-url-arg` の使用を推奨します。
 
 ---
 

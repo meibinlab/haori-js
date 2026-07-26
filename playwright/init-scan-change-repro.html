@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>初期スキャン中に発火した change で手続きが実行されるかの回帰確認</title>
+  </head>
+  <body>
+    <h2>初期ロードの 1 パスで data-fetch → data-each 描画 → change 発火</h2>
+    <p>
+      ?mode=run: data-each-rendered-run 内から同期 dispatch する（初期スキャン中に発火）。<br />
+      ?mode=attr: data-each-rendered-change による宣言的発火。
+    </p>
+
+    <!-- 実運用の構成（API から候補を取得 → select へ流し込み → 既定選択を確定して
+         明細を取得）を、初期ロードの 1 パスで通す。 -->
+    <div data-fetch="/playwright/init-scan-change-repro.json" data-fetch-arg="mv">
+      <form id="detail-form">
+        <select
+          id="month"
+          name="month"
+          data-each="mv.months"
+          data-each-arg="m"
+          data-change-fetch="/playwright/init-scan-change-detail.json"
+          data-change-form="#detail-form"
+          data-change-bind="#detail-result"
+          data-change-bind-arg="detail"
+        >
+          <option data-attr-value="{{m}}">{{m}}</option>
+        </select>
+      </form>
+    </div>
+    <!-- バインド前は detail が未定義のため、未定義参照でコンソールエラーを出さない
+         形（`&&` での短絡）で表示する。 -->
+    <div id="detail-result">total={{detail &amp;&amp; detail.total}}</div>
+
+    <script>
+      // ライブラリ読み込みより先に、モードに応じた属性を付与する。
+      (function () {
+        const mode =
+          new URLSearchParams(location.search).get('mode') || 'run';
+        const select = document.getElementById('month');
+        if (mode === 'attr') {
+          select.setAttribute('data-each-rendered-change', '');
+        } else {
+          select.setAttribute(
+            'data-each-rendered-run',
+            'window.__renderedRun(this)',
+          );
+        }
+      })();
+
+      window.__fetched = [];
+      (function () {
+        const original = window.fetch;
+        window.fetch = function (input) {
+          window.__fetched.push(
+            String(typeof input === 'string' ? input : input.url || input),
+          );
+          return original.apply(this, arguments);
+        };
+      })();
+
+      // 初期スキャン中に同期で change を発火する（従来はここで手続きが失われた）。
+      window.__renderedRun = function (el) {
+        if (el.options.length === 0 || el.dataset.fired) {
+          return;
+        }
+        el.dataset.fired = '1';
+        el.value = el.options[0].value;
+        el.dispatchEvent(new Event('change', {bubbles: true}));
+      };
+    </script>
+    <script src="/dist/haori.iife.js"></script>
+  </body>
+</html>

@@ -1297,6 +1297,28 @@ export class ElementFragment extends Fragment {
       return Promise.resolve();
     }
     const element = this.getTarget();
+    // input[type=file] はセキュリティ上、任意の値を設定できない（非空文字を代入すると
+    // ブラウザが InvalidStateError を投げる）。クリア（null / 空文字）のみ受け付け、
+    // それ以外の値の反映は警告して無視する。バインドデータに File が入っている状態で
+    // 双方向バインディングが値を書き戻そうとしても例外にならないようにする。
+    if (element instanceof HTMLInputElement && element.type === 'file') {
+      if (value === null || value === '') {
+        this.value = null;
+        if (element.value === '') {
+          return Promise.resolve();
+        }
+        return Queue.enqueue(() => {
+          element.value = '';
+        }) as Promise<void>;
+      }
+      Log.warn(
+        '[Haori]',
+        'A value cannot be assigned to input[type=file]; only clearing is' +
+          ' supported.',
+        element,
+      );
+      return Promise.resolve();
+    }
     if (
       element instanceof HTMLInputElement &&
       (element.type === 'checkbox' || element.type === 'radio')
@@ -1474,6 +1496,13 @@ export class ElementFragment extends Fragment {
             this.value = null;
           }
         }
+      } else if (element.type === 'file') {
+        // input[type=file] の element.value は `C:\fakepath\...` の擬似パスにしかならず
+        // 送信にも表示にも使えないため内部値には保持しない。実ファイルの収集は
+        // Form が DOM の files から直接行う。選択有無だけを式で判定できるよう、
+        // 選択済みならファイル名、未選択なら null を保持する。
+        const files = element.files;
+        this.value = files && files.length > 0 ? files[0].name : null;
       } else {
         // type="number" は数値へ正規化し、それ以外は文字列のまま保持する
         this.value = this.normalizeValueForElement(element, element.value);

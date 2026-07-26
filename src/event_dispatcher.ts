@@ -39,6 +39,23 @@ export default class EventDispatcher {
   /** `data-on` 宣言の追加（data-import 等）を監視する Observer。 */
   private customEventObserver: MutationObserver | undefined;
 
+  /** 組み込みイベントのリスナーを登録済みかどうか（二重登録の防止）。 */
+  private builtinListenersAdded = false;
+
+  /**
+   * 手続きの実行を保留中かどうか（初期化中モード）。
+   *
+   * 初期スキャン中に発火したイベントを取りこぼさないため、`startDeferred()` では
+   * リスナー登録だけを先に行い、手続きの実行は `release()` まで保留します。
+   */
+  private deferred = false;
+
+  /**
+   * 保留中の手続き実行。`release()` で登録順に実行されます。
+   * イベントオブジェクトはそのまま保持するため、`detail` などの情報は失われません。
+   */
+  private readonly deferredProcedures: (() => void)[] = [];
+
   /** クリックデリゲータ */
   private readonly onClick = (event: Event) => this.delegate(event, 'click');
 
@@ -54,13 +71,28 @@ export default class EventDispatcher {
 
   /** ページ全体のロード完了時の処理 */
   private readonly onWindowLoad = () => {
-    // ページロード時にも load を1回ディスパッチ
+    // 初期化中は手続きの実行を保留する。リスナー登録を初期スキャン前へ移した
+    // ことで、スキャン中に window load が発火し得るようになったため、
+    // data-haori-ready 前・フラグメント未確定の状態で走らせない。
+    if (this.deferred) {
+      this.deferredProcedures.push(() => this.runWindowLoadProcedure());
+      return;
+    }
+    this.runWindowLoadProcedure();
+  };
+
+  /**
+   * ページロード時の `load` 手続きを `<html>` に対して実行します。
+   *
+   * @returns 戻り値はない。
+   */
+  private runWindowLoadProcedure(): void {
     const html = document.documentElement;
     const fragment = Fragment.get(html);
     if (fragment) {
       void new Procedure(fragment, 'load').run();
     }
-  };
+  }
 
   /**
    * popstate デリゲータ（Haori が管理する履歴に戻った場合だけページをリロード）。
@@ -89,6 +121,71 @@ export default class EventDispatcher {
    * クリック、変更、ロード、popstate イベントを監視し、対応するProcedureを実行します。
    */
   start(): void {
+    // startDeferred() 後に release() を経ずに start() が呼ばれても、
+    // 手続きが恒久的に保留されないよう保留モードを解除する。
+    this.deferred = false;
+    this.addBuiltinListeners();
+    // data-on で宣言されたカスタムイベントの購読を開始
+    this.subscribeDeclaredCustomEvents();
+    this.observeCustomEventDeclarations();
+  }
+
+  /**
+   * 初期化中モードで購読を開始します。
+   *
+   * イベントリスナーの登録だけを先に行い、手続きの実行は `release()` が呼ばれる
+   * まで保留します。`Observer.init()` の初期スキャン中に `data-each-rendered-run`
+   * などから同期的に発火されたイベントが、リスナー未登録のまま失われるのを防ぐ
+   * ためのモードです。保留したイベントは初期化完了後に発火順で処理されます。
+   *
+   * `data-on` の宣言追加を監視する MutationObserver は、初期スキャン中の大量の
+   * ノード追加に対する無駄な走査を避けるため `release()` まで開始しません
+   * （初期スキャン中に追加された宣言は `release()` 時に一括で購読されます）。
+   *
+   * @returns 戻り値はない。
+   */
+  startDeferred(): void {
+    this.deferred = true;
+    this.addBuiltinListeners();
+    this.subscribeDeclaredCustomEvents();
+  }
+
+  /**
+   * 初期化中モードを解除し、保留していた手続きを発火順に実行します。
+   *
+   * 初期化中モードでない場合は何もしません。
+   *
+   * @returns 戻り値はない。
+   */
+  release(): void {
+    if (!this.deferred) {
+      return;
+    }
+    this.deferred = false;
+    // 初期スキャン中に追加された data-on 宣言も購読し、以降の追加を監視する。
+    this.subscribeDeclaredCustomEvents();
+    this.observeCustomEventDeclarations();
+    const pending = this.deferredProcedures.splice(0);
+    for (const run of pending) {
+      try {
+        run();
+      } catch (error) {
+        Log.error('[Haori]', 'Deferred event handling error:', error);
+      }
+    }
+  }
+
+  /**
+   * 組み込みイベント（click / change / input / load / popstate）のリスナーを登録します。
+   * 二重登録は行いません。
+   *
+   * @returns 戻り値はない。
+   */
+  private addBuiltinListeners(): void {
+    if (this.builtinListenersAdded) {
+      return;
+    }
+    this.builtinListenersAdded = true;
     this.root.addEventListener('click', this.onClick);
     this.root.addEventListener('change', this.onChange);
     this.root.addEventListener('input', this.onInput);
@@ -98,9 +195,6 @@ export default class EventDispatcher {
     window.addEventListener('load', this.onWindowLoad, {once: true});
     // ブラウザの戻る・進む操作
     window.addEventListener('popstate', this.onPopstate);
-    // data-on で宣言されたカスタムイベントの購読を開始
-    this.subscribeDeclaredCustomEvents();
-    this.observeCustomEventDeclarations();
   }
 
   /**
@@ -113,6 +207,10 @@ export default class EventDispatcher {
     this.root.removeEventListener('load', this.onLoadCapture, true);
     window.removeEventListener('load', this.onWindowLoad);
     window.removeEventListener('popstate', this.onPopstate);
+    this.builtinListenersAdded = false;
+    // 保留中の手続きは破棄する（購読停止後に実行しても意味がないため）。
+    this.deferred = false;
+    this.deferredProcedures.length = 0;
     // カスタムイベント購読を解除
     for (const [name, handler] of this.customEventHandlers) {
       window.removeEventListener(name, handler, true);
@@ -186,6 +284,14 @@ export default class EventDispatcher {
    * @returns 戻り値はない。
    */
   private runCustomEventProcedures(name: string, event: Event): void {
+    // 初期化中は手続きの実行を保留する（イベントオブジェクトはそのまま保持するため
+    // detail 等の情報は失われない）。
+    if (this.deferred) {
+      this.deferredProcedures.push(() =>
+        this.runCustomEventProcedures(name, event),
+      );
+      return;
+    }
     const root = this.root as Document | HTMLElement;
     // 属性セレクタの値エスケープ（CSS.escape）に依存せず、値一致で絞り込む。
     root.querySelectorAll(`[${this.onAttributeName}]`).forEach(element => {
@@ -276,6 +382,39 @@ export default class EventDispatcher {
       event.preventDefault();
     }
 
+    // 初期化中は手続きの実行だけを保留する。対象要素の解決と preventDefault は
+    // イベント発生時に同期で済ませ、フラグメント解決・値同期・手続き実行は
+    // 初期化完了後（フラグメントが確実に初期化済みの状態）に行う。
+    if (this.deferred) {
+      this.deferredProcedures.push(() => {
+        // 保留分の再生時のみ、初期化中の再描画などで対象要素が DOM から外れて
+        // いれば処理しない（その要素の状態はすでに失われている）。同期経路では
+        // 判定しない。他ライブラリのハンドラが同一イベント中に対象要素を DOM から
+        // 外す構成でも、従来どおり手続きを実行する必要があるため。
+        if (!element.isConnected) {
+          return;
+        }
+        this.runProcedureFor(element, type, event);
+      });
+      return;
+    }
+
+    this.runProcedureFor(element, type, event);
+  }
+
+  /**
+   * 対象要素に対して、値の同期と手続きの実行を行います。
+   *
+   * @param element 処理対象の要素
+   * @param type イベントタイプ（'click', 'change', 'load'など）
+   * @param event 起点となった DOM イベント
+   * @returns 戻り値はない。
+   */
+  private runProcedureFor(
+    element: HTMLElement,
+    type: string,
+    event: Event,
+  ): void {
     const fragment = Fragment.get(element);
     if (!fragment) {
       return;

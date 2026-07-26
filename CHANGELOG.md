@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## [0.26.0] - 2026-07-26
+
+### Added
+
+- **`input[type=file]` のファイルをフォーム値として収集できるようにした**。従来は `element.value`（`C:\fakepath\...` の擬似パス）しか扱っておらず、`data-{event}-fetch-content-type="multipart/form-data"` を指定してもファイルが送信データに入らず、ファイルアップロードが実装できなかった。`Form.getValues`（`data-click-form`・双方向バインドを含むすべての値収集経路）が DOM の `files` から File を直接取得するようにし、単一選択は `File`（未選択は `null`）、`multiple` 指定は `File[]`（未選択は `[]`）として収集する。`data-form-list` と `multiple` の併用でも 1 次元配列に保つ。あわせて multipart の FormData 構築で**配列要素の Blob / File も実体のまま**個別エントリとして追加するようにし、複数ファイル送信に対応した。内部値（式から参照される値）は擬似パスではなく選択済みならファイル名、未選択なら `null` を保持するため `data-attr-disabled="{{!csvFile}}"` のような選択有無の判定に使える。なお File は収集結果のトップレベルに置く必要がある（`data-form-object` / `data-form-list` 配下の File は FormData で JSON 文字列化され送信できないため、検出時に警告する）。
+- **`data-each-rendered-change`: 描画確定後に `change` を宣言的に発火する属性を追加**。API から取得した候補を `data-each` で `<select>` へ流し込み、「既定選択を確定して初期データを取得する」パターンを、インライン JS（`dataset` フラグ＋`setTimeout`）なしで宣言できるようにした。属性値を省略または `once` で「描画行が 1 件以上ある最初の描画確定時のみ」発火（既定）、`always` で描画確定ごとに毎回発火する。描画行が 0 件のときは発火せず初回発火の判定も消費しないため、`data-fetch` 完了前の空描画をガードする必要がない。既定を `once` にしているのは、`change` の手続きが `data-each` の取得元を再バインドする構成で毎回発火させると再帰的な発火ループになり得るため。`data-each-rendered-run` より後に実行されるため、外部ウィジェットの再同期を先に済ませた状態で発火する。
+
+### Fixed
+
+- **初期スキャン中に発火したイベントで手続きが実行されない不具合を修正**。`Observer.init()` が `EventDispatcher` の購読を初期スキャン完了後（`data-haori-ready` 付与後）に開始していたため、初期スキャン中に同期的に発火されたイベントはリスナー未登録のまま失われていた。`data-each-rendered-run` から `change` を発火して既定選択を確定する構成（静的 JSON や高速な API で `data-fetch` が初回マウント中に解決する場合）で `data-change-fetch` が実行されず、`setTimeout(..., 0)` で遅延させるワークアラウンドが必要だった。警告もエラーも出ないため原因の特定も困難だった。イベントリスナーの登録を初期スキャンより**前**に行い、手続きの実行だけを初期化完了後まで保留して発火順に再生する方式へ変更した。`data-each-rendered-run` 経由に限らず、外部ウィジェットの初期化に伴うイベントなど、初期スキャン中に発火するすべてのイベント（`click` / `change` / `input` / `load`、および初期 HTML に宣言済みの `data-on` カスタムイベント）が対象。`preventDefault`（`data-{event}-prevent`）と対象要素の解決はイベント発生時に同期で行うため保留の影響を受けない。保留中に DOM から外れた要素のイベントは再生しない（この判定は再生時のみで、通常のイベント処理では行わない）。初期化が途中で失敗しても保留は必ず解除する。
+- **フォームコンテナを持たない単独入力の `change` で、バインド先が空オブジェクトで全置換される不具合を修正**。`change` / `input` の手続きはフォームコンテナ（`<form>` / `data-form`）の値収集のみを送信データの源としていたため、`<form>` の外に置いた入力（同意チェックボックス等）では送信データが空になり、`data-change-bind` がバインド先を `{}` で全置換して既存データと表示を破壊していた。回避には専用の `<form>` を用意する必要があった。フォームコンテナが祖先に無い場合は**イベント発生元の入力要素自身**を値収集の対象とし、その `name` と値を送信データに含めるようにした（`value="true"` の boolean チェックボックスは ON=`true` / OFF=`false`）。対象は `name` を持つ `<input>` / `<select>` / `<textarea>` 自身に限定する（コンテナ要素の `change` で配下を意図せず収集しないため）。あわせて多層防御として、**この経路で**収集値が空のときに**キー指定（`bind-arg`）もマージ指定（`bind-merge`）も無い全置換のみ**、警告を出してバインドをスキップするようにした（`data-click-bind` による意図的な空クリアは従来どおり有効）。
+- **バインドデータに File / Blob が含まれる場合に差分が検出されない問題を修正**。File / Blob は列挙可能なプロパティを持たないため、バインドシグネチャの計算で別ファイルでも同じ `{}` になり「変更なし」と誤判定されて再評価が行われなかった。ファイル名・サイズ・更新日時・MIME タイプでシグネチャを作るようにした。
+- **`input[type=file]` へバインドデータの値を書き戻そうとした際に例外になり得る問題を修正**。ブラウザは file input への非空文字の代入で `InvalidStateError` を投げるため、フォーム値の反映ではクリア（`null` / 空文字）のみを行い、それ以外の値は静かに無視するようにした（`Fragment.setValue` での直接設定のみ警告する）。あわせて双方向バインディングでバインドデータへ反映する値は File をファイル名へ正規化し、`data-bind` 属性が `{"csvFile":{}}` に壊れないようにした。
+- **`data-each-rendered-change` の発火を `data-each` の再入制御解除後に行うようにした**。描画サイクル内で発火すると、`change` の手続きが同一コンテナの再評価を要求した場合に再評価要求を取りこぼす可能性があった。
+- **`data-{event}-history-form` の履歴クエリと `data-{event}-copy` のコピー先で File が `{}` / `[object File]` になる問題を修正**。いずれもファイル名へ正規化するようにした（履歴 URL の復元やコピー先バインドではファイル自体を扱えないため）。`data-{event}-reset-before` 併用時のスナップショット経路も含め、バインド／履歴へ渡す収集はすべて共通ヘルパー経由に統一して適用漏れを防いだ。
+
+### Changed
+
+- **multipart 以外で File を送信しようとした場合に警告を出力するようにした**。JSON では `{}`、クエリや `application/x-www-form-urlencoded` では `[object File]` になり原因が分かりにくいため、`data-{event}-fetch-content-type="multipart/form-data"` と body を持つメソッドの併用を促す警告を出す。
+- **フォームコンテナを持たない `change` / `input` で、対象入力の値が送信データ全体へ反映されるようになった**（挙動変更）。bind だけでなく `data-{event}-fetch` のクエリ・ボディにも含まれる。例えばフォーム外の `<select name="kind" data-change-fetch="/api/list">` は、これまでパラメータなしで取得していたが `/api/list?kind=B` を取得するようになる。フォーム内の入力と同じ扱いに揃えたもので、絞り込みをフォームなしで宣言できるようにする意図。既存ページでフォーム外入力に `data-change-fetch` を使っている場合はリクエスト URL が変わるため、サーバー側で未知のクエリを拒否する構成では確認が必要。
+
+### Docs
+
+- `docs/ja/specs.md`: 初期化フローを実装に合わせて更新し、「初期スキャン中に発火したイベントの扱い」節を追加。`data-each-rendered-change` の仕様、`input[type=file]` の値収集規則、フォームコンテナを持たない入力の値収集規則、multipart の配列 Blob 対応を追記。`data-url-param` の `data-url-arg` 有無による全置換／マージの違いと、未定義キーの直接参照がコンソールエラーになる点を明記。
+- `docs/ja/guide.md`: 「ファイルをアップロードする」「認証切れをログインページで知らせる（401 リダイレクト + メッセージ）」「選択肢を描画したら既定選択で初期データを取得する（`data-each-rendered-change`）」「フォーム外の単独チェックボックスでボタンを活性化する」の各レシピを追加。`data-url-arg` を付けるべき 2 つの理由（既定値の全置換回避・未定義キー参照のエラー回避）を追記。
+
+### Tests
+
+- `tests/init-deferred-events.test.ts`: 保留モードでのイベント再生（発火順・DOM から外れた要素の除外・同期経路では除外しない回帰・`data-{event}-prevent` の同期性・カスタムイベントの保留）、`Observer.init` の購読順序、`data-each-rendered-change` の `once` / `always` / 0 件時の挙動を検証。
+- `tests/file-input-collection.test.ts`: `input[type=file]` の値収集（単一・未選択・`multiple`・`data-form-list` 併用）、multipart 送信での File 実体、`data-form-object` 配下（トップレベルとの混在を含む）および multipart 以外での警告、書き戻し時の静かなスキップと直接設定時の警告、双方向バインディングと history クエリでのファイル名正規化を検証。
+- `tests/standalone-input-bind.test.ts`: フォーム外の単独入力の ON / OFF 書き戻し、fetch クエリへの反映、`name` なしでの bind スキップ、コンテナ要素での非収集、`data-click-bind` による空クリアの維持（回帰）、フォーム内入力の従来動作（回帰）を検証。
+- `playwright/init-scan-change.spec.cjs`: 実ブラウザで初期ロードの 1 パス（`data-fetch` → `data-each` 描画 → `change` 発火 → `data-change-fetch`）が `data-each-rendered-run` の同期 dispatch と `data-each-rendered-change` の両方で成立することを検証。
+
 ## [0.25.0] - 2026-06-29
 
 ### Added

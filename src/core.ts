@@ -115,6 +115,20 @@ export default class Core {
   >();
 
   /**
+   * data-each-rendered-change（既定の `once` モード）で change を発火済みの要素。
+   * 再帰的な発火ループを避けるため、要素ごとに一度だけ発火させるために使用します。
+   */
+  private static readonly EACH_RENDERED_CHANGE_FIRED =
+    new WeakSet<HTMLElement>();
+
+  /**
+   * data-each-rendered-change の不正な属性値を警告済みの要素。
+   * 描画確定ごとに同じ警告を出し続けないために使用します。
+   */
+  private static readonly EACH_RENDERED_CHANGE_WARNED =
+    new WeakSet<HTMLElement>();
+
+  /**
    * 遅延属性かどうか（完全名で判定）を判定します。
    *
    * @param name 属性名
@@ -1469,6 +1483,11 @@ export default class Core {
         state.running = false;
         state.settled = null;
       }
+      // data-each-rendered-change: 描画確定後に change を宣言的に発火する。
+      // rendered-run より後に実行し、外部ライブラリの再同期を先に済ませる。
+      // 再入制御の解除後（running=false）に発火することで、change の手続きが
+      // 同一コンテナの再評価を要求した場合も取りこぼさない。
+      Core.runEachRenderedChange(fragment);
     })();
     state.settled = settled;
     return settled;
@@ -1501,16 +1520,98 @@ export default class Core {
       try {
         script = new Function(`"use strict";\n${body}\n`) as () => unknown;
       } catch (e) {
-        Log.error('Haori', `Invalid each-rendered-run script: ${e}`);
+        Log.error('[Haori]', `Invalid each-rendered-run script: ${e}`);
       }
     }
     if (script) {
       try {
         script.call(target);
       } catch (e) {
-        Log.error('Haori', `each-rendered-run execution error: ${e}`);
+        Log.error('[Haori]', `each-rendered-run execution error: ${e}`);
       }
     }
+  }
+
+  /**
+   * data-each-rendered-change 属性に従い、描画確定後に対象要素へ `change`
+   * イベント（バブリングあり）を発火します。
+   *
+   * API から取得した候補を `data-each` で流し込んだ `<select>` について、
+   * 「既定選択を確定して初期データを取得する」パターンをインライン JS なしで
+   * 宣言できるようにするための属性です。`<select>` はブラウザが先頭 option を
+   * 自動選択するため、描画確定後の `change` がそのまま既定選択の確定になります。
+   *
+   * 描画行が 0 件のときは発火しません（確定すべき既定値が存在しないため）。
+   * この場合は初回発火の判定も消費しないため、行が入った最初の描画で発火します。
+   *
+   * 属性値による動作の違い:
+   * - 省略または `once`: 行が 1 件以上ある最初の描画確定時のみ発火する（既定）。
+   * - `always`: 描画確定ごとに毎回発火する。
+   *
+   * 既定を `once` にしているのは、`change` の手続きが `data-each` の取得元を
+   * 再バインドする構成（候補取得 → 選択確定 → 明細取得 → 再描画）で、毎回発火
+   * させると再帰的な発火ループになり得るためです。
+   *
+   * @param fragment data-each コンテナのフラグメント
+   */
+  private static runEachRenderedChange(fragment: ElementFragment): void {
+    const attrName = `${Env.prefix}each-rendered-change`;
+    const target = fragment.getTarget();
+    if (!target.hasAttribute(attrName)) {
+      return;
+    }
+    const rawMode = String(target.getAttribute(attrName) ?? '')
+      .trim()
+      .toLowerCase();
+    let always = false;
+    if (rawMode === 'always') {
+      always = true;
+    } else if (rawMode !== '' && rawMode !== 'once') {
+      // 描画確定ごとに警告が出続けないよう、要素ごとに一度だけ出力する。
+      if (!Core.EACH_RENDERED_CHANGE_WARNED.has(target)) {
+        Core.EACH_RENDERED_CHANGE_WARNED.add(target);
+        Log.warn(
+          '[Haori]',
+          `Invalid ${attrName} value: "${rawMode}".` +
+            ' Use "once" (default) or "always".',
+        );
+      }
+    }
+    // 描画行が 0 件のときは発火しない（既定選択として確定すべき値が無い）。
+    if (Core.countEachRenderedRows(fragment) === 0) {
+      return;
+    }
+    if (!always) {
+      if (Core.EACH_RENDERED_CHANGE_FIRED.has(target)) {
+        return;
+      }
+      Core.EACH_RENDERED_CHANGE_FIRED.add(target);
+    }
+    try {
+      target.dispatchEvent(new Event('change', {bubbles: true}));
+    } catch (e) {
+      Log.error('[Haori]', `each-rendered-change dispatch error: ${e}`);
+    }
+  }
+
+  /**
+   * data-each コンテナに描画されている行数を返します。
+   *
+   * 行は差分更新で `data-row` 属性が付与されるため、それを数えます。
+   * `data-each-before` / `data-each-after` の固定要素や、テンプレート以外の
+   * 静的な子要素（`data-each-before` の付け忘れを含む）は行数に含めません。
+   *
+   * @param fragment data-each コンテナのフラグメント
+   * @returns 描画済みの行数
+   */
+  private static countEachRenderedRows(fragment: ElementFragment): number {
+    let count = 0;
+    for (const child of fragment.getChildElementFragments()) {
+      if (child.getTarget().hasAttribute(`${Env.prefix}row`)) {
+        count += 1;
+      }
+    }
+    return count;
   }
 
   /**
@@ -2313,6 +2414,18 @@ export default class Core {
     }
     if (value instanceof Date) {
       return `[Date:${value.toISOString()}]`;
+    }
+    // File / Blob は列挙可能なプロパティを持たないため、そのままオブジェクトとして
+    // 走査すると別ファイルでも同じ `{}` になり、差分なしと誤判定されて再評価が
+    // 行われない。識別可能な属性でシグネチャを作る。
+    if (typeof File !== 'undefined' && value instanceof File) {
+      return (
+        `[File:${value.name}:${value.size}` +
+        `:${value.lastModified}:${value.type}]`
+      );
+    }
+    if (typeof Blob !== 'undefined' && value instanceof Blob) {
+      return `[Blob:${value.size}:${value.type}]`;
     }
     if (Array.isArray(value)) {
       if (seen.has(value)) {

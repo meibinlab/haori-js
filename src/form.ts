@@ -54,6 +54,41 @@ export default class Form {
   }
 
   /**
+   * 入力エレメントから収集する値を解決します。
+   *
+   * `input[type=file]` は選択されたファイルを File オブジェクトとして返します
+   * （内部値は `C:\fakepath\...` の擬似パス文字列にしかならず送信に使えないため、
+   * DOM の `files` から直接取得する）。`multiple` 指定時は File の配列、単一選択時は
+   * File または未選択を表す null を返します。それ以外の要素は内部値を返します。
+   *
+   * @param fragment 対象のElementFragment
+   * @returns 収集する値
+   */
+  private static resolveCollectedValue(fragment: ElementFragment): unknown {
+    const element = fragment.getTarget();
+    if (Form.isFileInput(fragment)) {
+      const input = element as HTMLInputElement;
+      const files = input.files ? Array.from(input.files) : [];
+      if (input.multiple) {
+        return files;
+      }
+      return files.length > 0 ? files[0] : null;
+    }
+    return fragment.getValue();
+  }
+
+  /**
+   * `input[type=file]` かどうかを判定します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns `input[type=file]` の場合 true
+   */
+  private static isFileInput(fragment: ElementFragment): boolean {
+    const element = fragment.getTarget();
+    return element instanceof HTMLInputElement && element.type === 'file';
+  }
+
+  /**
    * フォーム内の各入力エレメントから値を取得し、オブジェクトとして返します。
    * 入力エレメントのname属性、data-form-object属性、data-form-list属性に基づいて値を整理します。
    *
@@ -78,10 +113,17 @@ export default class Form {
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);
     if (name) {
       if (listName) {
+        const listValue = Form.resolveCollectedValue(fragment);
+        // multiple の file input は File[] を返すため、そのまま push すると
+        // 二重配列になり送信できない。ファイル単位に展開して 1 次元に保つ。
+        const listItems =
+          Form.isFileInput(fragment) && Array.isArray(listValue)
+            ? listValue
+            : [listValue];
         if (Array.isArray(values[String(name)])) {
-          (values[String(name)] as unknown[]).push(fragment.getValue());
+          (values[String(name)] as unknown[]).push(...listItems);
         } else {
-          values[String(name)] = [fragment.getValue()];
+          values[String(name)] = listItems;
         }
       } else if (Form.isGroupedCheckable(fragment)) {
         // 同名のチェックボックス・ラジオボタングループ:
@@ -109,7 +151,7 @@ export default class Form {
           values[key] = [values[key], value];
         }
       } else {
-        values[String(name)] = fragment.getValue();
+        values[String(name)] = Form.resolveCollectedValue(fragment);
       }
       if (objectName) {
         Log.warn(
@@ -270,6 +312,15 @@ export default class Form {
     if (name) {
       if (!detach || force) {
         const value = values[String(name)];
+        // input[type=file] へはブラウザの制約により任意の値を設定できない。
+        // クリア（null / 空文字）のみ反映し、それ以外は静かにスキップする。
+        // 双方向バインディングでファイル名が書き戻される正常系で警告が出るのを防ぐ。
+        if (Form.isFileInput(fragment)) {
+          if (value === null || value === '') {
+            promises.push(Form.applyFragmentValue(fragment, null, emitEvents));
+          }
+          return Promise.all(promises).then(() => undefined);
+        }
         if (listName && Array.isArray(value) && index !== null) {
           promises.push(
             Form.applyFragmentValue(fragment, value[index] ?? null, emitEvents),

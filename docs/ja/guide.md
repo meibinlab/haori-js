@@ -716,6 +716,44 @@ window.Dates = {
 
 > `haori.monthRange` を `base` 省略で呼ぶと現在月に依存するため、式の再評価で結果を固定したい場合は `haori.monthRange(24, '2026-06')` のように基準月を明示してください。
 
+### 選択肢を描画したら既定選択で初期データを取得する（`data-each-rendered-change`）
+
+API から取得した候補を `<select>` へ流し込み、「先頭の候補が選ばれた状態で明細を取得する」のはよくあるパターンです。`data-each-rendered-change` を付けると、描画確定後に `change` が発火するため、JavaScript を書かずに実現できます。
+
+`<select>` はブラウザが先頭の `<option>` を自動選択するため、この `change` がそのまま既定選択の確定になります。
+
+```html
+<!-- 対象月の候補を取得 -->
+<div data-fetch="/api/reward-months" data-fetch-arg="mv">
+  <form id="reward-form">
+    <select
+      name="month"
+      data-each="mv.months"
+      data-each-arg="m"
+      data-each-rendered-change
+      data-change-fetch="/api/reward"
+      data-change-form="#reward-form"
+      data-change-bind="#reward-result"
+      data-change-bind-arg="reward"
+    >
+      <option data-attr-value="{{m}}">{{m}}</option>
+    </select>
+  </form>
+</div>
+
+<div id="reward-result">
+  <p>支給額: {{ haori.number(reward &amp;&amp; reward.total) }}</p>
+</div>
+```
+
+動作の要点は次のとおりです。
+
+- **既定は初回だけ発火**します。上例のように `change` の手続きが再描画を招く構成でも、発火がループしません。描画確定ごとに毎回発火させたい場合は `data-each-rendered-change="always"` を指定します。
+- **描画行が 0 件のときは発火しません**。`data-fetch` の完了前の空描画では発火せず、候補が入った最初の描画で発火します（`if (this.options.length)` のようなガードを書く必要はありません）。
+- `data-each-rendered-run` と併用した場合は、**`data-each-rendered-run` が先**に実行されます。外部ウィジェット（Choices.js 等）の再同期を済ませた状態で `change` が発火します。
+
+> 初期表示のスキャン中に描画が確定した場合でも、手続きは初期化完了後に確実に実行されます（`setTimeout` で遅延させる必要はありません）。
+
 ### 親子プルダウン向けの派生値定義
 
 親の選択値から子プルダウンの候補を導出したい場合は、`data-derive` / `data-derive-name` を使って派生値を子孫要素へ渡せます。
@@ -948,6 +986,45 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 ```
 
 上の例では、`data-bind` や `data-fetch` によってフォームのバインディングデータが `{ mailImapSsl: true }` へ更新されるとチェックが入り、`{ mailImapSsl: false }` へ更新されるとチェックが外れます。
+
+### レシピ: フォーム外の単独チェックボックスでボタンを活性化する
+
+「利用規約に同意したら送信ボタンを有効にする」のようなゲートは、`<form>` を用意せずに書けます。`change` の手続きは、フォームコンテナ（`<form>` / `data-form`）が祖先に無い場合、**その入力要素自身の `name` と値だけ**を送信データにします。
+
+`value="true"` を付けたチェックボックスは boolean として扱われるため、ON で `true`、OFF で `false` が書き戻されます。
+
+```html
+<div id="gate" data-bind='{"agreed":false}'>
+  <label>
+    <input type="checkbox" name="agreed" value="true"
+      data-change-bind="#gate" data-change-bind-merge>
+    利用規約に同意します
+  </label>
+
+  <button data-attr-disabled="{{!agreed}}"
+          data-click-fetch="/api/login" data-click-fetch-method="POST">
+    ログイン
+  </button>
+</div>
+```
+
+> **`data-change-bind-merge` を付ける**
+>
+> `data-{event}-bind` は既定でバインド先を**全置換**します。上例のようにバインド先に他のキー（既定値や一覧データ）がある場合は `data-change-bind-merge` を付けて、指定キーだけを更新してください。
+>
+> なお `name` が無い入力では収集する値がありません。この場合は既存データを空オブジェクトで壊さないよう、Haori がバインドをスキップして警告を出します（`name` の付け忘れに気付けます）。
+
+この収集値は bind だけでなく**送信データ全体**に入るため、`data-change-fetch` のクエリにも含まれます。フォームを用意せずに絞り込みを実装するときに便利です。
+
+```html
+<!-- フォーム外の select でも値がクエリに付く: /api/list?kind=B -->
+<select name="kind" data-change-fetch="/api/list" data-change-bind="#list">
+  <option value="A">A</option>
+  <option value="B">B</option>
+</select>
+```
+
+> 収集対象は `name` を持つ `<input>` / `<select>` / `<textarea>` **自身**に限られます。コンテナ要素で `change` を受けても配下の入力はまとめて収集されません（まとめたい場合は `<form>` か `data-form` を宣言してください）。
 
 ### レシピ: チェック状態は「バインドデータ」で操作する（手書き `.checked` を避ける）
 
@@ -1208,6 +1285,23 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
   <p>年齢: {{params.age}}歳</p>
 </div>
 ```
+
+> **`data-url-arg` を付けたほうがよい 2 つの理由**
+>
+> 1. **`data-bind` の既定値が消えない**。`data-url-arg` を省略した `data-url-param` は、バインドデータをクエリパラメータで**全置換**します。そのため同一要素に `data-bind` で既定値を書いても消えてしまいます。`data-url-arg` を付けるとそのキー配下へのマージになり、既定値が保持されます。
+> 2. **クエリが無いときにコンソールエラーが出ない**。`{{expired}}` のようにクエリ名をトップレベルで直接参照すると、そのクエリが URL に無い場合は `ReferenceError` になりコンソールエラーが出ます（表示自体は「値なし」として動作します）。`data-url-arg` を付けて `{{params.expired}}` のようなプロパティ参照にすれば、`params` は常に定義済みのオブジェクトになるためエラーになりません。
+>
+> ```html
+> <!-- 避けたい書き方: 既定値が消え、クエリが無いとコンソールエラーになる -->
+> <div data-url-param data-bind='{"category":"all"}'>
+>   <p data-if="expired">セッションが切れました。</p>
+> </div>
+>
+> <!-- 推奨: 既定値が残り、クエリが無くてもエラーにならない -->
+> <div data-url-param data-url-arg="params" data-bind='{"category":"all"}'>
+>   <p data-if="params.expired">セッションが切れました。</p>
+> </div>
+> ```
 
 #### 実用例: 検索結果ページ
 
@@ -1603,6 +1697,93 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 haori-bootstrap を併用していれば、エラーのあるフィールド直後に `invalid-feedback` 要素が自動生成され、`is-invalid` クラスが付きます（フィールド側に対応付け用の属性を書く必要はありません）。エラーメッセージ表示そのものの仕組みは「メッセージ表示」の章を参照してください。
 
 > 補足: トップレベルが配列の `[{"key":"code","message":"..."}]` 形式は未対応です。サーバー側を `{"errors": {...}}` 形式に揃えてください。
+
+### ファイルをアップロードする（`input[type=file]` + multipart）
+
+`input[type=file]` で選択したファイルは、フォーム値として **File オブジェクトのまま**収集されます。`data-{event}-fetch-content-type="multipart/form-data"` と body を持つメソッド（POST 等）を組み合わせれば、JavaScript を書かずに送信できます。
+
+```html
+<form id="import-form">
+  <input type="file" name="csvFile" accept=".csv">
+  <input type="text" name="memo" placeholder="メモ">
+</form>
+
+<button
+  data-click-form="#import-form"
+  data-click-fetch="/api/customer-imports.json"
+  data-click-fetch-method="POST"
+  data-click-fetch-content-type="multipart/form-data"
+  data-click-toast="取り込みを開始しました"
+>
+  決定
+</button>
+```
+
+`multiple` を付けた場合は File の配列として収集され、同一キーの個別エントリとして送信されます。
+
+```html
+<input type="file" name="docs" multiple>
+<!-- docs=1件目, docs=2件目, ... として送信される -->
+```
+
+選択の有無は式から判定できます（内部値には選択済みならファイル名、未選択なら `null` が入ります）。
+
+このとき、**`data-bind` で初期値を宣言してください**。宣言がないと初回評価時に `csvFile` が未定義のトップレベル識別子となり、コンソールエラーが出るうえ、`{{!csvFile}}` が評価されずボタンが初期状態で有効になってしまいます。
+
+```html
+<form id="import-form" data-bind='{"csvFile":null}'>
+  <input type="file" name="csvFile">
+  <button data-click-form="#import-form"
+          data-attr-disabled="{{!csvFile}}"
+          data-click-fetch="/api/customer-imports.json"
+          data-click-fetch-method="POST"
+          data-click-fetch-content-type="multipart/form-data">決定</button>
+</form>
+```
+
+> **注意**
+>
+> - `multipart/form-data` を指定しないと、ファイルは JSON では `{}`、クエリでは `[object File]` になり送信できません。この場合はコンソールに警告が出ます。
+> - **ファイル入力は `data-form-object` / `data-form-list` コンテナの外（収集結果のトップレベル）に置いてください。** ネストした位置にあるファイルは JSON 文字列化されて送信できません（警告が出ます）。
+> - `input[type=file]` はブラウザのセキュリティ制約により、任意の値を設定できません。バインドデータからの書き戻しは**クリアのみ**可能です（フォームのリセットで選択が解除されます）。
+
+### 認証切れをログインページで知らせる（401 リダイレクト + メッセージ）
+
+`data-unauthorized-redirect` は 401 応答時に即時リダイレクトします。「セッションが切れました」のようなメッセージを遷移先で出したい場合は、遷移先 URL に理由のクエリを埋め込み、ログインページ側で `data-url-param` と `data-if` で表示します。
+
+```html
+<!-- 保護されたページ -->
+<body data-unauthorized-redirect="login.html?expired=1">
+  ...
+</body>
+```
+
+```html
+<!-- login.html -->
+<div data-url-param data-url-arg="params">
+  <div data-if="params.expired" class="alert alert-warning" role="alert">
+    セッションが切れました。再度ログインしてください。
+  </div>
+
+  <form>
+    <!-- ログインフォーム -->
+  </form>
+</div>
+```
+
+> **`data-url-arg` を必ず付ける**
+>
+> - `data-url-arg` を省略すると `data-url-param` はバインドデータを**全置換**するため、同一要素の `data-bind` で書いた既定値が消えます。
+> - `data-if="expired"` のようにクエリ名をトップレベルで直接参照すると、通常のログイン（クエリなし）でコンソールエラーが出ます。`data-url-arg` 配下のプロパティ参照（`params.expired`）にすればエラーになりません。
+>
+> 詳細は「[URLパラメータをバインドする](#urlパラメータをバインドする)」を参照してください。
+
+ログイン後に元のページへ戻したい場合は `data-unauthorized-redirect-return-param` を併用します。遷移先 URL に既存のクエリがあってもマージされるため、上記の `?expired=1` と同時に使えます。
+
+```html
+<body data-unauthorized-redirect="login.html?expired=1"
+      data-unauthorized-redirect-return-param="return">
+```
 
 ### フェッチの状態を画面に表示する（`data-fetch-state`）
 

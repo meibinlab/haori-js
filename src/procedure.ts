@@ -182,6 +182,116 @@ function normalizeRequestBody(body: BodyInit | null | undefined): unknown {
   return String(body);
 }
 
+/**
+ * 値（配列・オブジェクトの内部を含む）に File / Blob が含まれるかどうかを判定します。
+ * `data-form-object` / `data-form-list` によるネスト配下の File も検出します。
+ *
+ * @param value 判定対象の値。
+ * @returns File / Blob が含まれる場合は true。
+ */
+function containsBinaryValue(value: unknown): boolean {
+  if (value instanceof Blob) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some(containsBinaryValue);
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).some(
+      containsBinaryValue,
+    );
+  }
+  return false;
+}
+
+/**
+ * 送信データに、multipart の FormData 構築で実体のまま扱えない位置の File / Blob が
+ * 含まれるかどうかを判定します。
+ *
+ * FormData へ実体のまま載せられるのは「直下の値」と「直下の配列の要素」だけです。
+ * それより深い位置（`data-form-object` / `data-form-list` 配下）の File は
+ * `JSON.stringify` されて `{}` になり送信できません。トップレベルの File と混在して
+ * いても検出できるよう、深い位置の有無だけを独立に判定します。
+ *
+ * @param payload 判定対象の送信データ。
+ * @returns 送信できない位置に File / Blob がある場合は true。
+ */
+function hasUnsendableNestedBinaryValue(
+  payload: Record<string, unknown>,
+): boolean {
+  return Object.values(payload).some(value => {
+    if (value instanceof Blob) {
+      // 直下の File は FormData へ実体のまま載る。
+      return false;
+    }
+    if (Array.isArray(value)) {
+      // 直下の配列も要素単位で載るため、要素が Blob でない場合のみ内部を調べる。
+      return value.some(
+        item => !(item instanceof Blob) && containsBinaryValue(item),
+      );
+    }
+    return containsBinaryValue(value);
+  });
+}
+
+/**
+ * バインドデータ・history クエリ向けにフォーム値を収集します。
+ *
+ * 送信用の収集（`Form.getValues`）と異なり、File / Blob を文字列へ正規化した値を
+ * 返します。バインドや history へ渡す経路はすべてこの関数を通し、正規化の適用漏れ
+ * （`data-bind` 属性や URL が `{}` になる）を防ぎます。
+ *
+ * @param fragment 値を収集するフォームコンテナのフラグメント。
+ * @returns File / Blob を文字列へ置き換えたフォーム値。
+ */
+function collectFormValuesForBinding(
+  fragment: ElementFragment,
+): Record<string, unknown> {
+  return sanitizeBinaryForBinding(Form.getValues(fragment));
+}
+
+/**
+ * バインドデータ向けに File / Blob をファイル名（Blob は空文字）へ正規化します。
+ *
+ * File / Blob は列挙可能なプロパティを持たないため、そのままバインドデータへ入れると
+ * `JSON.stringify` で `{}` に潰れ、`data-bind` 属性や history のクエリが壊れます。
+ * 式からは選択有無やファイル名を参照できれば十分なため、文字列へ置き換えます。
+ * 送信用の送信データは変換しないため、multipart 送信には影響しません。
+ *
+ * @param payload 変換対象の送信データ。
+ * @returns File / Blob を文字列へ置き換えた新しいオブジェクト。
+ */
+function sanitizeBinaryForBinding(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const convert = (value: unknown): unknown => {
+    if (value instanceof File) {
+      return value.name;
+    }
+    if (value instanceof Blob) {
+      return '';
+    }
+    if (Array.isArray(value)) {
+      return value.map(convert);
+    }
+    if (value !== null && typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(
+        value as Record<string, unknown>,
+      )) {
+        result[key] = convert(item);
+      }
+      return result;
+    }
+    return value;
+  };
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    sanitized[key] = convert(value);
+  }
+  return sanitized;
+}
+
 function buildFetchSignature(url: string, options: RequestInit): string {
   const headers = new Headers(
     (options.headers as HeadersInit | undefined) || undefined,
@@ -255,6 +365,13 @@ export interface ProcedureOptions {
 
   /** 対象フォームフラグメント */
   formFragment?: ElementFragment | null;
+
+  /**
+   * フォームコンテナが無い change / input で、値収集の対象とする入力要素自身の
+   * フラグメント。`<form>` や `data-form` の外に置いた単独の入力（同意チェック等）
+   * でも、その要素の `name` と値を送信データへ含められるようにします。
+   */
+  selfValueFragment?: ElementFragment | null;
 
   /** フェッチURL */
   fetchUrl?: string | null;
@@ -750,6 +867,20 @@ export default class Procedure {
         // change / input イベントの場合、data-{event}-form 属性がなくても自動的に
         // フォームを検索し、入力値を双方向バインディングへ反映する。
         options.formFragment = Form.getFormFragment(fragment);
+        if (
+          options.formFragment === null &&
+          Procedure.isNamedInputFragment(fragment)
+        ) {
+          // フォームコンテナが無い場合は、対象要素自身を値収集の対象とする。
+          // これがないと送信データが空になり、data-{event}-bind でバインド先を
+          // 空オブジェクトで全置換してしまう（単独の同意チェックボックス等）。
+          //
+          // 対象は name を持つ入力要素自身に限定する。コンテナ要素を対象にすると
+          // Form.getValues が子孫を再帰収集するため、data-form を宣言していない
+          // 要素（data-each-rendered-change を付けた data-each コンテナ等）で
+          // 配下の全入力が意図せず収集されてしまう。
+          options.selfValueFragment = fragment;
+        }
       }
       if (fragment.hasAttribute(`${Env.prefix}${event}-before-run`)) {
         const body = fragment.getRawAttribute(
@@ -1383,6 +1514,28 @@ ${body}
   }
 
   /**
+   * `name` を持つ入力要素（input / select / textarea）のフラグメントかどうかを
+   * 判定します。フォームコンテナが無い change / input で、対象要素自身を値収集の
+   * 対象としてよいかの判定に使います。
+   *
+   * @param fragment 判定対象のフラグメント
+   * @returns `name` を持つ入力要素の場合は true
+   */
+  private static isNamedInputFragment(fragment: ElementFragment): boolean {
+    const element = fragment.getTarget();
+    if (
+      !(
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLSelectElement ||
+        element instanceof HTMLTextAreaElement
+      )
+    ) {
+      return false;
+    }
+    return element.getAttribute('name') !== null;
+  }
+
+  /**
    * ElementFragment の構造的タイプガード。
    *
    * @param value チェックする値
@@ -1417,6 +1570,13 @@ ${body}
    * 適用順を保証する。
    */
   private reentrantBind = false;
+
+  /**
+   * フォームコンテナを持たない change / input で、収集値が空だったかどうか。
+   * bind による全置換でバインド先を破壊しないための抑止判定に使います。
+   * `data-click-bind` などで意図的に空へクリアする使い方は抑止しません。
+   */
+  private suppressEmptyReplaceBind = false;
 
   /** reset-before 後に確定した historyData スナップショット */
   private historyDataSnapshot: Record<string, unknown> | null | undefined;
@@ -1686,11 +1846,21 @@ ${body}
         }
 
         const bindingData = formFragment.getBindingData();
-        Object.assign(bindingData, payload);
+        // File / Blob はバインドデータへ入れると JSON 化で `{}` に潰れ
+        // `data-bind` 属性を壊すため、ファイル名へ正規化して反映する。
+        Object.assign(bindingData, sanitizeBinaryForBinding(payload));
         await Core.setBindingData(formElement, bindingData, skipFragments);
       }
 
-      const merged = hasPayload ? payload : {};
+      // フォームコンテナを持たない change / input で収集値が空のまま bind すると、
+      // 全置換でバインド先を破壊するため bindResult 側で抑止できるよう記録する。
+      this.suppressEmptyReplaceBind =
+        !hasPayload &&
+        !this.options.formFragment &&
+        (this.eventType === 'change' || this.eventType === 'input');
+      // File / Blob はバインドデータへ入れると JSON 化で `{}` に潰れるため、
+      // ファイル名へ正規化してから bind する（送信用の payload には影響しない）。
+      const merged = hasPayload ? sanitizeBinaryForBinding(payload) : {};
       const response = new Response(JSON.stringify(merged), {
         headers: {'Content-Type': 'application/json'},
       });
@@ -2288,6 +2458,31 @@ ${body}
         });
         data = newData;
       }
+      // フォームコンテナを持たない change / input で収集値が空だった場合、そのまま
+      // bind するとバインド先を空オブジェクトで全置換し、既存の表示データを破壊して
+      // しまう（`name` の付け忘れが典型）。キー指定（bind-arg）やマージ（bind-merge）が
+      // ある場合は「空で置く」意図が明確なので従来どおり反映し、全置換のみ抑止する。
+      //
+      // 抑止はこの経路に限定する。`data-click-bind` で意図的にバインド先を空へ
+      // クリアする使い方は従来どおり有効に保つ。
+      if (
+        this.suppressEmptyReplaceBind &&
+        !this.options.bindArg &&
+        !this.options.bindMerge &&
+        data !== null &&
+        typeof data === 'object' &&
+        !Array.isArray(data) &&
+        Object.keys(data as Record<string, unknown>).length === 0
+      ) {
+        Log.warn(
+          'Haori',
+          'Skipped binding because the input has no value to collect;' +
+            ' the bind target would be replaced with an empty object.' +
+            ' Add a name attribute to the input, or specify' +
+            ` ${Env.prefix}${this.eventType}-form.`,
+        );
+        return undefined;
+      }
       const promises: Promise<unknown>[] = [];
       if (this.options.bindArg) {
         this.options.bindFragments!.forEach(fragment => {
@@ -2434,15 +2629,17 @@ ${body}
    * copy のコピー元データを取得します。
    */
   private resolveCopySourceData(): Record<string, unknown> {
+    // コピー先はバインドデータになるため、File はファイル名へ正規化する
+    // （そのまま入れると JSON 化で `{}` に潰れ data-bind 属性が壊れる）。
     if (this.options.copySourceFragment) {
       const sourceTarget = this.options.copySourceFragment.getTarget();
       if (sourceTarget.tagName === 'FORM') {
-        return Form.getValues(this.options.copySourceFragment);
+        return collectFormValuesForBinding(this.options.copySourceFragment);
       }
       return {...this.options.copySourceFragment.getBindingData()};
     }
     if (this.options.formFragment) {
-      return Form.getValues(this.options.formFragment);
+      return collectFormValuesForBinding(this.options.formFragment);
     }
     if (this.options.targetFragment) {
       return {...this.options.targetFragment.getBindingData()};
@@ -2467,8 +2664,11 @@ ${body}
   private buildPayloadResolution(): PayloadResolution {
     const payload: Record<string, unknown> = {};
     let hasUnresolvedReference = false;
-    if (this.options.formFragment) {
-      Object.assign(payload, Form.getValues(this.options.formFragment));
+    // フォームコンテナが無い change / input では、対象要素自身の値のみを収集する。
+    const valueSource =
+      this.options.formFragment ?? this.options.selfValueFragment;
+    if (valueSource) {
+      Object.assign(payload, Form.getValues(valueSource));
     }
     if (this.options.data && typeof this.options.data === 'object') {
       Object.assign(payload, this.options.data);
@@ -2537,6 +2737,37 @@ ${body}
 
     finalOptions.method = method;
 
+    // File / Blob は multipart/form-data 以外では送信できない（JSON では `{}`、
+    // クエリや urlencoded では `[object File]` になる）。原因が分かりにくいため、
+    // multipart 以外で File を含む送信を検出したら明示的に警告する。
+    if (Object.keys(payload).length > 0 && containsBinaryValue(payload)) {
+      const declaredContentType = headers.get('Content-Type') || '';
+      const isMultipart =
+        method !== 'GET' &&
+        method !== 'HEAD' &&
+        method !== 'OPTIONS' &&
+        /multipart\/form-data/i.test(declaredContentType);
+      if (!isMultipart) {
+        Log.warn(
+          'Haori',
+          'A File value cannot be sent without' +
+            ` ${Env.prefix}fetch-content-type="multipart/form-data"` +
+            ' and a body method such as POST.',
+        );
+      } else if (hasUnsendableNestedBinaryValue(payload)) {
+        // data-form-object / data-form-list 配下の File は FormData で
+        // JSON 文字列化され `{}` になるため送信できない。トップレベルの File と
+        // 混在していても取りこぼさないよう、位置ごとに独立して判定する。
+        Log.warn(
+          'Haori',
+          'A File value nested under' +
+            ` ${Env.prefix}form-object / ${Env.prefix}form-list` +
+            ' cannot be sent. Place file inputs at the top level of the' +
+            ' collected form values.',
+        );
+      }
+    }
+
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
       if (Object.keys(payload).length > 0) {
         fetchUrl = appendPayloadToUrl(fetchUrl, payload);
@@ -2552,7 +2783,15 @@ ${body}
           } else if (v instanceof Blob) {
             formData.append(k, v);
           } else if (Array.isArray(v)) {
-            v.forEach(item => formData.append(k, String(item)));
+            // 複数選択の input[type=file] は File の配列で収集されるため、
+            // 配列要素も Blob なら実体のまま追加する（文字列化しない）。
+            v.forEach(item => {
+              if (item instanceof Blob) {
+                formData.append(k, item);
+              } else {
+                formData.append(k, String(item));
+              }
+            });
           } else if (typeof v === 'object') {
             formData.append(k, JSON.stringify(v));
           } else {
@@ -2618,7 +2857,7 @@ ${body}
     }
 
     this.historyFormSnapshot = this.options.historyFormFragment
-      ? Form.getValues(this.options.historyFormFragment)
+      ? collectFormValuesForBinding(this.options.historyFormFragment)
       : undefined;
   }
 
@@ -2656,7 +2895,9 @@ ${body}
       return this.historyFormSnapshot;
     }
     if (this.options.historyFormFragment) {
-      return Form.getValues(this.options.historyFormFragment);
+      // File は履歴 URL のクエリでは `[object File]` / `{}` になり復元もできない
+      // ため、ファイル名へ正規化する。
+      return collectFormValuesForBinding(this.options.historyFormFragment);
     }
     return undefined;
   }
