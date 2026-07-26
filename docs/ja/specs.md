@@ -1027,7 +1027,17 @@ data-if / data-each / {{variable}} などが自動更新
 - checked: `true`
 - unchecked: `false`
 
+`value="false"` を指定した場合は反転指定として扱い、checked で `false`、unchecked で `true` を返します。
+
 それ以外の checkbox は従来どおり `value` 属性の文字列値を返し、未チェック時は `null` を返します。
+
+##### チェック状態の収集は DOM を真とする
+
+checkbox / radio のチェック状態は、内部値（`ElementFragment` が保持する値）ではなく **DOM の `checked` を真として収集**します。boolean モードの checkbox も同様です。
+
+内部値は、バインドからの書き戻しで先に更新されて DOM 反映が描画キュー待ちになる場合や、ラジオの排他制御で未チェックになった同名要素に `change` が発火しない場合など、DOM と食い違う瞬間があります。そこで収集すると「画面はチェック済みなのに送信値は `false`」という見た目と送信値の不一致が起こるため、チェック状態は常に画面の見たままを送ります。
+
+あわせて、宣言バインド（`checked="{{式}}"` / `data-attr-checked` / `data-attr-selected`）でチェック状態を書き換えたときは、DOM の書き込みに合わせて内部値も同期します（`data-attr-selected` は所属する `<select>` の内部値を同期します）。これにより宣言バインドで変更したチェック状態が、式評価から参照する内部値にも反映されます。ただしフォーカス中の要素は従来どおり再適用をスキップするため、内部値の同期も行いません。
 
 `type="number"` の `<input>` は値を**数値型**として収集・バインドします。HTML の `input.value` は常に文字列ですが、DTO が `Double` / `Integer` 等を期待する場合に文字列で送られるのを避けるため、内部値を数値へ正規化します（`ElementFragment.normalizeValueForElement`）。正規化は内部値へ値を取り込むすべての経路で行われます。すなわち `syncValue()`（DOM→内部値。`change` および構築時）、`applyValue()`（バインド→内部値）、および `value` 属性のテンプレート評価（`value="{{...}}"`）で正規化され、`Form.getValues()` の結果や JSON 送信ボディに数値として現れます。なお `data-attr-value` は仕様上 `input.value`（内部値）を同期しないため対象外です。フォームで収集したい数値フィールドは `name`＋フォームの `data-bind`（双方向バインド）または `value="{{...}}"` を使ってください。
 

@@ -1523,6 +1523,30 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * チェック状態の DOM 反映に合わせて内部値を DOM から同期します。
+   *
+   * `checked` を反映した場合は自身の内部値を、`option` の `selected` を反映した
+   * 場合は所属する `<select>` の内部値を同期します（option 自身は値収集の対象では
+   * なく、選択によって変化するのは select の値のため）。
+   *
+   * @param forSelectedOption `option` の `selected` を反映した場合に true
+   */
+  private syncCheckableValueFromDom(forSelectedOption: boolean): void {
+    if (!forSelectedOption) {
+      this.syncValue();
+      return;
+    }
+    const select = (this.getTarget() as HTMLOptionElement).closest('select');
+    if (!select) {
+      return;
+    }
+    const selectFragment = Fragment.get(select);
+    if (selectFragment instanceof ElementFragment) {
+      selectFragment.syncValue();
+    }
+  }
+
+  /**
    * 属性の値を評価して設定します。
    * 評価値がfalseの場合は属性を削除します。
    * 矯正評価属性の場合は元の値を設定します。
@@ -1747,6 +1771,11 @@ export class ElementFragment extends Fragment {
         // 属性評価で value を同期する場合も type="number" は数値へ正規化する
         this.value = this.normalizeValueForElement(element, stringResult);
       }
+      // DOM 書き込みが不要な場合でも、内部値が DOM のチェック状態と食い違って
+      // いれば揃える（下の書き込み経路と同じ理由。詳細はそちらのコメント参照）。
+      if ((isCheckedTarget || isSelectedTarget) && !skipCheckableReapply) {
+        this.syncCheckableValueFromDom(isSelectedTarget);
+      }
       return Promise.resolve();
     }
     this.skipMutationAttributes = true;
@@ -1783,6 +1812,14 @@ export class ElementFragment extends Fragment {
       }
       if (requiresSelectedPropertyWrite) {
         (element as HTMLOptionElement).selected = checkableDesiredState;
+      }
+      // 内部値（値収集や式評価が参照する値）も DOM のチェック状態へ揃える。
+      // value 属性の同期（上記 shouldSyncValueProperty）は内部値を更新するのに、
+      // checked / selected は DOM だけ書き換えていたため、宣言バインドで
+      // チェック状態を変えると「画面と内部値が食い違ったまま残る」経路があった。
+      // option の selected は所属する select の内部値が変わるため、そちらを同期する。
+      if (requiresCheckedPropertyWrite || requiresSelectedPropertyWrite) {
+        this.syncCheckableValueFromDom(requiresSelectedPropertyWrite);
       }
     }).finally(() => {
       this.skipMutationAttributes = false;

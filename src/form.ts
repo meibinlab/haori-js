@@ -74,7 +74,36 @@ export default class Form {
       }
       return files.length > 0 ? files[0] : null;
     }
+    // boolean チェックボックスは DOM の checked を真として収集する。内部値は
+    // バインドからの書き戻しで先に更新され DOM 反映が Queue 待ちになるなど、
+    // DOM と食い違う瞬間があり、そこで収集すると「画面はチェック済みなのに
+    // 送信値は false」という見た目と送信値の不一致になる。グループ扱いの
+    // チェックボックス・ラジオ（isGroupedCheckable）が DOM を真としているのと
+    // 扱いを揃え、チェック状態は常に画面の見たままを送るようにする。
+    if (Form.isBooleanCheckbox(fragment)) {
+      const input = element as HTMLInputElement;
+      // value="false" は「チェック時に false」を表す反転指定。
+      return input.value === 'false' ? !input.checked : input.checked;
+    }
     return fragment.getValue();
+  }
+
+  /**
+   * boolean 値として扱うチェックボックスかどうかを判定します。
+   *
+   * `value="true"` は「チェック時に `true`」、`value="false"` は「チェック時に
+   * `false`」を表す単一の真偽値入力で、同名グループとしては扱いません。
+   *
+   * @param fragment 対象フラグメント
+   * @returns boolean チェックボックスの場合 true
+   */
+  private static isBooleanCheckbox(fragment: ElementFragment): boolean {
+    const element = fragment.getTarget();
+    return (
+      element instanceof HTMLInputElement &&
+      element.type === 'checkbox' &&
+      (element.value === 'true' || element.value === 'false')
+    );
   }
 
   /**

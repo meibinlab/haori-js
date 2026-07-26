@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [0.26.2] - 2026-07-26
+
+### Fixed
+
+- **チェック状態の収集値が画面の見た目と食い違いうる問題を修正**。`value="true"` / `value="false"` の boolean チェックボックスだけが、収集値の根拠を DOM の `checked` ではなく内部値（`ElementFragment` が保持する値）に置いていた。内部値はバインドからの書き戻しで先に更新されて DOM 反映が描画キュー待ちになるなど、DOM と食い違う瞬間があるため、そこで収集すると「画面はチェック済みなのに送信値は `false`」という不一致が起こりうる。同名グループのチェックボックス・ラジオはすでに DOM を真としており（0.24.0 のラジオ群修正）、扱いを揃えて boolean チェックボックスも DOM の `checked` を真として収集するようにした。`value="false"` の反転指定（checked で `false`）も同じ経路で扱う。
+- **宣言バインドで `checked` / `selected` を書き換えたとき、内部値が DOM に追従しない問題を修正**。`value` 属性の同期は内部値も更新していたのに対し、`checked` / `selected` は DOM プロパティだけを書き換えていたため、`checked="{{式}}"` / `data-attr-checked` / `data-attr-selected` でチェック状態を変えると内部値が古いまま残り、式評価や値収集が画面と異なる値を参照する経路があった。DOM への反映に合わせて内部値も同期するようにした（`data-attr-selected` は所属する `<select>` の内部値を同期する）。フォーカス中の要素は従来どおり再適用をスキップするため、内部値の同期も行わない。
+
+### Docs
+
+- `docs/ja/specs.md`: 「チェック状態の収集は DOM を真とする」節を追加し、その理由（内部値が DOM と食い違う瞬間）と宣言バインド時の内部値同期を明記。`value="false"` の反転指定を追記。
+
+### Tests
+
+- `tests/checkable-value-consistency.test.ts`: 内部値が古い状態での収集、`value="false"` の反転指定、グループ扱いチェックボックスの従来動作（回帰）、バインド書き戻し後の一致、宣言バインド（`data-attr-checked` / `data-attr-selected` / `checked="{{式}}"`）での内部値追従を検証。
+
 ## [0.26.1] - 2026-07-26
 
 ### Fixed
