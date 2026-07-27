@@ -280,11 +280,13 @@ newKeys.forEach((key, targetIndex) => {
   }
 
   // データ更新
-  child.setBindingData({
-    [argKey]: item,                // data-each-arg指定時（要素データを包む）
-    [indexKey]: targetIndex,      // data-each-index指定時（包んだ外側へ置く）
-    ...item                        // オブジェクトの場合は展開
-  })
+  // data-each-arg 指定時は要素データをそのキーで包み、指定が無ければ展開する。
+  // data-each-index は「包んだ外側」＝行スコープの直下へ置く。
+  child.setBindingData(
+    argKey
+      ? {[argKey]: item, ...(indexKey ? {[indexKey]: targetIndex} : {})}
+      : {...item, ...(indexKey ? {[indexKey]: targetIndex} : {})}
+  )
   child.setAttribute('data-row', key)
 
   // 正しい位置に挿入
