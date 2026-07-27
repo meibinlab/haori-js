@@ -8,15 +8,11 @@
     th, td { border: 1px solid #ccc; padding: 0.5em; }
     .row-key { color: #888; font-size: 0.9em; }
   </style>
-  <script>
-    window.haori = { items: ["A", "B", "C"] };
-    window.items = window.haori.items;
-  </script>
 </head>
 <body>
   <h2>data-row デモ</h2>
   <div>data-row属性でテーブル行を操作するデモ</div>
-  <div data-bind="haori">
+  <div data-bind='{"items":["A","B","C"]}'>
     <table>
       <thead>
         <tr><th>値</th><th>data-row キー</th></tr>

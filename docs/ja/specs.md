@@ -565,6 +565,34 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 4. トップレベルキーが再バインド不可の予約名と衝突する場合は**該当キーのみ無視**（引数から除外＋`undefined` 遮蔽）し、`error` ログにキー名を明示。バインド値を再帰的にチェックし、実ホストオブジェクト等の**危険な値**を含む入力は拒否
 5. plain object / array / function を Proxy でラップし、`constructor`、`__proto__`、`prototype` へのアクセスを遮断
 6. 評価中のみ prototype 系プロパティの生アクセスを一時的に遮断
+7. バインドに無い識別子を関数スコープへ引き込み、グローバルへ解決されないよう遮蔽（後述）
+
+#### バインドに無い識別子の扱い
+
+式の識別子は、バインディングデータのキーとして解決します。**バインドに無い識別子はグローバルへ解決しません**。
+
+遮蔽しない場合、生成した評価関数のスコープチェーンを通って `window` まで到達し、次のように「値のある参照」に化けてしまいます。
+
+- `id="agencyCode"` の要素があると、`{{agencyCode}}` がその要素オブジェクトへ解決される（HTML の named access on window）。`data-attr-value` に書くと入力欄へ `[object HTMLInputElement]` が書き込まれ、`required` の必須検証も通ってしまう
+- `{{name}}` `{{status}}` `{{length}}` `{{origin}}` のような `window` の既存プロパティが、その値（多くは空文字や数値）へ解決される
+
+そのため、式に現れる識別子のうちバインドに無いものは評価関数のスコープ内へ宣言し、グローバルへ到達しないようにします。挙動は「バインドに無いキーを参照した」場合と同じです。
+
+- 実際に参照された場合は `ReferenceError` となり、`error` ログに該当の識別子名を出力して**未解決参照**として扱います
+- `?.` / `??` / `||` / `&&` を含む式では、従来どおり `undefined` として評価を続けます（`{{agencyCode ?? ''}}` は空文字になります）
+- 短絡評価や三項演算子で**参照されなかった**識別子は、従来どおり未解決参照になりません（`{{flag ? missing : 5}}` は `flag` が偽なら `5`）
+
+**式から参照できる標準組み込み**は遮蔽の対象外です。以下は従来どおり利用できます。
+
+| 分類 | 識別子 |
+| ---- | ------ |
+| 名前空間 | `Math` / `JSON` / `Intl` / `Atomics` |
+| コンストラクタ | `Array` / `String` / `Number` / `Boolean` / `Date` / `RegExp` / `Symbol` / `BigInt` / `Map` / `Set` / `WeakMap` / `WeakSet` / `WeakRef` / `FinalizationRegistry` / `Promise` / `Proxy` |
+| エラー | `Error` / `AggregateError` / `EvalError` / `RangeError` / `ReferenceError` / `SyntaxError` / `TypeError` / `URIError` |
+| バイナリ | `ArrayBuffer` / `SharedArrayBuffer` / `DataView` / 各 TypedArray |
+| 関数 | `parseInt` / `parseFloat` / `isNaN` / `isFinite` / `encodeURI` / `encodeURIComponent` / `decodeURI` / `decodeURIComponent` |
+
+`Object` / `Function` / `Reflect` / `window` / `document` などは従来どおり禁止識別子として `undefined` に遮断されます。
 
 #### 組み込みヘルパー（予約名前空間 `haori`）
 
@@ -2122,6 +2150,8 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 
 `data-url-arg` を指定してプロパティ参照（`{{params.name}}`）にすれば、`params` は常に定義済みオブジェクトになるためエラーになりません。クエリの有無が不定なパラメータを扱う場合は `data-url-arg` の使用を推奨します。
 
+なお、バインドに無い識別子が[グローバルへ解決されることはありません](#バインドに無い識別子の扱い)。`{{name}}` が `window.name` になったり、`{{agencyCode}}` が `id="agencyCode"` の要素になったりはせず、常に未解決参照として扱われます。
+
 ---
 
 ### フォーム属性
@@ -2586,14 +2616,24 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 フェッチ前に実行するスクリプトを指定します。
 
+**引数**:
+- `arguments[0]`（`fetchUrl`）: 送信先 URL。未確定の場合は `null`
+- `arguments[1]`（`fetchOptions`）: 送信オプション（`RequestInit`）。未確定の場合は `null`
+
 **戻り値**:
 - `false` または `{ stop: true }`: 処理を中断
 - `{ fetchUrl, fetchOptions }`: フェッチ設定を上書き
 
+**`this`**: 起点要素では**ありません**（内部のオプションオブジェクトが渡ります。将来変わる可能性があるため依存しないでください）。`this` が起点要素になるのは `data-{event}-run` だけです。起点要素を参照する場合は `document.querySelector` などで取得してください。
+
+**上書き時の注意**:
+- `fetchUrl` を上書きすると、`data-{event}-form` / `data-{event}-data` から組み立てたクエリ文字列は引き継がれません。必要なクエリは上書きする URL に自分で含めてください。
+- `data-runtime="demo"` では、上書き後の設定に対しても[クエリ付き GET への正規化](#demo-ランタイムでの通信の正規化)が再適用されます。
+
 ```html
 <button
   data-click-fetch="/api/data"
-  data-click-before-run="console.log('フェッチ開始'); return true"
+  data-click-before-run="console.log('フェッチ開始', arguments[0]); return true"
 >
   取得
 </button>
@@ -2603,14 +2643,30 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 フェッチ後に実行するスクリプトを指定します。
 
-**戻り値**:
-- `false` または `{ stop: true }`: 以降の処理を中断
-- `{ response }`: バインド対象レスポンスを上書き
+**引数**:
+- `arguments[0]`（`response`）: **解析前の `Response` オブジェクト**です。解析済みのデータではありません。
+
+**本文を読む場合は `clone()` が必要です**。`Response` の本文は一度しか読めないため、ここで直接読むと後続のバインド処理が本文を読めなくなります。
 
 ```html
 <button
   data-click-fetch="/api/data"
-  data-click-after-run="console.log('取得完了', arguments[0])"
+  data-click-after-run="arguments[0].clone().json().then(d => console.log(d))"
+>
+  取得
+</button>
+```
+
+**戻り値**:
+- `false` または `{ stop: true }`: 以降の処理を中断
+- `{ response }`: バインド対象レスポンスを上書き
+
+**`this`**: `before-run` と同じく起点要素ではありません。
+
+```html
+<button
+  data-click-fetch="/api/data"
+  data-click-after-run="console.log('取得完了', arguments[0].status)"
 >
   取得
 </button>
@@ -4197,6 +4253,21 @@ const isDev = devMode ||
 <!-- 開発モードを強制 -->
 <script src="haori.js" data-dev></script>
 ```
+
+### demo ランタイムでの通信の正規化
+
+`data-runtime="demo"` は、静的ファイルサーバ上でデモを動かすための実行モードです。body を伴うメソッドは静的ファイルサーバが受け付けられない（`405 Method Not Allowed` になる）ため、送信内容を**クエリ付き GET へ正規化**します。
+
+| 項目 | 正規化の内容 |
+| ---- | ------------ |
+| メソッド | `GET` / `HEAD` / `OPTIONS` 以外を `GET` へ変更 |
+| 送信データ | body ではなく URL のクエリ文字列へ載せる |
+| `Content-Type` | 削除する |
+
+- 対象は `data-runtime="demo"` のときだけです。既定の `embedded` では正規化しません。
+- 正規化を行った場合、開発モードでは `Haori demo fetch normalization` の情報ログを出力します。`haori:fetchstart` の `requestedMethod` / `effectiveMethod` / `transportMode`（`query-get`）/ `queryString` でも確認できます。
+- **`data-{event}-before-run` が `fetchOptions` を返してメソッドや body を上書きした場合も、送信直前に正規化を再適用します**。上書きが正規化を打ち消すと静的ファイルサーバへ実 POST が飛んで失敗するため、demo ランタイムでは常に正規化が優先されます。実際のメソッドで送る必要がある場合は `embedded` ランタイムを使用してください。
+- 上書きされた body は、クエリ化できる形式であればクエリへ移します。JSON オブジェクト文字列・`application/x-www-form-urlencoded` 形式の文字列・`URLSearchParams`・`FormData`（文字列値のみ）が対象です。`Blob` や `File` などクエリ化できない内容は破棄し、開発モードで警告します。
 
 ### ブラウザ互換性
 

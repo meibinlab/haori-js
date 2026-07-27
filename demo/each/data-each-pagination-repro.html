@@ -11,23 +11,6 @@
   <h1>data-each pagination repro</h1>
   <p>Haori.js の開発中ソースでページネーション描画を再現する最小ページです。</p>
 
-  <script>
-    var Pagination = {
-      pages: function (totalPages, currentPage) {
-        var indices = Array.from({ length: totalPages }, function (_, i) { return i; })
-          .filter(function (i) {
-            return i === 0 || i === totalPages - 1 || (i >= currentPage - 5 && i <= currentPage + 5);
-          });
-        return indices.reduce(function (acc, p) {
-          var last = acc[acc.length - 1];
-          if (acc.length > 0 && !last.ellipsis && p > last.p + 1) {
-            return acc.concat([{ p: -acc.length, ellipsis: true }, { p: p, ellipsis: false }]);
-          }
-          return acc.concat([{ p: p, ellipsis: false }]);
-        }, []);
-      },
-    };
-  </script>
   <script src="../../dist/haori.iife.js"></script>
 
   <main
@@ -55,11 +38,13 @@
     </div>
 
     <nav id="pagination-nav" aria-label="ページネーション">
-      <ul class="pagination" data-each="Pagination.pages(totalPages, number)" data-each-key="p">
-        <li class="page-item {{ellipsis ? 'disabled' : p === number ? 'active' : ''}}">
+      <!-- 表示要素列は組み込みヘルパー haori.pages() で生成する。
+           省略記号の要素は page が null になるため data-each-key は指定しない。 -->
+      <ul class="pagination" data-each="haori.pages(totalPages, number, {window: 5, boundary: 1})">
+        <li class="page-item {{ellipsis ? 'disabled' : active ? 'active' : ''}}">
           <span data-if="ellipsis" class="page-link" aria-hidden="true">…</span>
-          <span data-if="!ellipsis && p === number" class="page-link" aria-current="page">{{p + 1}}</span>
-          <button data-if="!ellipsis && p !== number" type="button" class="page-link">{{p + 1}}</button>
+          <span data-if="!ellipsis && active" class="page-link" aria-current="page">{{label}}</span>
+          <button data-if="!ellipsis && !active" type="button" class="page-link">{{label}}</button>
         </li>
       </ul>
     </nav>

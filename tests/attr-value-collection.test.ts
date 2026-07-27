@@ -5,9 +5,11 @@
  * 報告された症状の回帰ガードです。
  * 1. `data-attr-value` で設定した値がフォーム収集に載らない
  * 2. `type="hidden"` へ `value="{{式}}"` を書くとテンプレート文字列が収集される
+ * 3. 上記の値が `data-{event}-form` の送信ペイロードまで届かない
  */
-import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
+import EventDispatcher from '../src/event_dispatcher';
 import Form from '../src/form';
 import Fragment, {ElementFragment} from '../src/fragment';
 import Procedure from '../src/procedure';
@@ -408,6 +410,102 @@ describe('宣言バインドで設定した value の収集', () => {
       // 二つになるため、ガイドの「参照スコープを書込スコープに揃える」を参照。
       expect(input.value).toBe('fromAttr');
       expect(Form.getValues(getFrag(form))).toEqual({code: 'fromAttr'});
+    });
+  });
+
+  describe('data-{event}-form の送信ペイロード', () => {
+    let dispatcher: EventDispatcher;
+    const originalLocation = window.location;
+
+    /**
+     * 送信された body を記録する fetch のモックを設定します。
+     *
+     * @returns 記録された body の配列
+     */
+    const captureRequests = (): unknown[] => {
+      const bodies: unknown[] = [];
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          bodies.push(init?.body);
+          return Promise.resolve(
+            new Response('{}', {headers: {'Content-Type': 'application/json'}}),
+          );
+        },
+      );
+      return bodies;
+    };
+
+    beforeEach(() => {
+      Object.defineProperty(window, 'location', {
+        value: {...originalLocation, search: '?h=abc123'},
+        writable: true,
+      });
+      dispatcher = new EventDispatcher(document);
+      dispatcher.start();
+    });
+
+    afterEach(() => {
+      dispatcher.stop();
+      vi.restoreAllMocks();
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      });
+    });
+
+    it('URL パラメータ由来の hidden がペイロードへ載る', async () => {
+      const bodies = captureRequests();
+      await mount(
+        `<div data-url-param data-url-arg="q">
+           <form id="terms-form">
+             <input type="hidden" name="approvalHash"
+                    data-attr-value="{{q.h ?? ''}}">
+             <input type="checkbox" name="confirmed" value="true">
+           </form>
+           <button id="record"
+                   data-click-fetch="/api/approval-confirmations.json"
+                   data-click-fetch-method="POST"
+                   data-click-form="#terms-form">記録する</button>
+         </div>`,
+      );
+
+      container.querySelector<HTMLInputElement>('[name="confirmed"]')!.click();
+      await waitForDomSettled();
+      container.querySelector<HTMLElement>('#record')!.click();
+      await waitForDomSettled();
+      await waitForDomSettled();
+
+      expect(bodies).toHaveLength(1);
+      expect(JSON.parse(String(bodies[0]))).toEqual({
+        approvalHash: 'abc123',
+        confirmed: true,
+      });
+    });
+
+    it('data-{event}-data は同じキーのフォーム収集値を上書きする', async () => {
+      const bodies = captureRequests();
+      await mount(
+        `<div data-url-param data-url-arg="q">
+           <form id="terms-form">
+             <input type="hidden" name="approvalHash"
+                    data-attr-value="{{q.h ?? ''}}">
+           </form>
+           <button id="record"
+                   data-click-fetch="/api/approval-confirmations.json"
+                   data-click-fetch-method="POST"
+                   data-click-form="#terms-form"
+                   data-click-data='{"approvalHash":"fromData"}'>記録</button>
+         </div>`,
+      );
+
+      container.querySelector<HTMLElement>('#record')!.click();
+      await waitForDomSettled();
+      await waitForDomSettled();
+
+      expect(bodies).toHaveLength(1);
+      expect(JSON.parse(String(bodies[0]))).toEqual({
+        approvalHash: 'fromData',
+      });
     });
   });
 });

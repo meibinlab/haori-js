@@ -29,15 +29,15 @@ test.describe('data-each pagination repro', () => {
       page.locator('#pagination-nav .page-item:not(.active) button.page-link:visible').first(),
     ).toBeVisible();
 
+    // 0 件時は data-each の行テンプレートが行スコープ無しで評価されるため、
+    // 行スコープのキーが未解決参照になる。取得後は解決されるため無視する。
     const ignorableExpressionErrors = [
-      /Expression evaluation error: ellipsis/,
-      /Expression evaluation error: !ellipsis && p === number/,
-      /Expression evaluation error: !ellipsis && p !== number/,
-      /Expression evaluation error: ellipsis \? 'disabled' : p === number \? 'active' : ''/,
-      /Expression evaluation error: projectName/,
-      /Expression evaluation error: unitPrice/,
-      /Expression evaluation error: startPeriod/,
-      /Expression evaluation error: p \+ 1/,
+      /not in the binding data: ellipsis/,
+      /not in the binding data: active/,
+      /not in the binding data: label/,
+      /not in the binding data: projectName/,
+      /not in the binding data: unitPrice/,
+      /not in the binding data: startPeriod/,
     ];
     const unexpectedPageErrors = pageErrors.filter(error => {
       return !ignorableExpressionErrors.some(pattern => pattern.test(error.message));

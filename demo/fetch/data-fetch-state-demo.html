@@ -119,8 +119,10 @@
       <!-- 成功時: 取得した一覧を表示 -->
       <div class="state-success" data-if="_fetch?.success">
         <p>取得に成功しました。</p>
+        <!-- items が 0 件のうちは行テンプレートが行スコープ無しで評価されるため、
+             行スコープのキーは ?? でフォールバックを与えて未解決参照を避ける。 -->
         <ul data-each="items">
-          <li>{{name}}</li>
+          <li>{{name ?? ''}}</li>
         </ul>
       </div>
 
@@ -162,7 +164,7 @@
     &lt;button data-click-fetch="..." data-click-bind="#result"
             data-click-fetch-state="#result"&gt;再取得&lt;/button&gt;
   &lt;/div&gt;
-  &lt;ul data-if="_fetch?.success" data-each="items"&gt;&lt;li&gt;{{name}}&lt;/li&gt;&lt;/ul&gt;
+  &lt;ul data-if="_fetch?.success" data-each="items"&gt;&lt;li&gt;{{name ?? ''}}&lt;/li&gt;&lt;/ul&gt;
 &lt;/div&gt;</code></pre>
   </div>
 </body>

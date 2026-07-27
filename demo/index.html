@@ -276,7 +276,8 @@
         <!-- 4. フォーム双方向バインディング -->
         <h2>4. フォーム双方向バインディング</h2>
         <div class="demo-section" id="demo4">
-            <form>
+            <!-- 参照するキーは data-bind で宣言する（宣言が無いと未解決参照になる）。 -->
+            <form data-bind='{"username":"","email":"","message":""}'>
                 <label>ユーザー名:</label>
                 <input type="text" name="username" placeholder="名前を入力">
 
@@ -451,26 +452,6 @@
         </div>
     </div>
 
-        <script>
-                window.haori = {
-                    showMessage: false,
-                    count: 0,
-                    username: "",
-                    email: "",
-                    message: "",
-                    price: 0,
-                    quantity: 0,
-                    taxRate: 0.1
-                };
-                window.showMessage = window.haori.showMessage;
-                window.count = window.haori.count;
-                window.username = window.haori.username;
-                window.email = window.haori.email;
-                window.message = window.haori.message;
-                window.price = window.haori.price;
-                window.quantity = window.haori.quantity;
-                window.taxRate = window.haori.taxRate;
-        </script>
         <script type="module">
         // Haoriモジュールをインポートすると自動的に初期化されます（observer.tsにより）
         import '../dist/haori.es.js';

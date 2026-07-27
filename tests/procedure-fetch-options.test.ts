@@ -6,6 +6,27 @@ import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import Dev from '../src/dev';
 import Env from '../src/env';
+import {waitForCondition} from './helpers/async';
+
+/**
+ * スパイが呼ばれるまで待機します。
+ *
+ * 固定時間の待機では負荷時に呼び出し前へ進んでしまい、`mock.calls` が空のまま
+ * 参照して失敗することがあるため、確定待ちにします。
+ *
+ * @param spy 対象のスパイ
+ * @param description タイムアウト時の説明
+ * @returns 呼び出しが観測されたら解決される Promise
+ */
+async function waitForCall(
+  spy: {mock: {calls: unknown[][]}},
+  description: string,
+): Promise<void> {
+  await waitForCondition(() => spy.mock.calls.length > 0, {
+    description,
+    maxAttempts: 30,
+  });
+}
 
 describe('Procedure fetch options and hooks', () => {
   beforeEach(async () => {
@@ -36,7 +57,10 @@ describe('Procedure fetch options and hooks', () => {
     src.setAttribute('data-fetch-data', 'x=1');
     container.appendChild(src);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCall(
+      fetchSpy as unknown as {mock: {calls: unknown[][]}},
+      'fetch が呼ばれる',
+    );
 
     expect(fetchSpy).toHaveBeenCalled();
     const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
@@ -63,7 +87,10 @@ describe('Procedure fetch options and hooks', () => {
     src.setAttribute('data-fetch', 'http://api.test/get');
     container.appendChild(src);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCall(
+      fetchSpy as unknown as {mock: {calls: unknown[][]}},
+      'fetch が呼ばれる',
+    );
 
     expect(fetchSpy).toHaveBeenCalled();
     expect(handler).toHaveBeenCalled();
@@ -99,7 +126,10 @@ describe('Procedure fetch options and hooks', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCall(
+      fetchSpy as unknown as {mock: {calls: unknown[][]}},
+      'fetch が呼ばれる',
+    );
 
     expect(fetchSpy).toHaveBeenCalled();
     const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
@@ -137,7 +167,10 @@ describe('Procedure fetch options and hooks', () => {
     src.setAttribute('data-fetch-data', JSON.stringify({a: 'b'}));
     container.appendChild(src);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCall(
+      fetchSpy as unknown as {mock: {calls: unknown[][]}},
+      'fetch が呼ばれる',
+    );
 
     expect(fetchSpy).toHaveBeenCalled();
     const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
@@ -169,7 +202,10 @@ describe('Procedure fetch options and hooks', () => {
     container.appendChild(src);
 
     await Core.scan(container);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCall(
+      fetchSpy as unknown as {mock: {calls: unknown[][]}},
+      'fetch が呼ばれる',
+    );
 
     expect(fetchSpy).toHaveBeenCalled();
     const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
@@ -197,7 +233,10 @@ describe('Procedure fetch options and hooks', () => {
     container.appendChild(src);
 
     await Core.scan(container);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCall(
+      fetchSpy as unknown as {mock: {calls: unknown[][]}},
+      'fetch が呼ばれる',
+    );
 
     const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
     const options = called[1] as RequestInit | undefined;
@@ -224,7 +263,10 @@ describe('Procedure fetch options and hooks', () => {
     container.appendChild(src);
 
     await Core.scan(container);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCall(
+      fetchSpy as unknown as {mock: {calls: unknown[][]}},
+      'fetch が呼ばれる',
+    );
 
     const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
     const options = called[1] as RequestInit | undefined;
@@ -255,7 +297,10 @@ describe('Procedure fetch options and hooks', () => {
     container.appendChild(src);
 
     await Core.scan(container);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCall(
+      sbd as unknown as {mock: {calls: unknown[][]}},
+      'setBindingData が呼ばれる',
+    );
 
     expect(sbd).toHaveBeenCalled();
     const calls = (sbd as unknown as {mock: {calls: unknown[][]}}).mock.calls;
@@ -294,7 +339,10 @@ describe('Procedure fetch options and hooks', () => {
     await Core.scan(btnModify);
     await new Promise(resolve => setTimeout(resolve, 50));
     btnModify.click();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await waitForCall(
+      fetchSpy as unknown as {mock: {calls: unknown[][]}},
+      'fetch が呼ばれる',
+    );
     const called = (fetchSpy as unknown as {mock: {calls: unknown[][]}}).mock.calls.slice(-1)[0];
     const headers = new Headers(((called[1] as RequestInit).headers as HeadersInit) || undefined);
     expect(headers.get('X-From-Before')).toBe('yes');

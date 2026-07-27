@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>バインドに無い識別子が window 経由で解決される問題の再現</title>
+    <script>
+      // window.name は既定で空文字のため、解決された場合に見分けられるよう値を入れる。
+      // haori の読み込みより前に設定する必要がある。
+      window.name = 'WINDOW-NAME';
+    </script>
+  </head>
+  <body>
+    <h2>バインドに無い識別子がグローバルへ解決されないこと（回帰ガード）</h2>
+    <p>
+      jsdom には window の named access（id 由来）が無いため、実ブラウザでのみ
+      再現できる。退行時はケースAの入力欄へ [object HTMLInputElement] が入り、
+      required の必須検証も通ってしまう。
+    </p>
+
+    <!-- ケースA: バインドに無いキーを参照し、同名 id の要素が存在する（報告構成） -->
+    <form id="formA">
+      <input
+        id="agencyCode"
+        name="agencyCode"
+        required
+        data-attr-value="{{agencyCode}}"
+      />
+      <input
+        id="nameField"
+        name="userName"
+        required
+        data-attr-value="{{name}}"
+      />
+      <p id="outA">{{agencyCode}}</p>
+    </form>
+
+    <!-- ケースB: 同名キーをバインドで宣言した対照 -->
+    <form id="formB" data-bind='{"agencyCode":"A-1"}'>
+      <input
+        id="agencyCodeB"
+        name="agencyCode"
+        required
+        data-attr-value="{{agencyCode}}"
+      />
+    </form>
+
+    <!-- ケースC: ?? でフォールバックした場合（従来どおり値が入る） -->
+    <form id="formC">
+      <input
+        id="agencyCodeC"
+        name="agencyCode"
+        data-attr-value="{{agencyCode ?? 'FB'}}"
+      />
+    </form>
+
+    <!-- ケースD: 標準組み込みは従来どおり参照できる -->
+    <p id="outD" data-bind='{"scores":[1,9,3]}'>{{Math.max(...scores)}}</p>
+
+    <script src="/dist/haori.iife.js"></script>
+  </body>
+</html>

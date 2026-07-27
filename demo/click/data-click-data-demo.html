@@ -8,15 +8,10 @@
   <h2>data-click-data デモ</h2>
   <div>ボタンを押すとtypeパラメータを送信し、結果を表示します</div>
   <button data-click-fetch="./data-click-data-demo.json" data-click-data='{"type":"user"}' data-click-bind="#result">送信</button>
-  <div id="result" data-bind="haori" data-bind-arg="type">
+  <!-- 取得前は値が無いため、参照するキーを data-bind で宣言しておく。 -->
+  <div id="result" data-bind='{"type":null}'>
     <p>タイプ: {{type}}</p>
   </div>
-  <script>
-    window.haori = { type: "" };
-  </script>
-    <script>
-      window.type = 'info';
-    </script>
-    <script src="../../dist/haori.iife.js"></script>
+  <script src="../../dist/haori.iife.js"></script>
 </body>
 </html>

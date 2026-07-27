@@ -121,6 +121,192 @@ function appendPayloadToUrl(
 }
 
 /**
+ * demo ランタイム向け正規化の結果です。
+ */
+interface DemoRuntimeNormalization {
+  /** 正規化後の URL。 */
+  url: string;
+
+  /** 正規化後の送信オプション。 */
+  options: RequestInit;
+
+  /** 正規化前に要求されていた HTTP メソッド。 */
+  requestedMethod: string;
+
+  /** 実際に送信する HTTP メソッド。 */
+  effectiveMethod: string;
+
+  /** この呼び出しで正規化を適用したかどうか。 */
+  normalized: boolean;
+
+  /** 正規化を適用した場合のクエリ文字列。 */
+  queryString?: string;
+}
+
+/**
+ * 送信 body をクエリ化できる形へ変換します。
+ *
+ * @param body 変換対象の body。
+ * @return 変換結果。`dropped` が true の場合はクエリ化できない内容を含む。
+ */
+function extractPayloadFromBody(body: BodyInit | null | undefined): {
+  payload: Record<string, unknown>;
+  dropped: boolean;
+} {
+  if (body === null || body === undefined) {
+    return {payload: {}, dropped: false};
+  }
+  if (typeof body === 'string') {
+    const trimmed = body.trim();
+    if (trimmed === '') {
+      return {payload: {}, dropped: false};
+    }
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        if (
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          !Array.isArray(parsed)
+        ) {
+          return {payload: parsed as Record<string, unknown>, dropped: false};
+        }
+      } catch {
+        // JSON として読めない場合はクエリ化できない内容として扱う。
+      }
+      return {payload: {}, dropped: true};
+    }
+    if (trimmed.includes('=')) {
+      return {
+        payload: searchParamsToPayload(new URLSearchParams(trimmed)),
+        dropped: false,
+      };
+    }
+    return {payload: {}, dropped: true};
+  }
+  if (body instanceof URLSearchParams) {
+    return {payload: searchParamsToPayload(body), dropped: false};
+  }
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    const payload: Record<string, unknown> = {};
+    let dropped = false;
+    for (const [key, value] of body.entries()) {
+      if (typeof value !== 'string') {
+        // File / Blob はクエリへ載せられない。
+        dropped = true;
+        continue;
+      }
+      appendPayloadEntry(payload, key, value);
+    }
+    return {payload, dropped};
+  }
+  // Blob / ArrayBuffer / ReadableStream などはクエリ化できない。
+  return {payload: {}, dropped: true};
+}
+
+/**
+ * URLSearchParams を送信データへ変換します。
+ *
+ * @param params 変換対象。
+ * @return 送信データ。同一キーが複数ある場合は配列になる。
+ */
+function searchParamsToPayload(
+  params: URLSearchParams,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of params.entries()) {
+    appendPayloadEntry(payload, key, value);
+  }
+  return payload;
+}
+
+/**
+ * 送信データへ 1 件追加します。同一キーが重なる場合は配列へまとめます。
+ *
+ * @param payload 追加先の送信データ。
+ * @param key キー名。
+ * @param value 値。
+ * @return 戻り値はありません。
+ */
+function appendPayloadEntry(
+  payload: Record<string, unknown>,
+  key: string,
+  value: string,
+): void {
+  const existing = payload[key];
+  if (existing === undefined) {
+    payload[key] = value;
+  } else if (Array.isArray(existing)) {
+    existing.push(value);
+  } else {
+    payload[key] = [existing, value];
+  }
+}
+
+/**
+ * demo ランタイムでの送信内容をクエリ付き GET へ正規化します。
+ *
+ * `data-runtime="demo"` は静的ファイルサーバ上でデモを動かすための実行モードで、
+ * body を伴うメソッドは送信できません（405 になります）。`data-{event}-before-run`
+ * が `fetchOptions` を返して正規化を打ち消す場合にも成立させるため、送信直前へ
+ * もう一度適用できる独立した関数にしています。すでに正規化済み（メソッドが
+ * GET / HEAD / OPTIONS）なら何もしないため、二重適用でも副作用はありません。
+ *
+ * @param fetchUrl 送信先 URL。
+ * @param fetchOptions 送信オプション。
+ * @return 正規化結果。
+ */
+function normalizeRequestForDemoRuntime(
+  fetchUrl: string,
+  fetchOptions: RequestInit | null,
+): DemoRuntimeNormalization {
+  const options: RequestInit = {...(fetchOptions || {})};
+  const requestedMethod = (options.method || 'GET').toUpperCase();
+  if (Env.runtime !== 'demo' || isQueryTransportMethod(requestedMethod)) {
+    return {
+      url: fetchUrl,
+      options,
+      requestedMethod,
+      effectiveMethod: requestedMethod,
+      normalized: false,
+    };
+  }
+
+  const {payload, dropped} = extractPayloadFromBody(
+    options.body as BodyInit | null | undefined,
+  );
+  let url = fetchUrl;
+  if (Object.keys(payload).length > 0) {
+    url = appendPayloadToUrl(url, payload);
+  }
+  if (dropped) {
+    Log.warn(
+      'Haori',
+      `The ${requestedMethod} body cannot be converted into a query string` +
+        ' and is dropped by the demo runtime normalization. Send the values' +
+        ` with ${Env.prefix}{event}-data / ${Env.prefix}{event}-form, or use` +
+        ' the embedded runtime.',
+    );
+  }
+  delete options.body;
+  options.method = 'GET';
+  const headers = new Headers(
+    (options.headers as HeadersInit | undefined) || undefined,
+  );
+  headers.delete('Content-Type');
+  options.headers = headers;
+
+  return {
+    url,
+    options,
+    requestedMethod,
+    effectiveMethod: 'GET',
+    normalized: true,
+    queryString: new URL(url, window.location.href).search || undefined,
+  };
+}
+
+/**
  * 自動再評価用に解決したフェッチシグネチャです。
  */
 export interface ResolvedFetchSignature {
@@ -1759,12 +1945,28 @@ ${body}
 
       const hasPayload = Object.keys(payload).length > 0;
       if (fetchUrl) {
-        const finalOptions: RequestInit = {...(fetchOptions || {})};
-        const requestedMethod = preparedRequest.requestedMethod;
-        const method = preparedRequest.effectiveMethod;
+        // demo ランタイムの正規化は送信直前にもう一度適用する。
+        // `data-{event}-before-run` の `fetchOptions` 上書きは prepareFetchRequest
+        // の後に適用されるため、ここで再適用しないと上書きが正規化を打ち消し、
+        // 静的ファイルサーバへ実 POST が飛んで 405 になる。すでに正規化済み
+        // （メソッドが GET）なら何もしないため、通常経路への影響はない。
+        const renormalized = normalizeRequestForDemoRuntime(
+          fetchUrl,
+          fetchOptions,
+        );
+        fetchUrl = renormalized.url;
+        const finalOptions: RequestInit = {...renormalized.options};
+        // 正規化前に要求されていたメソッドは、上書きが無ければ
+        // prepareFetchRequest 段階の値が本来の要求値になる。
+        const requestedMethod = renormalized.normalized
+          ? renormalized.requestedMethod
+          : preparedRequest.requestedMethod;
+        const method = renormalized.effectiveMethod;
         const isDemoQueryNormalization =
-          preparedRequest.transportMode === 'query-get';
-        const queryString = preparedRequest.queryString;
+          preparedRequest.transportMode === 'query-get' ||
+          renormalized.normalized;
+        const queryString =
+          renormalized.queryString ?? preparedRequest.queryString;
 
         if (isDemoQueryNormalization) {
           Log.info('Haori demo fetch normalization', {

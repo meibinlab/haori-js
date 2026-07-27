@@ -8,14 +8,14 @@
 <body>
   <h2>data-url-param デモ</h2>
   <div>URLパラメータ user を取得して表示します</div>
-  <div data-url-param="user" data-bind="haori">
-    <p>ユーザー: {{user}}</p>
+  <!--
+    data-url-arg を指定してクエリを params 配下へマージする。省略すると全置換に
+    なり、クエリに含まれないキーの直接参照が未解決参照になるため、有無が不定な
+    パラメータはプロパティ参照（{{params.user}}）で扱う。
+    URL例: ?user=太郎 で開くと「ユーザー: 太郎」と表示されます。
+  -->
+  <div data-url-param data-url-arg="params">
+    <p>ユーザー: {{params.user}}</p>
   </div>
-  <script>
-    window.haori = { user: "" };
-    window.user = "";
-    // URL例: ?user=太郎
-    // ページを ?user=太郎 で開くと「ユーザー: 太郎」と表示されます
-  </script>
 </body>
 </html>

@@ -10,27 +10,31 @@
   <div>data-if-false属性の動作確認デモ</div>
 </head>
 <body>
-    <script>
-      window.haori = { show: false };
-      window.show = false;
-    </script>
-  <button onclick="toggle()">表示/非表示 切替</button>
-  <div id="target" data-if="show" data-bind="haori">これは表示されます</div>
-  <div id="status"></div>
-  <div id="attr-status"></div>
+  <!--
+    切替は宣言的に行う。data-click-data で反転した値を組み立て、data-click-bind で
+    同じスコープへ書き戻すことで data-if が再評価される。
+  -->
+  <div id="scope" data-bind='{"show":false}'>
+    <button
+      type="button"
+      data-click-data='{"show":{{!show}}}'
+      data-click-bind="#scope"
+    >表示/非表示 切替</button>
+    <div id="target" data-if="show">これは表示されます</div>
+    <div id="status" data-if="!show">data-if-false 属性が付与されます</div>
+    <div id="attr-status"></div>
+  </div>
   <script>
+    // data-if-false 属性の付与状況を表示する（デモの確認用）。
     function updateAttrStatus() {
       const el = document.getElementById('target');
       const has = el.hasAttribute('data-if-false');
       document.getElementById('attr-status').textContent =
         has ? 'data-if-false属性: あり' : 'data-if-false属性: なし';
     }
-    function toggle() {
-      haori.show = !haori.show;
-      document.getElementById('status').textContent =
-        haori.show ? '' : 'data-if-false 属性が付与されます';
+    document.getElementById('scope').addEventListener('click', function () {
       setTimeout(updateAttrStatus, 0);
-    }
+    });
     window.addEventListener('DOMContentLoaded', function() {
       setTimeout(updateAttrStatus, 0);
     });

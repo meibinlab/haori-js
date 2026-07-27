@@ -269,11 +269,108 @@ export default class Expression {
     'yield',
   ]);
 
+  /**
+   * 未知の識別子であっても宣言によって遮蔽してはならない名前。
+   *
+   * リテラル（`true` / `undefined` など）は宣言すると意味が変わり、予約語は
+   * `let` 宣言そのものが構文エラーになるため、遮蔽の対象から除外します。
+   * `DISALLOWED_KEYWORDS` は式構文の検証段階で弾かれますが、多層防御として
+   * ここでも除外します。
+   */
+  private static readonly NON_SHADOWABLE_IDENTIFIERS = new Set([
+    // リテラル・グローバル定数
+    'true',
+    'false',
+    'null',
+    'undefined',
+    'NaN',
+    'Infinity',
+    // strict モードの予約語（`let` 宣言が構文エラーになる）
+    'enum',
+    'implements',
+    'interface',
+    'package',
+    'private',
+    'protected',
+    'public',
+    'static',
+    'super',
+  ]);
+
+  /**
+   * 式から参照してよい標準組み込みグローバル。
+   *
+   * `Math.max(...)` や `JSON.stringify(...)` のように、ECMAScript の標準組み込みは
+   * 式から利用できます（危険なものは `FORBIDDEN_NAMES` で個別に遮断済み）。
+   * バインドに無い識別子の遮蔽対象からは、この一覧を除外します。ここに漏れがあると
+   * その組み込みを使う式が未解決参照になるため、追加時は仕様書の一覧も更新します。
+   */
+  private static readonly ALLOWED_GLOBAL_IDENTIFIERS = new Set([
+    // 名前空間オブジェクト
+    'Math',
+    'JSON',
+    'Intl',
+    'Atomics',
+    // 基本コンストラクタ
+    'Array',
+    'String',
+    'Number',
+    'Boolean',
+    'Date',
+    'RegExp',
+    'Symbol',
+    'BigInt',
+    'Map',
+    'Set',
+    'WeakMap',
+    'WeakSet',
+    'WeakRef',
+    'FinalizationRegistry',
+    'Promise',
+    'Proxy',
+    // エラー系
+    'Error',
+    'AggregateError',
+    'EvalError',
+    'RangeError',
+    'ReferenceError',
+    'SyntaxError',
+    'TypeError',
+    'URIError',
+    // バイナリ系
+    'ArrayBuffer',
+    'SharedArrayBuffer',
+    'DataView',
+    'Int8Array',
+    'Uint8Array',
+    'Uint8ClampedArray',
+    'Int16Array',
+    'Uint16Array',
+    'Int32Array',
+    'Uint32Array',
+    'Float32Array',
+    'Float64Array',
+    'BigInt64Array',
+    'BigUint64Array',
+    // 関数
+    'parseInt',
+    'parseFloat',
+    'isNaN',
+    'isFinite',
+    'encodeURI',
+    'encodeURIComponent',
+    'decodeURI',
+    'decodeURIComponent',
+  ]);
+
   /** 式 → 評価関数のグローバルキャッシュ */
   private static readonly EXPRESSION_CACHE = new Map<
     string,
     (...args: unknown[]) => unknown
   >();
+
+  /** 式 → 自由識別子一覧のキャッシュ */
+  private static readonly FREE_IDENTIFIER_CACHE = new Map<string, string[]>();
 
   /**
    * 現在のバインド識別子に含まれない禁止グローバルを遮断するコードを生成します。
@@ -304,6 +401,67 @@ export default class Expression {
       const pattern = new RegExp(`(^|[^\\w$.])${name}(?![\\w$])`);
       return pattern.test(expression);
     });
+  }
+
+  /**
+   * 式が参照している自由識別子（バインドで解決されるべき名前）を抽出します。
+   *
+   * プロパティアクセス（`foo.bar` の `bar`）とリテラル・予約語は除外します。
+   * 抽出結果は「遮蔽してよい名前」の候補として使うため、取りこぼしても従来の
+   * 挙動に戻るだけで、余分に含んでも参照されなければ影響しません（安全側）。
+   * オブジェクトリテラルのキーは除外しませんが、キーとしてしか現れない名前は
+   * 評価時に参照されないため遮蔽しても影響しません。
+   *
+   * @param expression 評価対象の式
+   * @returns 自由識別子の一覧（重複なし、出現順）
+   */
+  private static extractFreeIdentifiers(expression: string): string[] {
+    const cached = this.FREE_IDENTIFIER_CACHE.get(expression);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const tokens = this.tokenizeExpression(expression);
+    const found: string[] = [];
+    if (tokens !== null) {
+      let previous: ExpressionToken | null = null;
+      for (const token of tokens) {
+        const isProperty = previous?.value === '.' || previous?.value === '?.';
+        if (
+          token.type === 'identifier' &&
+          !isProperty &&
+          !this.NON_SHADOWABLE_IDENTIFIERS.has(token.value) &&
+          !this.DISALLOWED_KEYWORDS.has(token.value) &&
+          !this.STRICT_FORBIDDEN_NAMES.includes(token.value) &&
+          /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(token.value) &&
+          !found.includes(token.value)
+        ) {
+          found.push(token.value);
+        }
+        previous = token;
+      }
+    }
+
+    this.FREE_IDENTIFIER_CACHE.set(expression, found);
+    return found;
+  }
+
+  /**
+   * 未知の識別子をスコープ内へ宣言して遮蔽するコードを生成します。
+   *
+   * 式の後ろへ `let` 宣言を置くことで、対象の識別子は関数スコープに属しつつ
+   * 評価時点では未初期化（TDZ）になります。実際に参照された場合だけ
+   * `ReferenceError` となるため、`window` の named access などグローバルへの
+   * 解決を断ちながら、短絡評価で参照されない識別子は従来どおり無害に通せます。
+   *
+   * @param shadowNames 遮蔽する識別子の一覧
+   * @returns 式の後ろへ挿入する宣言コード。対象が無い場合は空文字
+   */
+  private static buildShadowDeclarations(shadowNames: string[]): string {
+    if (shadowNames.length === 0) {
+      return '';
+    }
+    return `\nlet ${shadowNames.join(', ')};`;
   }
 
   /**
@@ -437,12 +595,44 @@ export default class Expression {
     const allowMissingIdentifierRecovery =
       this.canAttemptMissingIdentifierRecovery(expression);
 
+    // バインドに無い識別子は、そのままでは関数のスコープチェーンを通ってグローバルへ
+    // 解決される。`id="foo"` の要素が `window.foo` として見える named access や、
+    // `name` / `status` / `length` のような window の既存プロパティが該当し、
+    // 未解決参照が「値のある参照」に化けてしまう（要素オブジェクトが値として
+    // 書き込まれ、必須検証も通ってしまう）。ここでスコープ内へ引き込んで遮蔽する。
+    const unknownIdentifiers = this.extractFreeIdentifiers(expression).filter(
+      name =>
+        !(name in runtimeBindings) &&
+        // 禁止グローバルは buildAssignments が `const` で遮蔽するため対象外
+        // （二重宣言は構文エラーになる）。
+        !this.FORBIDDEN_NAMES.includes(name) &&
+        // 標準組み込み（`Math` など）は式から参照できる仕様のため遮蔽しない。
+        !this.ALLOWED_GLOBAL_IDENTIFIERS.has(name),
+    );
+    if (allowMissingIdentifierRecovery) {
+      // `?.` / `??` / `||` / `&&` を含む式は、従来から未宣言識別子を undefined と
+      // して評価を続ける。事前に undefined を渡せば ReferenceError による再試行が
+      // 不要になり、グローバルへも解決されない。
+      unknownIdentifiers.forEach(name => {
+        runtimeBindings[name] = undefined;
+      });
+    }
+    // 回復対象外の式では TDZ による遮蔽を使う。実際に参照されたときだけ
+    // ReferenceError になるため、短絡評価で参照されない識別子の扱いは変わらない。
+    const shadowNames = allowMissingIdentifierRecovery
+      ? []
+      : unknownIdentifiers;
+
     for (
       let recoveryCount = 0;
       recoveryCount <= this.MAX_IDENTIFIER_RECOVERY_COUNT;
       recoveryCount += 1
     ) {
-      const setup = this.prepareEvaluator(expression, runtimeBindings);
+      const setup = this.prepareEvaluator(
+        expression,
+        runtimeBindings,
+        shadowNames,
+      );
       if (setup.compileFailed || setup.evaluator === null) {
         return {value: null, unresolvedReference: false};
       }
@@ -483,6 +673,21 @@ export default class Expression {
             expression,
           );
         }
+        if (error instanceof ReferenceError && shadowNames.length > 0) {
+          // 遮蔽した識別子を実際に参照した場合は TDZ の ReferenceError になる。
+          // 素の「is not defined」より原因が分かりにくいため、バインドに無いキーを
+          // 参照したことを明示する。
+          Log.error(
+            '[Haori]',
+            'Expression references identifier(s) that are not in the' +
+              ' binding data: ' +
+              shadowNames.join(', ') +
+              '. The result is treated as an unresolved reference.' +
+              ' Declare the key with data-bind, or guard it with ?? / ?.',
+            expression,
+          );
+          return {value: undefined, unresolvedReference: true};
+        }
         Log.error('[Haori]', 'Expression evaluation error:', expression, error);
         if (error instanceof ReferenceError) {
           // ReferenceError（未定義変数）はundefinedを返す
@@ -506,16 +711,23 @@ export default class Expression {
    *
    * @param expression 評価する式
    * @param bindedValues バインドされた値のオブジェクト
+   * @param shadowNames グローバル解決を断つため関数スコープへ宣言する識別子
    * @returns evaluator 準備結果
    */
   private static prepareEvaluator(
     expression: string,
     bindedValues: Record<string, unknown>,
+    shadowNames: string[] = [],
   ): ExpressionEvaluatorSetup {
     const bindKeys = Object.keys(bindedValues)
       .filter(key => !this.FORBIDDEN_BINDING_NAMES.has(key))
       .sort();
-    const cacheKey = `${expression}:${bindKeys.join(',')}`;
+    const bindKeySet = new Set(bindKeys);
+    // 引数・`const` 遮蔽と重複する宣言は構文エラーになるため取り除く。
+    const declarations = shadowNames.filter(name => !bindKeySet.has(name));
+    const cacheKey = `${expression}:${bindKeys.join(',')}:${declarations.join(
+      ',',
+    )}`;
 
     let evaluator = this.EXPRESSION_CACHE.get(cacheKey) || null;
     if (evaluator !== null) {
@@ -527,9 +739,11 @@ export default class Expression {
     }
 
     const assignments = this.buildAssignments(bindKeys);
+    const shadowDeclarations = this.buildShadowDeclarations(declarations);
     const body = assignments
-      ? '"use strict";\n' + `${assignments};\nreturn (${expression});`
-      : '"use strict";\n' + `return (${expression});`;
+      ? '"use strict";\n' +
+        `${assignments};\nreturn (${expression});${shadowDeclarations}`
+      : '"use strict";\n' + `return (${expression});${shadowDeclarations}`;
     try {
       evaluator = new Function(...bindKeys, body) as (
         ...args: unknown[]
@@ -541,12 +755,20 @@ export default class Expression {
         compileFailed: false,
       };
     } catch (error) {
-      Log.error(
-        '[Haori]',
-        'Failed to compile expression:',
-        expression,
-        error,
-      );
+      if (declarations.length > 0) {
+        // 遮蔽用の宣言が構文エラーになった場合（予期しない識別子名など）は、
+        // 式自体を壊さないよう遮蔽なしで再生成する。グローバルへ解決される
+        // 従来の挙動には戻るが、式が評価できなくなる退行は避ける。
+        Log.warn(
+          '[Haori]',
+          'Failed to shadow undeclared identifier(s): ' +
+            declarations.join(', ') +
+            '. Falling back to evaluation without shadowing.',
+          expression,
+        );
+        return this.prepareEvaluator(expression, bindedValues, []);
+      }
+      Log.error('[Haori]', 'Failed to compile expression:', expression, error);
       return {
         bindKeys,
         evaluator: null,
