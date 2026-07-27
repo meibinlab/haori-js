@@ -9,6 +9,7 @@ import Env from './env';
 import EventDispatcher from './event_dispatcher';
 import IntersectObserver from './intersect';
 import Log from './log';
+import PollObserver from './poll';
 import Queue from './queue';
 import VisibleRangeObserver from './visible_range';
 
@@ -80,6 +81,7 @@ export class Observer {
       Observer.observe(document.head);
       Observer.observe(document.body);
       IntersectObserver.syncTree(document.body);
+      PollObserver.syncTree(document.body);
       VisibleRangeObserver.syncTree(document.body);
     } finally {
       // 監視と表示範囲の同期をすべて整えてから、保留していた手続きを実行する。
@@ -157,12 +159,14 @@ export class Observer {
                 true,
               );
               IntersectObserver.syncElement(element);
+              PollObserver.syncElement(element);
               VisibleRangeObserver.syncElement(element);
               break;
             }
             case 'childList': {
               Array.from(mutation.removedNodes).forEach(node => {
                 IntersectObserver.cleanupTree(node);
+                PollObserver.cleanupTree(node);
                 VisibleRangeObserver.cleanupTree(node);
                 Core.removeNode(node);
               });
@@ -172,6 +176,7 @@ export class Observer {
                 }
                 Core.addNode(node.parentElement, node);
                 IntersectObserver.syncTree(node);
+                PollObserver.syncTree(node);
                 VisibleRangeObserver.syncTree(node);
               });
               // 行の増減があったコンテナ自身の監視対象を取り直す

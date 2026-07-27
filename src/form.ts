@@ -41,6 +41,15 @@ function resolveFormHaoriApi(): FormHaoriApi {
  */
 export default class Form {
   /**
+   * 初期 `data-bind` からの入力欄復元を適用済みのフォーム要素。
+   *
+   * 復元は「そのフォームを初めてスキャンしたとき」の一度だけ行います。再スキャン
+   * （`data-if` の表示切替など）で繰り返すと、利用者が編集した入力欄を初期値へ
+   * 巻き戻してしまうためです。
+   */
+  private static readonly INITIAL_RESTORED_FORMS = new WeakSet<HTMLElement>();
+
+  /**
    * フォーム内にある入力エレメントの値をオブジェクトとして取得します。
    * data-form-object属性があると、そのエレメント内の値はオブジェクトとして処理されます。
    * 入力エレメントにdata-form-list属性があると、そのエレメントの値はリストとして処理されます。
@@ -216,9 +225,9 @@ export default class Form {
           childList.push(childValues);
         }
       }
-      if (childList.length > 0) {
-        values[String(listName)] = childList;
-      }
+      // 行が 0 件でもキー自体は空配列として出す。キーを落とすと、サーバ側で
+      // 「0 件」と「そのフィールドが未送信」を区別できず、全件削除を表現できない。
+      values[String(listName)] = childList;
     } else {
       for (const child of fragment.getChildElementFragments()) {
         Form.getPartValues(child, values);
@@ -259,6 +268,98 @@ export default class Form {
     force: boolean = false,
   ): Promise<void> {
     return Form.setPartValues(form, values, null, force, false);
+  }
+
+  /**
+   * `data-form-list` の 1 行分の入力欄へ、その行の値をイベントなしで反映します。
+   *
+   * `data-each` が新しく生成した行に対して呼び出します。フォーム全体への逆方向同期
+   * （`syncValues()`）は `Core.setBindingData()` の中で `data-each` の行生成より**前**に
+   * 走るため、その更新で生成された行には値が入りません。行単位でここを補います。
+   *
+   * @param row 行のElementFragment
+   * @param values 行に設定する値のオブジェクト
+   * @param index 行のインデックス
+   * @returns 反映完了の Promise
+   */
+  public static syncRowValues(
+    row: ElementFragment,
+    values: Record<string, unknown>,
+    index: number,
+  ): Promise<void> {
+    return Form.setPartValues(row, values, index, false, false, true);
+  }
+
+  /**
+   * バインディングデータから、入力欄へ書き戻す対象の値を切り出します。
+   *
+   * `data-form-arg` が指定されている場合はそのキー配下だけを対象とし、キーが
+   * オブジェクトでなければ空オブジェクトを返します（フォーム外のキーを入力欄へ
+   * 書き戻さないため）。指定が無ければバインディングデータ全体が対象です。
+   *
+   * @param form フォームのElementFragment
+   * @param data 対象のバインディングデータ
+   * @returns 入力欄へ書き戻す値
+   */
+  public static resolveSyncValues(
+    form: ElementFragment,
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const arg = form.getAttribute(`${Env.prefix}form-arg`);
+    if (!arg) {
+      return data;
+    }
+    const scoped = data[String(arg)];
+    return scoped && typeof scoped === 'object' && !Array.isArray(scoped)
+      ? (scoped as Record<string, unknown>)
+      : {};
+  }
+
+  /**
+   * 初期 `data-bind` の値を配下の入力欄へ反映します。
+   *
+   * `Core.setBindingData()` 経由の逆方向同期は `data-bind` 属性を**更新した**ときに
+   * だけ走るため、初期スキャンで読み込んだ `data-bind` は入力欄へ反映されません。
+   * その結果、`name` に対応する値を持つ `<select>` やチェックボックスが未選択のまま
+   * 残り、最初の `change` で全項目を収集した際に空値として確定して他項目の値を失う
+   * 問題がありました。本メソッドは初回スキャン時に一度だけ逆方向同期を適用します。
+   *
+   * 対象は `<form>` 要素のうち `data-bind` を持つものだけです（`Core.setBindingData()`
+   * の逆方向同期と同じ範囲）。`data-bind` に含まれないキーの入力欄は
+   * `setPartValues()` の規則により既存値が維持されるため、HTML の `value` 属性で
+   * 与えた初期値は保たれます。
+   *
+   * @param root 走査の起点要素
+   * @returns 反映完了の Promise
+   */
+  public static restoreInitialValues(root: HTMLElement): Promise<void> {
+    const forms: HTMLFormElement[] = [];
+    if (root instanceof HTMLFormElement) {
+      forms.push(root);
+    }
+    root.querySelectorAll('form').forEach(form => {
+      forms.push(form);
+    });
+    const promises: Promise<void>[] = [];
+    for (const form of forms) {
+      if (Form.INITIAL_RESTORED_FORMS.has(form)) {
+        continue;
+      }
+      const fragment = Fragment.get(form);
+      if (!(fragment instanceof ElementFragment)) {
+        continue;
+      }
+      const data = fragment.getRawBindingData();
+      if (!data) {
+        // data-bind を持たないフォームは反映対象が無い。
+        continue;
+      }
+      Form.INITIAL_RESTORED_FORMS.add(form);
+      promises.push(
+        Form.syncValues(fragment, Form.resolveSyncValues(fragment, data)),
+      );
+    }
+    return Promise.all(promises).then(() => undefined);
   }
 
   /**
@@ -324,6 +425,8 @@ export default class Form {
    * @param values フラグメントに設定する値のオブジェクト
    * @param index 配列の場合のインデックス
    * @param force data-form-detach属性があるエレメントにも値を反映するかどうか
+   * @param emitEvents input/change イベントを発火するかどうか
+   * @param clearMissing values に無いキーの入力欄を空にするかどうか
    * @returns Promise（DOMの更新が完了したら解決される）
    */
   private static setPartValues(
@@ -332,6 +435,7 @@ export default class Form {
     index: number | null = null,
     force: boolean = false,
     emitEvents: boolean = true,
+    clearMissing: boolean = false,
   ): Promise<void> {
     const promises: Promise<void>[] = [];
     const name = fragment.getAttribute('name');
@@ -340,7 +444,13 @@ export default class Form {
     const detach = fragment.getAttribute(`${Env.prefix}form-detach`);
     if (name) {
       if (!detach || force) {
-        const value = values[String(name)];
+        const rawValue = values[String(name)];
+        // clearMissing（data-each 行への反映）では、要素データに無いキーは「空」を
+        // 意味する。要素データが行全体を規定するため、キーが無いことを「維持」と
+        // 解釈すると、行の途中への挿入や並べ替えで担当要素が変わったときに前の行の
+        // 入力値が残ってしまう。
+        const value =
+          clearMissing && typeof rawValue === 'undefined' ? null : rawValue;
         // input[type=file] へはブラウザの制約により任意の値を設定できない。
         // クリア（null / 空文字）のみ反映し、それ以外は静かにスキップする。
         // 双方向バインディングでファイル名が書き戻される正常系で警告が出るのを防ぐ。
@@ -398,6 +508,7 @@ export default class Form {
               null,
               force,
               emitEvents,
+              clearMissing,
             ),
           );
         }
@@ -416,17 +527,27 @@ export default class Form {
                 i,
                 force,
                 emitEvents,
+                clearMissing,
               ),
             );
           } else {
-            promises.push(Form.setPartValues(child, {}, i, force, emitEvents));
+            promises.push(
+              Form.setPartValues(child, {}, i, force, emitEvents, clearMissing),
+            );
           }
         }
       }
     } else {
       for (const child of fragment.getChildElementFragments()) {
         promises.push(
-          Form.setPartValues(child, values, null, force, emitEvents),
+          Form.setPartValues(
+            child,
+            values,
+            null,
+            force,
+            emitEvents,
+            clearMissing,
+          ),
         );
       }
     }

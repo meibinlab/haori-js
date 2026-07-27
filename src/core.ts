@@ -464,7 +464,11 @@ export default class Core {
     if (!fragment) {
       return Promise.resolve();
     }
-    return Core.initializeElementFragment(fragment, false);
+    // 初期化（data-each の行生成を含む）が完了してから、初期 data-bind の値を
+    // 入力欄へ反映する。行が生成される前に反映しても新規行には値が入らない。
+    return Core.initializeElementFragment(fragment, false).then(() =>
+      Form.restoreInitialValues(element),
+    );
   }
 
   /**
@@ -816,17 +820,10 @@ export default class Core {
         // 誤った値が最終的に残る。
         chain = chain.then(() => {
           const latest = fragment.getRawBindingData() ?? data;
-          const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
-          const formValues =
-            arg &&
-            latest[String(arg)] &&
-            typeof latest[String(arg)] === 'object' &&
-            !Array.isArray(latest[String(arg)])
-              ? (latest[String(arg)] as Record<string, unknown>)
-              : arg
-                ? {}
-                : latest;
-          return Form.syncValues(fragment, formValues);
+          return Form.syncValues(
+            fragment,
+            Form.resolveSyncValues(fragment, latest),
+          );
         });
       }
       chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
@@ -1937,9 +1934,7 @@ export default class Core {
    * @param fragment 対象フラグメント
    * @returns host 識別子
    */
-  private static createDerivedSubtreeHostId(
-    fragment: ElementFragment,
-  ): string {
+  private static createDerivedSubtreeHostId(fragment: ElementFragment): string {
     const segments: string[] = [];
     let current: ElementFragment | null = fragment;
     while (current) {
@@ -2057,9 +2052,11 @@ export default class Core {
     if (hasDynamicAttributes) {
       return true;
     }
-    return fragment.getChildren().some(
-      child => child instanceof TextFragment && child.hasDynamicContent(),
-    );
+    return fragment
+      .getChildren()
+      .some(
+        child => child instanceof TextFragment && child.hasDynamicContent(),
+      );
   }
 
   /**
@@ -2155,8 +2152,10 @@ export default class Core {
           !child.hasAttribute(`${Env.prefix}each-after`),
       );
     const previousKeys = childElements.map(child => child.getListKey());
+    const removedChildren = new Set<ElementFragment>();
     childElements = childElements.filter(child => {
       if (!newKeySet.has(String(child.getListKey()))) {
+        removedChildren.add(child);
         removalPromises.push(child.remove());
         return false;
       }
@@ -2170,7 +2169,11 @@ export default class Core {
         childElementsByKey.set(listKey, child);
       }
     });
-    const insertTargets = parent.getChildElementFragments().slice();
+    // 挿入位置の基準となる現在の子並び。削除対象は除外する（除外しないと、削除中の
+    // フラグメントを挿入位置の参照に使ってしまう）。
+    const insertTargets = parent
+      .getChildElementFragments()
+      .filter(child => !removedChildren.has(child));
     const baseInsertIndex = insertTargets.filter(child =>
       child.hasAttribute(`${Env.prefix}each-before`),
     ).length;
@@ -2182,6 +2185,7 @@ export default class Core {
       if (reusedChild) {
         // 既存の要素を再利用
         child = reusedChild;
+        const currentInsertIndex = baseInsertIndex + loopIndex;
         // 行の入力が同一なら子孫の再評価をスキップする。
         chain = chain.then(() =>
           Core.updateRowFragment(
@@ -2191,12 +2195,25 @@ export default class Core {
             itemIndex,
             itemArg ? String(itemArg) : null,
             newKey,
-          ).then(changed => {
-            if (!changed) {
-              return undefined;
-            }
-            return Core.evaluateAll(child);
-          }),
+          ).then(changed =>
+            // 再利用行も新しい並び順の位置へ移動する。移動しないと、配列を並べ替え
+            // ただけの更新（data-each-key 指定時はキーが変わらないため全行が再利用
+            // される）で DOM の順序が古いまま残る。
+            Core.repositionEachRow(
+              parent,
+              child,
+              insertTargets,
+              currentInsertIndex,
+            ).then(() => {
+              if (!changed) {
+                // 行の入力が同一なら子孫の再評価も値の再適用も行わない。
+                return undefined;
+              }
+              return Core.evaluateAll(child).then(() =>
+                Core.applyRowFormValues(parent, child, item, itemIndex),
+              );
+            }),
+          ),
         );
       } else {
         // 新しい要素を追加
@@ -2217,7 +2234,10 @@ export default class Core {
               .then(() => {
                 insertTargets.splice(currentInsertIndex, 0, child);
               })
-              .then(() => Core.initializeFreshEachRow(child));
+              .then(() => Core.initializeFreshEachRow(child))
+              .then(() =>
+                Core.applyRowFormValues(parent, child, item, itemIndex),
+              );
           }),
         );
       }
@@ -2252,6 +2272,70 @@ export default class Core {
         );
         return undefined;
       });
+  }
+
+  /**
+   * 再利用した `data-each` の行を、新しい並び順の位置へ移動します。
+   *
+   * `insertTargets` は現在の子並びを表す作業用配列で、移動に合わせて更新します。
+   * すでに目的の位置にある場合は何もしません。
+   *
+   * @param parent `data-each` コンテナのフラグメント
+   * @param row 移動対象の行フラグメント
+   * @param insertTargets 現在の子並び（この呼び出しで更新される）
+   * @param targetIndex 移動先のインデックス
+   * @returns 移動完了の Promise
+   */
+  private static repositionEachRow(
+    parent: ElementFragment,
+    row: ElementFragment,
+    insertTargets: ElementFragment[],
+    targetIndex: number,
+  ): Promise<void> {
+    const currentIndex = insertTargets.indexOf(row);
+    if (currentIndex === -1 || currentIndex === targetIndex) {
+      return Promise.resolve();
+    }
+    insertTargets.splice(currentIndex, 1);
+    const referenceChild = insertTargets[targetIndex] ?? null;
+    insertTargets.splice(targetIndex, 0, row);
+    return parent.insertBefore(row, referenceChild);
+  }
+
+  /**
+   * `data-each` の行の入力欄へ、その行の要素データを反映します。
+   *
+   * `data-each` と `data-form-list` を同一要素へ指定した「編集可能な繰り返し行」では、
+   * 行内の入力欄は要素データのキーと `name` で対応します。`Core.setBindingData()` の
+   * 逆方向同期（`Form.syncValues`）は `Core.evaluateAll`（= 行生成）より**前**に走る
+   * ため、その更新で生成・更新された行には値が入りません。ここで行単位に補います。
+   *
+   * 呼び出すのは「新規生成した行」と「要素データが変化した再利用行」だけです。
+   * 変化していない行へ再適用すると、描画の待ち時間中に利用者が編集した入力欄を
+   * 古い値で巻き戻す競合になります（0.26.1 で修正した問題と同種）。行の途中へ要素を
+   * 挿入すると以降の行は別の要素データを担当することになるため、変化した再利用行への
+   * 適用は必要です（これを省くと挿入位置以降の入力値が前の行のまま残ります）。
+   *
+   * @param parent `data-each` コンテナのフラグメント
+   * @param row 行のフラグメント
+   * @param item 行の要素データ
+   * @param index 行のインデックス
+   * @returns 反映完了の Promise
+   */
+  private static applyRowFormValues(
+    parent: ElementFragment,
+    row: ElementFragment,
+    item: Record<string, unknown> | string | number,
+    index: number,
+  ): Promise<void> {
+    if (!parent.hasAttribute(`${Env.prefix}form-list`)) {
+      return Promise.resolve();
+    }
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      // プリミティブ配列は入力欄の name と対応付けられない。
+      return Promise.resolve();
+    }
+    return Form.syncRowValues(row, item as Record<string, unknown>, index);
   }
 
   /**
@@ -2307,34 +2391,27 @@ export default class Core {
     arg: string | null,
     listKey: string,
   ): Promise<boolean> {
-    let bindingData = data;
+    let bindingData: Record<string, unknown>;
     if (typeof data === 'object' && data !== null) {
-      bindingData = {...data};
-      if (indexKey) {
-        bindingData[indexKey] = index;
-      }
-      if (arg) {
-        bindingData = {
-          [arg]: bindingData,
-        };
-      }
+      // data-each-arg 指定時は要素データをそのキーで包む。
+      bindingData = arg ? {[arg]: {...data}} : {...data};
+    } else if (arg) {
+      bindingData = {[arg]: data};
     } else {
-      if (arg) {
-        bindingData = {
-          [arg]: data,
-        };
-        if (indexKey) {
-          bindingData[indexKey] = index;
-        }
-      } else {
-        Log.error(
-          '[Haori]',
-          `Primitive value requires '${Env.prefix}each-arg' attribute: ${data}`,
-        );
-        return Promise.resolve(false);
-      }
+      Log.error(
+        '[Haori]',
+        `Primitive value requires '${Env.prefix}each-arg' attribute: ${data}`,
+      );
+      return Promise.resolve(false);
     }
-    const normalizedBindingData = bindingData as Record<string, unknown>;
+    // インデックスは要素データを包んだ「外側」＝行スコープの直下へ置く。
+    // data-each-arg 指定時に要素データの内側へ入れると、`{{i}}` が解決できず
+    // （`{{arg.i}}` になってしまう）、さらに要素データ自体がインデックスキーで
+    // 汚染されて双方向バインドの書き戻しや差分比較へ混入する。
+    if (indexKey) {
+      bindingData[indexKey] = index;
+    }
+    const normalizedBindingData = bindingData;
     const nextRenderSignature = Core.createBindingSignature({
       listKey,
       bindingData: normalizedBindingData,

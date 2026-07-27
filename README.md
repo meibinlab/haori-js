@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.26.2
+Version: 0.27.0
 
 ---
 
@@ -30,6 +30,7 @@ Contents
   - Boolean checkbox support with `value="true"` (`true` when checked, `false` when unchecked)
   - `type="number"` inputs are bound and submitted as numbers (empty / non-numeric values become `null`)
   - Event-driven actions via `data-click-*`, `data-change-*`, `data-load-*`, `data-intersect-*`
+  - Interval polling via `data-poll-*` (interval, timeout, and stop condition)
   - Server fetches via `data-fetch`
   - HTML imports via `data-import`
   - Lifecycle events such as `haori:eachupdate`, `haori:bindcomplete`, `haori:show` / `haori:hide`
@@ -112,6 +113,7 @@ Additional binding helpers:
 Event-driven actions:
 
 - `data-click-*`, `data-change-*`, `data-input-*`, `data-load-*`, `data-intersect-*` declare actions (fetch, bind, copy, dialog control, etc.) triggered by click, form change, incremental input, element load, and viewport intersection respectively. `data-load-*` also fires when a `data-if` element transitions from hidden to shown (the `haori:show` timing), so it works on elements like `<button>` that never receive a native `load` event.
+- `data-poll-*` — run a procedure repeatedly on a timer (interval polling), for screens that wait until another device or process finishes. The action vocabulary is shared with `data-{event}-*` (`data-poll-fetch`, `data-poll-bind`, `data-poll-bind-arg`, …). Configuration is `data-poll-interval` (interval in ms, default 5000, floor 100), `data-poll-timeout` (give up after ms, unlimited when omitted), `data-poll-until="{{expr}}"` (stop permanently once true; evaluated before each request and after each bind), `data-poll-error-limit` (stop after N consecutive failures; keeps going when omitted), `data-poll-disabled` (suppress while truthy) and `data-poll-state` (inject `_poll` state — `running` / `paused` / `stopped` / `timedOut` / `stopReason` / `count` / `elapsedMs`). The first request runs immediately, later intervals are measured from the previous completion (so requests never overlap), polling pauses while hidden by `data-if` and resumes when shown, and stops permanently when the element leaves the DOM. Note that browsers throttle timers in background tabs, so the configured interval is not guaranteed there (an immediate refetch is issued when the tab becomes visible again).
 - `data-input-*` — run a procedure on each keystroke (the `input` event) for text inputs. Because `input` fires incrementally, only elements that explicitly declare a `data-input-*` attribute are handled (opt-in); like `change`, it auto-detects the ancestor form and reflects the value into two-way bindings. Useful for incremental search filtering (e.g. `<input name="q" data-input-form>`).
 - `data-on="eventName"` + `data-on-*` — run a procedure when an arbitrary **custom event** dispatched on `window` / `document` fires (the action vocabulary is shared with `data-{event}-*`). Lets you declaratively initialize on events other than the built-ins, e.g. a native-bridge ready signal (`<body data-on="appReady" data-on-fetch="/api/init.json" data-on-bind="#app">`). The event name is held in the attribute value (attribute names are lowercased), a single `window` capture subscription receives both `window`- and `document`-dispatched events without double-firing, and elements inserted later are picked up too. Built-in names (click/change/input/load) are warned and not subscribed. Note: events dispatched before Haori subscribes are not received (no replay).
 - `data-click-copy-source` — explicitly set the copy source element for `data-click-copy` (defaults to the form given by `data-click-form`, otherwise the event element's binding).

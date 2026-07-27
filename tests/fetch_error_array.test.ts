@@ -164,7 +164,9 @@ describe('fetch エラー応答: トップレベル JSON 配列形式', () => {
         nameWrapper.getAttribute('data-message') !== null &&
         emailWrapper.getAttribute('data-message') !== null &&
         form.getAttribute('data-message') !== null,
-      {description: '1回目で3箇所にエラーが付く'},
+      // フォームの初期スキャンで逆方向同期が 1 パス増えたため、負荷時に既定の
+      // 試行回数（10）では足りないことがある。判定内容は変えず回数だけ広げる。
+      {description: '1回目で3箇所にエラーが付く', maxAttempts: 30},
     );
     expect(emailWrapper.getAttribute('data-message')).toBe(
       'メール形式が不正です',
@@ -178,7 +180,10 @@ describe('fetch エラー応答: トップレベル JSON 配列形式', () => {
       () =>
         emailWrapper.getAttribute('data-message') === null &&
         form.getAttribute('data-message') === null,
-      {description: '2回目で前回の email / 全体エラーがクリアされる'},
+      {
+        description: '2回目で前回の email / 全体エラーがクリアされる',
+        maxAttempts: 30,
+      },
     );
     // 最新応答の name エラーは表示されたまま。
     expect(nameWrapper.getAttribute('data-message')).toBe('名前は必須です');

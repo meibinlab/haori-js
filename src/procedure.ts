@@ -922,10 +922,9 @@ ${body}
           ) as (event: Event | null) => unknown;
         } catch {
           try {
-            runScript = new Function(
-              'event',
-              `"use strict";\n${body}\n`,
-            ) as (event: Event | null) => unknown;
+            runScript = new Function('event', `"use strict";\n${body}\n`) as (
+              event: Event | null,
+            ) => unknown;
           } catch (e) {
             Log.error('Haori', `Invalid run script: ${e}`);
           }
@@ -1410,9 +1409,9 @@ ${body}
       // copy-source（単一セレクタ）
       const copySourceAttrName = Procedure.attrName(event, 'copy-source');
       if (fragment.hasAttribute(copySourceAttrName)) {
-        const selector = fragment.getRawAttribute(
-          copySourceAttrName,
-        ) as string | null;
+        const selector = fragment.getRawAttribute(copySourceAttrName) as
+          | string
+          | null;
         if (selector) {
           const el = document.body.querySelector(selector);
           if (el !== null) {
@@ -1894,9 +1893,7 @@ ${body}
     // data-click-no-disabled が指定されている場合は native disabled を付与しない。
     // Bootstrap など他ライブラリの click ハンドラや CSS が disabled 要素を無視する
     // 問題を避けつつ、内部マーカーと RUNNING_CLICK_TARGETS で多重実行は防止する。
-    const skipDisabled = target.hasAttribute(
-      `${Env.prefix}click-no-disabled`,
-    );
+    const skipDisabled = target.hasAttribute(`${Env.prefix}click-no-disabled`);
 
     Procedure.RUNNING_CLICK_TARGETS.add(target);
     target.setAttribute(PROCEDURE_CLICK_LOCK_MARKER, '');
@@ -2183,9 +2180,7 @@ ${body}
     // 同一応答内の複数メッセージはクリア後に追加されるため従来どおり並ぶ。
     // baseFragment が無い場合は document.body を対象とし、ページ全体の
     // 管理メッセージをクリアする（広く許容する方針）。
-    const clearTarget = baseFragment
-      ? baseFragment.getTarget()
-      : document.body;
+    const clearTarget = baseFragment ? baseFragment.getTarget() : document.body;
     await resolveProcedureHaoriApi().clearMessages(clearTarget);
 
     const addGeneralMessage = async (message: string) => {
@@ -3001,6 +2996,182 @@ ${body}
   }
 
   /**
+   * 行操作の対象となる `data-each` コンテナを解決します。
+   *
+   * `data-{event}-row-*` に CSS セレクタを指定した場合はその要素を、値を省略した
+   * 場合は対象要素が属する行（`data-row`）の親コンテナを返します。セレクタ指定は、
+   * 行の外に置いた「追加」ボタンや、行が 0 件で複製元が存在しない状態からの追加に
+   * 対応するためのものです。
+   *
+   * @param attributeKey 属性のキー（`row-add` など）
+   * @returns `data-each` コンテナのフラグメント。解決できない場合は null
+   */
+  private resolveRowContainer(attributeKey: string): ElementFragment | null {
+    const target = this.options.targetFragment;
+    if (!target) {
+      Log.error('Haori', 'Target fragment is not specified for row operation.');
+      return null;
+    }
+    const attrName = Procedure.attrName(this.eventType, attributeKey);
+    const selector = target.getRawAttribute(attrName);
+    if (selector !== null && selector.trim() !== '') {
+      const element = document.querySelector(selector);
+      if (element === null) {
+        Log.error(
+          'Haori',
+          `Row container not found: ${selector} (${attrName})`,
+        );
+        return null;
+      }
+      const fragment = Fragment.get(element as HTMLElement);
+      if (!(fragment instanceof ElementFragment)) {
+        Log.error(
+          'Haori',
+          `Row container is not initialized: ${selector} (${attrName})`,
+        );
+        return null;
+      }
+      if (!fragment.hasAttribute(`${Env.prefix}each`)) {
+        Log.error(
+          'Haori',
+          `Row container must have ${Env.prefix}each:` +
+            ` ${selector} (${attrName})`,
+        );
+        return null;
+      }
+      return fragment;
+    }
+    const rowFragment = this.getRowFragment();
+    return rowFragment ? rowFragment.getParent() : null;
+  }
+
+  /**
+   * `data-each` コンテナが参照している配列と、その所有者を解決します。
+   *
+   * `data-each` の式を単純な識別子パス（`contracts` / `form.contracts` など）と
+   * みなし、根の識別子を持つ最も近い祖先（自身を含む）のバインディングデータを
+   * 所有者として扱います。関数呼び出しや演算を含む式は書き戻し先を一意に決められ
+   * ないため、エラーログを出して null を返します。
+   *
+   * @param container `data-each` コンテナのフラグメント
+   * @returns 所有者・所有者データ・配列。解決できない場合は null
+   */
+  private static resolveEachArray(container: ElementFragment): {
+    owner: ElementFragment;
+    ownerData: Record<string, unknown>;
+    array: unknown[];
+    path: string[];
+  } | null {
+    const expression = container.getRawAttribute(`${Env.prefix}each`);
+    if (expression === null) {
+      Log.error(
+        'Haori',
+        `Row container has no ${Env.prefix}each expression.`,
+      );
+      return null;
+    }
+    const path = expression.trim().split('.');
+    const isIdentifierPath =
+      path.length > 0 && path.every(part => /^[A-Za-z_$][\w$]*$/.test(part));
+    if (!isIdentifierPath) {
+      Log.error(
+        'Haori',
+        'Row operations require a plain identifier path for ' +
+          `${Env.prefix}each (got: ${expression}).`,
+      );
+      return null;
+    }
+    // 根の識別子を持つ最も近い祖先（自身を含む）を所有者とする。
+    let owner: ElementFragment | null = container;
+    let ownerData: Record<string, unknown> | null = null;
+    while (owner) {
+      const data = owner.getRawBindingData();
+      if (data && path[0] in data) {
+        ownerData = data;
+        break;
+      }
+      owner = owner.getParent();
+    }
+    if (!owner || !ownerData) {
+      Log.error(
+        'Haori',
+        `Binding data owner not found for ${Env.prefix}each="${expression}".`,
+      );
+      return null;
+    }
+    let current: unknown = ownerData;
+    for (const part of path) {
+      if (
+        current === null ||
+        typeof current !== 'object' ||
+        Array.isArray(current)
+      ) {
+        current = undefined;
+        break;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+    if (!Array.isArray(current)) {
+      Log.error(
+        'Haori',
+        `${Env.prefix}each="${expression}" does not resolve to an array.`,
+      );
+      return null;
+    }
+    return {owner, ownerData, array: current, path};
+  }
+
+  /**
+   * 指定パスの値を差し替えた新しいオブジェクトを返します。
+   *
+   * パス上のオブジェクトを浅くコピーして組み立て、元のオブジェクトは変更しません。
+   * バインディングデータを直接書き換えると `haori:bindchange` の変更前後が同一
+   * オブジェクトになり、外部から変化を検知できなくなるためです。
+   *
+   * @param data 元のバインディングデータ
+   * @param path 差し替える値までのキーの並び
+   * @param value 差し替える値
+   * @returns 差し替え後のバインディングデータ
+   */
+  private static withPathValue(
+    data: Record<string, unknown>,
+    path: string[],
+    value: unknown,
+  ): Record<string, unknown> {
+    const next: Record<string, unknown> = {...data};
+    let cursor = next;
+    for (let index = 0; index < path.length - 1; index += 1) {
+      const key = path[index];
+      const child = cursor[key] as Record<string, unknown>;
+      const cloned: Record<string, unknown> = {...child};
+      cursor[key] = cloned;
+      cursor = cloned;
+    }
+    cursor[path[path.length - 1]] = value;
+    return next;
+  }
+
+  /**
+   * `data-each` コンテナ配下の行フラグメント一覧を返します。
+   *
+   * `data-each-before` / `data-each-after` の固定要素は除外します。
+   *
+   * @param container `data-each` コンテナのフラグメント
+   * @returns 行フラグメントの配列（描画順）
+   */
+  private static getRowFragments(
+    container: ElementFragment,
+  ): ElementFragment[] {
+    return container
+      .getChildElementFragments()
+      .filter(
+        child =>
+          !child.hasAttribute(`${Env.prefix}each-before`) &&
+          !child.hasAttribute(`${Env.prefix}each-after`),
+      );
+  }
+
+  /**
    * 行を追加します。
    *
    * @returns 処理結果のPromise
@@ -3009,19 +3180,14 @@ ${body}
     if (this.options.rowAdd !== true) {
       return Promise.resolve();
     }
-    const rowFragment = this.getRowFragment();
-    if (!rowFragment) {
-      return Promise.reject(new Error('Row fragment not found.'));
-    }
-    const promises: Promise<void>[] = [];
-    const newFragment = rowFragment.clone();
-    promises.push(
-      rowFragment.getParent()!.insertAfter(newFragment, rowFragment),
-    );
-    promises.push(Core.evaluateAll(newFragment));
-    // 追加された行のフォーム要素をリセット
-    promises.push(Form.reset(newFragment as ElementFragment));
-    return Promise.all(promises).then(() => undefined);
+    // 行の DOM を複製するのではなく、`data-each` が参照している配列へ空の要素を
+    // 挿入し、再描画に行の生成を任せる。DOM だけを複製すると配列が追従せず、
+    // 次のバインド更新（fetch 結果の反映など）で差分更新が古い配列から再描画して
+    // 追加が黙って取り消される。`data-row` キーの重複も起きる。
+    return this.spliceRows('row-add', (array, index) => {
+      array.splice(index + 1, 0, {});
+      return true;
+    });
   }
 
   /**
@@ -3033,25 +3199,22 @@ ${body}
     if (this.options.rowRemove !== true) {
       return Promise.resolve();
     }
-    const rowFragment = this.getRowFragment();
-    if (!rowFragment) {
-      return Promise.reject(new Error('Row fragment not found.'));
-    }
-    // 1行だった場合は削除しない
-    const parent = rowFragment.getParent();
-    if (parent) {
-      const siblings = parent.getChildElementFragments().filter(child => {
-        // data-each-before と data-each-after を除外
-        return (
-          !child.hasAttribute(`${Env.prefix}each-before`) &&
-          !child.hasAttribute(`${Env.prefix}each-after`)
-        );
-      });
-      if (siblings.length <= 1) {
-        return Promise.resolve();
+    // `data-{event}-row-remove-empty` を指定した場合のみ 0 件まで削除できる。
+    // 既定で最後の 1 行を残すのは従来仕様であり、変更すると「最低 1 行は消えない」
+    // 前提で作られた既存画面の挙動が変わるため、オプトインとする。
+    const allowEmpty = this.options.targetFragment?.hasAttribute(
+      Procedure.attrName(this.eventType, 'row-remove-empty'),
+    );
+    return this.spliceRows('row-remove', (array, index) => {
+      if (index < 0 || index >= array.length) {
+        return false;
       }
-    }
-    return rowFragment.remove();
+      if (!allowEmpty && array.length <= 1) {
+        return false;
+      }
+      array.splice(index, 1);
+      return true;
+    });
   }
 
   /**
@@ -3063,19 +3226,14 @@ ${body}
     if (this.options.rowMovePrev !== true) {
       return Promise.resolve();
     }
-    const rowFragment = this.getRowFragment();
-    if (!rowFragment) {
-      return Promise.reject(new Error('Row fragment not found.'));
-    }
-    const prevFragment = rowFragment.getPrevious();
-    if (!prevFragment) {
-      return Promise.resolve();
-    }
-    const parent = rowFragment.getParent();
-    if (!parent) {
-      return Promise.resolve();
-    }
-    return parent.insertBefore(rowFragment, prevFragment);
+    return this.spliceRows('row-prev', (array, index) => {
+      if (index <= 0 || index >= array.length) {
+        return false;
+      }
+      const [moved] = array.splice(index, 1);
+      array.splice(index - 1, 0, moved);
+      return true;
+    });
   }
 
   /**
@@ -3087,19 +3245,58 @@ ${body}
     if (this.options.rowMoveNext !== true) {
       return Promise.resolve();
     }
-    const rowFragment = this.getRowFragment();
-    if (!rowFragment) {
-      return Promise.reject(new Error('Row fragment not found.'));
+    return this.spliceRows('row-next', (array, index) => {
+      if (index < 0 || index >= array.length - 1) {
+        return false;
+      }
+      const [moved] = array.splice(index, 1);
+      array.splice(index + 1, 0, moved);
+      return true;
+    });
+  }
+
+  /**
+   * `data-each` が参照する配列を書き換えて行を増減・並べ替えします。
+   *
+   * 対象コンテナと配列の所有者を解決し、`mutate` で配列を書き換えたうえで所有者へ
+   * `Core.setBindingData()` を適用します。DOM の行は差分更新で再描画されるため、
+   * DOM とバインディングデータが常に一致します。
+   *
+   * `mutate` の第 2 引数は操作対象の行インデックスです。属性値でコンテナを指定した
+   * 場合（行の外に置いたボタン）は末尾の行を指し、`row-add` では末尾へ追加されます。
+   *
+   * @param attributeKey 属性のキー（`row-add` など）
+   * @param mutate 配列を書き換える関数。書き換えた場合は true を返す
+   * @returns 処理結果の Promise
+   */
+  private spliceRows(
+    attributeKey: string,
+    mutate: (array: unknown[], index: number) => boolean,
+  ): Promise<void> {
+    const container = this.resolveRowContainer(attributeKey);
+    if (!container) {
+      return Promise.reject(new Error('Row container not found.'));
     }
-    const nextFragment = rowFragment.getNext();
-    if (!nextFragment) {
+    const resolved = Procedure.resolveEachArray(container);
+    if (!resolved) {
+      return Promise.reject(new Error('Row array not resolved.'));
+    }
+    const target = this.options.targetFragment;
+    const ownRow = target
+      ? target.closestByAttribute(`${Env.prefix}row`)
+      : null;
+    const rows = Procedure.getRowFragments(container);
+    // 自身が行の内側にあればその行を、外側（属性値でコンテナ指定）なら末尾を対象とする。
+    const index = ownRow ? rows.indexOf(ownRow) : rows.length - 1;
+    // 元の配列は変更せず、コピーを書き換えて差し替える。
+    const nextArray = resolved.array.slice();
+    if (!mutate(nextArray, index)) {
       return Promise.resolve();
     }
-    const parent = rowFragment.getParent();
-    if (!parent) {
-      return Promise.resolve();
-    }
-    return parent.insertAfter(rowFragment, nextFragment);
+    return Core.setBindingData(
+      resolved.owner.getTarget(),
+      Procedure.withPathValue(resolved.ownerData, resolved.path, nextArray),
+    );
   }
 
   /**

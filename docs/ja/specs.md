@@ -160,7 +160,16 @@ fragment.ts (仮想DOM)
 
 observer.ts (DOM監視)
   ├─ core.ts
-  └─ event_dispatcher.ts
+  ├─ event_dispatcher.ts
+  ├─ intersect.ts (data-intersect-* の交差監視)
+  ├─ poll.ts (data-poll-* の定期取得)
+  └─ visible_range.ts (data-each-visible の可視範囲)
+
+poll.ts (定期取得トリガー)
+  ├─ core.ts
+  ├─ fragment.ts
+  ├─ procedure.ts
+  └─ event.ts
 
 procedure.ts (イベント処理)
   ├─ core.ts
@@ -272,8 +281,8 @@ newKeys.forEach((key, targetIndex) => {
 
   // データ更新
   child.setBindingData({
-    [indexKey]: targetIndex,      // data-each-index指定時
-    [argKey]: item,                // data-each-arg指定時 (プリミティブ値用)
+    [argKey]: item,                // data-each-arg指定時（要素データを包む）
+    [indexKey]: targetIndex,      // data-each-index指定時（包んだ外側へ置く）
     ...item                        // オブジェクトの場合は展開
   })
   child.setAttribute('data-row', key)
@@ -601,6 +610,8 @@ class Observer {
 - **attributes**: 属性の変更 → `Core.setAttribute()`
 - **childList**: ノードの追加・削除 → `Core.addNode()`, `Core.removeNode()`
 - **characterData**: テキストノードの変更 → `Core.changeText()`
+
+属性変更とノードの追加・削除では、専用トリガーの登録状態も同期します（`IntersectObserver` / `PollObserver` / `VisibleRangeObserver` の `syncElement()` / `syncTree()` / `cleanupTree()`）。これによって `data-import` などで後から挿入された `data-intersect-*` / `data-poll-*` も監視対象になり、DOM から除去された要素の監視・タイマーは確実に破棄されます。
 
 #### 初期化フロー
 
@@ -1006,6 +1017,34 @@ async handleError(response: Response): Promise<void> {
 - 同名入力の DOM 上の共存自体（セレクタの strict mode 違反など）は解消されません。DOM に1要素だけ存在させたい場合は、入力を1つに統一し `type` / `step` / `max` 等を `{{}}` 式で切り替えてください。
 
 また、フォーム要素自身に対して `Core.setBindingData()` や `data-fetch` が実行された場合は、フォーム配下の入力要素へ無イベントで逆方向同期します。このとき text input / textarea / select は `value` を更新し、checkbox / radio は `Form.setValues()` と同じ規則で checked 状態を反映します。
+
+##### 初期 `data-bind` からの入力欄復元
+
+`<form>` に `data-bind` を指定した場合、初期スキャンの完了時に**一度だけ**逆方向同期を適用します。これにより `name` と `data-bind` のキーが一致する `<select>` やチェックボックスは、`value="{{...}}"` や `data-attr-selected` / `data-attr-checked` を書かなくても初期表示で選択状態になります。
+
+```html
+<!-- select は "gas"、checkbox はチェック済みで初期表示される -->
+<form data-bind='{"kind":"gas","active":true}'>
+  <select name="kind">
+    <option value="">未選択</option>
+    <option value="power">電力</option>
+    <option value="gas">ガス</option>
+  </select>
+  <input type="checkbox" name="active" value="true">
+</form>
+```
+
+- **`data-bind` に含まれないキーの入力欄は、HTML の `value` 属性で与えた初期値がそのまま保たれます**（「未指定のキーは既存の入力値を維持する」規則）。
+- 復元は「そのフォームを初めてスキャンしたとき」だけです。`data-if` の表示切替などで再スキャンされても繰り返しません（利用者の編集を初期値へ巻き戻さないため）。
+- 対象は `<form>` 要素です。`data-form` 属性によるフォームコンテナは、`Core.setBindingData()` の逆方向同期と同様に対象外です。
+- `data-bind` に空文字を置きつつ HTML の `value` 属性を初期値として使っていた構成では、入力欄が空になります。初期値は `data-bind` 側へ寄せてください。
+
+##### `data-each` で生成された行への値反映
+
+`Core.setBindingData()` の逆方向同期は `data-each` の行生成より**前**に走るため、その更新で新しく生成された行には値が入りません。そこで `data-each` と `data-form-list` を同一要素へ指定した「編集可能な繰り返し行」では、**行単位でも値を反映**します。
+
+- 反映するのは「新規生成した行」と「要素データが変化した再利用行」だけです。変化していない行へ再適用すると、描画待ちの間に利用者が編集した入力欄を古い値で巻き戻すためです。
+- 行単位の反映では、**要素データに無いキーの入力欄は空になります**。要素データが行全体を規定するため、行の途中への挿入や並べ替えで担当する要素が変わったときに前の行の入力値が残らないようにするためです（フォーム全体への逆方向同期では、未指定のキーは既存値を維持します）。
 
 **処理フロー**:
 ```
@@ -1564,7 +1603,7 @@ data-each="arrayExpression"
 **関連属性**:
 - `data-each-arg`: 各要素のバインド名 (プリミティブ配列では必須)
 - `data-each-key`: 一意キープロパティ名 (差分検出用)
-- `data-each-index`: インデックスのバインド名
+- `data-each-index`: インデックスのバインド名。`data-each-arg` と併用した場合も**行スコープの直下**（`{{i}}`）で解決します。要素データの内側（`{{arg.i}}`）には入りません
 - `data-each-before`: ループ前に表示する要素をマーク
 - `data-each-after`: ループ後に表示する要素をマーク
 - `data-row`: 各行に自動付与されるキー (手動変更禁止)
@@ -2105,6 +2144,8 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 <!-- { items: [{ name: "Item1" }, { name: "Item2" }] } -->
 ```
 
+行が 0 件の場合も**キーは空配列として出力されます**（`{ items: [] }`）。キーを落とすと、サーバ側で「0 件」と「そのフィールドが未送信」を区別できず、全件削除を表現できないためです。
+
 #### `data-form-detach`
 
 バインディングから除外します。
@@ -2188,7 +2229,7 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 7. `data-{event}-after-run`: フェッチ後スクリプト実行
 8. `data-{event}-bind`: データバインド実行
 9. `data-{event}-adjust`: 値調整実行
-10. `data-{event}-row-add` / `data-{event}-row-remove` / `data-{event}-row-prev` / `data-{event}-row-next`: 行データの変更
+10. `data-{event}-row-add` / `data-{event}-row-remove`（`data-{event}-row-remove-empty`）/ `data-{event}-row-prev` / `data-{event}-row-next`: 行データの変更
 11. `data-{event}-reset`: リセット処理実行
 12. `data-{event}-copy` / `data-{event}-copy-params`: 別要素へバインディング値をコピー
 13. `data-{event}-refetch`: 再フェッチ実行
@@ -2283,6 +2324,157 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 ```html
 <div data-intersect-fetch="/api/hero" data-intersect-once></div>
 ```
+
+#### 定期取得トリガー (`data-poll-*`)
+
+`data-poll-*` はタイマーによって発火する専用トリガー属性です。`click` / `change` / `load` の DOM イベントとは別に、一定間隔で繰り返し Procedure を実行します。主な用途は、別端末や別プロセスでの状態変化をサーバへ問い合わせ続ける「完了待ち」画面です。
+
+アクション語彙は `data-{event}-*` と共通で、`data-poll-fetch` / `data-poll-data` / `data-poll-bind` / `data-poll-bind-arg` / `data-poll-bind-merge` / `data-poll-fetch-method` / `data-poll-fetch-headers` / `data-poll-fetch-state` などがそのまま使えます。バインドの適用規則もエラーメッセージの振り分けも通常のイベント属性と同一です。
+
+`data-poll-*` 固有の設定属性は次の 6 つです。
+
+1. `data-poll-interval`: 取得間隔（ミリ秒）
+2. `data-poll-timeout`: 開始からの打ち切り時間（ミリ秒）
+3. `data-poll-until`: 条件が成立した時点で停止
+4. `data-poll-error-limit`: 連続失敗回数の上限に達したら停止
+5. `data-poll-disabled`: 真の間は実行を抑止
+6. `data-poll-state`: ポーリング状態 `_poll` の注入先セレクタ
+
+```html
+<div id="page-state" data-bind='{"approval":{},"_poll":null}'>
+  <div
+    data-poll-fetch="/api/approval-status.json"
+    data-poll-data='{"approvalHash":"{{sms.approvalHash}}"}'
+    data-poll-interval="5000"
+    data-poll-timeout="900000"
+    data-poll-until="{{approval.confirmed}}"
+    data-poll-bind="#page-state"
+    data-poll-bind-arg="approval"
+    data-poll-bind-merge
+    data-poll-state="#page-state"
+  ></div>
+
+  <p data-if="{{_poll?.running}}">確認をお待ちしています…</p>
+  <p data-if="{{_poll?.timedOut}}">時間内に確認が完了しませんでした。</p>
+</div>
+```
+
+トリガーとして機能するのは、上記の設定属性以外の `data-poll-*` を 1 つ以上持つ場合です。`data-poll-interval` や `data-poll-timeout` だけを指定した要素はポーリングを開始しません。
+
+##### 実行タイミング
+
+- 初回は間隔を待たずに**即時実行**します（非イベント `data-fetch` と同じ扱い）。
+- 2 回目以降の間隔は、**前回の手続きが完了した時点**から計測します。応答が間隔より遅い場合でもリクエストは多重化しません。
+- タブが非表示から表示へ戻った時点（`visibilitychange`）で、待機中の間隔を打ち切って即時実行します。バックグラウンドのタブではブラウザがタイマーを大きく抑制するため（Chrome では数分後に 1 分あたり 1 回程度まで低下）、復帰直後の検知遅延を抑えるための補正です。**指定した間隔はバックグラウンドでは保証されません。**
+
+##### `data-poll-interval`
+
+取得間隔をミリ秒で指定します。省略時は `5000`（5 秒）です。下限は `100` ミリ秒で、これを下回る値と数値として解釈できない値は補正し、開発モードで警告を出します。
+
+```html
+<div data-poll-fetch="/api/status" data-poll-interval="5000"></div>
+```
+
+##### `data-poll-timeout`
+
+ポーリング開始からの打ち切り時間をミリ秒で指定します。省略時は無制限です。打ち切りは間隔タイマーとは独立に計測するため、バックグラウンドタブでタイマーが抑制されていても指定時刻に到達します。
+
+到達時は `_poll.timedOut` が真になり、`haori:polltimeout` に続いて `haori:pollstop` が発火します。
+
+```html
+<div data-poll-fetch="/api/status" data-poll-timeout="900000"></div>
+```
+
+##### `data-poll-until`
+
+条件が成立した時点でポーリングを恒久停止します。**`{{...}}` 記法で指定してください**（`data-if` / `data-each` / `data-derive` 以外の属性は、テンプレート式でなければ式として評価されません）。
+
+式は**その要素自身のバインドスコープ**で評価されます。`data-poll-bind` で別要素へ結果を書き込む場合、その要素が `data-poll-*` 要素の祖先でなければ参照は解決できません。上の例のように、ポーリング要素をバインド先の内側に配置してください。
+
+評価は次の 2 か所で行います。
+
+1. 各リクエストの**実行前**。初期状態で既に条件が成立している場合、一度もリクエストを出さずに停止します。
+2. 取得成功後の**バインド反映後**。取得結果によって条件が成立した時点で停止します。
+
+未解決の参照を含む場合は「成立していない」として扱い、停止しません（バインドが届く前の初回評価で即停止しないため）。属性名の綴り誤りなどに気づけるよう、開発モードでは警告を出します。
+
+```html
+<div data-poll-fetch="/api/status" data-poll-until="{{approval.confirmed}}"></div>
+```
+
+##### `data-poll-error-limit`
+
+連続して失敗した回数がこの値に達したらポーリングを恒久停止します。省略時は**無制限**で、失敗しても `data-poll-timeout` まで取得を続けます（モバイル回線の一時的な切断でポーリングが死なないようにするため）。成功した時点で連続失敗回数は 0 に戻ります。
+
+HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗として数えます。
+
+```html
+<!-- 3 回連続で失敗したら打ち切る -->
+<div data-poll-fetch="/api/status" data-poll-error-limit="3"></div>
+```
+
+##### `data-poll-disabled`
+
+真と評価された間は手続きを実行しません。**一時停止**であり、偽に戻れば次の周期から再開します。`data-poll-timeout` の経過時間は抑止中も進み、`data-poll-until` は抑止中に評価しません。
+
+```html
+<div data-poll-fetch="/api/status" data-poll-disabled="{{!ready}}"></div>
+```
+
+##### `data-poll-state`
+
+ポーリングの状態を `_poll` として指定要素のバインディングデータへ注入します。値を CSS セレクタとして解決し、値を省略した場合は自要素が対象になります。属性そのものが無い場合は注入しません。`data-fetch-state` と同様に `data-bind` 属性は汚しません。
+
+| キー | 内容 |
+| ---- | ---- |
+| `running` | ポーリングが稼働中かどうか（恒久停止で偽） |
+| `paused` | 一時停止中（非表示または `data-poll-disabled`）かどうか |
+| `stopped` | 恒久停止済みかどうか |
+| `timedOut` | 打ち切り時間に到達したかどうか |
+| `stopReason` | 恒久停止の理由。`'until'` / `'timeout'` / `'error'` / `'detached'` |
+| `count` | 手続きの実行回数 |
+| `elapsedMs` | ポーリング開始からの経過時間（ミリ秒） |
+
+**注入先は `_poll` を参照する要素の祖先（またはその要素自身）にしてください。** 式は要素を起点に祖先方向へバインドを辿って解決するため、値を省略して自要素へ注入すると、兄弟要素の `data-if="{{_poll?.timedOut}}"` などからは参照できません。画面全体で状態を使う構成では、上の例のように `data-poll-bind` と同じコンテナを指定します。
+
+**`_poll` は初期表示の時点では存在しません。** ポーリングの登録（`PollObserver.syncTree()`）は初期スキャンの完了後に行われるため、最初の評価では未定義です。`_fetch`（`data-fetch-state`）と同様に、`data-bind` で `"_poll": null` を宣言し、式では `_poll?.xxx` とオプショナルチェーンで参照してください。宣言と `?.` のどちらも省くと、初期表示時に参照エラーがコンソールへ出力されます。
+
+注入は**状態が遷移した時点だけ**行います。取得ごとに注入すると `data-each` を含む画面では間隔ごとに再評価が走るためです。リクエスト単位の `loading` / `success` / `error` は `data-poll-fetch-state`（`_fetch`）が担います。
+
+`false` はテキスト補間（`{{_poll?.stopped}}`）では空文字列として描画されます。真偽の出し分けには `data-if` を使用してください。
+
+`data-poll-bind` は既定でバインド先を全置換するため、注入先が bind 先と同じ要素になる構成では `data-poll-bind-merge` を併用してください（併用しない場合も `_poll` は書き戻されますが、bind 先の他のキーは保持されません）。
+
+##### 停止と一時停止
+
+**恒久停止**（再開しません）は次の 4 つです。停止時に `haori:pollstop` が発火します。
+
+| 契機 | `stopReason` |
+| ---- | ------------ |
+| `data-poll-until` の条件成立 | `'until'` |
+| `data-poll-timeout` への到達 | `'timeout'` |
+| `data-poll-error-limit` への到達 | `'error'` |
+| 対象要素が DOM から外れた | `'detached'` |
+
+**一時停止**（条件が戻れば再開します）は次の 2 つです。`_poll.paused` が真になります。
+
+- `data-if` によって非表示になった（自要素または祖先のいずれか）
+- `data-poll-disabled` が真になった
+
+`data-if` は要素を DOM から削除せず `display: none` と `data-if-false` 属性を付与するため（[data-if の動作](#data-if-の動作)）、非表示の判定は祖先方向を毎周期確認して行います。タブの出し入れのように `data-if` を切り替える構成でも、表示に戻った時点から再開します。
+
+停止はリクエストを中断しません。`data-poll-timeout` に到達した時点で通信中のリクエストがあった場合、その応答は通常どおりバインドまで処理されます。そのため `_poll.timedOut` が真になった直後に取得結果が反映されることがあります。打ち切り後の反映を避けたい場合は、`data-poll-until` 側で停止させる設計にしてください。
+
+##### 定期実行と相性の悪い修飾子
+
+`data-{event}-*` の全修飾子が技術的に動作しますが、次のものは間隔ごとに繰り返されるため実用になりません。使用は避けてください。
+
+- `data-poll-confirm`: 間隔ごとに確認ダイアログが出ます
+- `data-poll-toast` / `data-poll-dialog`: 間隔ごとにメッセージが表示されます
+- `data-poll-history`: 間隔ごとに履歴が積まれます
+- `data-poll-scroll` / `data-poll-scroll-error`: 間隔ごとにスクロールします
+
+`data-poll-redirect`（条件成立時の遷移）は、`data-poll-until` と組み合わせれば意図どおり動作します。
 
 #### バリデーションと確認
 
@@ -2609,28 +2801,60 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 
 調整値を指定します。
 
-##### `data-{event}-row-add`
+##### 行操作の共通仕様（`data-{event}-row-*`）
 
-対象要素が属する行の後に新しい行を追加します。追加された行のフォーム要素は空の状態にリセットされます。
+`data-{event}-row-add` / `-row-remove` / `-row-prev` / `-row-next` は、`data-each` が参照している**配列そのもの**を書き換えます。DOM の行は差分更新で再描画されるため、DOM とバインディングデータが常に一致します。
+
+- **対象の決定**: 値を省略した場合は対象要素が属する行（`data-row`）です。CSS セレクタを指定した場合は、そのセレクタが指す `data-each` コンテナの**末尾の行**を対象とします。行の外に置いたボタンや、行が 0 件で複製元が存在しない状態からの追加に使用します。
+- **配列の所有者**: `data-each` の式を単純な識別子パス（`contracts` / `form.contracts` など）とみなし、根の識別子を持つ最も近い祖先（自身を含む）のバインディングデータを所有者とします。関数呼び出しや演算を含む式（`items.filter(...)` など）は書き戻し先を一意に決められないため、エラーログを出して何もしません。
+- **行の値**: 追加した行には空のオブジェクト（`{}`）を挿入します。`data-form-list` を併用している場合、行内の入力欄は要素データのキーと `name` で対応するため空の状態で描画されます。
 
 ```html
-<div data-each="items" data-each-arg="item">
-  <input name="name" value="{{item.name}}">
-  <button data-click-row-add>行追加</button>
-</div>
+<form data-bind='{"contracts":[{"name":"A"}]}'>
+  <div id="list" data-form-list="contracts" data-each="contracts"
+    data-each-arg="c" data-each-index="i">
+    <div>
+      <span>{{i}}</span>
+      <input name="name">
+      <button data-click-row-add>行追加</button>
+      <button data-click-row-remove>削除</button>
+      <button data-click-row-prev>↑</button>
+      <button data-click-row-next>↓</button>
+    </div>
+  </div>
+  <!-- 行の外から追加する（0 件の状態からでも追加できる） -->
+  <button data-click-row-add="#list">行追加</button>
+</form>
+```
+
+##### `data-{event}-row-add`
+
+対象要素が属する行の**直後**に新しい行を追加します。セレクタで対象コンテナを指定した場合は末尾へ追加します。追加された行の入力欄は空の状態になります。
+
+```html
+<button data-click-row-add>行追加</button>
+<button data-click-row-add="#list">行追加（末尾）</button>
 ```
 
 ##### `data-{event}-row-remove`
 
-対象要素が属する行を削除します。ただし、リスト内に1行しか存在しない場合は削除されません。
+対象要素が属する行を削除します。ただし**リスト内に 1 行しか存在しない場合は削除しません**。0 件まで削除したい場合は `data-{event}-row-remove-empty` を併用してください。
 
 ```html
 <button data-click-row-remove>削除</button>
 ```
 
+##### `data-{event}-row-remove-empty`
+
+`data-{event}-row-remove` の「最後の 1 行を残す」動作を解除し、0 件まで削除できるようにします。可変件数（0〜N 件）の入力に使用します。
+
+```html
+<button data-click-row-remove data-click-row-remove-empty>削除</button>
+```
+
 ##### `data-{event}-row-prev`
 
-対象要素が属する行と前の行を入れ替えます。
+対象要素が属する行と前の行を入れ替えます。配列の順序が入れ替わり、DOM の行順も追従します。
 
 ```html
 <button data-click-row-prev>↑</button>
@@ -2638,7 +2862,7 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 
 ##### `data-{event}-row-next`
 
-対象要素が属する行と次の行を入れ替えます。
+対象要素が属する行と次の行を入れ替えます。配列の順序が入れ替わり、DOM の行順も追従します。
 
 ```html
 <button data-click-row-next>↓</button>
@@ -3420,6 +3644,53 @@ element.addEventListener('haori:importerror', (event) => {
   url: string
   error: unknown
 }
+```
+
+### 定期取得
+
+#### `haori:polltimeout`
+
+`data-poll-timeout` に到達した時に発火します。続けて `haori:pollstop` が発火します。
+
+```javascript
+element.addEventListener('haori:polltimeout', (event) => {
+  console.log('実行回数:', event.detail.count)
+  console.log('経過時間:', event.detail.elapsedMs)
+})
+```
+
+**detail**:
+```typescript
+{
+  count: number      // それまでの実行回数
+  elapsedMs: number  // ポーリング開始からの経過時間（ミリ秒）
+}
+```
+
+#### `haori:pollstop`
+
+ポーリングが恒久停止した時に発火します。一時停止（`data-if` による非表示・`data-poll-disabled`）では発火しません。対象要素が DOM から外れた場合（`reason` が `'detached'`）は、要素が既に切り離されているため発火しません。
+
+```javascript
+element.addEventListener('haori:pollstop', (event) => {
+  console.log('停止理由:', event.detail.reason)
+})
+```
+
+**detail**:
+```typescript
+{
+  reason: 'until' | 'timeout' | 'error' | 'detached'
+  count: number      // 実行回数
+  elapsedMs: number  // ポーリング開始からの経過時間（ミリ秒）
+}
+```
+
+`data-on` で宣言的に受け取ることもできます。
+
+```html
+<div data-on="haori:polltimeout"
+  data-on-data='{"expired":true}' data-on-bind="#page-state" data-on-bind-merge></div>
 ```
 
 ---

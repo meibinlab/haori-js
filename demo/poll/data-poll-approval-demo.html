@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-poll 定期取得（完了待ち） デモ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      line-height: 1.6;
+    }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #475569;
+    }
+
+    .meta code {
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #eef2ff;
+      color: #4338ca;
+    }
+
+    .status {
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      font-size: 15px;
+    }
+
+    .status.waiting {
+      border: 1px dashed #94a3b8;
+      background: #f8fafc;
+      color: #475569;
+    }
+
+    .status.done {
+      border: 1px solid #86efac;
+      background: #f0fdf4;
+      color: #15803d;
+    }
+
+    .status.expired {
+      border: 1px solid #fca5a5;
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button {
+      padding: 8px 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      color: #1f2937;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #f1f5f9;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>data-poll 定期取得（完了待ち） デモ</h1>
+    <p>
+      別端末での確認操作の完了を <code>data-poll-*</code> で 2 秒間隔に問い合わせ、完了を検知したら表示を切り替えます。
+      取得先 URL は <code>stage</code> のテンプレート式を含むため、「別端末で確認したことにする」を押すと次の周期から確認済みの応答を返します。
+    </p>
+
+    <div id="approval" class="panel" data-bind='{"stage":"waiting","paused":false,"approval":{},"_poll":null}'>
+      <!-- 定期取得トリガー。URL のテンプレート式は毎回評価されるため、
+           stage の変更は次の周期から反映される（生の属性値は変わらないので
+           タイマーと打ち切り時間の起点はリセットされない）。 -->
+      <div
+        data-poll-fetch="./data-poll-approval-demo-{{stage}}.json"
+        data-poll-interval="2000"
+        data-poll-timeout="60000"
+        data-poll-until="{{approval.confirmed}}"
+        data-poll-disabled="{{paused}}"
+        data-poll-bind="#approval"
+        data-poll-bind-arg="approval"
+        data-poll-bind-merge
+        data-poll-state="#approval"
+      ></div>
+
+      <div class="meta">
+        <span>取得回数: <code>{{_poll?.count}}</code></span>
+        <span>経過: <code>{{_poll?.elapsedMs}}</code> ms</span>
+        <span>取得先: <code>{{stage}}</code></span>
+        <span data-if="{{_poll?.stopped}}">停止理由: <code>{{_poll?.stopReason}}</code></span>
+      </div>
+
+      <div class="status waiting" data-if="{{_poll?.running && !_poll?.paused}}">
+        {{approval.message || "確認をお待ちしています..."}}
+      </div>
+
+      <div class="status waiting" data-if="{{_poll?.paused}}">
+        一時停止中です。「再開する」を押すと次の周期から取得を再開します。
+      </div>
+
+      <div class="status done" data-if="{{approval.confirmed}}">
+        {{approval.message}} ポーリングは停止しました。
+      </div>
+
+      <div class="status expired" data-if="{{_poll?.timedOut}}">
+        時間内に確認が完了しませんでした。最初からやり直してください。
+      </div>
+
+      <div class="controls">
+        <button
+          data-click-data='{"stage":"confirmed"}'
+          data-click-bind="#approval"
+          data-click-bind-merge
+        >
+          別端末で確認したことにする
+        </button>
+        <button
+          data-click-data='{"paused":true}'
+          data-click-bind="#approval"
+          data-click-bind-merge
+        >
+          一時停止する
+        </button>
+        <button
+          data-click-data='{"paused":false}'
+          data-click-bind="#approval"
+          data-click-bind-merge
+        >
+          再開する
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

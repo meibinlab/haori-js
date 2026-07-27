@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-form-list 編集可能な繰り返し行 デモ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      line-height: 1.6;
+    }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+
+    th,
+    td {
+      padding: 8px 6px;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      font-size: 14px;
+      vertical-align: middle;
+    }
+
+    th {
+      color: #475569;
+      font-weight: 600;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    select {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    button {
+      padding: 6px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #f1f5f9;
+    }
+
+    .empty {
+      padding: 16px;
+      border: 1px dashed #94a3b8;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #475569;
+      text-align: center;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 13px;
+      color: #475569;
+    }
+
+    li {
+      margin-bottom: 4px;
+    }
+
+    .num {
+      width: 32px;
+      color: #64748b;
+    }
+
+    .ops {
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>data-form-list 編集可能な繰り返し行 デモ</h1>
+    <p>
+      可変件数（0〜N 件）の明細を <code>data-each</code> と <code>data-form-list</code> で入力するデモです。
+      初期 <code>data-bind</code> の値が <code>&lt;select&gt;</code> やチェックボックスへ復元され、行の追加・削除・並べ替えが
+      バインディングデータへそのまま反映されます。
+    </p>
+
+    <form id="contractForm" class="panel" data-bind='{"contracts":[
+      {"kind":"power","name":"東京本社","startDate":"2026-04-01","active":true},
+      {"kind":"gas","name":"大阪支店","startDate":"2026-05-01","active":false}
+    ]}'>
+      <table>
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>種別</th>
+            <th>契約名</th>
+            <th>開始日</th>
+            <th>有効</th>
+            <th class="ops">操作</th>
+          </tr>
+        </thead>
+        <tbody
+          id="contractRows"
+          data-form-list="contracts"
+          data-each="contracts"
+          data-each-arg="c"
+          data-each-index="i"
+        >
+          <tr>
+            <td class="num">{{i + 1}}</td>
+            <td>
+              <select name="kind">
+                <option value="">未選択</option>
+                <option value="power">電力</option>
+                <option value="gas">ガス</option>
+              </select>
+            </td>
+            <td><input type="text" name="name"></td>
+            <td><input type="date" name="startDate"></td>
+            <td>
+              <input type="checkbox" name="active" value="true">
+            </td>
+            <td class="ops">
+              <button type="button" data-click-row-add>＋</button>
+              <button type="button" data-click-row-remove
+                data-click-row-remove-empty>－</button>
+              <button type="button" data-click-row-prev>↑</button>
+              <button type="button" data-click-row-next>↓</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="empty" data-if="contracts.length === 0">
+        契約がありません。「行を追加」で入力を始めてください。
+      </div>
+
+      <div class="actions">
+        <!-- 行の外に置いた追加ボタン。0 件の状態からでも追加できる -->
+        <button type="button" data-click-row-add="#contractRows">行を追加</button>
+      </div>
+
+      <h2>バインディングデータ（送信される内容）</h2>
+      <p>件数: {{contracts.length}}</p>
+      <ul data-each="contracts" data-each-arg="row" data-each-index="n">
+        <li>
+          [{{n}}] kind={{row.kind}} / name={{row.name}} /
+          startDate={{row.startDate}} / active={{row.active}}
+        </li>
+      </ul>
+    </form>
+  </main>
+
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

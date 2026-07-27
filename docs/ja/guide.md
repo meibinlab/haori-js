@@ -2082,6 +2082,128 @@ state に持った配列（編集中のルール一覧など）への要素追�
 
 ---
 
+## 一定間隔で処理を実行する（`data-poll-*`）
+
+`data-poll-*` 属性を使うと、一定間隔でサーバへ問い合わせ続けられます。別端末や別プロセスでの操作完了を待って画面を進める「完了待ち」画面に向いています。
+
+### 基本的な使い方
+
+別端末で確認操作が完了したかを 5 秒間隔で問い合わせ、完了を検知したら画面を切り替える例です。15 分で打ち切ります。
+
+```html
+<div id="page-state" data-bind='{"approval":{},"_poll":null}'>
+  <div
+    data-poll-fetch="/api/approval-status.json"
+    data-poll-data='{"approvalHash":"{{sms.approvalHash}}"}'
+    data-poll-interval="5000"
+    data-poll-timeout="900000"
+    data-poll-until="{{approval.confirmed}}"
+    data-poll-bind="#page-state"
+    data-poll-bind-arg="approval"
+    data-poll-bind-merge
+    data-poll-state="#page-state"
+  ></div>
+
+  <div data-if="{{!approval.confirmed && !_poll?.stopped}}">
+    <p>別の端末で確認操作を行ってください。</p>
+    <p>確認をお待ちしています…</p>
+  </div>
+  <div data-if="{{approval.confirmed}}">
+    <p>確認が完了しました。</p>
+  </div>
+  <div data-if="{{_poll?.timedOut}}">
+    <p>時間内に確認が完了しませんでした。お手数ですが最初からやり直してください。</p>
+  </div>
+</div>
+```
+
+`data-poll-fetch` の取得結果は `data-poll-bind` でバインドされ、`data-poll-until` の条件が成立した時点でポーリングが停止します。取得・バインド・エラー表示の考え方は `data-click-*` と同じです。
+
+**ポーリング要素はバインド先の内側に置いてください。** `data-poll-until` の式はその要素自身のバインドスコープで評価されるため、`data-poll-bind` の対象が祖先でないと `approval.confirmed` を参照できません。
+
+### いつ止まるか
+
+再開しない**恒久停止**は次の 4 つです。
+
+- `data-poll-until` の条件が成立した
+- `data-poll-timeout` に到達した
+- `data-poll-error-limit` の連続失敗回数に達した
+- 要素が DOM から外れた
+
+条件が戻れば再開する**一時停止**は次の 2 つです。
+
+- `data-if` で非表示になった（祖先が非表示になった場合も含む）
+- `data-poll-disabled` が真になった
+
+### `data-poll-*` の関連属性
+
+#### `data-poll-interval`: 取得間隔
+
+```html
+<div data-poll-fetch="/api/status" data-poll-interval="5000"></div>
+```
+
+省略時は 5000 ミリ秒（5 秒）です。初回は間隔を待たずに即時実行し、2 回目以降は**前回の完了時点**から計測します。応答が間隔より遅い場合もリクエストは重なりません。
+
+#### `data-poll-timeout`: 打ち切り時間
+
+```html
+<div data-poll-fetch="/api/status" data-poll-timeout="900000"></div>
+```
+
+開始からこの時間が経過したら停止します。省略時は無制限です。到達したことは `_poll.timedOut` または `haori:polltimeout` イベントで判定できます。
+
+#### `data-poll-until`: 停止条件
+
+```html
+<div data-poll-fetch="/api/status" data-poll-until="{{approval.confirmed}}"></div>
+```
+
+条件が成立した時点で停止します。`{{...}}` を付けて指定してください。各リクエストの実行前とバインド反映後に評価するため、最初から条件が成立している場合は 1 回も通信しません。
+
+#### `data-poll-error-limit`: 連続失敗で打ち切る
+
+```html
+<div data-poll-fetch="/api/status" data-poll-error-limit="3"></div>
+```
+
+省略時は失敗しても取得を続けます（回線の一時的な切断でポーリングが止まらないようにするため）。サーバ障害時に叩き続けたくない場合に指定してください。成功すると連続失敗回数は 0 に戻ります。
+
+#### `data-poll-disabled`: 一時的に停止
+
+```html
+<div data-poll-fetch="/api/status" data-poll-disabled="{{!ready}}"></div>
+```
+
+真の間は実行しません。偽に戻れば次の周期から再開します。
+
+#### `data-poll-state`: ポーリング状態を画面で使う
+
+```html
+<div id="page-state" data-bind='{"_poll":null}'>
+  <div data-poll-fetch="/api/status" data-poll-state="#page-state"></div>
+  <p data-if="{{_poll?.running}}">確認中…</p>
+</div>
+```
+
+`_poll` として `running` / `paused` / `stopped` / `timedOut` / `stopReason` / `count` / `elapsedMs` が注入されます。値を省略すると自要素が対象で、CSS セレクタを指定すれば別要素へ注入できます。
+
+**注入先は `_poll` を参照する要素の祖先にしてください。** 式は祖先方向へ辿って解決するため、値を省略して自要素へ注入すると、上の例の `<p>` のような兄弟要素からは参照できません。画面全体で使う場合は `data-poll-bind` と同じコンテナを指定するのが簡単です。
+
+**`_poll` は初期表示の時点では存在しません。** `_fetch`（`data-fetch-state`）と同じように、`data-bind` で `"_poll": null` を宣言し、式では `_poll?.xxx` とオプショナルチェーンで参照してください。どちらも省くと初期表示時に参照エラーがコンソールへ出ます。
+
+なお `false` はテキスト補間では空文字列になります。真偽の出し分けには `{{_poll?.stopped}}` をそのまま表示するのではなく `data-if` を使ってください。
+
+各リクエストの通信状態（`loading` / `success` / `error`）が必要な場合は `data-poll-fetch-state` を併用してください。
+
+### 注意点
+
+**バックグラウンドのタブでは指定した間隔が保証されません。** ブラウザが非表示タブのタイマーを抑制するためで、Chrome では数分後に 1 分あたり 1 回程度まで低下します。タブが表示に戻った時点で即時に取得し直す補正が入りますが、抑制中の検知遅延は避けられません。利用者が別のタブやアプリを見ている間に完了する可能性がある画面では、この遅延を前提に文言を設計してください。
+
+`data-poll-confirm`、`data-poll-toast`、`data-poll-dialog`、`data-poll-history`、`data-poll-scroll` は間隔ごとに繰り返されるため使用を避けてください。`data-poll-redirect` は `data-poll-until` と組み合わせれば意図どおり動作します。
+
+---
+
 ## ボタンクリックで処理を実行する
 
 `data-click-*`属性を使うと、ボタンクリック時の処理を定義できます。
@@ -2103,7 +2225,7 @@ state に持った配列（編集中のルール一覧など）への要素追�
 7. `data-click-after-run` - 後処理スクリプト
 8. `data-click-bind` - データバインド
 9. `data-click-adjust` - 値の増減
-10. `data-click-row-add` / `data-click-row-remove` / `data-click-row-prev` / `data-click-row-next` - 行操作
+10. `data-click-row-add` / `data-click-row-remove`（`data-click-row-remove-empty`）/ `data-click-row-prev` / `data-click-row-next` - 行操作
 11. `data-click-reset` - リセット
 12. `data-click-copy` / `data-click-copy-params` - 別要素へ値をコピー
 13. `data-click-refetch` - 再フェッチ
@@ -2392,10 +2514,26 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 </div>
 ```
 
+行操作は `data-each` が参照している**配列そのもの**を書き換えます。DOM の行は再描画で追従するため、送信データと画面が食い違いません。
+
+セレクタを指定すると、**行の外に置いたボタン**から末尾へ追加できます。行が 0 件のときも追加できるため、可変件数（0〜N 件）の入力に使えます。
+
+```html
+<button data-click-row-add="#list">行追加</button>
+```
+
 #### `data-click-row-remove`: 行を削除
 
 ```html
 <button data-click-row-remove>この行を削除</button>
+```
+
+既定では**最後の 1 行は削除されません**。0 件まで削除したい場合は `data-click-row-remove-empty` を併用してください。
+
+#### `data-click-row-remove-empty`: 0 件まで削除できるようにする
+
+```html
+<button data-click-row-remove data-click-row-remove-empty>この行を削除</button>
 ```
 
 #### `data-click-row-prev`: 前の行と入れ替え

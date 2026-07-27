@@ -4,6 +4,7 @@
  */
 import {describe, it, expect, beforeEach, vi} from 'vitest';
 import Form from '../src/form';
+import Fragment, {ElementFragment} from '../src/fragment';
 import Haori from '../src/haori';
 import Log from '../src/log';
 import {waitForCondition, waitForDomSettled} from './helpers/async';
@@ -1490,7 +1491,6 @@ describe('Procedure action operations', () => {
     form.setAttribute('data-bind', '{"keyword":"stale"}');
     const input = document.createElement('input');
     input.name = 'keyword';
-    input.value = 'copied';
     form.appendChild(input);
 
     const btn = document.createElement('button');
@@ -1503,6 +1503,10 @@ describe('Procedure action operations', () => {
     container.appendChild(form);
 
     await waitForDomSettled();
+    // 初期 data-bind は入力欄へ反映されるため（初期復元）、収集値だけを bind と
+    // 異なる値へ変えて「copy が pushState より前に走る」ことを検出できるようにする。
+    input.value = 'copied';
+    (Fragment.get(input) as ElementFragment).syncValue();
     btn.click();
     await waitForCondition(() => pushStateSpy.mock.calls.length > 0, {
       description: 'pushState called after copy processing',

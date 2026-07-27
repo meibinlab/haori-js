@@ -6,7 +6,7 @@
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
-import {waitForDomSettled} from './helpers/async';
+import {waitForCondition, waitForDomSettled} from './helpers/async';
 
 describe('Row operations', () => {
   let container: HTMLElement;
@@ -294,30 +294,37 @@ describe('Row operations', () => {
       await Core.scan(container);
       await waitForDomSettled();
 
+      // 行操作はバインディングデータの更新を経て差分更新で再描画されるため、
+      // 描画が確定するまで待ってから件数を確認する。
+      const rowCount = (): number =>
+        container.querySelectorAll('div[data-each] > div').length;
+
       // 追加
       const addButtons = container.querySelectorAll('button[data-click-row-add]');
       (addButtons[0] as HTMLButtonElement).click();
-      await waitForDomSettled();
-
-      let items = container.querySelectorAll('div[data-each] > div');
-      expect(items.length).toBe(3);
+      await waitForCondition(() => rowCount() === 3, {
+        description: 'row added',
+      });
 
       // 移動
       const prevButtons = container.querySelectorAll(
         'button[data-click-row-prev]'
       );
       (prevButtons[2] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForCondition(() => rowCount() === 3, {
+        description: 'row moved',
+      });
 
       // 削除
       const removeButtons = container.querySelectorAll(
         'button[data-click-row-remove]'
       );
       (removeButtons[0] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForCondition(() => rowCount() === 2, {
+        description: 'row removed',
+      });
 
-      items = container.querySelectorAll('div[data-each] > div');
-      expect(items.length).toBe(2);
+      expect(rowCount()).toBe(2);
     });
   });
 });

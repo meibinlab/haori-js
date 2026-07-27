@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>data-poll-* 定期取得の動作確認（完了待ち画面）</title>
+  </head>
+  <body>
+    <h2>data-poll-* の実ブラウザ動作確認</h2>
+    <p>
+      別端末での確認完了をポーリングで待つ画面を模した構成。応答は
+      page.route() で差し替える。`_poll` は参照側の祖先へ注入する
+      （式は祖先方向にしか解決しないため）。
+    </p>
+
+    <!-- ケースA: until 成立で停止する（完了待ち） -->
+    <section id="caseA" data-bind='{"approval":{},"_poll":null}'>
+      <h3>A: data-poll-until で停止</h3>
+      <div
+        id="pollA"
+        data-poll-fetch="/api/approval-status"
+        data-poll-interval="150"
+        data-poll-timeout="10000"
+        data-poll-until="{{approval.confirmed}}"
+        data-poll-bind="#caseA"
+        data-poll-bind-arg="approval"
+        data-poll-bind-merge
+        data-poll-state="#caseA"
+      ></div>
+      <p id="stateA">
+        confirmed={{approval.confirmed}} running={{_poll?.running}}
+        stopped={{_poll?.stopped}} reason={{_poll?.stopReason}}
+        count={{_poll?.count}}
+      </p>
+      <p id="waitingA" data-if="{{!approval.confirmed && !_poll?.stopped}}">
+        確認をお待ちしています
+      </p>
+      <p id="doneA" data-if="{{approval.confirmed}}">確認が完了しました</p>
+    </section>
+
+    <!-- ケースB: timeout で打ち切る（条件は成立させない） -->
+    <section id="caseB" data-bind='{"approval":{},"_poll":null}'>
+      <h3>B: data-poll-timeout で打ち切り</h3>
+      <div
+        id="pollB"
+        data-poll-fetch="/api/never-confirm"
+        data-poll-interval="150"
+        data-poll-timeout="700"
+        data-poll-until="{{approval.confirmed}}"
+        data-poll-bind="#caseB"
+        data-poll-bind-arg="approval"
+        data-poll-bind-merge
+        data-poll-state="#caseB"
+      ></div>
+      <p id="stateB">
+        stopped={{_poll?.stopped}} timedOut={{_poll?.timedOut}}
+        reason={{_poll?.stopReason}}
+      </p>
+      <p id="expiredB" data-if="{{_poll?.timedOut}}">時間切れです</p>
+    </section>
+
+    <!-- ケースC: data-if による一時停止と再開 -->
+    <section id="caseC" data-bind='{"visible":true,"_poll":null}'>
+      <h3>C: data-if の非表示で一時停止</h3>
+      <button
+        id="toggleC"
+        data-click-data='{"visible":false}'
+        data-click-bind="#caseC"
+      >
+        隠す
+      </button>
+      <button
+        id="showC"
+        data-click-data='{"visible":true}'
+        data-click-bind="#caseC"
+      >
+        表示する
+      </button>
+      <div data-if="visible">
+        <div
+          id="pollC"
+          data-poll-fetch="/api/tick"
+          data-poll-interval="150"
+          data-poll-state="#stateHolderC"
+        ></div>
+      </div>
+      <!-- 注入先は data-if の外側に置く。data-if 配下だと非表示時に
+           テキスト評価も止まり、paused の遷移が画面に出ない。
+           false はテキスト補間では空文字列になるため、真偽の確認は data-if で行う。 -->
+      <div id="stateHolderC">
+        <p id="pausedC" data-if="{{_poll?.paused}}">一時停止中</p>
+        <p id="stoppedC" data-if="{{_poll?.stopped}}">恒久停止</p>
+      </div>
+    </section>
+
+    <script>
+      // ローカルビルドを読み込む
+      const script = document.createElement('script');
+      script.src = '/dist/haori.iife.js';
+      document.head.appendChild(script);
+    </script>
+  </body>
+</html>

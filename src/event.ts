@@ -324,4 +324,40 @@ export default class HaoriEvent {
       durationMs: startedAt ? performance.now() - startedAt : undefined,
     });
   }
+
+  /**
+   * polltimeoutイベントを発火します。
+   *
+   * @param target data-poll-*要素
+   * @param count それまでの実行回数
+   * @param elapsedMs ポーリング開始からの経過時間（ミリ秒）
+   * @return 戻り値はありません。
+   */
+  public static pollTimeout(
+    target: HTMLElement,
+    count: number,
+    elapsedMs: number,
+  ): void {
+    HaoriEvent.dispatch(target, 'polltimeout', {count, elapsedMs});
+  }
+
+  /**
+   * pollstopイベントを発火します。
+   *
+   * 打ち切り時は polltimeout の後に続けて発火します。
+   *
+   * @param target data-poll-*要素
+   * @param reason 停止理由（'until' | 'timeout' | 'error' | 'detached'）
+   * @param count それまでの実行回数
+   * @param elapsedMs ポーリング開始からの経過時間（ミリ秒）
+   * @return 戻り値はありません。
+   */
+  public static pollStop(
+    target: HTMLElement,
+    reason: string,
+    count: number,
+    elapsedMs: number,
+  ): void {
+    HaoriEvent.dispatch(target, 'pollstop', {reason, count, elapsedMs});
+  }
 }
