@@ -174,7 +174,15 @@ describe('fetch エラー応答: トップレベル JSON 配列形式', () => {
     expect(form.getAttribute('data-message')).toBe('入力内容に誤りがあります');
 
     // 2回目: name のみの応答。前回の email / 全体エラーは残ってはならない。
-    (form.querySelector('#save') as HTMLElement).click();
+    // メッセージ表示は 1 回目の処理完了より前に起きるため、実行ロック（実行中の
+    // ボタンへ付与される disabled）の解放を待ってから再クリックする。ロック中の
+    // click は無視されるため、待たずにクリックすると 2 回目が発火しない。
+    const save = form.querySelector('#save') as HTMLElement;
+    await waitForCondition(() => !save.hasAttribute('disabled'), {
+      description: '1回目の実行ロックが解放される',
+      maxAttempts: 30,
+    });
+    save.click();
 
     await waitForCondition(
       () =>

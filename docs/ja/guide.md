@@ -987,6 +987,41 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 
 上の例では、`data-bind` や `data-fetch` によってフォームのバインディングデータが `{ mailImapSsl: true }` へ更新されるとチェックが入り、`{ mailImapSsl: false }` へ更新されるとチェックが外れます。
 
+### レシピ: 繰り返し行の中でラジオボタンを使う（`data-form-name`）
+
+HTML のラジオボタンは「同じフォームの中の同名要素」で 1 グループになります。そのため `data-form-list` の行の中で同じ `name` を使うと、**行をまたいで排他**になり、行ごとに別の値を選べません（別の行を選ぶと前の行の選択が外れます）。
+
+行ごとに独立して選ばせたいときは、`name` を書かずに `data-form-name` で収集キーを宣言します。DOM の `name` は Haori が行ごとに自動で振り分けます。
+
+```html
+<!-- ✅ 行ごとに独立して選ぶ -->
+<form data-bind='{"rows":[{"title":"設計"},{"title":"実装"}]}'>
+  <div data-form-list="rows" data-each="rows" data-each-arg="r">
+    <div>
+      <input name="title">
+      <label><input type="radio" data-form-name="level" value="high">高</label>
+      <label><input type="radio" data-form-name="level" value="low">低</label>
+    </div>
+  </div>
+</form>
+<!-- { rows: [{ title: "設計", level: "high" }, { title: "実装", level: "low" }] } -->
+```
+
+逆に「**複数行の中から 1 行だけ選ぶ**」（代表行の選択など）を表現したいときは、従来どおり `name` を書きます。この場合は行をまたぐ 1 グループになり、選択されていない行の値は `null` になります。
+
+```html
+<!-- ✅ 複数行から 1 行だけ選ぶ -->
+<div data-form-list="rows" data-each="rows" data-each-arg="r">
+  <div>
+    <input name="title">
+    <label><input type="radio" name="primary" value="yes">代表</label>
+  </div>
+</div>
+<!-- { rows: [{ title: "…", primary: null }, { title: "…", primary: "yes" }] } -->
+```
+
+`data-form-name` は行の外でも使えます。DOM の `name` と収集キーを分けたいときの一般的な手段です（`data-attr-name` で DOM の `name` を変える方法では値が収集されません）。
+
 ### レシピ: フォーム外の単独チェックボックスでボタンを活性化する
 
 「利用規約に同意したら送信ボタンを有効にする」のようなゲートは、`<form>` を用意せずに書けます。`change` の手続きは、フォームコンテナ（`<form>` / `data-form`）が祖先に無い場合、**その入力要素自身の `name` と値だけ**を送信データにします。
@@ -1069,11 +1104,13 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 
 ポイントは「`.checked` を直接いじらず、`permissions` 配列を更新する」ことです。`data-attr-checked` は配列を参照しているため、`setBindingData` 後の再評価で各チェックボックスの状態が正しく反映され、以降の再評価でも保持されます。読み取りには `Core.getBindingData(element, { resolved: true })`、書き込みには `Core.setBindingData(element, data)` を使います。
 
-### レシピ: `name` 付き select / checkbox では「参照スコープ」を「書込スコープ」に揃える
+### レシピ: `name` 付き入力では「参照スコープ」を「書込スコープ」に揃える
 
-`name` を持つ select / checkbox は、フォームの双方向バインディングによって**バインドデータ ↔ 選択状態**が双方向に同期します（選択状態の単一の真実源は `name` のバインドデータです）。ここに `data-attr-selected` / `data-attr-checked` を**別のスコープ（キー）を参照する形で**併用すると、真実源が二つになって衝突します。
+`name` を持つ入力は、フォームの双方向バインディングによって**バインドデータ ↔ 値・選択状態**が双方向に同期します（単一の真実源は `name` のバインドデータです）。ここに `data-attr-selected` / `data-attr-checked` / `data-attr-value`（`value="{{式}}"` も同様）を**別のスコープ（キー）を参照する形で**併用すると、真実源が二つになって衝突します。
 
 典型的なアンチパターンは「フォームは `name` で flat なキー（例 `category`）に書き込むのに、`data-attr-selected` の式は別オブジェクト（例 親フラグメントの `correspondenceItem.category`）を読む」構成です。ユーザーが select を変更して `change` が確定しても、`correspondenceItem.category`（読取先）は更新されないため、フォーカスが外れた後の再評価で `option.selected` が読取先（空のまま）基準に戻り、**選択が巻き戻ります**（`required` 検証も落ちます）。0.15.1 では属性のみ同期で live 値を戻さなかったため顕在化しませんでしたが、0.16.0 以降は live プロパティまで同期するため表面化します。
+
+**テキスト入力でも同じことが起きます。** `<input name="code" data-attr-value="{{別スコープのキー}}">` のような構成では、利用者が入力して `change` が確定しても読取先は更新されないため、フォーカスが外れた後の再評価で**入力内容が評価結果へ巻き戻ります**。`value` については 0.27.0 で `data-attr-*` の live プロパティ同期が有効になったため表面化します（`value="{{式}}"` を直接書いた場合は 0.16.0 以降）。読み取り専用の表示（`readonly` を付けた入力や hidden）であれば衝突しません。
 
 ```html
 <!-- ❌ アンチパターン: 書込先（form 自身の category）と読取先（親の correspondenceItem.category）が異なる -->
@@ -1115,7 +1152,7 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 </form>
 ```
 
-レコード（例 `correspondenceItem`）を編集するフォームでは、フォームの `data-bind` をそのオブジェクトのフィールドで初期化する（`category` に `correspondenceItem.category` を入れて束縛する）か、フォームをそのオブジェクトへ束縛して `name` をそのフィールドに対応させると、初期表示・編集・保存が一貫します。要は **`data-attr-selected` / `data-attr-checked` の式が参照するキーと、その要素の `name` がフォームへ書き込むキーを一致させる**ことです。
+レコード（例 `correspondenceItem`）を編集するフォームでは、フォームの `data-bind` をそのオブジェクトのフィールドで初期化する（`category` に `correspondenceItem.category` を入れて束縛する）か、フォームをそのオブジェクトへ束縛して `name` をそのフィールドに対応させると、初期表示・編集・保存が一貫します。要は **`data-attr-selected` / `data-attr-checked` / `data-attr-value` の式が参照するキーと、その要素の `name` がフォームへ書き込むキーを一致させる**ことです。
 
 ### 数値フィールド（`type="number"`）は数値型で扱われる
 

@@ -15,6 +15,9 @@ type FormHaoriApi = Pick<typeof Haori, 'addErrorMessage' | 'clearMessages'>;
 
 const FORM_HAORI_METHOD_NAMES = ['addErrorMessage', 'clearMessages'] as const;
 
+/** 自動生成した DOM の `name` であることを示す内部マーカー属性名 */
+const GENERATED_GROUP_NAME_MARKER = 'data-haori-group-name';
+
 /**
  * Form から利用する Haori API を解決します。
  * window.Haori が差し替えられている場合はそちらを優先します。
@@ -115,6 +118,221 @@ export default class Form {
     );
   }
 
+  /** ラジオグループのスコープへ割り当てた識別番号 */
+  private static readonly GROUP_SCOPE_IDS = new WeakMap<
+    ElementFragment,
+    number
+  >();
+
+  /** ラジオグループのスコープ識別番号の連番 */
+  private static groupScopeSequence = 0;
+
+  /**
+   * 入力要素の収集キーを解決します。
+   *
+   * `data-form-name` があればそれを収集キーとし、無ければ `name` 属性を使います。
+   * ラジオボタンのように DOM の `name` がグループ化の意味を持つ場合に、収集キーと
+   * DOM の `name` を分けるために使います。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 収集キー。どちらも無い場合は null
+   */
+  public static resolveFieldName(fragment: ElementFragment): unknown {
+    const declared = fragment.getAttribute(`${Env.prefix}form-name`);
+    if (declared) {
+      return declared;
+    }
+    return fragment.getAttribute('name');
+  }
+
+  /**
+   * `data-form-name` の初期化を行います。
+   *
+   * 収集キーが空になる指定を開発モードで警告し、ラジオボタンにはグループ用の
+   * DOM `name` を生成します。
+   *
+   * HTML のラジオグループは「同じフォームオーナー内の同名要素」で構成されるため、
+   * `data-form-list` の行内で同じ `name` を使うと行をまたいで排他になり、1 行しか
+   * 選択を保持できません。収集キーを `data-form-name` で宣言した場合は、DOM の
+   * `name` を行ごとにユニークな値へ生成してグループを行単位に分けます。
+   *
+   * 作者が `name` を書いている場合は尊重して生成しません（行をまたぐグループを
+   * 意図している場合があるため）。自動生成した `name` は内部マーカーで区別し、
+   * 行の複製で引き継がれたものは作り直します。
+   *
+   * 処理が不要な場合は Promise を返しません。要素初期化の共通経路から呼ばれるため、
+   * 対象外の要素で Promise を挟むと初期化の非同期段数が全要素で増えてしまいます。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 属性設定の Promise。処理が不要な場合は undefined
+   */
+  public static prepareFormName(
+    fragment: ElementFragment,
+  ): Promise<void> | void {
+    // 大半の要素はここで抜ける（属性マップの参照のみ）。
+    if (!fragment.hasAttribute(`${Env.prefix}form-name`)) {
+      return;
+    }
+    const declared = fragment.getAttribute(`${Env.prefix}form-name`);
+    if (!declared) {
+      // 収集キーが空になる指定は、`name` が無ければその入力が値収集から静かに
+      // 外れる。テンプレート式がまだ解決していない場合もここに来るため、開発
+      // モードの警告に留める。
+      Log.warn(
+        'Haori',
+        `${Env.prefix}form-name evaluated to an empty key;` +
+          ' the field falls back to the name attribute or is not collected.',
+        fragment.getTarget(),
+      );
+      return;
+    }
+    const element = fragment.getTarget();
+    if (!(element instanceof HTMLInputElement) || element.type !== 'radio') {
+      return;
+    }
+    if (
+      element.hasAttribute('name') &&
+      !element.hasAttribute(GENERATED_GROUP_NAME_MARKER)
+    ) {
+      return;
+    }
+    const scope = Form.resolveGroupScope(fragment);
+    const generated = `${String(declared)}--haori${Form.resolveGroupScopeId(
+      scope,
+    )}`;
+    if (element.getAttribute('name') === generated) {
+      return;
+    }
+    return fragment
+      .setAttribute(GENERATED_GROUP_NAME_MARKER, '')
+      .then(() => fragment.setAttribute('name', generated));
+  }
+
+  /**
+   * ラジオグループのスコープとなるフラグメントを解決します。
+   *
+   * `data-form-list` のコンテナ直下の要素（= 行）が祖先にあればその行を、無ければ
+   * 最近傍のフォーム（`<form>` または `data-form`）をスコープとします。行の外では
+   * 通常の HTML と同じくフォーム単位のグループになります。
+   *
+   * @param fragment 対象フラグメント
+   * @returns スコープとなるフラグメント
+   */
+  private static resolveGroupScope(fragment: ElementFragment): ElementFragment {
+    let current = fragment;
+    let parent = current.getParent();
+    while (parent !== null) {
+      if (parent.hasAttribute(`${Env.prefix}form-list`)) {
+        return current;
+      }
+      if (
+        parent.getTarget() instanceof HTMLFormElement ||
+        parent.hasAttribute(`${Env.prefix}form`)
+      ) {
+        return parent;
+      }
+      current = parent;
+      parent = parent.getParent();
+    }
+    return current;
+  }
+
+  /**
+   * ラジオグループのスコープへ識別番号を割り当てます。
+   *
+   * @param scope スコープとなるフラグメント
+   * @returns スコープの識別番号
+   */
+  private static resolveGroupScopeId(scope: ElementFragment): number {
+    const existing = Form.GROUP_SCOPE_IDS.get(scope);
+    if (existing !== undefined) {
+      return existing;
+    }
+    Form.groupScopeSequence += 1;
+    Form.GROUP_SCOPE_IDS.set(scope, Form.groupScopeSequence);
+    return Form.groupScopeSequence;
+  }
+
+  /**
+   * 値または状態が宣言バインドで決まる入力かどうかを判定します。
+   *
+   * 属性にテンプレート式を書いた場合、または対応する `data-attr-*` を持つ場合は、
+   * その値・状態の権威はバインドの評価結果にあります。値収集側から空で上書きして
+   * はいけません。
+   *
+   * 判定する属性は要素の種類で変わります。checkbox / radio の `value` は送信値で
+   * あってチェック状態ではないため、`value` ではなく `checked` を見ます（`value` で
+   * 判定すると、送信値をテンプレート式で決めているだけのチェックボックスが解除
+   * されなくなり、前の行のチェック状態が残る）。`<select>` は自身の `value` に加えて、
+   * 配下の `<option>` が `selected` を宣言している場合も対象とします。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 宣言バインドで値または状態が決まる場合 true
+   */
+  private static isDeclarativeStateBound(fragment: ElementFragment): boolean {
+    const element = fragment.getTarget();
+    if (
+      element instanceof HTMLInputElement &&
+      (element.type === 'checkbox' || element.type === 'radio')
+    ) {
+      return Form.hasDeclarativeBinding(fragment, 'checked');
+    }
+    if (!ElementFragment.isValuePropertyTarget(element)) {
+      return false;
+    }
+    if (Form.hasDeclarativeBinding(fragment, 'value')) {
+      return true;
+    }
+    if (element instanceof HTMLSelectElement) {
+      return Form.hasDeclarativeSelectedOption(element);
+    }
+    return false;
+  }
+
+  /**
+   * 指定した属性が宣言バインド（テンプレート式または `data-attr-*`）かどうかを
+   * 判定します。
+   *
+   * @param fragment 対象フラグメント
+   * @param name 属性名
+   * @returns 宣言バインドの場合 true
+   */
+  private static hasDeclarativeBinding(
+    fragment: ElementFragment,
+    name: string,
+  ): boolean {
+    if (fragment.hasAttribute(`${Env.prefix}attr-${name}`)) {
+      return true;
+    }
+    const raw = fragment.getRawAttribute(name);
+    return typeof raw === 'string' && raw.includes('{{');
+  }
+
+  /**
+   * `<select>` 配下の `<option>` が選択状態を宣言バインドしているかどうかを
+   * 判定します。
+   *
+   * `name` を持つ select の選択状態を `data-attr-selected` などで宣言している場合、
+   * 選択の権威は option 側の式にあります。
+   *
+   * @param element 対象の select エレメント
+   * @returns いずれかの option が selected を宣言している場合 true
+   */
+  private static hasDeclarativeSelectedOption(
+    element: HTMLSelectElement,
+  ): boolean {
+    for (const option of Array.from(element.options)) {
+      const fragment = Fragment.get(option);
+      if (
+        fragment instanceof ElementFragment &&
+        Form.hasDeclarativeBinding(fragment, 'selected')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * `input[type=file]` かどうかを判定します。
    *
@@ -146,7 +364,7 @@ export default class Form {
     if (fragment.getTarget().hasAttribute(`${Env.prefix}if-false`)) {
       return values;
     }
-    const name = fragment.getAttribute('name');
+    const name = Form.resolveFieldName(fragment);
     const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);
     if (name) {
@@ -438,7 +656,7 @@ export default class Form {
     clearMissing: boolean = false,
   ): Promise<void> {
     const promises: Promise<void>[] = [];
-    const name = fragment.getAttribute('name');
+    const name = Form.resolveFieldName(fragment);
     const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);
     const detach = fragment.getAttribute(`${Env.prefix}form-detach`);
@@ -449,8 +667,17 @@ export default class Form {
         // 意味する。要素データが行全体を規定するため、キーが無いことを「維持」と
         // 解釈すると、行の途中への挿入や並べ替えで担当要素が変わったときに前の行の
         // 入力値が残ってしまう。
-        const value =
-          clearMissing && typeof rawValue === 'undefined' ? null : rawValue;
+        //
+        // ただし宣言バインド（テンプレート式・`data-attr-*`）で値や状態が決まる入力は
+        // 対象外とする。行データにキーが無くても、その値・状態はバインドの評価結果が
+        // 権威であり、ここで空にすると宣言した値を消してしまう（URL パラメータ由来の
+        // 値を hidden へ載せる構成など）。行データにキーが「ある」場合は従来どおり
+        // 行データを優先する。
+        const clearAsMissing =
+          clearMissing &&
+          typeof rawValue === 'undefined' &&
+          !Form.isDeclarativeStateBound(fragment);
+        const value = clearAsMissing ? null : rawValue;
         // input[type=file] へはブラウザの制約により任意の値を設定できない。
         // クリア（null / 空文字）のみ反映し、それ以外は静かにスキップする。
         // 双方向バインディングでファイル名が書き戻される正常系で警告が出るのを防ぐ。
@@ -834,7 +1061,7 @@ export default class Form {
     const results: ElementFragment[] = [];
     const key = parts[0];
     if (parts.length == 1) {
-      const name = fragment.getAttribute('name');
+      const name = Form.resolveFieldName(fragment);
       if (name === key) {
         results.push(fragment);
       }

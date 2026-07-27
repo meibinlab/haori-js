@@ -1531,7 +1531,12 @@ ${body}
     ) {
       return false;
     }
-    return element.getAttribute('name') !== null;
+    // `data-form-name` は収集キーを宣言する属性で、DOM の `name` を持たない入力も
+    // 値収集の対象になる（ラジオボタンのグループ名と収集キーを分ける構成）。
+    return (
+      element.getAttribute('name') !== null ||
+      fragment.hasAttribute(`${Env.prefix}form-name`)
+    );
   }
 
   /**

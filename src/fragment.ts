@@ -641,7 +641,7 @@ export class ElementFragment extends Fragment {
   ]);
 
   /** inputイベントを発生させるタイプ */
-  private readonly INPUT_EVENT_TYPES = [
+  private static readonly INPUT_EVENT_TYPES = [
     'text',
     'password',
     'email',
@@ -1404,7 +1404,7 @@ export class ElementFragment extends Fragment {
         if (dispatchEvents) {
           if (
             (element instanceof HTMLInputElement &&
-              this.INPUT_EVENT_TYPES.includes(element.type)) ||
+              ElementFragment.INPUT_EVENT_TYPES.includes(element.type)) ||
             element instanceof HTMLTextAreaElement
           ) {
             element.dispatchEvent(new Event('input', {bubbles: true}));
@@ -1464,6 +1464,35 @@ export class ElementFragment extends Fragment {
       return Number.isNaN(numeric) ? null : numeric;
     }
     return value;
+  }
+
+  /**
+   * `value` の宣言バインド（テンプレート式・`data-attr-value`）で DOM プロパティと
+   * 内部値を同期する対象要素かどうかを判定します。
+   *
+   * `value` 属性の反映だけでは `element.value` や内部値（値収集や式評価が参照する値）が
+   * 更新されないため、これらの要素では属性に加えてプロパティも揃えます。
+   * `type="hidden"` は利用者が編集できず送信される値を持つため対象に含めます
+   * （`INPUT_EVENT_TYPES` は `input` イベント発火の可否を決める別目的の一覧なので、
+   * そちらへは追加しません）。checkbox / radio の `value` は送信値であってチェック
+   * 状態ではないため対象外です（状態は `checked` の同期で扱います）。
+   *
+   * @param element 判定対象のエレメント
+   * @returns 同期対象の場合true
+   */
+  public static isValuePropertyTarget(
+    element: Element,
+  ): element is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
+    if (element instanceof HTMLInputElement) {
+      return (
+        ElementFragment.INPUT_EVENT_TYPES.includes(element.type) ||
+        element.type === 'hidden'
+      );
+    }
+    return (
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+    );
   }
 
   /**
@@ -1569,6 +1598,7 @@ export class ElementFragment extends Fragment {
    * @param rawName 生の属性名
    * @param targetName 反映先の属性名
    * @param value 生の属性値
+   * @param fromObserver MutationObserver 経由の書き戻しかどうか
    * @returns 属性更新の Promise
    */
   public setAliasedAttribute(
@@ -1577,11 +1607,15 @@ export class ElementFragment extends Fragment {
     value: string | null,
     fromObserver = false,
   ): Promise<void> {
+    // 値プロパティの同期は通常の属性経路と同じく有効にする。`value` 属性の反映だけ
+    // では `element.value` が更新されない要素（textarea / select）があり、また内部値
+    // （値収集や式評価が参照する値）も更新されないため、`data-attr-value` で設定した
+    // 値が送信データに載らない。
     return this.setAttributeInternal(
       rawName,
       targetName,
       value,
-      false,
+      true,
       fromObserver,
     );
   }
@@ -1620,6 +1654,7 @@ export class ElementFragment extends Fragment {
    * @param targetName 反映先の属性名
    * @param value 生の属性値
    * @param syncValueProperty value 属性更新時に DOM property も同期するかどうか
+   * @param fromObserver MutationObserver 経由の書き戻しかどうか
    * @returns 属性更新の Promise
    */
   private setAttributeInternal(
@@ -1694,14 +1729,13 @@ export class ElementFragment extends Fragment {
       : isSingleExpression
         ? evaluatedValue
         : joinedValue;
+    // 同期対象の判定は isValuePropertyTarget に集約する（Form 側の宣言バインド判定と
+    // 対象要素を揃えるため）。
     const shouldSyncValueProperty =
       syncValueProperty &&
       contents.isEvaluate &&
       targetName === 'value' &&
-      ((element instanceof HTMLInputElement &&
-        this.INPUT_EVENT_TYPES.includes(element.type)) ||
-        element instanceof HTMLTextAreaElement ||
-        element instanceof HTMLSelectElement);
+      ElementFragment.isValuePropertyTarget(element);
     // フォーカス中（ユーザー編集中）の入力には value を再適用しない。
     // 別要素起因の再評価や data-fetch 完了で、ユーザーの未コミット入力が
     // 巻き戻る問題を防ぐ。コミットは change イベントでバインド側へ反映される。
@@ -1719,11 +1753,15 @@ export class ElementFragment extends Fragment {
       stringResult === null
         ? element.hasAttribute(targetName)
         : element.getAttribute(targetName) !== stringResult;
+    // 属性削除（評価結果が null / undefined / false / 未解決参照）となる場合も値を
+    // 空へ揃える。属性だけを削除すると内部値（値収集や式評価が参照する値）が旧値の
+    // まま残り、画面と送信内容が食い違う。仕様書は属性削除については未解決参照も
+    // null と同じ扱いとしているため、ここでも区別しない。
+    const desiredValueProperty = stringResult === null ? '' : stringResult;
     const requiresValuePropertyWrite =
       shouldSyncValueProperty &&
       !skipValueReapply &&
-      stringResult !== null &&
-      element.value !== stringResult;
+      element.value !== desiredValueProperty;
     // checked / selected は真偽属性で、setAttribute では DOM プロパティ
     // （element.checked / option.selected）が変わらない。属性反映に加えて
     // プロパティも同期し、radio/checkbox の checked と option の selected を
@@ -1763,13 +1801,12 @@ export class ElementFragment extends Fragment {
       !requiresCheckedPropertyWrite &&
       !requiresSelectedPropertyWrite
     ) {
-      if (
-        shouldSyncValueProperty &&
-        !skipValueReapply &&
-        stringResult !== null
-      ) {
+      if (shouldSyncValueProperty && !skipValueReapply) {
         // 属性評価で value を同期する場合も type="number" は数値へ正規化する
-        this.value = this.normalizeValueForElement(element, stringResult);
+        this.value = this.normalizeValueForElement(
+          element,
+          desiredValueProperty,
+        );
       }
       // DOM 書き込みが不要な場合でも、内部値が DOM のチェック状態と食い違って
       // いれば揃える（下の書き込み経路と同じ理由。詳細はそちらのコメント参照）。
@@ -1785,24 +1822,26 @@ export class ElementFragment extends Fragment {
       }
       if (stringResult === null) {
         element.removeAttribute(targetName);
-      } else {
-        if (requiresTargetAttributeWrite) {
-          element.setAttribute(targetName, stringResult);
-          // data-bind への自己書き込みを記録し、MutationObserver による自身の
-          // エコーの再取り込み（並行更新時の巻き戻し）を防ぐ。
-          if (targetName === `${Env.prefix}bind`) {
-            this.recordSelfWrittenBind(stringResult);
-          }
+      } else if (requiresTargetAttributeWrite) {
+        element.setAttribute(targetName, stringResult);
+        // data-bind への自己書き込みを記録し、MutationObserver による自身の
+        // エコーの再取り込み（並行更新時の巻き戻し）を防ぐ。
+        if (targetName === `${Env.prefix}bind`) {
+          this.recordSelfWrittenBind(stringResult);
         }
-        // element.setAttribute('value', ...) は defaultValue のみ更新するため、
-        // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
-        // フォーカス中（編集中）の入力は skipValueReapply で再適用しない。
-        if (shouldSyncValueProperty && !skipValueReapply) {
-          // 内部値は type="number" のとき数値化し、DOM 表示は文字列のままにする
-          this.value = this.normalizeValueForElement(element, stringResult);
-          if (requiresValuePropertyWrite) {
-            element.value = stringResult;
-          }
+      }
+      // element.setAttribute('value', ...) は defaultValue のみ更新するため、
+      // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
+      // 属性削除となる場合は空へ揃える（属性の有無と値の食い違いを残さない）。
+      // フォーカス中（編集中）の入力は skipValueReapply で再適用しない。
+      if (shouldSyncValueProperty && !skipValueReapply) {
+        // 内部値は type="number" のとき数値化し、DOM 表示は文字列のままにする
+        this.value = this.normalizeValueForElement(
+          element,
+          desiredValueProperty,
+        );
+        if (requiresValuePropertyWrite) {
+          element.value = desiredValueProperty;
         }
       }
       // checked / selected の DOM プロパティを真偽属性の有無に合わせて同期する

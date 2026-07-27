@@ -938,7 +938,7 @@ describe('Core', () => {
       expect(image.getAttribute('src')).toBe('img/after.jpg');
     });
 
-    test('data-attr-value は value 属性だけを更新し現在値は上書きしない', async () => {
+    test('data-attr-value は value 属性と現在値を同期する', async () => {
       container.innerHTML = `
         <div data-bind='{"count":"1"}'>
           <input type="text" data-attr-value="{{count}}">
@@ -951,17 +951,43 @@ describe('Core', () => {
       await Core.scan(root);
       await waitForDomSettled();
 
-      // 初回評価では value 属性へ反映されること。
+      // 初回評価では value 属性と現在値の両方へ反映されること。
       expect(input.getAttribute('value')).toBe('1');
+      expect(input.value).toBe('1');
 
       input.value = 'manual';
 
       await Core.setBindingData(root, {count: '2'});
       await waitForDomSettled();
 
-      // 再評価では value 属性だけ更新し、現在値 property は維持すること。
+      // フォーカスが外れている入力には再適用すること
+      // （data-attr-* も value="{{式}}" と同じ規則。仕様書「data-attr-*」参照）。
       expect(input.getAttribute('value')).toBe('2');
-      expect(input.value).toBe('manual');
+      expect(input.value).toBe('2');
+    });
+
+    test('data-attr-value はフォーカス中の入力へ現在値を再適用しない', async () => {
+      container.innerHTML = `
+        <div data-bind='{"count":"1"}'>
+          <input type="text" data-attr-value="{{count}}">
+        </div>
+      `;
+
+      const root = container.querySelector('div') as HTMLElement;
+      const input = root.querySelector('input') as HTMLInputElement;
+
+      await Core.scan(root);
+      await waitForDomSettled();
+
+      // 編集中（フォーカス中）の未コミット入力を再評価で巻き戻さないこと。
+      input.focus();
+      input.value = 'editing';
+
+      await Core.setBindingData(root, {count: '2'});
+      await waitForDomSettled();
+
+      expect(input.getAttribute('value')).toBe('2');
+      expect(input.value).toBe('editing');
     });
 
     test('setBindingData で false になった通常属性は削除される', async () => {

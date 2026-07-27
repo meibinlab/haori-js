@@ -594,7 +594,11 @@ export default class Core {
         processedAttributes.add(name);
       }
     }
-    return attributeChain.then(() => undefined);
+    // `data-form-name` の初期化（収集キーの検証と、ラジオボタンのグループ用 DOM
+    // `name` の生成）を行う。属性の反映後に行うのは、`data-form-name` にテンプレート
+    // 式を書いた場合の評価結果を収集キーとして使うため。対象外の要素では Promise を
+    // 返さないため、初期化の非同期段数は従来（末尾で undefined へ畳む分）と変わらない。
+    return attributeChain.then(() => Form.prepareFormName(fragment));
   }
 
   /**

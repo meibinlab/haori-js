@@ -27,6 +27,24 @@ test.describe('data-each + data-form-list（実ブラウザ）', () => {
     await expect(rows.nth(0).locator('input[name="active"]')).toBeChecked();
     await expect(rows.nth(1).locator('input[name="active"]')).not.toBeChecked();
 
+    // --- 行内ラジオ（data-form-name）は行ごとに独立している ---
+    // 実ブラウザでは同名ラジオがフォーム単位で排他になるため、行ごとに別の値を
+    // 保持できることは実ブラウザで確認する必要がある。
+    const planRadios = (rowIndex, value) =>
+      rows
+        .nth(rowIndex)
+        .locator(`input[data-form-name="plan"][value="${value}"]`);
+    await expect(planRadios(0, 'flat')).toBeChecked();
+    await expect(planRadios(1, 'meter')).toBeChecked();
+
+    // 2 行目を変更しても 1 行目の選択は外れない
+    await planRadios(1, 'flat').check();
+    await expect(planRadios(0, 'flat')).toBeChecked();
+    await expect(summary.nth(0)).toContainText('plan=flat');
+    await expect(summary.nth(1)).toContainText('plan=flat');
+    await planRadios(1, 'meter').check();
+    await expect(summary.nth(1)).toContainText('plan=meter');
+
     // --- 行の追加（1 行目の直後へ空行が入る） ---
     await rows.nth(0).locator('button[data-click-row-add]').click();
     await expect(rows).toHaveCount(3);

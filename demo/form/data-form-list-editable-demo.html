@@ -119,6 +119,15 @@
     .ops {
       white-space: nowrap;
     }
+
+    .plan label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-right: 8px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -127,12 +136,15 @@
     <p>
       可変件数（0〜N 件）の明細を <code>data-each</code> と <code>data-form-list</code> で入力するデモです。
       初期 <code>data-bind</code> の値が <code>&lt;select&gt;</code> やチェックボックスへ復元され、行の追加・削除・並べ替えが
-      バインディングデータへそのまま反映されます。
+      バインディングデータへそのまま反映されます。料金プランの列は <code>data-form-name</code> で収集キーを宣言しており、
+      ラジオボタンのグループが行ごとに分かれるため、行ごとに別のプランを選べます。
     </p>
 
     <form id="contractForm" class="panel" data-bind='{"contracts":[
-      {"kind":"power","name":"東京本社","startDate":"2026-04-01","active":true},
-      {"kind":"gas","name":"大阪支店","startDate":"2026-05-01","active":false}
+      {"kind":"power","name":"東京本社","startDate":"2026-04-01","active":true,
+       "plan":"flat"},
+      {"kind":"gas","name":"大阪支店","startDate":"2026-05-01","active":false,
+       "plan":"meter"}
     ]}'>
       <table>
         <thead>
@@ -142,6 +154,7 @@
             <th>契約名</th>
             <th>開始日</th>
             <th>有効</th>
+            <th>料金プラン</th>
             <th class="ops">操作</th>
           </tr>
         </thead>
@@ -165,6 +178,14 @@
             <td><input type="date" name="startDate"></td>
             <td>
               <input type="checkbox" name="active" value="true">
+            </td>
+            <td class="plan">
+              <!-- name を書かず data-form-name で収集キーを宣言すると、DOM の
+                   name が行ごとに生成され、行ごとに独立して選択できる -->
+              <label><input type="radio" data-form-name="plan"
+                value="flat">定額</label>
+              <label><input type="radio" data-form-name="plan"
+                value="meter">従量</label>
             </td>
             <td class="ops">
               <button type="button" data-click-row-add>＋</button>
@@ -191,7 +212,8 @@
       <ul data-each="contracts" data-each-arg="row" data-each-index="n">
         <li>
           [{{n}}] kind={{row.kind}} / name={{row.name}} /
-          startDate={{row.startDate}} / active={{row.active}}
+          startDate={{row.startDate}} / active={{row.active}} /
+          plan={{row.plan}}
         </li>
       </ul>
     </form>
