@@ -104,10 +104,104 @@ describe('demo ランタイムでの通信の正規化', () => {
       // 正規化を打ち消して実 POST が飛ぶと静的ファイルサーバでは 405 になる。
       expect(String(calls[0].options.method).toUpperCase()).toBe('GET');
       expect(calls[0].options.body).toBeUndefined();
-      // 収集済みの送信データと、上書きで与えられた body の両方がクエリへ載る。
-      expect(calls[0].url).toContain('a=1');
+      // 上書きの body は送信データの「置き換え」であり、追記ではない。
+      // embedded ランタイムでは body ごと差し替わるため、demo でも揃える。
       expect(calls[0].url).toContain('b=2');
+      expect(calls[0].url).not.toContain('a=1');
       expect(headersOf(calls[0]).get('Content-Type')).toBeNull();
+    });
+
+    it('同じキーを上書きしてもクエリが二重にならない', async () => {
+      await mount(
+        `<button id="go"
+           data-click-fetch="http://api.test/save"
+           data-click-fetch-method="POST"
+           data-click-data='{"a":1}'
+           data-click-before-run='return {fetchOptions:{method:"POST",
+             body:JSON.stringify({a:1}),
+             headers:{"Content-Type":"application/json"}}};'
+         >送信</button>`,
+      );
+
+      await clickAndWait('#go');
+
+      const params = new URL(calls[0].url).searchParams;
+      expect(params.getAll('a')).toEqual(['1']);
+    });
+
+    it('URL のもとから持つクエリは上書きしても残る', async () => {
+      await mount(
+        `<button id="go"
+           data-click-fetch="http://api.test/save?fixed=keep"
+           data-click-fetch-method="POST"
+           data-click-data='{"a":1}'
+           data-click-before-run='return {fetchOptions:{method:"POST",
+             body:JSON.stringify({b:2}),
+             headers:{"Content-Type":"application/json"}}};'
+         >送信</button>`,
+      );
+
+      await clickAndWait('#go');
+
+      const params = new URL(calls[0].url).searchParams;
+      expect(params.get('fixed')).toBe('keep');
+      expect(params.get('b')).toBe('2');
+      expect(params.has('a')).toBe(false);
+    });
+
+    it('body を伴わない上書きでは送信データのクエリを保つ', async () => {
+      await mount(
+        `<button id="go"
+           data-click-fetch="http://api.test/save"
+           data-click-fetch-method="POST"
+           data-click-data='{"a":1}'
+           data-click-before-run='return {fetchOptions:{headers:{"X-Test":"1"}}};'
+         >送信</button>`,
+      );
+
+      await clickAndWait('#go');
+
+      // ヘッダーだけの差し替えは送信データの置き換えではない。
+      expect(new URL(calls[0].url).searchParams.get('a')).toBe('1');
+      expect(headersOf(calls[0]).get('X-Test')).toBe('1');
+    });
+
+    it('GET のまま body を付けた上書きでは送信データのクエリを落とさない', async () => {
+      // この組み合わせでは body がクエリへ移らない（再正規化が走らない）。
+      // 置き換えとして扱うと収集済みの送信データだけが消えるため対象外にする。
+      await mount(
+        `<button id="go"
+           data-click-fetch="http://api.test/save"
+           data-click-fetch-method="POST"
+           data-click-data='{"a":1}'
+           data-click-before-run='return {fetchOptions:{method:"GET",
+             body:JSON.stringify({b:2})}};'
+         >送信</button>`,
+      );
+
+      await clickAndWait('#go');
+
+      expect(new URL(calls[0].url).searchParams.get('a')).toBe('1');
+    });
+
+    it('fetchUrl も上書きした場合はその URL を尊重する', async () => {
+      await mount(
+        `<button id="go"
+           data-click-fetch="http://api.test/save"
+           data-click-fetch-method="POST"
+           data-click-data='{"a":1}'
+           data-click-before-run='return {fetchUrl:"http://api.test/other?x=9",
+             fetchOptions:{method:"POST",body:JSON.stringify({b:2})}};'
+         >送信</button>`,
+      );
+
+      await clickAndWait('#go');
+
+      const url = new URL(calls[0].url);
+      expect(url.pathname).toBe('/other');
+      expect(url.searchParams.get('x')).toBe('9');
+      expect(url.searchParams.get('b')).toBe('2');
+      expect(url.searchParams.has('a')).toBe(false);
     });
 
     it('URLSearchParams の body もクエリへ移す', async () => {

@@ -244,6 +244,24 @@ function appendPayloadEntry(
 }
 
 /**
+ * 送信オプションが送信データとしての body を持つかどうかを判定します。
+ *
+ * `data-{event}-before-run` の上書きが送信データの置き換えかどうかの判定に使います。
+ * ヘッダーだけを差し替えるような上書きは body を持たないため対象外です。空文字の
+ * body は送るデータが無いのと同じなので持たないものとして扱います。
+ *
+ * @param fetchOptions 判定対象の送信オプション。
+ * @return 送信データとしての body を持つ場合は true。
+ */
+function hasRequestBody(fetchOptions: RequestInit | null): boolean {
+  const body = fetchOptions?.body;
+  if (body === undefined || body === null) {
+    return false;
+  }
+  return typeof body === 'string' ? body !== '' : true;
+}
+
+/**
  * demo ランタイムでの送信内容をクエリ付き GET へ正規化します。
  *
  * `data-runtime="demo"` は静的ファイルサーバ上でデモを動かすための実行モードで、
@@ -324,6 +342,15 @@ interface ResolvedDataAttribute {
 
 interface PreparedFetchRequest {
   url: string | null;
+  /**
+   * 送信データをクエリへ載せる前の URL。
+   *
+   * demo ランタイムでは送信データを URL のクエリへ移すため、`url` には正規化で
+   * 付与したクエリが含まれます。`data-{event}-before-run` が body を伴う
+   * `fetchOptions` を返した場合は、その body が送信データの置き換えになるため、
+   * 再正規化はこの URL を基点にします（付与済みのクエリを引き継がない）。
+   */
+  baseUrl: string | null;
   options: RequestInit | null;
   payload: Record<string, unknown>;
   hasUnresolvedReference: boolean;
@@ -1923,6 +1950,8 @@ ${body}
       const payload = preparedRequest.payload;
       let fetchUrl = preparedRequest.url;
       let fetchOptions = preparedRequest.options;
+      let urlOverridden = false;
+      let optionsOverridden = false;
       if (this.options.beforeCallback) {
         const result = this.options.beforeCallback(
           fetchUrl || null,
@@ -1933,11 +1962,13 @@ ${body}
             return false;
           }
           if (typeof result === 'object') {
-            fetchUrl = ('fetchUrl' in result ? result.fetchUrl : fetchUrl) as
+            urlOverridden = 'fetchUrl' in result;
+            optionsOverridden = 'fetchOptions' in result;
+            fetchUrl = (urlOverridden ? result.fetchUrl : fetchUrl) as
               | string
               | null;
             fetchOptions = (
-              'fetchOptions' in result ? result.fetchOptions : fetchOptions
+              optionsOverridden ? result.fetchOptions : fetchOptions
             ) as RequestInit | null;
           }
         }
@@ -1950,8 +1981,32 @@ ${body}
         // の後に適用されるため、ここで再適用しないと上書きが正規化を打ち消し、
         // 静的ファイルサーバへ実 POST が飛んで 405 になる。すでに正規化済み
         // （メソッドが GET）なら何もしないため、通常経路への影響はない。
+        //
+        // 上書きが body を持つ場合は、その body が送信データの置き換えになる
+        // （embedded ランタイムでは body ごと差し替わる）。demo ランタイムでは
+        // 送信データを URL のクエリへ移してあるため、そのまま再正規化すると
+        // 置き換えではなく追記になり、同じキーが二重に載る。基点を正規化前の
+        // URL へ戻して embedded と同じ「置き換え」に揃える。`fetchUrl` も
+        // 上書きされた場合は、その URL をそのまま尊重する。
+        //
+        // 基点を戻すのは、上書きの body が実際にクエリへ移る場合だけに限る。
+        // 上書きがメソッドを GET のままにして body を付けた場合、再正規化は
+        // 何もしないため body はクエリにならず、収集済みの送信データだけが
+        // 消えてしまう（この組み合わせは fetch 自体が TypeError になる）。
+        const overrideMethod = (
+          fetchOptions?.method || 'GET'
+        ).toUpperCase();
+        const overrideReplacesPayload =
+          !urlOverridden &&
+          optionsOverridden &&
+          preparedRequest.transportMode === 'query-get' &&
+          hasRequestBody(fetchOptions) &&
+          !isQueryTransportMethod(overrideMethod);
+        const normalizeBase = overrideReplacesPayload
+          ? (preparedRequest.baseUrl ?? fetchUrl)
+          : fetchUrl;
         const renormalized = normalizeRequestForDemoRuntime(
-          fetchUrl,
+          normalizeBase,
           fetchOptions,
         );
         fetchUrl = renormalized.url;
@@ -2917,6 +2972,7 @@ ${body}
     if (!this.options.fetchUrl || hasUnresolvedReference) {
       return {
         url: null,
+        baseUrl: null,
         options: null,
         payload,
         hasUnresolvedReference,
@@ -3034,6 +3090,7 @@ ${body}
 
     return {
       url: fetchUrl,
+      baseUrl: this.options.fetchUrl,
       options: finalOptions,
       payload,
       hasUnresolvedReference: false,

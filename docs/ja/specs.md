@@ -2688,6 +2688,7 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 **上書き時の注意**:
 - `fetchUrl` を上書きすると、`data-{event}-form` / `data-{event}-data` から組み立てたクエリ文字列は引き継がれません。必要なクエリは上書きする URL に自分で含めてください。
+- `fetchOptions` の `body` を上書きすると、`data-{event}-form` / `data-{event}-data` から組み立てた送信データは置き換わります。両方を送る場合は上書きする `body` に自分で含めてください。
 - `data-runtime="demo"` では、上書き後の設定に対しても[クエリ付き GET への正規化](#demo-ランタイムでの通信の正規化)が再適用されます。
 
 ```html
@@ -3715,6 +3716,8 @@ element.addEventListener('haori:fetchstart', (event) => {
 }
 ```
 
+`payload` は `data-{event}-data` / `data-{event}-form` から**収集した**送信データです。`data-{event}-before-run` が `fetchOptions` の `body` を上書きした場合、実際に送信される内容は上書き後の `body`（demo ランタイムでは `queryString`）であり、`payload` とは一致しません。実送信内容を見る場合は `options` と `queryString` を参照してください。
+
 #### `haori:fetchend`
 
 フェッチ終了時に発火します。
@@ -4334,6 +4337,7 @@ const isDev = devMode ||
 - 正規化を行った場合、開発モードでは `Haori demo fetch normalization` の情報ログを出力します。`haori:fetchstart` の `requestedMethod` / `effectiveMethod` / `transportMode`（`query-get`）/ `queryString` でも確認できます。
 - **`data-{event}-before-run` が `fetchOptions` を返してメソッドや body を上書きした場合も、送信直前に正規化を再適用します**。上書きが正規化を打ち消すと静的ファイルサーバへ実 POST が飛んで失敗するため、demo ランタイムでは常に正規化が優先されます。実際のメソッドで送る必要がある場合は `embedded` ランタイムを使用してください。
 - 上書きされた body は、クエリ化できる形式であればクエリへ移します。JSON オブジェクト文字列・`application/x-www-form-urlencoded` 形式の文字列・`URLSearchParams`・`FormData`（文字列値のみ）が対象です。`Blob` や `File` などクエリ化できない内容は破棄し、開発モードで警告します。
+- **上書きの body は送信データの「置き換え」です**。`data-{event}-data` / `data-{event}-form` から正規化でクエリへ移した値は引き継がず、上書きした body の内容だけがクエリになります（`embedded` ランタイムで body ごと差し替わるのと同じ扱い）。`data-{event}-fetch` の URL にもともと書いてあるクエリは残ります。ヘッダーだけを差し替えるなど body を伴わない上書きでは、正規化済みのクエリをそのまま保ちます。
 
 ### ブラウザ互換性
 
