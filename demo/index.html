@@ -276,8 +276,8 @@
         <!-- 4. フォーム双方向バインディング -->
         <h2>4. フォーム双方向バインディング</h2>
         <div class="demo-section" id="demo4">
-            <!-- 参照するキーは data-bind で宣言する（宣言が無いと未解決参照になる）。 -->
-            <form data-bind='{"username":"","email":"","message":""}'>
+            <!-- data-bind はスコープの確立が目的。個々のキーの初期値は不要。 -->
+            <form data-bind="{}">
                 <label>ユーザー名:</label>
                 <input type="text" name="username" placeholder="名前を入力">
 

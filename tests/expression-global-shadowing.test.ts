@@ -13,6 +13,7 @@
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
+import Env from '../src/env';
 import Expression from '../src/expression';
 import Log from '../src/log';
 import {waitForDomSettled} from './helpers/async';
@@ -79,19 +80,34 @@ describe('バインドに無い識別子のグローバル解決', () => {
       expect(result.unresolvedReference).toBe(false);
     });
 
-    it('原因を特定できるエラーログを出力する', () => {
+    it('未解決参照でもエラーログは出さない', () => {
       const error = vi.spyOn(Log, 'error').mockImplementation(() => undefined);
       container.innerHTML = '<input id="agencyCode">';
       defineNamedAccess(container.querySelector('input')!);
 
       Expression.evaluateDetailed(NAMED_ACCESS_KEY, {});
 
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('厳格バインドモードでは原因を特定できるエラーログを出力する', () => {
+      const error = vi.spyOn(Log, 'error').mockImplementation(() => undefined);
+      container.innerHTML = '<input id="agencyCode">';
+      defineNamedAccess(container.querySelector('input')!);
+
+      Env.setStrictBind(true);
+      try {
+        Expression.evaluateDetailed(NAMED_ACCESS_KEY, {});
+      } finally {
+        Env.setStrictBind(false);
+      }
+
       expect(error).toHaveBeenCalled();
       const message = error.mock.calls
         .map(call => call.map(part => String(part)).join(' '))
         .join('\n');
       expect(message).toContain(NAMED_ACCESS_KEY);
-      expect(message).toContain('not in the');
+      expect(message).toContain('not in the binding data');
     });
   });
 

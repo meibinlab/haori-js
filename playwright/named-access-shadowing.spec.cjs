@@ -11,9 +11,13 @@ test('バインドに無い識別子が同名 id の要素や window プロパ�
 }) => {
   test.setTimeout(60000);
   const errors = [];
+  const warnings = [];
   page.on('console', message => {
     if (message.type() === 'error') {
       errors.push(message.text());
+    }
+    if (message.type() === 'warning') {
+      warnings.push(message.text());
     }
   });
 
@@ -63,7 +67,11 @@ test('バインドに無い識別子が同名 id の要素や window プロパ�
   // ケースD: 標準組み込みは従来どおり参照できる。
   expect(state.outD, 'Math などの標準組み込みは使える').toBe('9');
 
-  // 原因を追えるよう、識別子名を含むエラーログが出る。
-  const joined = errors.join('\n');
-  expect(joined, 'エラーログに識別子名が含まれる').toContain('agencyCode');
+  // 未解決参照は正常系なのでエラーは出さない。
+  expect(errors.join('\n'), '未解決参照でエラーログを出さない').toBe('');
+
+  // 一度も供給されなかったキーは、描画完了後に集約された警告で報告する。
+  const joined = warnings.join('\n');
+  expect(joined, '集約警告に識別子名が含まれる').toContain('agencyCode');
+  expect(joined, '集約警告であることが分かる').toContain('never provided');
 });

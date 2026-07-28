@@ -11,8 +11,7 @@
     <input name="username" value="testuser">
   </form>
   <button data-click-fetch="./data-click-form-demo.json" data-click-form="#userForm" data-click-bind="#result">送信</button>
-  <!-- 取得前は値が無いため、参照するキーを data-bind で宣言しておく。 -->
-  <div id="result" data-bind='{"username":null}'>
+  <div id="result">
     <p>ユーザー名: {{username}}</p>
   </div>
   <script src="../../dist/haori.iife.js"></script>

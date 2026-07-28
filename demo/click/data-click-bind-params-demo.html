@@ -8,8 +8,7 @@
   <h2>data-click-bind-params デモ</h2>
   <div>パラメータを指定して取得し、userオブジェクトでバインド</div>
   <button data-click-fetch="./data-click-bind-params-demo.json" data-click-bind="#result" data-click-bind-arg="user" data-click-bind-params="name&age">取得</button>
-  <!-- 取得前は値が無いため、参照するキーを data-bind で宣言しておく。 -->
-  <div id="result" data-bind='{"user":{"name":null,"age":null}}'>
+  <div id="result">
     <p>名前: {{user.name}}</p>
     <p>年齢: {{user.age}}</p>
   </div>

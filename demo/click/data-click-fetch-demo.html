@@ -8,8 +8,7 @@
   <h2>data-click-fetch デモ</h2>
   <div>ボタンを押すとJSONから名前を取得して表示します</div>
   <button data-click-fetch="./data-click-fetch-demo.json" data-click-bind="#result">取得</button>
-  <!-- 取得前は値が無いため、参照するキーを data-bind で宣言しておく。 -->
-  <div id="result" data-bind='{"name":null}'>
+  <div id="result">
     <p>名前: {{name}}</p>
   </div>
   <script src="../../dist/haori.iife.js"></script>

@@ -1326,10 +1326,10 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 > **`data-url-arg` を付けたほうがよい 2 つの理由**
 >
 > 1. **`data-bind` の既定値が消えない**。`data-url-arg` を省略した `data-url-param` は、バインドデータをクエリパラメータで**全置換**します。そのため同一要素に `data-bind` で既定値を書いても消えてしまいます。`data-url-arg` を付けるとそのキー配下へのマージになり、既定値が保持されます。
-> 2. **クエリが無いときにコンソールエラーが出ない**。`{{expired}}` のようにクエリ名をトップレベルで直接参照すると、そのクエリが URL に無い場合は `ReferenceError` になりコンソールエラーが出ます（表示自体は「値なし」として動作します）。`data-url-arg` を付けて `{{params.expired}}` のようなプロパティ参照にすれば、`params` は常に定義済みのオブジェクトになるためエラーになりません。
+> 2. **キーの出所が明確になる**。`{{expired}}` のようにクエリ名をトップレベルで直接参照した場合、そのクエリが URL に無ければ未解決参照（表示は空・条件は偽）になります。エラーにはなりませんが、どこから来るキーなのかがマークアップから読み取れません。`data-url-arg` を付けて `{{params.expired}}` のようなプロパティ参照にすれば、クエリ由来であることが明示できます。
 >
 > ```html
-> <!-- 避けたい書き方: 既定値が消え、クエリが無いとコンソールエラーになる -->
+> <!-- 避けたい書き方: 既定値が消え、キーの出所も分からない -->
 > <div data-url-param data-bind='{"category":"all"}'>
 >   <p data-if="expired">セッションが切れました。</p>
 > </div>
@@ -1446,7 +1446,7 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 ```html
 <head>
   <!-- 応答 {"company":"..."} を <title> 自身にバインド -->
-  <title data-bind='{"company":""}' data-fetch="/api/site">{{company}} - ログイン</title>
+  <title data-fetch="/api/site">{{company}} - ログイン</title>
 </head>
 ```
 
@@ -1459,7 +1459,7 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 ポイントは次の通りです。
 
 - スコープは **`<title>` 自身**に持たせます。`<meta data-bind>` のような**兄弟要素のスコープは `<title>` に継承されません**。
-- 初回描画で `{{company}}` が未解決にならないよう、参照するキーは `data-bind` に空値で**種まき**しておくと安全です（上例の `company:""`）。
+- 取得前の `{{company}}` は**未解決参照**として空文字になります。エラーにはならないため、`data-bind` でキーを宣言しておく必要はありません。
 - `data-fetch-bind` や `data-click-copy` などの**対象セレクタは `<body>` 配下しか探さない**ため、別要素から `<head>` 内の `<title>` を狙ってバインドすることはできません。`<head>` への実行時バインドは必ず「対象要素自身に直接付与」してください。
 
 ### data-fetch の関連属性
@@ -1765,10 +1765,10 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 
 選択の有無は式から判定できます（内部値には選択済みならファイル名、未選択なら `null` が入ります）。
 
-このとき、**`data-bind` で初期値を宣言してください**。宣言がないと初回評価時に `csvFile` が未定義のトップレベル識別子となり、コンソールエラーが出るうえ、`{{!csvFile}}` が評価されずボタンが初期状態で有効になってしまいます。
+未選択のうちは `csvFile` が未解決参照になりますが、`{{!csvFile}}` のような**判定する式は「無い＝偽」として結論が出る**ため、ボタンは初期状態で無効になります。`data-bind` による初期値の宣言は不要です。
 
 ```html
-<form id="import-form" data-bind='{"csvFile":null}'>
+<form id="import-form">
   <input type="file" name="csvFile">
   <button data-click-form="#import-form"
           data-attr-disabled="{{!csvFile}}"
@@ -1811,7 +1811,7 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 > **`data-url-arg` を必ず付ける**
 >
 > - `data-url-arg` を省略すると `data-url-param` はバインドデータを**全置換**するため、同一要素の `data-bind` で書いた既定値が消えます。
-> - `data-if="expired"` のようにクエリ名をトップレベルで直接参照すると、通常のログイン（クエリなし）でコンソールエラーが出ます。`data-url-arg` 配下のプロパティ参照（`params.expired`）にすればエラーになりません。
+> - `data-if="expired"` のようにクエリ名をトップレベルで直接参照しても、クエリが無ければ未解決参照として偽になるだけでエラーにはなりません。ただしキーの出所が分かりにくいため、`data-url-arg` 配下のプロパティ参照（`params.expired`）を推奨します。
 >
 > 詳細は「[URLパラメータをバインドする](#urlパラメータをバインドする)」を参照してください。
 
@@ -1839,21 +1839,21 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 
 ```html
 <!-- 取得先の領域自身に状態を注入する（値を省略すると自要素が対象） -->
-<!-- _fetch はフェッチ前には存在しないため data-bind で null 宣言しておき、
-     式では _fetch?.xxx とオプショナルチェーンで安全に参照する -->
-<div data-fetch="/api/list" data-bind='{"items":[],"_fetch":null}' data-fetch-state>
+<!-- _fetch はフェッチ前には存在しないが、未解決参照は正常系として扱われるため
+     data-bind による宣言もオプショナルチェーンも要らない -->
+<div data-fetch="/api/list" data-fetch-state>
   <!-- 読み込み中 -->
-  <p data-if="_fetch?.loading">読み込み中...</p>
+  <p data-if="_fetch.loading">読み込み中...</p>
 
   <!-- 失敗時はメッセージと再取得ボタンを表示 -->
-  <div data-if="_fetch?.error">
+  <div data-if="_fetch.error">
     <p>読み込みに失敗しました。再試行してください。</p>
     <!-- 同じ領域を再取得する（手動リトライ） -->
     <button data-click-fetch="/api/list">再取得</button>
   </div>
 
   <!-- 成功時 -->
-  <ul data-if="_fetch?.success" data-each="items">
+  <ul data-if="_fetch.success" data-each="items">
     <li>{{name}}</li>
   </ul>
 </div>
@@ -1862,9 +1862,9 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 注入先は CSS セレクタで別要素を指定することもできます。状態表示用のパネルを取得領域の外に置きたい場合に使います。
 
 ```html
-<div id="status" data-bind='{"_fetch":null}'>
-  <p data-if="_fetch?.loading">読み込み中...</p>
-  <p data-if="_fetch?.error">読み込みに失敗しました（{{_fetch?.statusCode}}）。</p>
+<div id="status">
+  <p data-if="_fetch.loading">読み込み中...</p>
+  <p data-if="_fetch.error">読み込みに失敗しました（{{_fetch.statusCode}}）。</p>
 </div>
 <div data-fetch="/api/list" data-fetch-state="#status" data-fetch-bind="#list"></div>
 <ul id="list" data-each="items"><li>{{name}}</li></ul>
@@ -1873,7 +1873,7 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 クリックなどのイベント起点のフェッチでは `data-{event}-fetch-state` を使います（例: `data-click-fetch-state`）。
 
 > 補足:
-> - `_fetch` はフェッチ後に注入されるため、初期表示で参照エラーを避けるには注入先の `data-bind` に `"_fetch":null` を宣言し、式では `_fetch?.loading` のように参照してください。
+> - `_fetch` はフェッチ後に注入されます。注入前の `_fetch.loading` などは未解決参照になるだけでエラーにはならないため、`data-bind` による宣言もオプショナルチェーンも不要です。
 > - `_fetch` は表示制御のための内部状態で、`data-bind` 属性には書き出されません（送信ペイロードにも含まれません）。
 > - 401/403 を認証ガードでリダイレクトする構成では、それらはこの仕組みの対象外です。500・ネットワーク断・タイムアウトなどクライアントに応答が返る失敗が `_fetch.error` になります。
 > - 自動リトライは行いません。再取得は上記のように `data-click-fetch`（同じ URL）で手動導線を宣言してください。
@@ -2128,7 +2128,7 @@ state に持った配列（編集中のルール一覧など）への要素追�
 別端末で確認操作が完了したかを 5 秒間隔で問い合わせ、完了を検知したら画面を切り替える例です。15 分で打ち切ります。
 
 ```html
-<div id="page-state" data-bind='{"approval":{},"_poll":null}'>
+<div id="page-state" data-bind='{"approval":{}}'>
   <div
     data-poll-fetch="/api/approval-status.json"
     data-poll-data='{"approvalHash":"{{sms.approvalHash}}"}'
@@ -2141,14 +2141,14 @@ state に持った配列（編集中のルール一覧など）への要素追�
     data-poll-state="#page-state"
   ></div>
 
-  <div data-if="{{!approval.confirmed && !_poll?.stopped}}">
+  <div data-if="{{!approval.confirmed && !_poll.stopped}}">
     <p>別の端末で確認操作を行ってください。</p>
     <p>確認をお待ちしています…</p>
   </div>
   <div data-if="{{approval.confirmed}}">
     <p>確認が完了しました。</p>
   </div>
-  <div data-if="{{_poll?.timedOut}}">
+  <div data-if="{{_poll.timedOut}}">
     <p>時間内に確認が完了しませんでした。お手数ですが最初からやり直してください。</p>
   </div>
 </div>
@@ -2217,9 +2217,9 @@ state に持った配列（編集中のルール一覧など）への要素追�
 #### `data-poll-state`: ポーリング状態を画面で使う
 
 ```html
-<div id="page-state" data-bind='{"_poll":null}'>
+<div id="page-state">
   <div data-poll-fetch="/api/status" data-poll-state="#page-state"></div>
-  <p data-if="{{_poll?.running}}">確認中…</p>
+  <p data-if="{{_poll.running}}">確認中…</p>
 </div>
 ```
 
@@ -2227,9 +2227,9 @@ state に持った配列（編集中のルール一覧など）への要素追�
 
 **注入先は `_poll` を参照する要素の祖先にしてください。** 式は祖先方向へ辿って解決するため、値を省略して自要素へ注入すると、上の例の `<p>` のような兄弟要素からは参照できません。画面全体で使う場合は `data-poll-bind` と同じコンテナを指定するのが簡単です。
 
-**`_poll` は初期表示の時点では存在しません。** `_fetch`（`data-fetch-state`）と同じように、`data-bind` で `"_poll": null` を宣言し、式では `_poll?.xxx` とオプショナルチェーンで参照してください。どちらも省くと初期表示時に参照エラーがコンソールへ出ます。
+**`_poll` は初期表示の時点では存在しません。** `_fetch`（`data-fetch-state`）と同じく、注入前の `_poll.xxx` は未解決参照になるだけでエラーにはならないため、`data-bind` による宣言もオプショナルチェーンも不要です。
 
-なお `false` はテキスト補間では空文字列になります。真偽の出し分けには `{{_poll?.stopped}}` をそのまま表示するのではなく `data-if` を使ってください。
+なお `false` はテキスト補間では空文字列になります。真偽の出し分けには `{{_poll.stopped}}` をそのまま表示するのではなく `data-if` を使ってください。
 
 各リクエストの通信状態（`loading` / `success` / `error`）が必要な場合は `data-poll-fetch-state` を併用してください。
 

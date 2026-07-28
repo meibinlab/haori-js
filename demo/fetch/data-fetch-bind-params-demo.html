@@ -6,8 +6,7 @@
 </head>
 <body>
   <button data-fetch="./data-fetch-bind-params-demo.json" data-fetch-bind="#result" data-fetch-bind-params="name&age">データ取得</button>
-  <!-- 取得前は値が無いため、参照するキーを data-bind で宣言しておく。 -->
-  <div id="result" data-bind='{"name":null,"age":null}'>
+  <div id="result">
     <p>名前: {{name}}</p>
     <p>年齢: {{age}}</p>
   </div>

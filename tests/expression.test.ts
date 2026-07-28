@@ -123,10 +123,10 @@ describe('Expression', () => {
       expect(result).toBeUndefined();
     });
 
-    it('window.locationへのアクセスはエラーになる', () => {
+    it('window.locationへのアクセスはundefinedになる', () => {
       const result = Expression.evaluate('window.location', {});
-      // windowがundefinedなのでTypeError
-      expect(result).toBeNull();
+      // window は undefined へ遮断され、暗黙のオプショナルチェーンで undefined
+      expect(result).toBeUndefined();
     });
 
     it('documentへのアクセスはundefinedになる', () => {
@@ -305,14 +305,16 @@ describe('Expression', () => {
       expect(result).toBeNull();
     });
 
-    it('nullのプロパティアクセスはnullを返す', () => {
-      const result = Expression.evaluate('obj.prop', {obj: null});
-      expect(result).toBeNull();
+    it('nullのプロパティアクセスは未解決参照になる', () => {
+      const result = Expression.evaluateDetailed('obj.prop', {obj: null});
+      expect(result.value).toBeUndefined();
+      expect(result.unresolvedReference).toBe(true);
     });
 
-    it('undefinedのプロパティアクセスはnullを返す', () => {
-      const result = Expression.evaluate('obj.prop', {obj: undefined});
-      expect(result).toBeNull();
+    it('undefinedのプロパティアクセスは未解決参照になる', () => {
+      const result = Expression.evaluateDetailed('obj.prop', {obj: undefined});
+      expect(result.value).toBeUndefined();
+      expect(result.unresolvedReference).toBe(true);
     });
   });
 
@@ -589,6 +591,8 @@ describe('Expression', () => {
       expect(Expression.evaluate('user["__proto__"]', {user: {name: '田中'}})).toBeNull();
     });
 
+    // constructor は undefined へ遮断されるため、暗黙のオプショナルチェーンでは
+    // 例外ではなく undefined になる。関数を取得できない点は変わらない。
     it('変数経由の computed constructor アクセスをブロックする', () => {
       const result = Expression.evaluate(
         'items.filter[key]("return this")()',
@@ -597,7 +601,8 @@ describe('Expression', () => {
           key: 'constructor',
         },
       );
-      expect(result).toBeNull();
+      expect(result).toBeUndefined();
+      expect(typeof result).not.toBe('function');
     });
 
     it('Reflect 経由の constructor 取得をブロックする', () => {
@@ -605,7 +610,8 @@ describe('Expression', () => {
         'Reflect.get(Reflect.get([], "filter"), "constructor")("return 7")()',
         {},
       );
-      expect(result).toBeNull();
+      expect(result).toBeUndefined();
+      expect(typeof result).not.toBe('function');
     });
 
     it('関数戻り値経由の computed constructor アクセスをブロックする', () => {
@@ -616,7 +622,8 @@ describe('Expression', () => {
           key: 'constructor',
         },
       );
-      expect(result).toBeNull();
+      expect(result).toBeUndefined();
+      expect(typeof result).not.toBe('function');
     });
   });
 });

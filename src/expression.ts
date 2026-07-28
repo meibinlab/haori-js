@@ -8,6 +8,9 @@
 
 import Log from './log';
 import Builtins from './builtins';
+import Dev from './dev';
+import Env from './env';
+import Queue from './queue';
 
 /**
  * 式評価結果の詳細です。
@@ -372,6 +375,37 @@ export default class Expression {
   /** 式 → 自由識別子一覧のキャッシュ */
   private static readonly FREE_IDENTIFIER_CACHE = new Map<string, string[]>();
 
+  /** 式 → 暗黙のオプショナルチェーン変換後の式のキャッシュ */
+  private static readonly OPTIONAL_CHAIN_CACHE = new Map<string, string>();
+
+  /**
+   * ブロック識別子の検出に使う正規表現。
+   *
+   * 直前が単語構成文字・`$`・`.` でなく、直後が単語構成文字・`$` でない、独立した
+   * 識別子としての出現だけを検出します。評価のたびに生成しないよう事前に作ります。
+   */
+  private static readonly FORBIDDEN_NAME_PATTERNS =
+    Expression.FORBIDDEN_NAMES.map(name => ({
+      name,
+      pattern: new RegExp(`(^|[^\\w$.])${name}(?![\\w$])`),
+    }));
+
+  /** 式 → 参照しているブロック識別子一覧のキャッシュ */
+  private static readonly FORBIDDEN_IDENTIFIER_CACHE = new Map<
+    string,
+    string[]
+  >();
+
+  /** まだ報告していない未解決識別子名 */
+  private static readonly pendingUnresolvedIdentifiers = new Set<string>();
+
+  /** 未解決識別子の集約報告をスケジュール済みかどうか */
+  private static unresolvedReportScheduled = false;
+
+  /** ブロック識別子の警告を出力済みの式 */
+  private static readonly loggedBlockedIdentifierExpressions =
+    new Set<string>();
+
   /**
    * 現在のバインド識別子に含まれない禁止グローバルを遮断するコードを生成します。
    *
@@ -395,12 +429,15 @@ export default class Expression {
    * @returns 式が参照しているブロック済み識別子の一覧
    */
   private static detectForbiddenIdentifiers(expression: string): string[] {
-    return this.FORBIDDEN_NAMES.filter(name => {
-      // 直前が単語構成文字・`$`・`.` でなく、直後が単語構成文字・`$` でない
-      // 独立した識別子としての出現のみを検出する。
-      const pattern = new RegExp(`(^|[^\\w$.])${name}(?![\\w$])`);
-      return pattern.test(expression);
-    });
+    const cached = this.FORBIDDEN_IDENTIFIER_CACHE.get(expression);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const found = this.FORBIDDEN_NAME_PATTERNS.filter(item =>
+      item.pattern.test(expression),
+    ).map(item => item.name);
+    this.FORBIDDEN_IDENTIFIER_CACHE.set(expression, found);
+    return found;
   }
 
   /**
@@ -462,6 +499,276 @@ export default class Expression {
       return '';
     }
     return `\nlet ${shadowNames.join(', ')};`;
+  }
+
+  /**
+   * 使用できない（ブロックされた）識別子を参照している式に警告を出します。
+   *
+   * `Object` などは評価時に `undefined` へ遮断されるため、暗黙のオプショナル
+   * チェーンと組み合わさると例外にもならず静かに `undefined` になります。原因が
+   * 分からなくならないよう、式ごとに 1 度だけヒントを出力します。
+   *
+   * @param expression 評価対象の式
+   * @return 戻り値はありません。
+   */
+  private static warnBlockedIdentifiers(expression: string): void {
+    if (this.loggedBlockedIdentifierExpressions.has(expression)) {
+      return;
+    }
+    const blocked = this.detectForbiddenIdentifiers(expression);
+    if (blocked.length === 0) {
+      return;
+    }
+    this.loggedBlockedIdentifierExpressions.add(expression);
+    Log.warn(
+      '[Haori]',
+      'Expression references blocked identifier(s): ' +
+        blocked.join(', ') +
+        '. These are blocked in expressions and evaluate to' +
+        ' undefined (often the cause of an empty result).' +
+        ' Use spread {...a, ...b} instead of Object.assign.',
+      expression,
+    );
+  }
+
+  /**
+   * 丸括弧が関数・メソッド呼び出しの開始かどうかを判定します。
+   *
+   * 直前が識別子・`)`・`]` のときだけ呼び出しとみなします。アロー関数の
+   * 引数リストやグループ化の括弧は直前が演算子または先頭になるため除外されます。
+   *
+   * @param previous 直前のトークン
+   * @returns 呼び出しの開始であれば true
+   */
+  private static startsCall(previous: ExpressionToken | null): boolean {
+    if (previous === null) {
+      return false;
+    }
+    if (previous.type === 'identifier') {
+      // `true(...)` のようなリテラル・予約語直後は呼び出しではない。
+      return !this.NON_SHADOWABLE_IDENTIFIERS.has(previous.value);
+    }
+    return previous.value === ')' || previous.value === ']';
+  }
+
+  /**
+   * メンバーアクセスを暗黙のオプショナルチェーンへ変換します。
+   *
+   * `a.b` を `a?.b`、`a[i]` を `a?.[i]`、`a.b()` を `a?.b?.()` へ書き換えます。
+   * これにより、値がまだ供給されていない途中経路（`null` / `undefined`）を
+   * 参照しても `TypeError` にならず、結果が `undefined` になります。テンプレート
+   * 側で `?.` を書く必要をなくすための変換です。
+   *
+   * 変換はトークン位置に基づく差し替えのみで行い、それ以外の文字列は元のまま
+   * 保持します。トークン化できない式は変換せずそのまま返します。
+   *
+   * @param expression 変換対象の式
+   * @returns 変換後の式
+   */
+  private static toOptionalChainExpression(expression: string): string {
+    const cached = this.OPTIONAL_CHAIN_CACHE.get(expression);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const tokens = this.tokenizeExpression(expression);
+    let converted = expression;
+    if (tokens !== null) {
+      const edits: {start: number; end: number; text: string}[] = [];
+      let previous: ExpressionToken | null = null;
+      for (const token of tokens) {
+        // すでに `?.` が書かれている箇所へ二重に挿入しない。
+        if (token.type === 'operator' && previous?.value !== '?.') {
+          if (token.value === '.') {
+            edits.push({
+              start: token.position,
+              end: token.position + 1,
+              text: '?.',
+            });
+          } else if (
+            (token.value === '[' && this.startsMemberAccess(previous)) ||
+            (token.value === '(' && this.startsCall(previous))
+          ) {
+            edits.push({
+              start: token.position,
+              end: token.position,
+              text: '?.',
+            });
+          }
+        }
+        previous = token;
+      }
+      for (let index = edits.length - 1; index >= 0; index -= 1) {
+        const edit = edits[index];
+        converted =
+          converted.slice(0, edit.start) +
+          edit.text +
+          converted.slice(edit.end);
+      }
+    }
+
+    this.OPTIONAL_CHAIN_CACHE.set(expression, converted);
+    return converted;
+  }
+
+  /**
+   * TDZ の `ReferenceError` から実際に参照された識別子名を取り出します。
+   *
+   * メッセージ書式はブラウザごとに異なるため、引用符で囲まれた名前のうち
+   * 遮蔽対象に含まれるものだけを採用します。取り出せない場合は遮蔽対象を
+   * すべて返します。識別子名には `$` を含み得るため、正規表現ではなく
+   * 文字列一致で判定します。
+   *
+   * @param error 発生した ReferenceError
+   * @param shadowNames 遮蔽した識別子の一覧
+   * @returns 未解決として報告する識別子名の一覧
+   */
+  private static extractUninitializedIdentifiers(
+    error: ReferenceError,
+    shadowNames: string[],
+  ): string[] {
+    const message = String(error.message || '');
+    const matched = shadowNames.filter(name =>
+      ['\'', '"', '`'].some(quote =>
+        message.includes(`${quote}${name}${quote}`),
+      ),
+    );
+    return matched.length > 0 ? matched : shadowNames;
+  }
+
+  /**
+   * バインドに無いキーを参照したことを記録します。
+   *
+   * 既定では初期表示時の一過性の未解決参照を騒がせないため、その場では出力せず
+   * 描画が落ち着いた時点で集約して 1 度だけ警告します。厳格バインドモード
+   * （`data-strict-bind`）では検出時点で `error` を出力します。
+   *
+   * @param names 未解決だった識別子名の一覧
+   * @param expression 評価対象の式
+   * @return 戻り値はありません。
+   */
+  private static recordUnresolvedIdentifiers(
+    names: string[],
+    expression: string,
+  ): void {
+    if (names.length === 0) {
+      return;
+    }
+    if (Env.strictBind) {
+      Log.error(
+        '[Haori]',
+        'Expression references key(s) that are not in the binding data: ' +
+          names.join(', ') +
+          '. The result is treated as an unresolved reference.',
+        expression,
+      );
+      return;
+    }
+    if (!Dev.isEnabled()) {
+      // 本番では未解決参照は正常系として扱い、一切出力しない。
+      return;
+    }
+    names.forEach(name => {
+      this.pendingUnresolvedIdentifiers.add(name);
+    });
+    this.scheduleUnresolvedIdentifierReport();
+  }
+
+  /**
+   * 未解決識別子の集約報告をスケジュールします。
+   *
+   * @return 戻り値はありません。
+   */
+  private static scheduleUnresolvedIdentifierReport(): void {
+    if (this.unresolvedReportScheduled) {
+      return;
+    }
+    this.unresolvedReportScheduled = true;
+    void Queue.waitForIdle().then(() => {
+      this.unresolvedReportScheduled = false;
+      this.reportUnresolvedIdentifiers();
+    });
+  }
+
+  /**
+   * 描画完了時点でも一度も供給されなかった識別子名をまとめて警告します。
+   *
+   * @return 戻り値はありません。
+   */
+  private static reportUnresolvedIdentifiers(): void {
+    if (this.pendingUnresolvedIdentifiers.size === 0) {
+      return;
+    }
+    const names = Array.from(this.pendingUnresolvedIdentifiers);
+    this.pendingUnresolvedIdentifiers.clear();
+    Log.warn(
+      '[Haori]',
+      'Expression key(s) were never provided by any binding: ' +
+        names.join(', ') +
+        '. They are treated as unresolved references (rendered as empty).' +
+        ' Check for typos if this is unexpected.',
+    );
+  }
+
+  /**
+   * バインドに無いキーを `undefined` とみなして、判定結果が出るかを試します。
+   *
+   * 「無いものを表示する」式は未解決参照（空表示）が妥当ですが、「無いものを
+   * 判定する」式は `false` などの結論が出せます。そのため、未宣言キーを
+   * `undefined` として評価し直し、結果が真偽値になった場合だけ採用します。
+   * 文字列連結（`'x' + missing`）や算術（`a + b`）は真偽値にならないため、
+   * `'xundefined'` や `NaN` が表示されることはありません。
+   *
+   * @param expression 評価する式
+   * @param bindings 現在のバインド値
+   * @param shadowNames バインドに無い識別子の一覧
+   * @returns 真偽値として結論が出た場合はその値。出ない場合は undefined
+   */
+  private static evaluateAsCondition(
+    expression: string,
+    bindings: Record<string, unknown>,
+    shadowNames: string[],
+  ): boolean | undefined {
+    const fallbackBindings: Record<string, unknown> = {...bindings};
+    shadowNames.forEach(name => {
+      fallbackBindings[name] = undefined;
+    });
+    const setup = this.prepareEvaluator(expression, fallbackBindings);
+    if (setup.compileFailed || setup.evaluator === null) {
+      return undefined;
+    }
+    try {
+      const wrappedValues = this.wrapBoundValues(fallbackBindings);
+      const argValues = setup.bindKeys.map(key => wrappedValues[key]);
+      const value = this.withBlockedPropertyAccess(() =>
+        setup.evaluator!(...argValues),
+      );
+      return typeof value === 'boolean' ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * 供給されたキーを未解決識別子の報告対象から取り除きます。
+   *
+   * 初期表示では未解決でも、後続の `data-fetch` や `data-bind` 更新で解決した
+   * キーは報告しません。
+   *
+   * @param bindings 評価に用いるバインド値
+   * @return 戻り値はありません。
+   */
+  private static pruneResolvedIdentifiers(
+    bindings: Record<string, unknown>,
+  ): void {
+    if (this.pendingUnresolvedIdentifiers.size === 0) {
+      return;
+    }
+    this.pendingUnresolvedIdentifiers.forEach(name => {
+      if (name in bindings) {
+        this.pendingUnresolvedIdentifiers.delete(name);
+      }
+    });
   }
 
   /**
@@ -592,6 +899,7 @@ export default class Expression {
     if (referencesBuiltins) {
       runtimeBindings[this.BUILTIN_NAMESPACE] = this.BUILTIN_HELPERS;
     }
+    this.pruneResolvedIdentifiers(runtimeBindings);
     const allowMissingIdentifierRecovery =
       this.canAttemptMissingIdentifierRecovery(expression);
 
@@ -642,11 +950,19 @@ export default class Expression {
         setup.bindKeys.forEach((key: string) => {
           argValues.push(wrappedValues[key]);
         });
+        const value = this.withBlockedPropertyAccess(() =>
+          setup.evaluator!(...argValues),
+        );
+        if (value === undefined) {
+          // ブロック識別子が原因で静かに undefined になった場合のヒント。
+          this.warnBlockedIdentifiers(expression);
+        }
         return {
-          value: this.withBlockedPropertyAccess(() =>
-            setup.evaluator!(...argValues),
-          ),
-          unresolvedReference: false,
+          value,
+          // `undefined` になる参照は「値が無い」状態であり、未解決参照として扱う。
+          // 暗黙のオプショナルチェーンにより、`null` / `undefined` を経由した
+          // メンバーアクセスもここへ集約される。
+          unresolvedReference: value === undefined,
         };
       } catch (error) {
         if (allowMissingIdentifierRecovery && error instanceof ReferenceError) {
@@ -661,29 +977,22 @@ export default class Expression {
         }
         // 式が使用できない（ブロックされた）識別子を参照している場合は、
         // 原因が分かりにくい TypeError になりがちなため明示的なヒントを出す。
-        const blocked = this.detectForbiddenIdentifiers(expression);
-        if (blocked.length > 0) {
-          Log.warn(
-            '[Haori]',
-            'Expression references blocked identifier(s): ' +
-              blocked.join(', ') +
-              '. These are blocked in expressions and evaluate to' +
-              ' undefined (often the cause of this error).' +
-              ' Use spread {...a, ...b} instead of Object.assign.',
-            expression,
-          );
-        }
+        this.warnBlockedIdentifiers(expression);
         if (error instanceof ReferenceError && shadowNames.length > 0) {
           // 遮蔽した識別子を実際に参照した場合は TDZ の ReferenceError になる。
-          // 素の「is not defined」より原因が分かりにくいため、バインドに無いキーを
-          // 参照したことを明示する。
-          Log.error(
-            '[Haori]',
-            'Expression references identifier(s) that are not in the' +
-              ' binding data: ' +
-              shadowNames.join(', ') +
-              '. The result is treated as an unresolved reference.' +
-              ' Declare the key with data-bind, or guard it with ?? / ?.',
+          // これは「バインドに無いキーを参照した」だけの正常系なので、エラーには
+          // せず未解決参照として返し、診断は集約報告へ委ねる。
+          const decided = this.evaluateAsCondition(
+            expression,
+            runtimeBindings,
+            shadowNames,
+          );
+          if (decided !== undefined) {
+            // 判定する式（`!x` や比較など）は「無い＝偽」として結論が出せる。
+            return {value: decided, unresolvedReference: false};
+          }
+          this.recordUnresolvedIdentifiers(
+            this.extractUninitializedIdentifiers(error, shadowNames),
             expression,
           );
           return {value: undefined, unresolvedReference: true};
@@ -740,10 +1049,12 @@ export default class Expression {
 
     const assignments = this.buildAssignments(bindKeys);
     const shadowDeclarations = this.buildShadowDeclarations(declarations);
+    // メンバーアクセスは暗黙のオプショナルチェーンへ変換してから評価する。
+    const source = this.toOptionalChainExpression(expression);
     const body = assignments
       ? '"use strict";\n' +
-        `${assignments};\nreturn (${expression});${shadowDeclarations}`
-      : '"use strict";\n' + `return (${expression});${shadowDeclarations}`;
+        `${assignments};\nreturn (${source});${shadowDeclarations}`
+      : '"use strict";\n' + `return (${source});${shadowDeclarations}`;
     try {
       evaluator = new Function(...bindKeys, body) as (
         ...args: unknown[]

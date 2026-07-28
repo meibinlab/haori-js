@@ -96,17 +96,16 @@
     </p>
 
     <!--
-      _fetch は初期状態（フェッチ前）では存在しないため、参照エラーを避けるよう
-      data-bind で _fetch を null として宣言しておき、式では _fetch?.xxx と
-      オプショナルチェーンで安全に参照する。
+      _fetch は初期状態（フェッチ前）では存在しないが、未解決参照は正常系として
+      扱われるため data-bind による宣言もオプショナルチェーンも要らない。
     -->
-    <div id="result" data-bind='{"items":[],"_fetch":null}'>
+    <div id="result">
       <!-- 読み込み中 -->
-      <p class="state-loading" data-if="_fetch?.loading">読み込み中...</p>
+      <p class="state-loading" data-if="_fetch.loading">読み込み中...</p>
 
       <!-- 失敗時: メッセージと再取得ボタンを宣言的に表示 -->
-      <div class="state-error" data-if="_fetch?.error">
-        <p>読み込みに失敗しました（ステータス: {{_fetch?.statusCode}}）。再試行してください。</p>
+      <div class="state-error" data-if="_fetch.error">
+        <p>読み込みに失敗しました（ステータス: {{_fetch.statusCode}}）。再試行してください。</p>
         <!-- 手動リトライ: 同じ領域を再取得する -->
         <button
           data-click-fetch="./data-fetch-state-demo.json"
@@ -117,17 +116,15 @@
       </div>
 
       <!-- 成功時: 取得した一覧を表示 -->
-      <div class="state-success" data-if="_fetch?.success">
+      <div class="state-success" data-if="_fetch.success">
         <p>取得に成功しました。</p>
-        <!-- items が 0 件のうちは行テンプレートが行スコープ無しで評価されるため、
-             行スコープのキーは ?? でフォールバックを与えて未解決参照を避ける。 -->
         <ul data-each="items">
-          <li>{{name ?? ''}}</li>
+          <li>{{name}}</li>
         </ul>
       </div>
 
-      <!-- 初期表示（まだフェッチしていない）: _fetch?.status が未定義のときだけ表示 -->
-      <p data-if="!_fetch?.status">「成功するフェッチ」または「失敗するフェッチ」を押してください。</p>
+      <!-- 初期表示（まだフェッチしていない）: _fetch.status が未定義のときだけ表示 -->
+      <p data-if="!_fetch.status">「成功するフェッチ」または「失敗するフェッチ」を押してください。</p>
     </div>
   </div>
 
@@ -157,14 +154,14 @@
   data-click-fetch-state="#result"
 &gt;成功するフェッチ&lt;/button&gt;
 
-&lt;div id="result" data-bind='{"items":[],"_fetch":null}'&gt;
-  &lt;p data-if="_fetch?.loading"&gt;読み込み中...&lt;/p&gt;
-  &lt;div data-if="_fetch?.error"&gt;
-    読み込みに失敗しました（{{_fetch?.statusCode}}）。
+&lt;div id="result"&gt;
+  &lt;p data-if="_fetch.loading"&gt;読み込み中...&lt;/p&gt;
+  &lt;div data-if="_fetch.error"&gt;
+    読み込みに失敗しました（{{_fetch.statusCode}}）。
     &lt;button data-click-fetch="..." data-click-bind="#result"
             data-click-fetch-state="#result"&gt;再取得&lt;/button&gt;
   &lt;/div&gt;
-  &lt;ul data-if="_fetch?.success" data-each="items"&gt;&lt;li&gt;{{name ?? ''}}&lt;/li&gt;&lt;/ul&gt;
+  &lt;ul data-if="_fetch.success" data-each="items"&gt;&lt;li&gt;{{name}}&lt;/li&gt;&lt;/ul&gt;
 &lt;/div&gt;</code></pre>
   </div>
 </body>

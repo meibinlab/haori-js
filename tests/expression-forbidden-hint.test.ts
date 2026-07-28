@@ -20,9 +20,10 @@ describe('式評価: ブロック識別子の明示警告', () => {
     const warn = vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
     vi.spyOn(Log, 'error').mockImplementation(() => undefined);
 
-    // Object はブロックされ undefined になるため Object.assign は TypeError
+    // Object はブロックされ undefined になるため、暗黙のオプショナルチェーンで
+    // 例外にはならず undefined（未解決参照）になる。
     const result = Expression.evaluate('Object.assign({}, a)', {a: {x: 1}});
-    expect(result).toBeNull();
+    expect(result).toBeUndefined();
 
     const warned = warn.mock.calls.some(args =>
       args.some(

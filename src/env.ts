@@ -43,6 +43,29 @@ function resolveRuntimeAttribute(runtime: string | null): HaoriRuntime | null {
 export default class Env {
   private static _prefix: string = 'data-';
   private static _runtime: HaoriRuntime = DEFAULT_RUNTIME;
+  private static _strictBind: boolean = false;
+
+  /**
+   * 厳格バインドモードが有効かどうかを取得します。
+   *
+   * 有効な場合、バインドに無いキーの参照を検出した時点で `error` ログを出力します。
+   * 無効（既定）の場合は正常系として扱い、開発モードで集約警告のみを出します。
+   *
+   * @returns 厳格バインドモードなら true。
+   */
+  public static get strictBind(): boolean {
+    return Env._strictBind;
+  }
+
+  /**
+   * 厳格バインドモードを設定します。
+   *
+   * @param enabled 有効にする場合は true。
+   * @return 戻り値はありません。
+   */
+  public static setStrictBind(enabled: boolean): void {
+    Env._strictBind = enabled;
+  }
 
   /**
    * 実行モードを取得します。
@@ -84,6 +107,10 @@ export default class Env {
         if (runtime !== null) {
           Env._runtime = runtime;
         }
+
+        Env._strictBind = currentScript.hasAttribute(
+          `${Env._prefix}strict-bind`,
+        );
       }
       if (
         currentScript instanceof HTMLScriptElement &&
@@ -123,8 +150,12 @@ export default class Env {
   }
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', Env.detect);
-} else {
-  Env.detect();
+// SSR や単体 import のような非ブラウザ環境では起動処理を行わない
+// （このモジュールを import しただけで ReferenceError にならないようにする）。
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', Env.detect);
+  } else {
+    Env.detect();
+  }
 }
