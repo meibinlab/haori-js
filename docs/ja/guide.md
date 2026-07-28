@@ -241,7 +241,7 @@ Haori.js の初期化（スキャンと初期フェッチ）がすべて完了�
 <input type="number" data-attr-value="{{count}}" readonly>
 ```
 
-`data-attr-*` は対応する属性を更新します。加えて、入力欄の状態と DOM の食い違いを防ぐため、`value`（テキスト系入力）・`checked`（radio / checkbox）・`selected`（option）は DOM property（`input.value` / `element.checked` / `option.selected`）も同期します。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` でチェック・選択状態を宣言バインドできます。ただし `value` は**フォーカス中（編集中）の入力には再適用しません**（別要素起因の再評価や `data-fetch` 完了で未コミット入力が巻き戻るのを防ぐため。コミット値は `change` でバインドへ反映されます）。
+`data-attr-*` は対応する属性を更新します。加えて、入力欄の状態と DOM の食い違いを防ぐため、`value`（テキスト系入力）・`checked`（radio / checkbox）・`selected`（option）は DOM property（`input.value` / `element.checked` / `option.selected`）も同期します。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` でチェック・選択状態を宣言バインドできます。ただし**フォーカス中（編集中）の入力**と、**`change` / `input` で確定した編集を抱えている入力**には再適用しません（別要素起因の再評価で利用者の入力が失われるのを防ぐため）。確定した編集の印は明示的な値の供給（フェッチ応答の反映、`data-{event}-reset`、`data-{event}-copy`、`Core.setBindingData()`）で解除されます。
 
 ### グローバル関数を使った値の整形
 
@@ -1065,7 +1065,7 @@ HTML のラジオボタンは「同じフォームの中の同名要素」で 1 
 
 `data-attr-checked="{{...}}"`（または `checked="{{...}}"`）で束縛したチェックボックスは、評価結果が `element.checked`（DOM プロパティ）まで同期されます。これにより、別要素の `change` などでフォームが再評価されると、チェック状態は**常にバインドデータ基準**へ戻ります。
 
-このとき、JavaScript で `element.checked = true` のように DOM を直接書き換えると、次回の再評価で**バインドデータ基準に巻き戻り**ます（フォーカス保護は操作中の当該要素のみが対象のため、別要素起因の再評価では効きません）。これは宣言バインドと手書き DOM 操作の混在によるアンチパターンです。
+このとき、JavaScript で `element.checked = true` のように DOM を直接書き換えると、次回の再評価で**バインドデータ基準に巻き戻り**ます。ユーザー編集の保護は `change` / `input` を通した操作だけが対象なので、スクリプトからの直接操作には効きません。これは宣言バインドと手書き DOM 操作の混在によるアンチパターンです。
 
 連動（例: 「権限セット」をチェックすると対応する個別権限を一括で ON にする）も、**バインドデータ側を更新**すれば再評価をまたいで保持されます。集合演算（加算・他セット保持）も、配列をマージしてから `Core.setBindingData` で書き戻すだけで宣言的に表現できます。
 
@@ -1104,16 +1104,21 @@ HTML のラジオボタンは「同じフォームの中の同名要素」で 1 
 
 ポイントは「`.checked` を直接いじらず、`permissions` 配列を更新する」ことです。`data-attr-checked` は配列を参照しているため、`setBindingData` 後の再評価で各チェックボックスの状態が正しく反映され、以降の再評価でも保持されます。読み取りには `Core.getBindingData(element, { resolved: true })`、書き込みには `Core.setBindingData(element, data)` を使います。
 
-### レシピ: `name` 付き入力では「参照スコープ」を「書込スコープ」に揃える
+### レシピ: `name` 付き入力で「参照スコープ」と「書込スコープ」が違うとき
 
-`name` を持つ入力は、フォームの双方向バインディングによって**バインドデータ ↔ 値・選択状態**が双方向に同期します（単一の真実源は `name` のバインドデータです）。ここに `data-attr-selected` / `data-attr-checked` / `data-attr-value`（`value="{{式}}"` も同様）を**別のスコープ（キー）を参照する形で**併用すると、真実源が二つになって衝突します。
+`name` を持つ入力は、フォームの双方向バインディングによって**バインドデータ ↔ 値・選択状態**が双方向に同期します。ここに `data-attr-selected` / `data-attr-checked` / `data-attr-value`（`value="{{式}}"` も同様）を**別のスコープ（キー）を参照する形で**併用すると、値の供給元が二つになります。
 
-典型的なアンチパターンは「フォームは `name` で flat なキー（例 `category`）に書き込むのに、`data-attr-selected` の式は別オブジェクト（例 親フラグメントの `correspondenceItem.category`）を読む」構成です。ユーザーが select を変更して `change` が確定しても、`correspondenceItem.category`（読取先）は更新されないため、フォーカスが外れた後の再評価で `option.selected` が読取先（空のまま）基準に戻り、**選択が巻き戻ります**（`required` 検証も落ちます）。0.15.1 では属性のみ同期で live 値を戻さなかったため顕在化しませんでしたが、0.16.0 以降は live プロパティまで同期するため表面化します。
+典型は「フォームは `name` で平坦なキー（例 `category`）に書き込むのに、`data-attr-selected` の式は別オブジェクト（例 祖先の `correspondenceItem.category`）を読む」構成です。
 
-**テキスト入力でも同じことが起きます。** `<input name="code" data-attr-value="{{別スコープのキー}}">` のような構成では、利用者が入力して `change` が確定しても読取先は更新されないため、フォーカスが外れた後の再評価で**入力内容が評価結果へ巻き戻ります**。`value` については 0.27.0 で `data-attr-*` の live プロパティ同期が有効になったため表面化します（`value="{{式}}"` を直接書いた場合は 0.16.0 以降）。読み取り専用の表示（`readonly` を付けた入力や hidden）であれば衝突しません。
+**0.29.0 以降、この構成でも確定した編集は失われません。** 利用者が `change` / `input` で確定した入力欄は、明示的な値の供給（`data-fetch` / `data-{event}-bind` の応答反映、`data-{event}-reset`、`data-{event}-copy`、`Core.setBindingData()` の直接呼び出し）を受けるまで宣言バインドの再適用対象から外れます。0.16.0〜0.28.x では、フォーカスが外れた後の再評価で**選択や入力内容が評価結果へ巻き戻っていました**（`required` 検証も落ちました）。
+
+それでも、参照スコープと書込スコープを揃えたほうが素直です。揃えておくと次の利点があります。
+
+- 再取得（`data-fetch`）の応答で編集前の値へ戻らない。応答は「編集より古い情報」として扱われるため、揃っていない構成では送信前の編集が応答の値へ更新されます
+- 画面の表示とバインドデータが常に一致するため、他の式（`data-if` など）から同じキーを参照できる
 
 ```html
-<!-- ❌ アンチパターン: 書込先（form 自身の category）と読取先（親の correspondenceItem.category）が異なる -->
+<!-- △ 書込先（form 自身の category）と読取先（祖先の correspondenceItem.category）が異なる -->
 <div data-bind='{"correspondenceItem":{"category":""}}'>
   <form>
     <select name="category" required>
@@ -1125,7 +1130,7 @@ HTML のラジオボタンは「同じフォームの中の同名要素」で 1 
 </div>
 ```
 
-解決は「参照スコープを書込スコープに揃える」ことです。次のいずれかにします（どちらも巻き戻りません）。
+揃える書き方は次のいずれかです。
 
 **推奨①: `name` 束縛に選択状態を任せ、`data-attr-selected` を使わない。** `name` 付き select の選択は `name` のバインドデータで決まるため、`data-attr-selected` は不要です。初期値はフォームの `data-bind` / `data-fetch` で `category` を投入しておけば、初期表示も編集後の保持も両立します。
 

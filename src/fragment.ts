@@ -750,6 +750,13 @@ export class ElementFragment extends Fragment {
   private userEditSequence = 0;
 
   /**
+   * 明示的な値の供給を最後に受けた時点のユーザー編集通し番号（未受領は 0）。
+   * これより大きい `userEditSequence` を持つ入力欄は「まだ供給で上書きされて
+   * いない編集を抱えている」とみなし、宣言バインドの再適用対象から外す。
+   */
+  private authoritativeValueSequence = 0;
+
+  /**
    * エレメントフラグメントのコンストラクタ。
    * アトリビュートや子フラグメントの作成も行います。
    *
@@ -1508,6 +1515,106 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 宣言バインドの再適用を抑止すべきユーザー編集を抱えているかを返します。
+   *
+   * `change` / `input` で確定した値は、明示的な値の供給（フェッチ応答や
+   * `data-{event}-bind` の反映、`data-{event}-reset`、`data-{event}-copy`、
+   * `data-each` の行データ差し替え）を受けるまで権威を持ちます。評価結果が
+   * 変わらない再評価で書き戻すと、利用者には「別の欄を触ったら入力が元へ戻る」
+   * 現象として現れるため、その再適用を抑止します。
+   *
+   * @returns 未確定のユーザー編集がある場合は true
+   */
+  public hasPendingUserEdit(): boolean {
+    return this.userEditSequence > this.authoritativeValueSequence;
+  }
+
+  /**
+   * ユーザー編集の印を解除します。
+   *
+   * 解除後の再評価では宣言バインドの評価結果が入力欄へ再適用されます。
+   * フェッチ応答の反映ではリクエスト送出時点の通し番号を渡します。応答より後に
+   * 行われた編集の印は残るため、飛行中の通信の応答で新しい編集が消えることは
+   * ありません。
+   *
+   * @param upTo この通し番号までの編集を解除対象とする（既定は現在の最新）
+   * @return 戻り値はありません。
+   */
+  public clearUserEditMark(
+    upTo: number = ElementFragment.userEditCounter,
+  ): void {
+    if (upTo > this.authoritativeValueSequence) {
+      this.authoritativeValueSequence = upTo;
+    }
+  }
+
+  /**
+   * 未解決参照により属性の反映を見送ったことを報告済みの宣言。
+   * 再評価ごとに警告すると開発コンソールが埋まるため、同じ宣言は一度だけ報告する。
+   */
+  private static readonly loggedUnresolvedAttributes = new Set<string>();
+
+  /**
+   * 未解決参照により属性の反映を見送ったことを開発モードで警告します。
+   *
+   * 未解決参照のときは属性を削除し、値の同期対象では値も空へ揃えます。式の書き
+   * 間違いやバインドキーの供給漏れが原因の場合、画面上は「なぜか空になる」ように
+   * しか見えず、原因の宣言に辿り着けません。そのため原因の属性とテンプレートを
+   * 名指しで報告します。`Log.warn` は開発モードでのみ出力します。
+   *
+   * @param rawName 生の属性名
+   * @param targetName 反映先の属性名
+   * @param template 宣言されたテンプレート
+   * @param element 対象エレメント
+   * @return 戻り値はありません。
+   */
+  private static warnUnresolvedAttribute(
+    rawName: string,
+    targetName: string,
+    template: string,
+    element: Element,
+  ): void {
+    if (!Dev.isEnabled()) {
+      return;
+    }
+    const key = `${rawName} ${template}`;
+    if (ElementFragment.loggedUnresolvedAttributes.has(key)) {
+      return;
+    }
+    ElementFragment.loggedUnresolvedAttributes.add(key);
+    Log.warn(
+      '[Haori]',
+      `Attribute "${targetName}" was not applied because the expression has` +
+        ' an unresolved reference; the attribute is removed and the' +
+        ` synchronized value is emptied: ${rawName}="${template}"`,
+      element,
+    );
+  }
+
+  /**
+   * チェック状態の宣言バインドについて、再適用を抑止すべきかを判定します。
+   *
+   * `option` の `selected` はユーザー操作で変化するのが所属する `<select>` の
+   * 値なので、印も `<select>` 側で判定します。
+   *
+   * @param forSelectedOption `option` の `selected` を反映する場合に true
+   * @returns 未確定のユーザー編集がある場合は true
+   */
+  private hasPendingCheckableUserEdit(forSelectedOption: boolean): boolean {
+    if (!forSelectedOption) {
+      return this.hasPendingUserEdit();
+    }
+    const select = (this.getTarget() as HTMLOptionElement).closest('select');
+    if (!select) {
+      return false;
+    }
+    const selectFragment = Fragment.get(select);
+    return selectFragment instanceof ElementFragment
+      ? selectFragment.hasPendingUserEdit()
+      : false;
+  }
+
+  /**
    * 内部の値をクリアします。エレメントのvalue値は変化しません。
    */
   public clearValue() {
@@ -1797,6 +1904,16 @@ export class ElementFragment extends Fragment {
               evaluatedValue === undefined ||
               evaluatedValue === false
             : hasTemplateExpression && joinedValue === '');
+    if (shouldRemoveTarget && detail.hasUnresolvedReference) {
+      // 未解決参照が原因で反映を見送った場合だけ報告する（評価結果が素直に
+      // null / false になった場合は宣言どおりの動作なので報告しない）。
+      ElementFragment.warnUnresolvedAttribute(
+        rawName,
+        targetName,
+        value,
+        element,
+      );
+    }
     const result = contents.isForceEvaluation()
       ? value
       : isSingleExpression
@@ -1813,9 +1930,13 @@ export class ElementFragment extends Fragment {
     // 別要素起因の再評価や data-fetch 完了で、ユーザーの未コミット入力が
     // 巻き戻る問題を防ぐ。コミットは change イベントでバインド側へ反映される。
     // getRootNode().activeElement で light DOM / Shadow DOM 双方のフォーカスを判定する。
+    // 確定済み（change / input を通した）編集も、明示的な値の供給を受けるまでは
+    // 同様に守る。評価結果が変わらない再評価で書き戻すと、フォーカスが外れた後に
+    // 「別の欄を触ったら前の欄が元へ戻る」現象になり、送信値も古くなる。
     const rootNode = element.getRootNode() as Document | ShadowRoot;
     const skipValueReapply =
-      shouldSyncValueProperty && element === rootNode.activeElement;
+      shouldSyncValueProperty &&
+      (element === rootNode.activeElement || this.hasPendingUserEdit());
     const stringResult =
       shouldRemoveTarget || result === null || result === false
         ? null
@@ -1848,15 +1969,18 @@ export class ElementFragment extends Fragment {
     // 操作中（フォーカス中）の要素には選択／チェック状態を再適用しない。value の
     // skipValueReapply と挙動を統一し、ユーザーが操作中の選択が再評価で巻き戻る
     // 問題を防ぐ。checkbox/radio は自身が、option は所属する select がフォーカス
-    // 中かで判定する。フォーカスが外れれば次回以降の再評価で宣言状態が反映される。
+    // 中かで判定する。確定済みの編集も、明示的な値の供給を受けるまでは守る。
     const activeElement = rootNode.activeElement;
     // activeElement が null のときに closest('select') の null と一致して誤って
     // スキップしないよう、フォーカス要素が存在する場合のみ判定する。
     const skipCheckableReapply =
-      activeElement !== null &&
-      ((isCheckedTarget && element === activeElement) ||
-        (isSelectedTarget &&
-          (element as HTMLOptionElement).closest('select') === activeElement));
+      (activeElement !== null &&
+        ((isCheckedTarget && element === activeElement) ||
+          (isSelectedTarget &&
+            (element as HTMLOptionElement).closest('select') ===
+              activeElement))) ||
+      ((isCheckedTarget || isSelectedTarget) &&
+        this.hasPendingCheckableUserEdit(isSelectedTarget));
     // 真偽属性の有無（= stringResult が null でない）が望ましいチェック状態。
     const checkableDesiredState = stringResult !== null;
     const requiresCheckedPropertyWrite =

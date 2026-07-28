@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.28.0
+Version: 0.29.0
 
 ---
 
@@ -137,7 +137,7 @@ Helpers for tests and debugging: `waitForRenders()` (also `Haori.waitForRenders(
 
 `data-fetch` and `data-import` are automatically re-evaluated only when their evaluated values change after a binding update. `data-fetch` compares a request signature composed of the resolved URL, HTTP method, headers, and body, while `data-import` compares only the resolved URL. If either attribute contains even one unresolved reference, it is treated as invalid for that evaluation cycle, is not executed, and becomes executable only after a later binding update resolves the reference.
 
-When the browser interprets an attribute during HTML parsing, such as `src` or `value` on `input type="number"`, writing template expressions directly in that attribute can cause warnings or unwanted requests before Haori runs. Use `data-attr-*` for those cases. `data-attr-xxx` updates the matching `xxx` attribute, and to keep input state consistent with the DOM it also synchronizes DOM properties for `value` (text inputs), `checked` (radio / checkbox) and `selected` (option). The `value` property is **not** re-applied to a focused (being-edited) input, so unsaved keystrokes are never rolled back; the committed value is reflected back on `change`.
+When the browser interprets an attribute during HTML parsing, such as `src` or `value` on `input type="number"`, writing template expressions directly in that attribute can cause warnings or unwanted requests before Haori runs. Use `data-attr-*` for those cases. `data-attr-xxx` updates the matching `xxx` attribute, and to keep input state consistent with the DOM it also synchronizes DOM properties for `value` (text inputs), `checked` (radio / checkbox) and `selected` (option). These properties are **not** re-applied to a focused (being-edited) input, nor to an input that holds an edit committed through `change` / `input`, so user input is never rolled back. The committed-edit mark is cleared by an explicit supply of values (fetch response binding, `data-{event}-reset`, `data-{event}-copy`, `Core.setBindingData()`).
 
 For detailed usage and many examples, see the official documentation.
 

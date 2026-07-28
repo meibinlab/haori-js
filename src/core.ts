@@ -273,6 +273,34 @@ export default class Core {
   }
 
   /**
+   * 配下の入力欄からユーザー編集の印を解除します。
+   *
+   * 明示的に値を供給する操作（フェッチ応答や `data-{event}-bind` の反映、
+   * `data-{event}-reset`、`data-{event}-copy`、`data-each` の行データ差し替え）から
+   * 呼び出します。解除後の再評価では宣言バインドの評価結果が入力欄へ再適用され、
+   * 「再取得したのに古い入力が残る」状態になりません。
+   *
+   * 逆に、`change` / `input` の双方向コミットや `data-url-param` の再評価のような
+   * 「値の供給ではない更新」からは呼び出しません。呼び出すと編集値が評価結果へ
+   * 巻き戻ります。
+   *
+   * @param fragment 対象フラグメント（配下すべてが対象）
+   * @param upTo この通し番号までの編集を解除対象とする（既定は現在の最新）
+   * @return 戻り値はありません。
+   */
+  public static clearUserEditMarks(
+    fragment: ElementFragment,
+    upTo: number = ElementFragment.currentUserEditSequence(),
+  ): void {
+    fragment.clearUserEditMark(upTo);
+    fragment.getChildren().forEach(child => {
+      if (child instanceof ElementFragment) {
+        Core.clearUserEditMarks(child, upTo);
+      }
+    });
+  }
+
+  /**
    * data-fetch の再評価状態を取得します。
    *
    * @param element 対象要素
@@ -747,11 +775,17 @@ export default class Core {
         // data-url-param の再評価は evaluateAll（= setBindingData の work）内から
         // 同一フラグメントへ再帰し得るため reentrant=true で即時実行する。
         if (arg === null) {
-          promises.push(Core.setBindingData(element, params, new Set(), true));
+          promises.push(
+            // 再評価ごとに走る経路なので、ユーザー編集の印は解除しない。
+            Core.setBindingData(element, params, new Set(), true, true, null),
+          );
         } else {
           const data = fragment.getRawBindingData() || {};
           data[String(arg)] = params;
-          promises.push(Core.setBindingData(element, data, new Set(), true));
+          promises.push(
+            // 再評価ごとに走る経路なので、ユーザー編集の印は解除しない。
+            Core.setBindingData(element, data, new Set(), true, true, null),
+          );
         }
         break;
       }
@@ -788,11 +822,20 @@ export default class Core {
    * 反映されます。あわせて外部向けの `haori:bindchange` イベントも発火しません
    * （非ミラーの一時更新は外部通知もしない、という方針で意味を揃えるため）。
    *
+   * データの設定は既定で「明示的な値の供給」として扱い、配下の入力欄からユーザー
+   * 編集の印を解除します（`clearUserEditMarks`）。これにより、利用者が編集した欄も
+   * 供給された値へ更新されます。値の供給ではない内部更新（`change` の双方向コミット、
+   * `data-url-param` の再評価、`_poll` / `_fetch` などのエンジン管理変数）からは
+   * `userEditBaseline` に `null` を渡して解除を抑止します。フェッチ応答の反映では
+   * リクエスト送出時点の通し番号を渡し、それより後の編集を守ります。
+   *
    * @param element 対象要素
    * @param data 設定するバインドデータ
    * @param skipFragments 再評価をスキップするフラグメント集合
    * @param reentrant 直列化中の再帰呼出で即時実行するか
    * @param reflectToAttribute `data-bind` 属性へミラーするか（既定 true）
+   * @param userEditBaseline ユーザー編集の印を解除する上限の通し番号。
+   *     既定は現在の最新（すべて解除）、`null` は解除しない
    * @returns Promise (DOM操作が完了したときに解決される)
    */
   public static setBindingData(
@@ -801,9 +844,13 @@ export default class Core {
     skipFragments: ReadonlySet<ElementFragment> = new Set(),
     reentrant = false,
     reflectToAttribute = true,
+    userEditBaseline: number | null = ElementFragment.currentUserEditSequence(),
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
     const previous = fragment.getRawBindingData();
+    if (userEditBaseline !== null) {
+      Core.clearUserEditMarks(fragment, userEditBaseline);
+    }
     // 内部バインドデータは即時確定する（後続の同期読み取りが最新値を得られるよう）。
     fragment.setBindingData(data);
 
@@ -1103,7 +1150,17 @@ export default class Core {
       } else {
         bindingData = values;
       }
-      promises.push(Core.setBindingData(formFragment.getTarget(), bindingData));
+      promises.push(
+        // 値の設定に伴うコミットなので、ユーザー編集の印は解除しない。
+        Core.setBindingData(
+          formFragment.getTarget(),
+          bindingData,
+          new Set(),
+          false,
+          true,
+          null,
+        ),
+      );
     }
     return Promise.all(promises).then(() => undefined);
   }
@@ -2457,6 +2514,11 @@ export default class Core {
                 // 行の入力が同一なら子孫の再評価も値の再適用も行わない。
                 return undefined;
               }
+              // 再利用行に別のレコードが入るため、行内の編集の印を解除する。
+              // 解除しないと、宣言バインドで値が決まる入力欄が前のレコードの値を
+              // 表示したまま残る（行データ由来の書き戻しは宣言バインド対象を
+              // 除外するため、この経路以外では更新されない）。
+              Core.clearUserEditMarks(child);
               return Core.evaluateAll(child).then(() =>
                 Core.applyRowFormValues(parent, child, item),
               );

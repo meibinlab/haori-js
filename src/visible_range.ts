@@ -503,6 +503,8 @@ export default class VisibleRangeObserver {
       skipFragments,
       false,
       false,
+      // 可視範囲の公開は値の供給ではないため、ユーザー編集の印は解除しない。
+      null,
     ).catch((error: unknown) => {
       Log.error('[Haori]', 'Failed to publish visible range:', error);
     });

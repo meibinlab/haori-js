@@ -630,7 +630,14 @@ export default class PollObserver {
           ...(target.getRawBindingData() ?? {}),
           _poll: state,
         };
-        return Core.setBindingData(element, data, new Set(), false, false);
+        return Core.setBindingData(
+          element,
+          data,
+          new Set(),
+          false,
+          false,
+          null,
+        );
       }),
     ).then(() => undefined);
   }

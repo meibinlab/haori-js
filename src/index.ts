@@ -32,4 +32,4 @@ export const waitForRenders = (): Promise<void> => Haori.waitForRenders();
 export default Haori;
 
 // バージョン情報
-export const version = '0.28.0';
+export const version = '0.29.0';

@@ -9,6 +9,7 @@
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
+import Dev from '../src/dev';
 import EventDispatcher from '../src/event_dispatcher';
 import Form from '../src/form';
 import Fragment, {ElementFragment} from '../src/fragment';
@@ -338,6 +339,61 @@ describe('宣言バインドで設定した value の収集', () => {
       await waitForDomSettled();
 
       expect(Form.getValues(getFrag(form))).toEqual({approvalHash: ''});
+    });
+
+    it('未解決参照で反映を見送ったことを開発モードで警告する', async () => {
+      Dev.enable();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await mount(
+          `<div id="scope" data-bind='{"other":1}'>
+             <form>
+               <input type="text" name="code" data-attr-value="{{missing.key}}">
+             </form>
+           </div>`,
+        );
+
+        const messages = warn.mock.calls.map(args => args.join(' '));
+        const reported = messages.filter(
+          message =>
+            message.includes('unresolved reference') &&
+            message.includes('data-attr-value="{{missing.key}}"'),
+        );
+        // 属性名とテンプレートを名指しで 1 度だけ報告する。
+        expect(reported).toHaveLength(1);
+        expect(reported[0]).toContain('"value" was not applied');
+      } finally {
+        warn.mockRestore();
+        Dev.disable();
+      }
+    });
+
+    it('短絡で値が確定する式は未解決参照にならない', async () => {
+      Dev.enable();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const form = await mount(
+          `<div id="scope" data-bind='{"detail":{},"dialog":{}}'>
+             <form>
+               <input type="text" name="code"
+                      data-attr-value="{{detail?.id || dialog?.id || id || ''}}">
+             </form>
+           </div>`,
+        );
+        const input = form.querySelector<HTMLInputElement>('input')!;
+
+        // `id` はどのスコープにも無いが、短絡で `''` に確定するため反映される。
+        expect(input.value).toBe('');
+        expect(input.getAttribute('value')).toBe('');
+        expect(Form.getValues(getFrag(form))).toEqual({code: ''});
+        const messages = warn.mock.calls.map(args => args.join(' '));
+        expect(
+          messages.filter(message => message.includes('unresolved reference')),
+        ).toEqual([]);
+      } finally {
+        warn.mockRestore();
+        Dev.disable();
+      }
     });
 
     it('hidden では value プロパティの代入が属性へ反映される', async () => {

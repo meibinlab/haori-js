@@ -2198,11 +2198,35 @@ ${body}
           skipFragments.add(this.options.targetFragment);
         }
 
-        const bindingData = formFragment.getBindingData();
+        // 土台はフォーム自身のバインドデータに限る。`getBindingData()` は祖先との
+        // マージ結果（かつキャッシュそのもの）なので、それを書き込むと祖先のキーが
+        // フォームへ焼き付き、以降その祖先の更新がフォーム自身の古いコピーに
+        // シャドーされて届かなくなる。
+        const bindingData: Record<string, unknown> = {
+          ...(formFragment.getRawBindingData() ?? {}),
+        };
         // File / Blob はバインドデータへ入れると JSON 化で `{}` に潰れ
         // `data-bind` 属性を壊すため、ファイル名へ正規化して反映する。
-        Object.assign(bindingData, sanitizeBinaryForBinding(payload));
-        await Core.setBindingData(formElement, bindingData, skipFragments);
+        const formValues = sanitizeBinaryForBinding(payload);
+        // data-form-arg 指定時は、そのキー配下が入力欄と対応する（Core.changeValue
+        // と Form.reset の書き込み先に合わせる）。平坦に書くと参照キーと書込キーが
+        // 食い違い、宣言バインドの参照元が更新されない。
+        const formArg = formFragment.getAttribute(`${Env.prefix}form-arg`);
+        if (formArg) {
+          bindingData[String(formArg)] = formValues;
+        } else {
+          Object.assign(bindingData, formValues);
+        }
+        // 双方向コミットは値の供給ではないため、ユーザー編集の印は解除しない。
+        // 解除すると、この再評価で宣言バインドが編集値を評価結果へ巻き戻す。
+        await Core.setBindingData(
+          formElement,
+          bindingData,
+          skipFragments,
+          false,
+          true,
+          null,
+        );
       }
 
       // フォームコンテナを持たない change / input で収集値が空のまま bind すると、
@@ -2862,13 +2886,17 @@ ${body}
           promises.push(
             Core.setBindingData(
               fragment.getTarget(),
-              this.restoreUserEditsAfterRequest(fragment, bindingData),
+              this.reconcileUserEditsForBind(fragment, bindingData),
               new Set(),
               // マネージド fetch の bind かつ、bind 先が実行中のバインドワークを
               // 持つ（= 自分自身を await している）ときだけ reentrant（即時実行）に
               // する。これで自己デッドロックのみを解消し、idle なフラグメントへの
               // bind は従来どおり FIFO で適用順を保証する。
               this.reentrantBind && fragment.isExecutingBindingWork(),
+              true,
+              // ユーザー編集の印は reconcileUserEditsForBind が送信時点を基準に
+              // 解除済み。ここで既定の全解除を行うと、応答より後の編集まで巻き戻る。
+              null,
             ),
           );
         });
@@ -2904,10 +2932,14 @@ ${body}
           promises.push(
             Core.setBindingData(
               fragment.getTarget(),
-              this.restoreUserEditsAfterRequest(fragment, finalData),
+              this.reconcileUserEditsForBind(fragment, finalData),
               new Set(),
               // 自己デッドロックのみを解消する限定 reentrant（上の bindArg 分岐と同様）。
               this.reentrantBind && fragment.isExecutingBindingWork(),
+              true,
+              // ユーザー編集の印は reconcileUserEditsForBind が送信時点を基準に
+              // 解除済み（上の bindArg 分岐と同様）。
+              null,
             ),
           );
         });
@@ -2925,23 +2957,29 @@ ${body}
   }
 
   /**
-   * 応答データへ、送信データを確定した後にユーザーが編集した値を上書きし直します。
+   * バインドの反映内容とユーザー編集の権威関係を調整します。
    *
-   * 応答はリクエストを組み立てた時点の内容を反映したものなので、その後に行われた
-   * 編集より古い情報です。そのままフォームへバインドすると、利用者が入力した値が
-   * 画面からも収集値からも静かに消えます（応答が遅いほど起こりやすい）。ここで
-   * 編集分を上書きし直し、バインドデータの段階で最新の状態にします。入力欄への
-   * 書き戻し（`Form.syncValues`）と宣言バインドの再評価（`data-attr-*` など）は
-   * どちらもバインドデータを基準にするため、この 1 か所で両方が整合します。
+   * 行うことは 2 つです。
    *
-   * 対象は `<form>` へのバインドだけです。入力欄への書き戻しが起きるのは
-   * `Core.setBindingData()` がフォームを対象にしたときに限られます。
+   * 1. **送信より前の編集の印を解除する**。バインドは明示的な値の供給なので、
+   *    リクエストを組み立てた時点までの編集は応答（またはバインド指定）に権威を
+   *    譲ります。解除しないと、宣言バインドの再適用が抑止されたままになり
+   *    「再取得したのに古い入力が残る」状態になります。
+   * 2. **送信より後の編集を応答データへ上書きし直す**。応答はリクエストを
+   *    組み立てた時点の内容を反映したものなので、その後の編集より古い情報です。
+   *    そのままバインドすると利用者の入力が画面からも収集値からも静かに消えます。
+   *    バインドデータの段階で上書きするため、入力欄への書き戻し
+   *    （`Form.syncValues`）と宣言バインドの再評価（`data-attr-*` など）の双方が
+   *    この 1 か所で整合します。
+   *
+   * 上書き（2）の対象は `<form>` へのバインドだけです。入力欄への書き戻しが
+   * 起きるのは `Core.setBindingData()` がフォームを対象にしたときに限られます。
    *
    * @param fragment バインド先のフラグメント
    * @param data バインドする応答データ
    * @return ユーザー編集分を上書きしたデータ
    */
-  private restoreUserEditsAfterRequest(
+  private reconcileUserEditsForBind(
     fragment: ElementFragment,
     data: Record<string, unknown>,
   ): Record<string, unknown> {
@@ -2949,10 +2987,22 @@ ${body}
     if (baseline === null) {
       return data;
     }
+    // ポーリングは利用者が要求した再取得ではなく、数秒ごとに自動で繰り返される。
+    // 他のフェッチと同じ扱いにすると、入力してからしばらく置いた値が次の取得で
+    // 静かに消える。そのため印は解除せず、これまでの編集すべてを応答へ上書きし直す。
+    const isAutomaticPoll = this.eventType === 'poll';
+    if (!isAutomaticPoll) {
+      // 送信時点までの編集は応答に権威を譲る。それより後の編集の印は残るため、
+      // 飛行中の通信の応答で新しい編集が消えることはない。
+      Core.clearUserEditMarks(fragment, baseline);
+    }
     if (!(fragment.getTarget() instanceof HTMLFormElement)) {
       return data;
     }
-    const edited = Form.getValuesEditedAfter(fragment, baseline);
+    const edited = Form.getValuesEditedAfter(
+      fragment,
+      isAutomaticPoll ? 0 : baseline,
+    );
     if (Object.keys(edited).length === 0) {
       return data;
     }
@@ -3011,6 +3061,8 @@ ${body}
     const sourceData = this.resolveCopySourceData();
     const copyData = this.pickCopyData(sourceData);
     const promises = this.options.copyFragments.map(fragment => {
+      // コピーは明示的な値の供給なので、setBindingData の既定どおり
+      // コピー先のユーザー編集の印を解除する。
       const bindingData = {
         ...fragment.getBindingData(),
         ...copyData,
@@ -3692,6 +3744,12 @@ ${body}
     return Core.setBindingData(
       resolved.owner.getTarget(),
       Procedure.withPathValue(resolved.ownerData, resolved.path, nextArray),
+      new Set(),
+      false,
+      true,
+      // 対象は配列の 1 要素だけなので、他の行の編集の印は解除しない。要素データが
+      // 入れ替わる再利用行の印は差分更新（Core.updateDiff）が個別に解除する。
+      null,
     );
   }
 
@@ -3733,7 +3791,14 @@ ${body}
           ...(fragment.getRawBindingData() ?? {}),
           _fetch: state,
         };
-        return Core.setBindingData(element, data, new Set(), false, false);
+        return Core.setBindingData(
+          element,
+          data,
+          new Set(),
+          false,
+          false,
+          null,
+        );
       }),
     );
   }

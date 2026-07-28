@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>宣言バインドの再適用によるユーザー編集の巻き戻しの回帰確認</title>
+  </head>
+  <body>
+    <!--
+      レコードオブジェクトを参照する式で値を表示し、入力欄は name でフラットキーへ
+      書き込む編集フォーム。参照キー（detail.*）と書込キー（name）が別なので、
+      change の双方向コミットが起こす再評価で data-attr-value が評価結果を再適用し、
+      直前に編集した欄が取得時の値へ戻っていた。
+      実ブラウザは dirty value flag（利用者が触った入力は value 属性の変更を
+      DOM 値へ反映しない）を持つため、jsdom とは値の権威の伝わり方が異なる。
+      そのため実ブラウザでも操作して確認する。
+    -->
+    <div
+      id="state"
+      data-bind='{"detail":{"name":"原名","kana":"ゲンカナ","tel":"03-0000-0000"}}'
+    >
+      <form id="f">
+        <label>名称 <input id="name" name="name" data-attr-value="{{detail?.name || ''}}" /></label>
+        <label>カナ <input id="kana" name="kana" data-attr-value="{{detail?.kana || ''}}" /></label>
+        <label>電話 <input id="tel" name="tel" data-attr-value="{{detail?.tel || ''}}" /></label>
+      </form>
+    </div>
+
+    <p>
+      <button id="collect" type="button">収集</button>
+      <button id="supply" type="button">明示供給</button>
+    </p>
+    <pre id="log">-</pre>
+
+    <script src="/dist/haori.iife.js"></script>
+    <script>
+      /* global Haori */
+      const $ = id => document.getElementById(id);
+      const ns = () => (Haori && Haori.default ? Haori : {default: Haori});
+
+      /**
+       * 画面の値とフォームの収集値を記録します。
+       */
+      const dump = () => {
+        const api = ns();
+        const form = api.Fragment.get($('f'));
+        $('log').textContent = JSON.stringify({
+          dom: {
+            name: $('name').value,
+            kana: $('kana').value,
+            tel: $('tel').value,
+          },
+          collected: api.Form.getValues(form),
+          formBind: $('f').getAttribute('data-bind'),
+        });
+      };
+
+      $('collect').addEventListener('click', async () => {
+        await ns().Queue.waitForIdle();
+        dump();
+      });
+
+      $('supply').addEventListener('click', async () => {
+        const api = ns();
+        await api.Core.setBindingData($('state'), {
+          detail: {name: 'サーバ名', kana: 'サーバカナ', tel: '000'},
+        });
+        await api.Queue.waitForIdle();
+        dump();
+      });
+    </script>
+  </body>
+</html>

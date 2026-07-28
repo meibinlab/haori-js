@@ -290,6 +290,43 @@ export default class Form {
   }
 
   /**
+   * 宣言バインドで値・状態が決まる入力について、DOM 側の値を空へ揃えます。
+   *
+   * `Form.reset()` から `form.reset()` の直後に呼び出します。評価結果の入れ直しは
+   * 呼び出し元の再評価（`Core.evaluateAll`）が行うため、ここでは空へ揃えるだけです。
+   *
+   * @param fragment 対象フラグメント（配下すべてが対象）
+   * @return 戻り値はありません。
+   */
+  private static clearDeclarativeStateFromDom(fragment: ElementFragment): void {
+    if (Form.isDeclarativeStateBound(fragment)) {
+      const element = fragment.getTarget();
+      if (
+        element instanceof HTMLInputElement &&
+        (element.type === 'checkbox' || element.type === 'radio')
+      ) {
+        element.checked = false;
+      } else if (element instanceof HTMLSelectElement) {
+        // 単一選択でも「どれも選ばれていない」状態にできるため、選択を全解除する。
+        Array.from(element.options).forEach(option => {
+          option.selected = false;
+        });
+        element.selectedIndex = -1;
+      } else if (
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement
+      ) {
+        element.value = '';
+      }
+    }
+    fragment.getChildren().forEach(child => {
+      if (child instanceof ElementFragment) {
+        Form.clearDeclarativeStateFromDom(child);
+      }
+    });
+  }
+
+  /**
    * 指定した属性が宣言バインド（テンプレート式または `data-attr-*`）かどうかを
    * 判定します。
    *
@@ -352,7 +389,8 @@ export default class Form {
    * 無い行も空オブジェクトで場所を確保します。
    *
    * 飛行中の通信の応答をバインドする直前に、その通信を開始した後の編集だけを
-   * 上書きし直す用途で使います。
+   * 上書きし直す用途で使います。`data-poll` の応答では、利用者が要求していない
+   * 自動取得なので基準に 0 を渡し、これまでの編集すべてを対象にします。
    *
    * @param fragment 対象のElementFragment
    * @param baseline ユーザー編集の通し番号の基準（これより大きいものが対象）
@@ -872,6 +910,10 @@ export default class Form {
    * @returns すべての初期化処理が完了するPromise
    */
   public static async reset(fragment: ElementFragment): Promise<void> {
+    // 初期化は明示的な値の供給なので、ユーザー編集の印を解除する。解除しないと
+    // 宣言バインドの再適用が抑止されたままになり、編集した欄だけが初期化されない。
+    Core.clearUserEditMarks(fragment);
+
     // 値をクリア
     Form.clearValues(fragment);
 
@@ -898,21 +940,40 @@ export default class Form {
           parent.insertBefore(element, next);
         }
       }
+      // `form.reset()` は `value` / `checked` / `selected` 属性を既定値として復元する。
+      // 宣言バインドは評価結果をこれらの属性へ書くため、そのままでは「前回の評価
+      // 結果」が既定値として復元され、初期化したはずの欄に古い値が残る（続く値収集
+      // と双方向コミットでバインドデータへ固定されてしまう）。宣言バインドで値・
+      // 状態が決まる入力は DOM 側も空へ揃え、この後の再評価で現在の評価結果を
+      // 入れ直す。
+      Form.clearDeclarativeStateFromDom(fragment);
     });
 
-    // data-bind 属性で宣言された初期バインドデータを復元し、宣言キーを入力欄へ反映する
+    // フォーム自身のバインドデータを初期宣言（宣言が無ければ空）へ戻し、宣言キーを
+    // 入力欄へ反映する。戻さないと、リセット前の双方向コミットで書き込まれた値が
+    // 残り、そのキーを参照する式（`{{キー}}` や平坦キー優先のフォールバック）が
+    // 直後の再評価で古い入力値を復元してしまう。
     const targetForms = Form.collectBindingTargetForms(fragment);
     for (const formFragment of targetForms) {
       const initial = Form.getInitialBindingData(formFragment);
-      if (initial) {
-        await Core.setBindingData(formFragment.getTarget(), initial);
+      if (initial === null && formFragment.getRawBindingData() === null) {
+        // 自身のバインドデータを持たないフォームは祖先のデータを参照している。
+        // 空のデータを作ると不要なシャドーイングを増やすため何もしない。
+        continue;
       }
+      await Core.setBindingData(formFragment.getTarget(), initial ?? {});
     }
 
     // リセット後の DOM 値（HTML 属性の既定値と初期バインド値）を内部値へ再同期する。
     // 同期しないと、リセット前に変更イベントで双方向バインディングへ書き込まれた
     // 値が再評価時に復元され、画面上は既定値なのに古い値が送信される。
     Form.syncValuesFromDom(fragment);
+
+    // 宣言バインドの評価結果を入力欄へ入れ直す。バインドデータの更新より前に行う。
+    // 後にすると、宣言バインドで値が決まる入力について「収集した空の値」を
+    // バインドデータへ書いてから DOM だけが評価結果へ変わるため、画面とバインド
+    // データ（および `{{キー}}` の参照結果）が食い違ったまま残る。
+    await Core.evaluateAll(fragment);
 
     // 双方向バインディングのバインドデータをリセット後の値で更新する。
     // バインドデータを一度も持っていないフォームは対象外とする
@@ -936,9 +997,6 @@ export default class Form {
       }
       await Core.setBindingData(formFragment.getTarget(), bindingData);
     }
-
-    // 再評価
-    await Core.evaluateAll(fragment);
   }
 
   /**
