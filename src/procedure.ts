@@ -244,6 +244,56 @@ function appendPayloadEntry(
 }
 
 /**
+ * 応答データへユーザー編集分を再上書きします。
+ *
+ * 編集分に現れるキーだけを上書きし、それ以外は応答の値を残します。応答が返した
+ * 派生値や正規化結果（サーバが計算した合計や整形済みコードなど）を、編集していない
+ * 項目については保つためです。配列は位置合わせで要素ごとに再帰し、`data-form-list`
+ * の行に対応させます。編集分の配列に含まれる空オブジェクトは、行位置を保つための
+ * 場所取りなので上書きしません。
+ *
+ * @param base 応答データ（基底）。
+ * @param edits 上書きするユーザー編集分。
+ * @return 上書き後のデータ。
+ */
+function mergeUserEdits(base: unknown, edits: unknown): unknown {
+  if (Array.isArray(edits)) {
+    const merged = Array.isArray(base) ? base.slice() : [];
+    let applied = false;
+    edits.forEach((edit, index) => {
+      if (edit === null || edit === undefined) {
+        return;
+      }
+      if (
+        typeof edit === 'object' &&
+        !Array.isArray(edit) &&
+        Object.keys(edit as Record<string, unknown>).length === 0
+      ) {
+        return;
+      }
+      merged[index] = mergeUserEdits(merged[index], edit);
+      applied = true;
+    });
+    // 場所取りだけで実際の上書きが無ければ応答の値をそのまま残す。基底が配列で
+    // ない場合に空配列で潰さないためでもある。
+    return applied ? merged : base;
+  }
+  if (edits !== null && typeof edits === 'object') {
+    const baseObject =
+      base !== null && typeof base === 'object' && !Array.isArray(base)
+        ? {...(base as Record<string, unknown>)}
+        : {};
+    for (const [key, value] of Object.entries(
+      edits as Record<string, unknown>,
+    )) {
+      baseObject[key] = mergeUserEdits(baseObject[key], value);
+    }
+    return baseObject;
+  }
+  return edits;
+}
+
+/**
  * 送信オプションが送信データとしての body を持つかどうかを判定します。
  *
  * `data-{event}-before-run` の上書きが送信データの置き換えかどうかの判定に使います。
@@ -1798,6 +1848,15 @@ ${body}
   /** reset-before 後に確定した historyData スナップショット */
   private historyDataSnapshot: Record<string, unknown> | null | undefined;
 
+  /**
+   * 送信データを確定した時点のユーザー編集の通し番号。
+   *
+   * 応答をフォームへバインドするとき、この番号より後に編集された入力欄の値は
+   * 応答より新しいため、応答データへ上書きし直します。これがないと、送信後に
+   * 行った編集が「送信時点の内容を反映した応答」で静かに巻き戻ります。
+   */
+  private requestUserEditSequence: number | null = null;
+
   /** reset-before 後に確定した historyForm スナップショット */
   private historyFormSnapshot: Record<string, unknown> | null | undefined;
 
@@ -1947,6 +2006,11 @@ ${body}
         this.captureHistorySnapshots();
       }
       const preparedRequest = this.prepareFetchRequest();
+      // 送信データを確定した時点を記録する。ここから後の編集は応答より新しいので、
+      // 応答をフォームへバインドするときに上書きし直す。シグネチャ比較のための
+      // 事前組み立て（resolveFetchSignature）では記録せず、実際に送る経路でだけ
+      // 記録する。
+      this.requestUserEditSequence = ElementFragment.currentUserEditSequence();
       const payload = preparedRequest.payload;
       let fetchUrl = preparedRequest.url;
       let fetchOptions = preparedRequest.options;
@@ -2770,7 +2834,7 @@ ${body}
           promises.push(
             Core.setBindingData(
               fragment.getTarget(),
-              bindingData,
+              this.restoreUserEditsAfterRequest(fragment, bindingData),
               new Set(),
               // マネージド fetch の bind かつ、bind 先が実行中のバインドワークを
               // 持つ（= 自分自身を await している）ときだけ reentrant（即時実行）に
@@ -2812,7 +2876,7 @@ ${body}
           promises.push(
             Core.setBindingData(
               fragment.getTarget(),
-              finalData,
+              this.restoreUserEditsAfterRequest(fragment, finalData),
               new Set(),
               // 自己デッドロックのみを解消する限定 reentrant（上の bindArg 分岐と同様）。
               this.reentrantBind && fragment.isExecutingBindingWork(),
@@ -2830,6 +2894,52 @@ ${body}
         return undefined;
       });
     });
+  }
+
+  /**
+   * 応答データへ、送信データを確定した後にユーザーが編集した値を上書きし直します。
+   *
+   * 応答はリクエストを組み立てた時点の内容を反映したものなので、その後に行われた
+   * 編集より古い情報です。そのままフォームへバインドすると、利用者が入力した値が
+   * 画面からも収集値からも静かに消えます（応答が遅いほど起こりやすい）。ここで
+   * 編集分を上書きし直し、バインドデータの段階で最新の状態にします。入力欄への
+   * 書き戻し（`Form.syncValues`）と宣言バインドの再評価（`data-attr-*` など）は
+   * どちらもバインドデータを基準にするため、この 1 か所で両方が整合します。
+   *
+   * 対象は `<form>` へのバインドだけです。入力欄への書き戻しが起きるのは
+   * `Core.setBindingData()` がフォームを対象にしたときに限られます。
+   *
+   * @param fragment バインド先のフラグメント
+   * @param data バインドする応答データ
+   * @return ユーザー編集分を上書きしたデータ
+   */
+  private restoreUserEditsAfterRequest(
+    fragment: ElementFragment,
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const baseline = this.requestUserEditSequence;
+    if (baseline === null) {
+      return data;
+    }
+    if (!(fragment.getTarget() instanceof HTMLFormElement)) {
+      return data;
+    }
+    const edited = Form.getValuesEditedAfter(fragment, baseline);
+    if (Object.keys(edited).length === 0) {
+      return data;
+    }
+    // data-form-arg 指定時は、そのキー配下だけが入力欄と対応する。
+    const formArg = fragment.getAttribute(`${Env.prefix}form-arg`);
+    if (formArg) {
+      const key = String(formArg);
+      const scoped = data[key];
+      const base =
+        scoped && typeof scoped === 'object' && !Array.isArray(scoped)
+          ? (scoped as Record<string, unknown>)
+          : {};
+      return {...data, [key]: mergeUserEdits(base, edited)};
+    }
+    return mergeUserEdits(data, edited) as Record<string, unknown>;
   }
 
   /**

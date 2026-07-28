@@ -260,12 +260,14 @@ describe('Core', () => {
       ).toEqual(['warm', 'cool']);
     });
 
-    test('同じ行データなら data-each の再利用行を再評価しない', async () => {
+    test('行スコープだけを参照する行は同じ行データなら再評価しない', async () => {
+      // テンプレートが data-each-arg の名前しか参照しない場合、要素データが同値なら
+      // 描画結果も変わらないため再評価を省略する。
       container.innerHTML = `
         <div id="root">
           <p id="status">{{status}}</p>
           <ul data-each="items" data-each-key="id" data-each-arg="item">
-            <li>{{renderSpy(item)}}</li>
+            <li>{{item.render(item)}}</li>
           </ul>
         </div>
       `;
@@ -273,12 +275,12 @@ describe('Core', () => {
       const root = container.querySelector('#root') as HTMLElement;
       const renderSpy = vi.fn((item: {label: string}) => item.label);
       const items = [
-        {id: 'a', label: 'alpha'},
-        {id: 'b', label: 'beta'},
+        {id: 'a', label: 'alpha', render: renderSpy},
+        {id: 'b', label: 'beta', render: renderSpy},
       ];
 
       await Core.scan(root);
-      await Core.setBindingData(root, {items, status: 'before', renderSpy});
+      await Core.setBindingData(root, {items, status: 'before'});
       await waitForDomSettled();
       await new Promise(resolve => setTimeout(resolve, 150));
       await waitForDomSettled();
@@ -286,7 +288,7 @@ describe('Core', () => {
       const baselineCalls = renderSpy.mock.calls.length;
       expect(baselineCalls).toBeGreaterThanOrEqual(2);
 
-      await Core.setBindingData(root, {items, status: 'after', renderSpy});
+      await Core.setBindingData(root, {items, status: 'after'});
       await waitForDomSettled();
 
       expect(renderSpy).toHaveBeenCalledTimes(baselineCalls);
@@ -294,6 +296,44 @@ describe('Core', () => {
       expect(
         Array.from(container.querySelectorAll('li')).map(item => item.textContent),
       ).toEqual(['alpha', 'beta']);
+    });
+
+    test('行の外を参照する行は行データが同値でも再評価する', async () => {
+      // テンプレートが行スコープ外の名前を参照する場合、要素データが同値でも
+      // 行外データの更新で描画が変わるため再評価が必要になる。
+      container.innerHTML = `
+        <div id="root">
+          <ul data-each="items" data-each-key="id" data-each-arg="item">
+            <li>{{item.label}}:{{suffix}}</li>
+          </ul>
+        </div>
+      `;
+
+      const root = container.querySelector('#root') as HTMLElement;
+      const items = [
+        {id: 'a', label: 'alpha'},
+        {id: 'b', label: 'beta'},
+      ];
+
+      await Core.scan(root);
+      await Core.setBindingData(root, {items, suffix: 'before'});
+      await waitForDomSettled();
+
+      expect(
+        Array.from(container.querySelectorAll('li')).map(item =>
+          item.textContent?.trim(),
+        ),
+      ).toEqual(['alpha:before', 'beta:before']);
+
+      // 一覧そのものは同値のまま、行の外にある値だけを更新する。
+      await Core.setBindingData(root, {items, suffix: 'after'});
+      await waitForDomSettled();
+
+      expect(
+        Array.from(container.querySelectorAll('li')).map(item =>
+          item.textContent?.trim(),
+        ),
+      ).toEqual(['alpha:after', 'beta:after']);
     });
 
     test('同値の新しい配列なら data-each 全体の差分更新をスキップする', async () => {

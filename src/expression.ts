@@ -407,6 +407,22 @@ export default class Expression {
     new Set<string>();
 
   /**
+   * 式が参照している自由識別子（バインドで解決されるべき名前）を返します。
+   *
+   * プロパティアクセスの右辺（`foo.bar` の `bar`）、リテラル、予約語、
+   * 遮蔽対象外の組み込み名は含みません。式が解析できない場合は空配列を返すため、
+   * 「この式は何も参照していない」と「解析できなかった」は区別できません。
+   * 参照の有無で最適化を判断する用途では、空配列を安全側（= 参照あり）として
+   * 扱うか、別途式の有無を確認してください。
+   *
+   * @param expression 評価対象の式
+   * @returns 自由識別子の一覧（重複なし、出現順）
+   */
+  public static getFreeIdentifiers(expression: string): string[] {
+    return this.extractFreeIdentifiers(expression);
+  }
+
+  /**
    * 現在のバインド識別子に含まれない禁止グローバルを遮断するコードを生成します。
    *
    * @param bindKeys 現在の式で利用するバインド識別子一覧

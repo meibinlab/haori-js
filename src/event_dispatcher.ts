@@ -426,6 +426,9 @@ export default class EventDispatcher {
       fragment instanceof ElementFragment
     ) {
       fragment.syncValue();
+      // ユーザー編集として記録する。飛行中の通信の応答がこの編集より古い内容を
+      // 持っていても、その応答でこの入力欄を巻き戻さないための基準になる。
+      fragment.markUserEdit();
       // ラジオボタンは排他制御で他要素が未チェックになるが、その要素では
       // change が発火しないため内部値が古いまま残る。同一フォームスコープの
       // 同名ラジオを併せて同期し、値収集時の不整合（配列累積）を防ぐ。
@@ -447,6 +450,10 @@ export default class EventDispatcher {
           const memberFragment = Fragment.get(member);
           if (memberFragment instanceof ElementFragment) {
             memberFragment.syncValue();
+            // 排他で未チェックになった同名ラジオもユーザー編集として扱う。
+            // 起点要素だけを記録すると、応答の書き戻しでグループの一部だけが
+            // 巻き戻り、チェック状態が食い違う。
+            memberFragment.markUserEdit();
           }
         }
       }

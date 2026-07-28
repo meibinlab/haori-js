@@ -707,6 +707,12 @@ export class ElementFragment extends Fragment {
   /** each用のテンプレート */
   private template: ElementFragment | null = null;
 
+  /**
+   * each テンプレートが行スコープの値だけで描画できるかどうか（未判定は null）。
+   * テンプレートは差し替えられるまで不変なので、判定結果を保持して再利用する。
+   */
+  private rowLocalTemplate: boolean | null = null;
+
   /** each比較用のキー */
   private listKey: string | null = null;
 
@@ -733,6 +739,15 @@ export class ElementFragment extends Fragment {
 
   /** 値変更スキップフラグ（更新イベントによる無限ループ対応） */
   private skipChangeValue = false;
+
+  /** ユーザー編集の通し番号の発番元（全フラグメント共通、単調増加）。 */
+  private static userEditCounter = 0;
+
+  /**
+   * この入力欄を最後にユーザーが編集したときの通し番号（未編集は 0）。
+   * 「ある時点より後に編集されたか」を比較するために使う。
+   */
+  private userEditSequence = 0;
 
   /**
    * エレメントフラグメントのコンストラクタ。
@@ -832,6 +847,9 @@ export class ElementFragment extends Fragment {
     clone.display = this.display;
     clone.displayPriority = this.displayPriority;
     clone.template = this.template;
+    // 行スコープ判定はテンプレートと each 属性から決まり、どちらも複製されるため
+    // 判定結果もそのまま引き継げる。
+    clone.rowLocalTemplate = this.rowLocalTemplate;
     clone.renderSignature = this.renderSignature;
     clone.eachInputSignature = this.eachInputSignature;
     clone.deriveSubtreeSignature = null;
@@ -1125,6 +1143,26 @@ export class ElementFragment extends Fragment {
    */
   public setTemplate(template: ElementFragment | null): void {
     this.template = template;
+    // テンプレートが変われば行スコープ判定もやり直す。
+    this.rowLocalTemplate = null;
+  }
+
+  /**
+   * `data-each` テンプレートが行スコープの値だけで描画できるかの判定結果を返します。
+   *
+   * @returns 判定済みなら真偽値、未判定なら null
+   */
+  public getRowLocalTemplate(): boolean | null {
+    return this.rowLocalTemplate;
+  }
+
+  /**
+   * `data-each` テンプレートが行スコープの値だけで描画できるかの判定結果を保存します。
+   *
+   * @param rowLocal 行スコープだけで描画できるなら true
+   */
+  public setRowLocalTemplate(rowLocal: boolean | null): void {
+    this.rowLocalTemplate = rowLocal;
   }
 
   /**
@@ -1432,6 +1470,41 @@ export class ElementFragment extends Fragment {
    */
   public getValue(): string | number | boolean | string[] | null {
     return this.value;
+  }
+
+  /**
+   * 現在のユーザー編集の通し番号を返します。
+   *
+   * 通信を開始した時点の番号を控えておき、応答が届いたときに各入力欄の
+   * `getUserEditSequence()` と比べることで「リクエスト送出後に編集されたか」を
+   * 判定できます。
+   *
+   * @returns 直近に発番したユーザー編集の通し番号（未発番なら 0）
+   */
+  public static currentUserEditSequence(): number {
+    return ElementFragment.userEditCounter;
+  }
+
+  /**
+   * この入力欄がユーザーに編集されたことを記録します。
+   *
+   * `change` / `input` の委譲で内部値を DOM から同期した直後に呼び出します。
+   * プログラムからの値反映（バインド由来の書き戻しなど）では呼び出しません。
+   *
+   * @returns 戻り値はありません。
+   */
+  public markUserEdit(): void {
+    ElementFragment.userEditCounter += 1;
+    this.userEditSequence = ElementFragment.userEditCounter;
+  }
+
+  /**
+   * この入力欄を最後にユーザーが編集したときの通し番号を返します。
+   *
+   * @returns ユーザー編集の通し番号（未編集なら 0）
+   */
+  public getUserEditSequence(): number {
+    return this.userEditSequence;
   }
 
   /**
@@ -2311,6 +2384,18 @@ export class TextFragment extends Fragment {
    */
   public hasDynamicContent(): boolean {
     return this.contents.isEvaluate || this.contents.isRawEvaluate;
+  }
+
+  /**
+   * 評価前の生のテキストを返します。
+   *
+   * `{{式}}` を展開する前の宣言そのものです。テンプレートが参照している識別子を
+   * 静的に調べる用途で使います。
+   *
+   * @returns 評価前のテキスト
+   */
+  public getRawText(): string {
+    return this.text;
   }
 
   /**

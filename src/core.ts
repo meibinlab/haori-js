@@ -90,6 +90,33 @@ export default class Core {
   private static readonly ATTRIBUTE_PLACEHOLDER_REGEX =
     /\{\{\{[\s\S]+?\}\}\}|\{\{[\s\S]+?\}\}/;
 
+  /**
+   * 行スコープ判定で「属性値そのものが式」とみなす `data-*` 属性のサフィックス。
+   * `{{...}}` を伴わずに式を書く属性だけを列挙する。
+   */
+  private static readonly ROW_LOCAL_EXPRESSION_ATTRIBUTES: ReadonlySet<string> =
+    new Set(['each', 'if', 'derive']);
+
+  /**
+   * 行スコープ判定で「属性値が式ではない」とみなす `data-*` 属性のサフィックス。
+   * ここに無い `data-*` 属性は、行の外を参照し得るものとして安全側に扱う。
+   */
+  private static readonly ROW_LOCAL_STATIC_ATTRIBUTES: ReadonlySet<string> =
+    new Set([
+      'each-arg',
+      'each-key',
+      'each-index',
+      'each-before',
+      'each-after',
+      'derive-name',
+      'row',
+      'form',
+      'form-arg',
+      'form-list',
+      'form-object',
+      'form-detach',
+    ]);
+
   /** data-fetch の自動再評価状態 */
   private static readonly REACTIVE_FETCH_STATES = new WeakMap<
     HTMLElement,
@@ -1722,11 +1749,43 @@ export default class Core {
       });
     }
     if (fragment.getEachInputSignature() === nextEachInputSignature) {
-      return Promise.resolve();
+      // 行の構成（件数・並び・要素データ）は変わらないので差分更新は不要だが、
+      // 行の外にあるデータが変わっている可能性はある。行スコープの値だけで描画が
+      // 決まらないテンプレートでは、既存行の子孫を再評価しないと行外データの更新が
+      // 行内へ届かない（行内の選択肢を別の data-each で描画する構成など）。
+      return Core.reevaluateEachRows(fragment);
     }
     return this.updateDiff(fragment, data).then(() => {
       fragment.setEachInputSignature(nextEachInputSignature);
     });
+  }
+
+  /**
+   * 差分更新が不要な `data-each` の既存行について、子孫の再評価だけを行います。
+   *
+   * 行スコープの値だけで描画が決まるテンプレートでは、行の要素データが同値である
+   * 限り描画結果も変わらないため何もしません。
+   *
+   * @param fragment `data-each` コンテナのフラグメント
+   * @returns 再評価完了の Promise
+   */
+  private static reevaluateEachRows(fragment: ElementFragment): Promise<void> {
+    if (Core.isRowLocalEachTemplate(fragment)) {
+      return Promise.resolve();
+    }
+    const rows = fragment
+      .getChildElementFragments()
+      .filter(
+        child =>
+          !child.hasAttribute(`${Env.prefix}each-before`) &&
+          !child.hasAttribute(`${Env.prefix}each-after`),
+      );
+    if (rows.length === 0) {
+      return Promise.resolve();
+    }
+    return Promise.all(rows.map(row => Core.evaluateAll(row))).then(
+      () => undefined,
+    );
   }
 
   /**
@@ -1784,6 +1843,11 @@ export default class Core {
     if (Core.hasNonEachDynamicElementState(fragment)) {
       return false;
     }
+    // 行スコープの外を参照するテンプレートは、要素データが同値でも行外データの
+    // 更新で描画が変わる。走査ごと省略すると更新が行内へ届かない。
+    if (!Core.isRowLocalEachTemplate(fragment)) {
+      return false;
+    }
     const data = Core.resolveEachItems(fragment);
     if (data === null) {
       return false;
@@ -1794,6 +1858,168 @@ export default class Core {
       items: data,
     });
     return fragment.getEachInputSignature() === nextEachInputSignature;
+  }
+
+  /**
+   * `data-each` のテンプレートが行スコープの値だけで描画できるかどうかを返します。
+   *
+   * 行スコープとは `data-each-arg` と `data-each-index` で公開される名前です。
+   * テンプレート内の式がこの名前だけを参照している場合、要素データが同値なら
+   * 描画結果も変わらないため、行の子孫の再評価を省略できます。逆に行の外にある
+   * 名前（別の一覧や親スコープの値）を参照している場合は、要素データが同値でも
+   * 再評価が必要です。
+   *
+   * 判定できない場合はすべて「行スコープ外」（= 再評価が必要）へ倒します。
+   * 具体的には、テンプレート未確定、`data-each-arg` の無い構成（要素データのキーが
+   * 行スコープへ直接展開されるため参照名を静的に決められない）、解析できない式、
+   * 既知でない `data-*` 属性が該当します。
+   *
+   * 判定結果はテンプレート単位で不変なのでフラグメントへ保存して再利用します。
+   *
+   * @param fragment `data-each` コンテナのフラグメント
+   * @returns 行スコープの値だけで描画できるなら true
+   */
+  private static isRowLocalEachTemplate(fragment: ElementFragment): boolean {
+    const cached = fragment.getRowLocalTemplate();
+    if (cached !== null) {
+      return cached;
+    }
+    const template = fragment.getTemplate();
+    const itemArg = fragment.getAttribute(`${Env.prefix}each-arg`);
+    if (template === null || !itemArg) {
+      fragment.setRowLocalTemplate(false);
+      return false;
+    }
+    const scopeNames = new Set<string>([String(itemArg)]);
+    const indexKey = fragment.getAttribute(`${Env.prefix}each-index`);
+    if (indexKey) {
+      scopeNames.add(String(indexKey));
+    }
+    const rowLocal = Core.isRowLocalSubtree(template, scopeNames);
+    fragment.setRowLocalTemplate(rowLocal);
+    return rowLocal;
+  }
+
+  /**
+   * フラグメントとその子孫の式が、指定した名前だけを参照しているかを判定します。
+   *
+   * @param fragment 判定対象フラグメント
+   * @param scopeNames 参照してよい名前の集合
+   * @returns 指定した名前だけを参照しているなら true
+   */
+  private static isRowLocalSubtree(
+    fragment: ElementFragment,
+    scopeNames: ReadonlySet<string>,
+  ): boolean {
+    for (const name of fragment.getAttributeNames()) {
+      const rawValue = fragment.getRawAttribute(name);
+      const raw = typeof rawValue === 'string' ? rawValue : '';
+      if (raw.includes('{{')) {
+        if (
+          !Core.areExpressionsRowLocal(
+            Core.extractInterpolations(raw),
+            scopeNames,
+          )
+        ) {
+          return false;
+        }
+        continue;
+      }
+      if (!name.startsWith(Env.prefix)) {
+        // 素の HTML 属性で `{{` を含まないものは静的。
+        continue;
+      }
+      const suffix = name.slice(Env.prefix.length);
+      if (Core.ROW_LOCAL_EXPRESSION_ATTRIBUTES.has(suffix)) {
+        if (!Core.areExpressionsRowLocal([raw], scopeNames)) {
+          return false;
+        }
+        continue;
+      }
+      if (!Core.ROW_LOCAL_STATIC_ATTRIBUTES.has(suffix)) {
+        return false;
+      }
+    }
+    // ネストした data-each は自身の行スコープを子孫へ追加で公開する。
+    let childScopeNames = scopeNames;
+    if (fragment.hasAttribute(`${Env.prefix}each`)) {
+      const nestedArg = fragment.getRawAttribute(`${Env.prefix}each-arg`);
+      if (typeof nestedArg !== 'string' || nestedArg === '') {
+        return false;
+      }
+      const nested = new Set(scopeNames);
+      nested.add(nestedArg);
+      const nestedIndex = fragment.getRawAttribute(`${Env.prefix}each-index`);
+      if (typeof nestedIndex === 'string' && nestedIndex !== '') {
+        nested.add(nestedIndex);
+      }
+      childScopeNames = nested;
+    }
+    for (const child of fragment.getChildren()) {
+      if (child instanceof ElementFragment) {
+        if (!Core.isRowLocalSubtree(child, childScopeNames)) {
+          return false;
+        }
+      } else if (child instanceof TextFragment) {
+        const raw = child.getRawText();
+        if (
+          raw.includes('{{') &&
+          !Core.areExpressionsRowLocal(
+            Core.extractInterpolations(raw),
+            scopeNames,
+          )
+        ) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /**
+   * 式の集合が、指定した名前だけを参照しているかを判定します。
+   *
+   * 参照名を取り出せなかった式は安全側（= 指定外を参照している）として扱います。
+   *
+   * @param expressions 判定対象の式
+   * @param scopeNames 参照してよい名前の集合
+   * @returns 指定した名前だけを参照しているなら true
+   */
+  private static areExpressionsRowLocal(
+    expressions: string[],
+    scopeNames: ReadonlySet<string>,
+  ): boolean {
+    for (const expression of expressions) {
+      const trimmed = expression.trim();
+      if (trimmed === '') {
+        continue;
+      }
+      const identifiers = Expression.getFreeIdentifiers(trimmed);
+      if (identifiers.length === 0) {
+        return false;
+      }
+      if (identifiers.some(identifier => !scopeNames.has(identifier))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * 文字列から `{{式}}` の中身を取り出します。
+   *
+   * @param raw 評価前の文字列
+   * @returns 式の一覧（出現順）
+   */
+  private static extractInterpolations(raw: string): string[] {
+    const expressions: string[] = [];
+    const pattern = /\{\{([\s\S]*?)\}\}/g;
+    let match = pattern.exec(raw);
+    while (match !== null) {
+      expressions.push(match[1]);
+      match = pattern.exec(raw);
+    }
+    return expressions;
   }
 
   /**

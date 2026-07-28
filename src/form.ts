@@ -345,16 +345,40 @@ export default class Form {
   }
 
   /**
+   * 指定した基準より後にユーザーが編集した入力欄の値だけを収集します。
+   *
+   * 収集結果は `getValues()` と同じ入れ子構造になりますが、編集されていない
+   * 入力欄のキーは含みません。`data-form-list` の行は位置がずれないよう、編集の
+   * 無い行も空オブジェクトで場所を確保します。
+   *
+   * 飛行中の通信の応答をバインドする直前に、その通信を開始した後の編集だけを
+   * 上書きし直す用途で使います。
+   *
+   * @param fragment 対象のElementFragment
+   * @param baseline ユーザー編集の通し番号の基準（これより大きいものが対象）
+   * @returns 編集された入力欄だけを含む値のオブジェクト
+   */
+  public static getValuesEditedAfter(
+    fragment: ElementFragment,
+    baseline: number,
+  ): Record<string, unknown> {
+    return Form.getPartValues(fragment, {}, baseline);
+  }
+
+  /**
    * フォーム内の各入力エレメントから値を取得し、オブジェクトとして返します。
    * 入力エレメントのname属性、data-form-object属性、data-form-list属性に基づいて値を整理します。
    *
    * @param fragment 対象のElementFragment
    * @param values オブジェクトに追加する値のオブジェクト
+   * @param minUserEditSequence 指定した場合、この通し番号より後にユーザーが編集した
+   *     入力欄だけを収集する（`data-form-list` の行位置は空オブジェクトで保持する）
    * @returns values と同じオブジェクト
    */
   private static getPartValues(
     fragment: ElementFragment,
     values: Record<string, unknown>,
+    minUserEditSequence: number | null = null,
   ): Record<string, unknown> {
     // data-if が false の分岐（data-if-false 属性付き）配下の入力は値収集の
     // 対象外とする。非表示分岐の要素は DOM に残るため、同名入力を出し分けると
@@ -367,8 +391,23 @@ export default class Form {
     const name = Form.resolveFieldName(fragment);
     const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);
+    // 編集分だけを収集する場合、基準より後に編集されていない入力欄は値を出さない
+    // （キー自体を出さないことで、上書き対象から外れる）。
+    const skipAsUnedited =
+      minUserEditSequence !== null &&
+      fragment.getUserEditSequence() <= minUserEditSequence;
     if (name) {
-      if (listName) {
+      if (listName && skipAsUnedited) {
+        // 同名リストでは、収集しない要素も位置を保つため null で場所を確保する。
+        // 詰めて出すと、後段の位置合わせで別の要素の値として扱われてしまう。
+        if (Array.isArray(values[String(name)])) {
+          (values[String(name)] as unknown[]).push(null);
+        } else {
+          values[String(name)] = [null];
+        }
+      } else if (skipAsUnedited) {
+        // 収集対象外。キーを出さないことで上書き対象から外す。
+      } else if (listName) {
         const listValue = Form.resolveCollectedValue(fragment);
         // multiple の file input は File[] を返すため、そのまま push すると
         // 二重配列になり送信できない。ファイル単位に展開して 1 次元に保つ。
@@ -417,12 +456,12 @@ export default class Form {
         );
       }
       for (const child of fragment.getChildElementFragments()) {
-        Form.getPartValues(child, values);
+        Form.getPartValues(child, values, minUserEditSequence);
       }
     } else if (objectName) {
       const childValues: Record<string, unknown> = {};
       for (const child of fragment.getChildElementFragments()) {
-        Form.getPartValues(child, childValues);
+        Form.getPartValues(child, childValues, minUserEditSequence);
       }
       if (Object.keys(childValues).length > 0) {
         values[String(objectName)] = childValues;
@@ -436,19 +475,28 @@ export default class Form {
       }
     } else if (listName) {
       const childList: Record<string, unknown>[] = [];
+      let hasCollectedRow = false;
       for (const child of fragment.getChildElementFragments()) {
         const childValues: Record<string, unknown> = {};
-        Form.getPartValues(child, childValues);
+        Form.getPartValues(child, childValues, minUserEditSequence);
         if (Object.keys(childValues).length > 0) {
+          hasCollectedRow = true;
           childList.push(childValues);
+        } else if (minUserEditSequence !== null) {
+          // 編集分だけの収集では、行の位置がずれないよう空の行も場所を確保する。
+          childList.push({});
         }
       }
-      // 行が 0 件でもキー自体は空配列として出す。キーを落とすと、サーバ側で
-      // 「0 件」と「そのフィールドが未送信」を区別できず、全件削除を表現できない。
-      values[String(listName)] = childList;
+      if (minUserEditSequence === null) {
+        // 行が 0 件でもキー自体は空配列として出す。キーを落とすと、サーバ側で
+        // 「0 件」と「そのフィールドが未送信」を区別できず、全件削除を表現できない。
+        values[String(listName)] = childList;
+      } else if (hasCollectedRow) {
+        values[String(listName)] = childList;
+      }
     } else {
       for (const child of fragment.getChildElementFragments()) {
-        Form.getPartValues(child, values);
+        Form.getPartValues(child, values, minUserEditSequence);
       }
     }
     return values;
