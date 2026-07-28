@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>form の named access による id 上書きの回帰確認</title>
+  </head>
+  <body>
+    <!--
+      HTML 仕様の named access により、<form> は配下の入力要素の name が同名の
+      組み込みプロパティを上書きする。<input name="id"> があると form.id は文字列では
+      なく input 要素になるため、id を文字列として扱うコードが壊れる。
+      開発モード（data-dev）でのみ通る診断経路がこれを踏んでいた。
+    -->
+    <div id="root" data-bind='{"status":"same"}'>
+      <form id="myform">
+        <input name="id" value="1" />
+        <section data-derive="'derived'" data-derive-name="label">
+          <span id="child">{{label}}</span>
+        </section>
+      </form>
+    </div>
+
+    <p><button id="run" type="button">実行</button></p>
+    <pre id="log">-</pre>
+
+    <script src="/dist/haori.iife.js" data-dev></script>
+    <script>
+      /* global Haori */
+      const $ = id => document.getElementById(id);
+      const result = {errors: [], child: null, shadowed: null};
+      window.addEventListener('error', event => {
+        result.errors.push('window: ' + event.message);
+      });
+      const originalConsoleError = console.error;
+      console.error = (...args) => {
+        result.errors.push('console: ' + String(args[0]));
+        originalConsoleError(...args);
+      };
+
+      $('run').addEventListener('click', async () => {
+        const ns = Haori && Haori.default ? Haori : {default: Haori};
+        // 前提の確認: このブラウザで実際に上書きが起きていること。
+        result.shadowed = typeof $('myform').id.trim !== 'function';
+        try {
+          await ns.Core.setBindingData($('root'), {status: 'same'});
+          await ns.Queue.waitForIdle();
+          await ns.Core.setBindingData($('root'), {status: 'changed'});
+          await ns.Queue.waitForIdle();
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (e) {
+          result.errors.push('thrown: ' + String(e));
+        }
+        result.child = $('child').textContent;
+        $('log').textContent = JSON.stringify(result);
+      });
+    </script>
+  </body>
+</html>

@@ -936,8 +936,9 @@ export default class Core {
     > = {};
     const describe = (frag: ElementFragment): string => {
       const target = frag.getTarget();
-      if (target.id) {
-        return `#${target.id}`;
+      const id = Core.resolveElementId(target);
+      if (id !== '') {
+        return `#${id}`;
       }
       return target.tagName.toLowerCase();
     };
@@ -2159,6 +2160,22 @@ export default class Core {
   }
 
   /**
+   * 要素の `id` 属性を安全に取得します。
+   *
+   * `<form>` は配下の入力要素の `name` が同名の組み込みプロパティを上書きします
+   * （HTML 仕様の named access）。そのため `<input name="id">` を含むフォームでは
+   * `form.id` が文字列ではなく input 要素を返し、文字列として扱うと
+   * `[object HTMLInputElement]` になったり `.trim()` で TypeError になります。
+   * 属性から直接読み取ってこの上書きを避けます。
+   *
+   * @param element 対象要素
+   * @returns `id` 属性の値。指定が無ければ空文字
+   */
+  private static resolveElementId(element: HTMLElement): string {
+    return element.getAttribute('id') ?? '';
+  }
+
+  /**
    * data-derive subtree host の識別子を作成します。
    *
    * @param fragment 対象フラグメント
@@ -2173,8 +2190,9 @@ export default class Core {
         break;
       }
       let segment = target.tagName.toLowerCase();
-      if (target.id.trim() !== '') {
-        segment += `#${target.id.trim()}`;
+      const id = Core.resolveElementId(target).trim();
+      if (id !== '') {
+        segment += `#${id}`;
         segments.unshift(segment);
         break;
       }
@@ -2440,7 +2458,7 @@ export default class Core {
                 return undefined;
               }
               return Core.evaluateAll(child).then(() =>
-                Core.applyRowFormValues(parent, child, item, itemIndex),
+                Core.applyRowFormValues(parent, child, item),
               );
             }),
           ),
@@ -2466,7 +2484,7 @@ export default class Core {
               })
               .then(() => Core.initializeFreshEachRow(child))
               .then(() =>
-                Core.applyRowFormValues(parent, child, item, itemIndex),
+                Core.applyRowFormValues(parent, child, item),
               );
           }),
         );
@@ -2549,14 +2567,12 @@ export default class Core {
    * @param parent `data-each` コンテナのフラグメント
    * @param row 行のフラグメント
    * @param item 行の要素データ
-   * @param index 行のインデックス
    * @returns 反映完了の Promise
    */
   private static applyRowFormValues(
     parent: ElementFragment,
     row: ElementFragment,
     item: Record<string, unknown> | string | number,
-    index: number,
   ): Promise<void> {
     if (!parent.hasAttribute(`${Env.prefix}form-list`)) {
       return Promise.resolve();
@@ -2565,7 +2581,7 @@ export default class Core {
       // プリミティブ配列は入力欄の name と対応付けられない。
       return Promise.resolve();
     }
-    return Form.syncRowValues(row, item as Record<string, unknown>, index);
+    return Form.syncRowValues(row, item as Record<string, unknown>);
   }
 
   /**

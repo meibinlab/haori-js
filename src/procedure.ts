@@ -88,18 +88,46 @@ function appendPayloadToSearchParams(
     if (value === undefined) {
       continue;
     }
-    if (value === null) {
-      params.append(key, '');
-    } else if (Array.isArray(value)) {
+    if (Array.isArray(value)) {
       value.forEach(item => {
-        params.append(key, String(item));
+        params.append(key, serializePayloadValue(item));
       });
-    } else if (typeof value === 'object' || typeof value === 'function') {
-      params.append(key, JSON.stringify(value));
     } else {
-      params.append(key, String(value));
+      params.append(key, serializePayloadValue(value));
     }
   }
+}
+
+/**
+ * 送信データの 1 つの値を、テキストで送る経路（クエリ / urlencoded / multipart）の
+ * 値へ変換します。
+ *
+ * オブジェクトと配列は JSON 文字列にします。`String()` に任せると `[object Object]`
+ * になり、サーバ側で元の構造を復元できません。単一のオブジェクト値は以前から JSON
+ * 文字列にしていたため、配列の要素も同じ規則へ揃えます（`data-form-list` の行データを
+ * GET で送る構成が該当します）。
+ *
+ * 入れ子の構造をそのまま送りたい場合は JSON body（既定の POST）を使ってください。
+ * テキストで送る経路は 1 つの値が 1 つの文字列になるため、構造を保つには要素ごとの
+ * JSON 文字列にするしかありません。
+ *
+ * @param value 変換対象の値。
+ * @return テキスト表現。`null` / `undefined` は空文字。
+ */
+function serializePayloadValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'object' || typeof value === 'function') {
+    // 関数は JSON.stringify が undefined を返し、循環参照は例外を投げる。どちらも
+    // 送れる表現が無いので空文字に落とす（送信そのものは止めない）。
+    try {
+      return JSON.stringify(value) ?? '';
+    } catch {
+      return '';
+    }
+  }
+  return String(value);
 }
 
 /**
@@ -3157,13 +3185,11 @@ ${body}
               if (item instanceof Blob) {
                 formData.append(k, item);
               } else {
-                formData.append(k, String(item));
+                formData.append(k, serializePayloadValue(item));
               }
             });
-          } else if (typeof v === 'object') {
-            formData.append(k, JSON.stringify(v));
           } else {
-            formData.append(k, String(v));
+            formData.append(k, serializePayloadValue(v));
           }
         }
         finalOptions.body = formData;
@@ -3173,14 +3199,10 @@ ${body}
           if (v === undefined) {
             continue;
           }
-          if (v === null) {
-            params.append(k, '');
-          } else if (Array.isArray(v)) {
-            v.forEach(item => params.append(k, String(item)));
-          } else if (typeof v === 'object') {
-            params.append(k, JSON.stringify(v));
+          if (Array.isArray(v)) {
+            v.forEach(item => params.append(k, serializePayloadValue(item)));
           } else {
-            params.append(k, String(v));
+            params.append(k, serializePayloadValue(v));
           }
         }
         finalOptions.body = params;

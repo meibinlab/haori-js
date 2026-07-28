@@ -391,13 +391,18 @@ export default class Form {
     const name = Form.resolveFieldName(fragment);
     const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);
+    // 入力要素に付けた `data-form-list` は「この name を配列として集める」印で、
+    // キーは name が決めるため属性値は省略できる（`<input name="tags"
+    // data-form-list>`）。値の有無で判定すると省略形が配列にならず、同名の入力が
+    // 互いを上書きして最後の 1 件だけが残る。
+    const isValueList = fragment.hasAttribute(`${Env.prefix}form-list`);
     // 編集分だけを収集する場合、基準より後に編集されていない入力欄は値を出さない
     // （キー自体を出さないことで、上書き対象から外れる）。
     const skipAsUnedited =
       minUserEditSequence !== null &&
       fragment.getUserEditSequence() <= minUserEditSequence;
     if (name) {
-      if (listName && skipAsUnedited) {
+      if (isValueList && skipAsUnedited) {
         // 同名リストでは、収集しない要素も位置を保つため null で場所を確保する。
         // 詰めて出すと、後段の位置合わせで別の要素の値として扱われてしまう。
         if (Array.isArray(values[String(name)])) {
@@ -407,7 +412,7 @@ export default class Form {
         }
       } else if (skipAsUnedited) {
         // 収集対象外。キーを出さないことで上書き対象から外す。
-      } else if (listName) {
+      } else if (isValueList) {
         const listValue = Form.resolveCollectedValue(fragment);
         // multiple の file input は File[] を返すため、そのまま push すると
         // 二重配列になり送信できない。ファイル単位に展開して 1 次元に保つ。
@@ -516,7 +521,7 @@ export default class Form {
     values: Record<string, unknown>,
     force: boolean = false,
   ): Promise<void> {
-    return Form.setPartValues(form, values, null, force, true);
+    return Form.setPartValues(form, values, force, true);
   }
 
   /**
@@ -533,7 +538,7 @@ export default class Form {
     values: Record<string, unknown>,
     force: boolean = false,
   ): Promise<void> {
-    return Form.setPartValues(form, values, null, force, false);
+    return Form.setPartValues(form, values, force, false);
   }
 
   /**
@@ -545,15 +550,13 @@ export default class Form {
    *
    * @param row 行のElementFragment
    * @param values 行に設定する値のオブジェクト
-   * @param index 行のインデックス
    * @returns 反映完了の Promise
    */
   public static syncRowValues(
     row: ElementFragment,
     values: Record<string, unknown>,
-    index: number,
   ): Promise<void> {
-    return Form.setPartValues(row, values, index, false, false, true);
+    return Form.setPartValues(row, values, false, false, true);
   }
 
   /**
@@ -689,24 +692,27 @@ export default class Form {
    *
    * @param fragment 対象フラグメント
    * @param values フラグメントに設定する値のオブジェクト
-   * @param index 配列の場合のインデックス
    * @param force data-form-detach属性があるエレメントにも値を反映するかどうか
    * @param emitEvents input/change イベントを発火するかどうか
    * @param clearMissing values に無いキーの入力欄を空にするかどうか
+   * @param listCursors 同名リストの出現位置。同じ `values` を共有する範囲で
+   *     収集キーごとに何件目かを数え、配列の対応する要素を配るために使う
    * @returns Promise（DOMの更新が完了したら解決される）
    */
   private static setPartValues(
     fragment: ElementFragment,
     values: Record<string, unknown>,
-    index: number | null = null,
     force: boolean = false,
     emitEvents: boolean = true,
     clearMissing: boolean = false,
+    listCursors: Map<string, number> = new Map(),
   ): Promise<void> {
     const promises: Promise<void>[] = [];
     const name = Form.resolveFieldName(fragment);
     const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);
+    // 入力要素に付けた `data-form-list` は属性値を省略できる（収集側と同じ規則）。
+    const isValueList = fragment.hasAttribute(`${Env.prefix}form-list`);
     const detach = fragment.getAttribute(`${Env.prefix}form-detach`);
     if (name) {
       if (!detach || force) {
@@ -735,9 +741,28 @@ export default class Form {
           }
           return Promise.all(promises).then(() => undefined);
         }
-        if (listName && Array.isArray(value) && index !== null) {
+        if (
+          isValueList &&
+          Array.isArray(value) &&
+          // チェックボックスグループと複数選択 select は配列そのものを状態として
+          // 解釈する（後続の分岐）。位置で配ると選択状態を決められないため、
+          // `data-form-list` を併記していても従来どおりそちらへ渡す。
+          !Form.isGroupedCheckable(fragment) &&
+          !Form.isMultipleSelect(fragment)
+        ) {
+          // 同名リストは、同じ `values` を共有する範囲での出現順に配列の要素を
+          // 配る。まとめて 1 つの入力へ渡すとカンマ連結された文字列になり、同名の
+          // 入力すべてに同じ連結文字列が入ってしまう。出現順は収集側の並びと同じ
+          // なので、収集 → 書き戻しで値の対応が保たれる。
+          const key = String(name);
+          const cursor = listCursors.get(key) ?? 0;
+          listCursors.set(key, cursor + 1);
           promises.push(
-            Form.applyFragmentValue(fragment, value[index] ?? null, emitEvents),
+            Form.applyFragmentValue(
+              fragment,
+              value[cursor] ?? null,
+              emitEvents,
+            ),
           );
         } else if (typeof value === 'undefined') {
           // 未指定のキーは既存の入力値を維持する。
@@ -775,15 +800,17 @@ export default class Form {
     } else if (objectName) {
       const childValues = values[String(objectName)];
       if (childValues && typeof childValues === 'object') {
+        // values が切り替わるので出現位置も数え直す。
+        const childCursors = new Map<string, number>();
         for (const child of fragment.getChildElementFragments()) {
           promises.push(
             Form.setPartValues(
               child,
               childValues as Record<string, unknown>,
-              null,
               force,
               emitEvents,
               clearMissing,
+              childCursors,
             ),
           );
         }
@@ -794,20 +821,28 @@ export default class Form {
         const children = fragment.getChildElementFragments();
         for (let i = 0; i < children.length; i++) {
           const child = children[i];
+          // 行ごとに values が切り替わるので出現位置も行単位で数える。
           if (childList.length > i) {
             promises.push(
               Form.setPartValues(
                 child,
                 childList[i] as Record<string, unknown>,
-                i,
                 force,
                 emitEvents,
                 clearMissing,
+                new Map(),
               ),
             );
           } else {
             promises.push(
-              Form.setPartValues(child, {}, i, force, emitEvents, clearMissing),
+              Form.setPartValues(
+                child,
+                {},
+                force,
+                emitEvents,
+                clearMissing,
+                new Map(),
+              ),
             );
           }
         }
@@ -818,10 +853,10 @@ export default class Form {
           Form.setPartValues(
             child,
             values,
-            null,
             force,
             emitEvents,
             clearMissing,
+            listCursors,
           ),
         );
       }
