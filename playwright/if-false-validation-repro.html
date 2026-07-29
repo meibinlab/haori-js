@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>data-if が偽の分岐がバリデーションを止める問題の回帰確認</title>
+  </head>
+  <body>
+    <!--
+      data-if が偽の分岐は DOM に残るため、その中の required 付き入力が制約検証の
+      対象に残り、表示中の分岐だけを入力しても送信できなかった。reportValidity() は
+      display:none の要素へフォーカスできないため、ブラウザは何も表示せずに止まる。
+      実ブラウザでしか確認できない挙動（フォーカス可否・検証 UI）を含むため、
+      実際に操作して確認する。
+    -->
+    <form id="f" data-bind='{"kind":"individual"}'>
+      <label
+        >種別
+        <select id="kind" name="kind">
+          <option value="individual">individual</option>
+          <option value="company">company</option>
+        </select>
+      </label>
+      <div id="branch" data-if="kind === 'company'">
+        <label>法人名 <input id="req" name="companyName" required /></label>
+      </div>
+    </form>
+
+    <p>
+      <button
+        id="validate"
+        data-click-validate
+        data-click-form="#f"
+        data-click-run="window.__validatePassed = true"
+      >
+        検証
+      </button>
+      <button id="collect" type="button">状態を収集</button>
+    </p>
+    <pre id="log">-</pre>
+
+    <script src="/dist/haori.iife.js"></script>
+    <script>
+      /* global Haori */
+      const $ = id => document.getElementById(id);
+      const ns = () => (Haori && Haori.default ? Haori : {default: Haori});
+
+      /**
+       * 検証状態と収集値を記録します。
+       */
+      const dump = () => {
+        const api = ns();
+        $('log').textContent = JSON.stringify({
+          ifFalse: $('branch').hasAttribute('data-if-false'),
+          willValidate: $('req').willValidate,
+          formValid: $('f').checkValidity(),
+          validatePassed: window.__validatePassed === true,
+          collected: api.Form.getValues(api.Fragment.get($('f'))),
+        });
+      };
+
+      $('collect').addEventListener('click', async () => {
+        await ns().Queue.waitForIdle();
+        dump();
+      });
+    </script>
+  </body>
+</html>

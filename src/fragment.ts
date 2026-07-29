@@ -10,6 +10,23 @@ import Expression from './expression';
 import Env from './env';
 import Dev from './dev';
 
+/**
+ * `data-if` が偽の分岐で、エンジンが `disabled` を付与した入力に立てる印。
+ *
+ * 非表示分岐の入力は値収集の対象外なのに、ブラウザの制約検証（`required` など）の
+ * 対象には残るため、表示中の分岐だけを入力しても送信できない状態になります。
+ * 非表示のあいだ `disabled` を付けて検証対象から外し、表示へ戻すときに**この印が
+ * ある要素だけ**を復帰させます。利用者が自分で付けた `disabled` は印が付かないため
+ * 表示後も維持されます。
+ *
+ * エンジン管理の属性なので、`data-haori-click-lock` と同じく `data-haori-` を
+ * 名前空間に使い、オブザーバーの属性処理からも除外します。
+ */
+export const IF_DISABLED_MARKER = 'data-haori-if-disabled';
+
+/** `disabled` を持てるフォームコントロールのセレクタ。 */
+const FORM_CONTROL_SELECTOR = 'input, select, textarea, button, fieldset';
+
 interface EvaluationProfilePlaceholderSnapshot {
   expression: string;
   calls: number;
@@ -880,6 +897,9 @@ export class ElementFragment extends Fragment {
       this.displayPriority = null;
       this.getTarget().style.removeProperty('display');
       this.getTarget().removeAttribute(`${Env.prefix}if-false`);
+      // 非表示状態を落とすので、非表示のあいだ外していた検証対象も復帰させる
+      // （複製元が非表示だった行が、複製後も入力できないまま残らないようにする）。
+      this.restoreFormControlsDisabledByIf();
     }
     this.children.forEach(child => {
       if (child instanceof ElementFragment) {
@@ -2401,7 +2421,90 @@ export class ElementFragment extends Fragment {
     this.displayPriority = target.style.getPropertyPriority('display');
     target.style.setProperty('display', 'none', 'important');
     target.setAttribute(`${Env.prefix}if-false`, '');
+    // 非表示分岐の入力を制約検証の対象から外す（値収集の除外と基準を揃える）。
+    ElementFragment.disableFormControlsInBranch(target);
     return Promise.resolve();
+  }
+
+  /**
+   * 分岐配下のフォームコントロールを順に処理します。
+   *
+   * 入れ子の `data-if` が偽の分岐には踏み込みません。その分岐の入力は、内側の
+   * `hide()` / `show()` が管理します（外側の表示で一括復帰させると、内側が偽の
+   * ままでも `disabled` が外れてしまいます）。
+   *
+   * @param root 分岐の根要素
+   * @param visit 各フォームコントロールへの処理
+   * @returns 戻り値はありません。
+   */
+  private static forEachFormControlInBranch(
+    root: HTMLElement,
+    visit: (element: HTMLElement) => void,
+  ): void {
+    if (root.matches(FORM_CONTROL_SELECTOR)) {
+      visit(root);
+    }
+    const walk = (parent: Element): void => {
+      Array.from(parent.children).forEach(child => {
+        if (child.hasAttribute(`${Env.prefix}if-false`)) {
+          return;
+        }
+        if (
+          child instanceof HTMLElement &&
+          child.matches(FORM_CONTROL_SELECTOR)
+        ) {
+          visit(child);
+        }
+        walk(child);
+      });
+    };
+    walk(root);
+  }
+
+  /**
+   * 非表示分岐配下のフォームコントロールを検証対象から外します。
+   *
+   * すでに `disabled` が付いている要素（利用者が指定したもの、`data-attr-disabled`
+   * の評価結果を含む）には印を付けません。表示へ戻すときに復帰させないためです。
+   *
+   * 逆に、非表示になった後でその `disabled` が外れた要素（クリック実行ロックの解除、
+   * 外部管理 DOM の作り替えなど）は無効化されないまま残ります。`data-{event}-validate`
+   * は走査側でも `data-if-false` 配下を除外するため影響しませんが、ネイティブの
+   * `checkValidity()` では検証対象に戻ります。ボタンは制約検証の対象外のため、
+   * 実際に問題になるのは非表示中に入力の `disabled` を外した場合に限られます。
+   *
+   * @param root 分岐の根要素
+   * @returns 戻り値はありません。
+   */
+  private static disableFormControlsInBranch(root: HTMLElement): void {
+    ElementFragment.forEachFormControlInBranch(root, element => {
+      if (element.hasAttribute('disabled')) {
+        return;
+      }
+      element.setAttribute(IF_DISABLED_MARKER, '');
+      element.setAttribute('disabled', '');
+    });
+  }
+
+  /**
+   * 非表示分岐で外した検証対象を復帰させます。
+   *
+   * `show()` から呼ぶほか、表示へ戻す評価が始まる前にも呼びます（`Core.evaluateIf`）。
+   * 子の評価より後に復帰させると、`data-attr-disabled` の適用と競合します。
+   * 印が無い要素には触れないため、何度呼んでも結果は変わりません。
+   *
+   * @returns 戻り値はありません。
+   */
+  public restoreFormControlsDisabledByIf(): void {
+    ElementFragment.forEachFormControlInBranch(this.getTarget(), element => {
+      if (!element.hasAttribute(IF_DISABLED_MARKER)) {
+        return;
+      }
+      // 印を先に外す。オブザーバーは印の有無で「エンジンが付けた disabled」を
+      // 判定するため、印が残っている状態で disabled を外すと属性処理が走る。
+      element.removeAttribute(IF_DISABLED_MARKER);
+      element.removeAttribute('disabled');
+    });
   }
 
   /**
@@ -2426,6 +2529,7 @@ export class ElementFragment extends Fragment {
     this.display = null;
     this.displayPriority = null;
     target.removeAttribute(`${Env.prefix}if-false`);
+    this.restoreFormControlsDisabledByIf();
     this.visible = true;
     return Promise.resolve();
   }

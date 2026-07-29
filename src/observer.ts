@@ -7,6 +7,7 @@
 import Core from './core';
 import Env from './env';
 import EventDispatcher from './event_dispatcher';
+import {IF_DISABLED_MARKER} from './fragment';
 import IntersectObserver from './intersect';
 import Log from './log';
 import PollObserver from './poll';
@@ -140,6 +141,18 @@ export class Observer {
                 element.hasAttribute('data-haori-click-lock') &&
                 (mutation.attributeName === 'disabled' ||
                   mutation.attributeName === 'data-haori-click-lock')
+              ) {
+                break;
+              }
+              // 非表示分岐（data-if が偽）で検証対象から外すために付けた disabled は
+              // エンジン管理なので属性処理へ載せない。載せると内部の属性マップに
+              // disabled が焼き付き、表示へ戻した後の再評価で付け直される。
+              // 復帰時は印を先に外すため、この判定に掛からず解除が反映される。
+              if (
+                mutation.attributeName &&
+                element.hasAttribute(IF_DISABLED_MARKER) &&
+                (mutation.attributeName === 'disabled' ||
+                  mutation.attributeName === IF_DISABLED_MARKER)
               ) {
                 break;
               }

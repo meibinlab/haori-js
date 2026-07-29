@@ -462,6 +462,33 @@ window.Dates = {
 
 なお、送信値からは除外されますが、同名の入力要素自体は DOM 上に残ります。Playwright などのセレクタで「1要素だけ」を前提にしたい場合は、入力を1つにまとめ `type` / `step` / `max` などを `{{}}` 式で切り替える方法も検討してください。
 
+### 非表示にした入力はバリデーションにも含まれない
+
+送信値の除外と同じ基準で、`data-if` が `false` の分岐の入力は**バリデーションの対象外**になります。非表示のあいだ、Haori が配下の入力へ `disabled` を付けて制約検証から外すためです。
+
+```html
+<form id="f" data-bind='{"kind":"individual"}'>
+  <select name="kind">
+    <option value="individual">個人</option>
+    <option value="company">法人</option>
+  </select>
+  <!-- 個人を選んでいるあいだ、この required は検証されない -->
+  <div data-if="kind === 'company'">
+    <input name="companyName" required>
+  </div>
+</form>
+<button data-click-validate data-click-form="#f"
+  data-click-fetch="/api/save" data-click-method="post">保存</button>
+```
+
+- `data-{event}-validate`・`form.checkValidity()`・ネイティブ送信のいずれも、非表示分岐の `required` では止まりません。
+- 表示へ戻すと通常どおり検証対象になります。**利用者が自分で付けた `disabled`（`data-attr-disabled` の評価結果を含む）は表示後も維持されます。**
+- 非表示分岐の内側に `data-attr-required="{{...}}"` を置いて制約を外す必要はありません。非表示のあいだ配下は再評価されないため、その方法では解除できません（`data-if` は表示へ戻った時点で配下をまとめて再評価します）。
+
+> **0.29.0 以前の挙動**
+>
+> 非表示分岐の `required` が検証対象に残っていたため、表示中の分岐だけを入力しても送信できませんでした。`reportValidity()` は `display: none` の要素へフォーカスできないため、ブラウザは何も表示せずに止まり、原因が分からない状態になっていました。回避策として `fieldset` の `disabled` を併用する必要はもうありません。
+
 ### 同時に1つだけ開く（排他パネル・アコーディオン）
 
 「状態を1つだけ持たせ、`data-if` で表示を切り替える」だけで、複数パネルの相互排他（同時に1つしか開かない）を JavaScript なしで表現できます。Bootstrap の collapse（`data-bs-parent`）のような仕組みを使わずに済みます。

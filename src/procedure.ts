@@ -2751,6 +2751,13 @@ ${body}
    * @returns 最初の invalid 要素、なければ null
    */
   private findFirstInvalid(fragment: ElementFragment): HTMLElement | null {
+    // data-if が偽の分岐（data-if-false 属性付き）配下は検証対象外とする。値収集
+    // （Form.getValues）と基準を揃える。非表示のあいだは配下の入力へ disabled を
+    // 付けて制約検証から外しているため通常はここへ到達しないが、非表示になった後に
+    // 差し込まれた要素まで取りこぼさないよう、走査でも除外する。
+    if (fragment.getTarget().hasAttribute(`${Env.prefix}if-false`)) {
+      return null;
+    }
     // 子要素を逆順に処理することで、DOM 順の先頭要素が最後に found を上書きし、
     // 最終的に最上部の invalid 要素が返る
     let found: HTMLElement | null = null;

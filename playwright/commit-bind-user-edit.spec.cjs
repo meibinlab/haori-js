@@ -20,6 +20,20 @@ test.describe('双方向コミットのバインドとユーザー編集の優�
     await page.locator('#ia').fill('AAA');
     await page.locator('#ib').fill('BBB');
     await page.locator('#ic').fill('CCC');
+    // 最後の項目の change は fill の後にフォーカスが外れて初めて発火し、その
+    // コミット（バインド）は非同期に完了する。待たずに収集すると、負荷時に
+    // 「DOM と収集値は正しいがバインドデータの最後の項目だけ空」を掴む。
+    await page.locator('#collect').focus();
+    await page.waitForFunction(() => {
+      const api = window.Haori && window.Haori.default ? window.Haori : null;
+      if (!api) {
+        return false;
+      }
+      const draft = api.Core.getBindingData(document.getElementById('state'), {
+        resolved: true,
+      }).draft;
+      return Boolean(draft) && draft.c === 'CCC';
+    });
     await page.locator('#collect').click();
     await page.waitForFunction(
       () => document.getElementById('log').textContent !== '-',

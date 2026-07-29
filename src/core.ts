@@ -1464,6 +1464,9 @@ export default class Core {
         }),
       );
     } else {
+      // 非表示のあいだ検証対象から外していた入力は、子の評価を始める前に復帰させる。
+      // 子の評価より後に復帰させると、`data-attr-disabled` の適用結果を打ち消す。
+      fragment.restoreFormControlsDisabledByIf();
       // 非表示→表示への遷移を検出するため、show() 前の表示状態を退避する。
       const wasVisible = fragment.isVisible();
       const childPromises: Promise<void>[] = [];

@@ -238,15 +238,17 @@ Core.setAttributeは以下の優先順位で属性を処理します：
 - 非表示時:
   - `style.display = 'none'` を設定
   - `data-if-false` 属性を付与
-  - 子要素をDOMから除去 (unmount)
+  - **要素と子要素は DOM に残る**（削除しない）
+  - 配下のフォームコントロールへ `disabled` を付与し、制約検証の対象から外す（エンジンが付けた印は `data-haori-if-disabled`）
   - `haori:hide` イベント発火
-  - 自要素および配下の入力は `Form.getValues()`（`data-click-form` 等のフォーム値収集）の対象外となる。詳細は[フォーム送信での扱い](#data-if-false-分岐とフォーム送信)を参照
+  - 自要素および配下の入力は `Form.getValues()`（`data-click-form` 等のフォーム値収集）と**バリデーション**の対象外となる。詳細は[フォーム送信での扱い](#data-if-false-分岐とフォーム送信)を参照
+  - 配下は再評価しない（`data-attr-*` も評価されない）。表示へ戻った時点でまとめて再評価する
 - 表示時:
+  - 非表示時に付けた `disabled` を、印がある要素だけ解除する（子要素の再評価より前に行う）
   - `style.display` を復元
   - `data-if-false` 属性を削除
-  - 子要素をDOMに追加 (mount)
   - `haori:show` イベント発火
-  - 子要素を再評価 (evaluateAll)
+  - 子要素を再評価 (evaluateAll)。未スキャンの子は `scan` で初期化する
 
 #### data-each の差分更新アルゴリズム
 
@@ -1135,6 +1137,10 @@ async handleError(response: Response): Promise<void> {
 
 - 除外はサブツリー全体に及び、`data-form-object` / `data-form-list` 配下の入力も非表示分岐なら丸ごと除外されます。
 - `data-if` が `true` に切り替わって表示されれば、その分岐の入力は通常どおり収集対象になります。
+- **バリデーションも同じ基準で除外されます。** 非表示のあいだ、配下のフォームコントロールにはエンジンが `disabled` を付与するため、`required` などの制約検証の対象から外れます（`data-{event}-validate`・`form.checkValidity()`・ネイティブ送信のいずれも通ります）。除外しないと、非表示分岐の `required` が常に送信をブロックし、`reportValidity()` は `display: none` の要素へフォーカスできないため画面には何も表示されません。
+  - 付与した `disabled` にはエンジン管理の印（`data-haori-if-disabled`）が付き、表示へ戻すときに**印がある要素だけ**が復帰します。利用者が指定した `disabled`（`data-attr-disabled` の評価結果を含む）は表示後も維持されます。
+  - 入れ子の `data-if` が偽の分岐へは踏み込みません。外側が表示に戻っても、内側が偽のままなら内側の入力は検証対象外です。
+  - 非表示分岐の内側で `data-attr-required` / `data-attr-disabled` を使って制約を解除する必要はありません（そもそも非表示のあいだ配下は再評価されないため、この方法では解除できません）。
 - 同名入力の DOM 上の共存自体（セレクタの strict mode 違反など）は解消されません。DOM に1要素だけ存在させたい場合は、入力を1つに統一し `type` / `step` / `max` 等を `{{}}` 式で切り替えてください。
 
 また、フォーム要素自身に対して `Core.setBindingData()` や `data-fetch` が実行された場合は、フォーム配下の入力要素へ無イベントで逆方向同期します。このとき text input / textarea / select は `value` を更新し、checkbox / radio は `Form.setValues()` と同じ規則で checked 状態を反映します。
@@ -1773,6 +1779,7 @@ data-if="expression"
 
 **関連属性**:
 - `data-if-false`: 非表示時に自動付与 (手動変更禁止)
+- `data-haori-if-disabled`: 非表示分岐で `disabled` を付与した入力への印 (手動変更禁止)
 
 **イベント**:
 - `haori:show` (表示時)
