@@ -1823,6 +1823,9 @@ export class ElementFragment extends Fragment {
   /**
    * data-attr-* の生属性と反映先属性を同時に削除します。
    *
+   * DOM に残っている属性だけを削除対象にします。すでに無い属性はキューへ積まず、
+   * 内部の属性マップの更新だけを行います（後続の書き込みを消さないため）。
+   *
    * @param rawName 生の属性名
    * @param targetName 反映先の属性名
    * @returns 属性削除の Promise
@@ -1835,11 +1838,22 @@ export class ElementFragment extends Fragment {
       return Promise.resolve();
     }
     this.attributeMap.delete(rawName);
-    this.skipMutationAttributes = true;
     const element = this.getTarget();
+    // DOM に残っている属性だけを削除対象にする（判定は setAttributeInternal の
+    // requires*Write と同じ方式）。既に無い属性まで削除タスクを積むと、実行までの
+    // あいだに他の経路が同じ属性へ書き込んだ値を、あとから走る削除が消してしまう。
+    const requiresRawRemoval = element.hasAttribute(rawName);
+    const requiresTargetRemoval =
+      targetName !== rawName && element.hasAttribute(targetName);
+    if (!requiresRawRemoval && !requiresTargetRemoval) {
+      return Promise.resolve();
+    }
+    this.skipMutationAttributes = true;
     return Queue.enqueue(() => {
-      element.removeAttribute(rawName);
-      if (targetName !== rawName) {
+      if (requiresRawRemoval) {
+        element.removeAttribute(rawName);
+      }
+      if (requiresTargetRemoval) {
         element.removeAttribute(targetName);
       }
     }).finally(() => {
@@ -2085,6 +2099,10 @@ export class ElementFragment extends Fragment {
   /**
    * 属性の値を削除します。
    *
+   * DOM に属性が無い場合はキューへ削除タスクを積まず、内部の属性マップの更新だけを
+   * 行います。キュー待ちの削除が、その間に他の経路（優先実行の直接書き込みなど）で
+   * 書き込まれた値を消してしまうのを防ぐためです。
+   *
    * @param name 属性名
    * @returns 属性の削除のPromise
    */
@@ -2093,8 +2111,15 @@ export class ElementFragment extends Fragment {
       return Promise.resolve();
     }
     this.attributeMap.delete(name);
-    this.skipMutationAttributes = true;
     const element = this.getTarget();
+    // DOM に属性が無ければ削除タスクを積まない。積むと、キューでの実行を待つあいだに
+    // 他の経路（Haori.addMessage などキュー先頭へ挿入する直接書き込み）が同じ属性へ
+    // 書き込んだ値を、あとから走る削除が消してしまう。MutationObserver は「属性が
+    // 消えた」状態を観測してこの経路を呼ぶため、この短絡が通常の経路になる。
+    if (!element.hasAttribute(name)) {
+      return Promise.resolve();
+    }
+    this.skipMutationAttributes = true;
     return Queue.enqueue(() => {
       element.removeAttribute(name);
     }).finally(() => {
