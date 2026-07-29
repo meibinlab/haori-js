@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.11.1
+バージョン: 0.29.0
 
 ## 目次
 
@@ -2603,6 +2603,25 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 ```
 
 `data-click-copy` と組み合わせた場合は、リセット後の値がコピーされます。
+
+フォーム内に `data-each` で描いた選択肢がある場合、要素データがフォームの外側（祖先の `data-bind` など）にあれば、リセット後も選択肢は残り、選択状態だけが解除されます。`data-form-list` の複製行のようにフォーム自身のバインドデータから描いている行は、初期件数へ戻ります。
+
+```html
+<!-- 選択肢は #opts で取得し、フォーム内の <select> へ描く -->
+<div id="opts" data-bind='{"plans":[]}'>
+  <div data-fetch="/api/plans" data-fetch-bind="#opts" data-fetch-bind-arg="plans"></div>
+  <form id="editForm">
+    <select name="planIds" multiple data-each="plans" data-each-key="id" data-each-arg="p">
+      <option value="{{p.id}}">{{p.name}}</option>
+    </select>
+  </form>
+</div>
+
+<!-- リセットしても選択肢は残る（選択だけ解除される） -->
+<button data-click-reset-before="#editForm" data-click-open="#editDialog">
+  新規追加
+</button>
+```
 
 #### `data-click-reset-before`: 送信前にリセット
 

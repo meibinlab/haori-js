@@ -1078,6 +1078,11 @@ export default class Form {
             tasks.push(child.remove());
           }
         }
+        // 描画済み入力の記録（要素データの署名）を破棄する。破棄しないと、行を
+        // 削除したのに「同じ要素データで描画済み」と判定され、続く再評価が差分
+        // 更新を省略して行が復元されない（選択肢を data-each で描画している
+        // 入力欄が空のまま残る）。
+        f.setEachInputSignature(null);
       }
     };
 

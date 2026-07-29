@@ -387,8 +387,13 @@ describe('宣言バインドで設定した value の収集', () => {
         expect(input.getAttribute('value')).toBe('');
         expect(Form.getValues(getFrag(form))).toEqual({code: ''});
         const messages = warn.mock.calls.map(args => args.join(' '));
+        // 対象はこの式に限定する（他ケースの後追い評価による警告を拾わない）。
         expect(
-          messages.filter(message => message.includes('unresolved reference')),
+          messages.filter(
+            message =>
+              message.includes('unresolved reference') &&
+              message.includes('detail?.id'),
+          ),
         ).toEqual([]);
       } finally {
         warn.mockRestore();
