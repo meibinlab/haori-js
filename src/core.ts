@@ -1399,6 +1399,18 @@ export default class Core {
       // テンプレート式（{{...}}）を含む属性は対象外（純粋な data-if 式のみ）。
       return;
     }
+    if (Expression.hasCompileFailure(expression)) {
+      // コンパイルに失敗した式の評価結果は null（= falsy）になる。参照値を並べて
+      // 「falsy だった」と報告すると、条件が真に見えるのに非表示という矛盾した
+      // 診断になるため、評価できていないことを名指しで報告する。
+      Log.warn(
+        '[Haori]',
+        'data-if is hidden because the expression could not be compiled' +
+          ' (see the preceding compile error):',
+        expression,
+      );
+      return;
+    }
     const {sources} = Core.dumpScope(fragment.getTarget());
     // 式に現れるトップレベル識別子（プロパティアクセスの末尾などは除く）を抽出する。
     const identifiers = new Set<string>();

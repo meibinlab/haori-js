@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>識別子として使えないバインドキーによる式の巻き添えの回帰確認</title>
+  </head>
+  <body>
+    <!--
+      ドットを含む name（サーバ側のネストパラメータ束縛に合わせた命名）を持つ入力が
+      あると、そのキーがバインドキーとして登録され、評価器の引数リストを壊していた。
+      結果として同一スコープの {{…}} と data-if がすべてコンパイルできず、
+      「無関係な式まで巻き添えで壊れる」状態になっていた。
+    -->
+    <div id="state" data-bind='{"route":"x"}'>
+      <form id="f">
+        <select id="sel" name="customer.contractorType">
+          <option value="">-</option>
+          <option value="法人">法人</option>
+        </select>
+        <input id="flat" name="plainKey" />
+        <div id="cond" data-if="plainKey === 'abc'">IN-PLAIN-OK</div>
+        <!-- 引数にできないキーは haori.data から読む -->
+        <div
+          id="corp"
+          data-if="haori.data['customer.contractorType'] === '法人'"
+        >
+          CORP
+        </div>
+        <span id="mirror"
+          >{{haori.data['customer.contractorType'] || '-'}}</span
+        >
+      </form>
+    </div>
+
+    <p><button id="collect" type="button">収集</button></p>
+    <pre id="log">-</pre>
+
+    <script src="/dist/haori.iife.js"></script>
+    <script>
+      /* global Haori */
+      const $ = id => document.getElementById(id);
+      const ns = () => (Haori && Haori.default ? Haori : {default: Haori});
+
+      /**
+       * 表示状態と収集値を記録します。
+       */
+      const dump = () => {
+        const api = ns();
+        $('log').textContent = JSON.stringify({
+          plainVisible: !$('cond').hasAttribute('data-if-false'),
+          corpVisible: !$('corp').hasAttribute('data-if-false'),
+          mirror: $('mirror').textContent.trim(),
+          collected: api.Form.getValues(api.Fragment.get($('f'))),
+        });
+      };
+
+      $('collect').addEventListener('click', async () => {
+        await ns().Queue.waitForIdle();
+        dump();
+      });
+    </script>
+  </body>
+</html>

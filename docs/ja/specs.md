@@ -691,6 +691,24 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 
 `haori.date` / `now` / `today` / `number` / `range` / `pages` / `monthAdd` / `monthRange` / `pageSummary` / `findBy` / `sum` / `distinct` / `groupBy` は `Haori.date(...)` のように静的メソッドとしても公開されます。
 
+- `haori.data`: そのスコープの解決済み要素データを保持するオブジェクト。**識別子として書けないキーを読むための経路**です（例 `haori.data['customer.email']`）。ドットや記号を含む `name` 由来のキー、非 ASCII のキーが該当します。存在しないキーは `undefined` になるため、`haori.data['no.such'] || ''` のように既定値を添えて書きます。読み取り専用の用途を想定した浅いコピーで、書き込んでもバインドデータは変わりません。
+
+#### バインドキーと識別子（`name` の命名）
+
+式は `new Function(...バインドキー, 本体)` として組み立てるため、**バインドキーは関数の引数名になります**。引数名にできないキーは式のスコープへ載せません。
+
+| キーの例 | 扱い |
+| --- | --- |
+| `plainKey`、`_ok`、`$x` | 引数として載せる（式から直接参照できる） |
+| `customer.email`、`a-b`、`1st`、`foo bar`、`class`（予約語） | 載せない（式から直接参照できない） |
+| `a,b`、`{a}`、`a=1`（引数リストの構造を壊す形） | 載せない |
+| `氏名` などの非 ASCII | 載せるが、式の検証で非 ASCII 識別子は使えないため実質参照できない |
+
+- 載せなかったキーを式が参照した場合は**未解決参照**として扱います（表示は空、`data-attr-*` は属性削除）。値は `haori.data['キー']` または `Core.getBindingData(element, {resolved: true})` から読めます。
+- 収集値・送信形式は変わりません。`name="customer.email"` はフラットなキー `customer.email` として収集され、クエリでも `customer.email=...` として送られます（サーバ側のネストパラメータ束縛に合わせた命名をそのまま使えます）。入れ子の構造で送りたい場合は `data-form-object` / `data-form-list` を使います。
+- 開発モードでは、載せなかったキーをキーごとに一度だけ警告します。
+- 判定は実際に `new Function` へ通して行うため、予約語も将来の識別子規則も取りこぼしません。結果はキー単位でキャッシュします。
+
 > **`data-attr-value` と再評価について**: `<input data-attr-value="{{ haori.today(-1) }}">` のような記述は「初期値」ではなく、バインドスコープの変化のたびに**再評価**されます。`haori.now` / `haori.today` は非冪等なため、日跨ぎや再描画でユーザーが編集した値が上書きされる場合があります。一度だけ設定したい場合は、初期スコープを `data-bind` でシードする（例 `data-bind` に算出済みの日付文字列を入れる）か、再描画で再適用されてよい用途に限定してください。
 
 #### `Core.getBindingData(element, options?)`

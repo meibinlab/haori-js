@@ -295,6 +295,37 @@ window.Dates = {
 
 > `haori` は予約名です。`data-bind` で `haori` というキーを与えても、式の中では組み込みヘルパーが優先されます。同じ関数は JavaScript からも `Haori.date(...)` / `Haori.number(...)` として呼べます。
 
+### レシピ: ドットを含む `name`（識別子として書けないキー）
+
+サーバ側のパラメータ名に合わせて `<input name="customer.email">` のようにドットを含む `name` を使うことがあります。この値は**フラットなキー `customer.email`** として収集され、送信形式もそのままです（クエリなら `customer.email=...`）。
+
+ただしバインドキーは式の中で識別子として扱われるため、`customer.email` のようなキーは**式から直接参照できません**。参照するには `haori.data` を使います。
+
+```html
+<div data-bind='{"route":"x"}'>
+  <form>
+    <select name="customer.contractorType">
+      <option value="">-</option>
+      <option value="法人">法人</option>
+    </select>
+
+    <!-- ✅ 識別子として書けないキーは haori.data から読む -->
+    <div data-if="haori.data['customer.contractorType'] === '法人'">
+      <label>法人名 <input name="customer.corpName"></label>
+    </div>
+
+    <!-- ❌ 直接参照はできない（未解決参照になり空表示） -->
+    <span>{{customer.contractorType}}</span>
+  </form>
+</div>
+```
+
+参照側も自然に書きたい場合は、`name` を識別子として妥当な名前にするか、`data-form-object` で入れ子に収集します（**送信形式が変わる**点に注意してください。クエリでは `customer={"contractorType":"法人"}` のように JSON 文字列になります）。
+
+> **開発モードの警告**
+>
+> 識別子として使えないキーを検出すると、キーごとに一度だけ警告します。0.29.0 以前は、こうしたキーが 1 つあるだけで**同じスコープのすべての式**が `Failed to compile expression` で評価できなくなっていました。
+
 #### 現在日時・相対日付を入れる（`haori.now` / `haori.today`）
 
 「画面を開いた日」を基準にした初期値（当日・前日・当月初など）は、`haori.now` / `haori.today` で宣言的に書けます。`data-bind` は JSON 専用で `{{}}` を解釈しないため、動的な日付の埋め込みにはこれらを使います。

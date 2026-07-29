@@ -62,6 +62,45 @@ export default class Expression {
   private static readonly BUILTIN_REFERENCE_PATTERN =
     /(^|[^\w$.])haori(?![\w$])/;
 
+  /**
+   * 組み込みヘルパーの名前空間に載せる、要素データ参照用のプロパティ名。
+   *
+   * 識別子として書けないキー（`customer.email` のようにドットや記号を含む
+   * `name` 由来のキー）は式の引数にできないため、`haori.data['customer.email']`
+   * の形で読めるようにします。
+   */
+  private static readonly BUILTIN_DATA_PROPERTY = 'data';
+
+  /**
+   * 式が `haori.data` を参照しているか判定する正規表現。
+   *
+   * 参照している式にだけ要素データを載せるための判定です。ブラケット記法
+   * （`haori['data']`）は文字列リテラルを除去した検出用テキストでは判別できないため、
+   * `haori` へのブラケットアクセス全体を対象に含めて安全側へ倒します。
+   */
+  private static readonly BUILTIN_DATA_REFERENCE_PATTERN =
+    /(^|[^\w$.])haori\s*(\.\s*data(?![\w$])|\[)/;
+
+  /**
+   * 単一の識別子名だけで構成されるかを判定する正規表現。
+   *
+   * `new Function` は `a,b` のような複数引数や `{a}` / `a=1` のような引数パターンも
+   * 受け付けてしまう（引数の位置がずれて他のキーの値が壊れる、あるいは同名の
+   * バインドキーを遮蔽する）ため、構造を持つキーはここで弾く。Unicode の識別子
+   * （`氏名` など）は妥当なので通す。
+   */
+  private static readonly IDENTIFIER_NAME_PATTERN =
+    /^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*$/u;
+
+  /** キーが関数の引数名として使えるかの判定キャッシュ */
+  private static readonly usableBindingKeyCache = new Map<string, boolean>();
+
+  /** 引数名に使えないキーとして警告済みのキー集合（開発モードの重複抑止） */
+  private static readonly loggedUnusableBindingKeys = new Set<string>();
+
+  /** コンパイルに失敗した式の集合（診断メッセージの切り替えに用いる） */
+  private static readonly compileFailedExpressions = new Set<string>();
+
   /** 危険値チェック結果の短命キャッシュ */
   private static forbiddenBindingValueCache = new WeakMap<object, boolean>();
 
@@ -420,6 +459,83 @@ export default class Expression {
    */
   public static getFreeIdentifiers(expression: string): string[] {
     return this.extractFreeIdentifiers(expression);
+  }
+
+  /**
+   * 式のコンパイルに失敗した記録があるかを返します。
+   *
+   * コンパイルに失敗した式の評価結果は `null` になるため、`data-if` などの診断で
+   * 「値が falsy だった」と「そもそも評価できていない」を区別するために使います。
+   *
+   * @param expression 評価対象の式
+   * @returns コンパイルに失敗した記録があれば true
+   */
+  public static hasCompileFailure(expression: string): boolean {
+    return this.compileFailedExpressions.has(expression);
+  }
+
+  /**
+   * バインドキーが関数の引数名として使えるかを返します。
+   *
+   * 評価器は `new Function(...bindKeys, body)` で組み立てるため、引数名にできない
+   * キー（`customer.email` のようにドットを含むもの、ハイフン、空白、先頭が数字、
+   * 予約語など）が 1 つでも混ざると引数リスト自体が壊れ、**そのスコープで評価する
+   * すべての式**がコンパイルできなくなります。カンマを含むキーは引数の位置をずらし、
+   * 例外も出さずに他のキーの値を壊します。
+   *
+   * 判定は 2 段で行います。実際に `new Function` へ通して予約語（`class` など）と
+   * 識別子として不正な文字を弾き、あわせて単一の識別子名かを検査して `a,b`
+   * （複数引数になる）や `{a}` / `a=1`（引数パターンになる）を弾きます。正規表現
+   * だけでは予約語を通してしまい、`new Function` だけでは構造を持つキーを通します。
+   * 結果はキー単位でキャッシュするため、評価ごとのコストは無視できます。
+   *
+   * @param key 判定するバインドキー
+   * @returns 引数名として使える場合は true
+   */
+  private static isUsableBindingKey(key: string): boolean {
+    const cached = this.usableBindingKeyCache.get(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+    let usable = this.IDENTIFIER_NAME_PATTERN.test(key);
+    if (usable) {
+      try {
+        new Function(key, '');
+      } catch {
+        usable = false;
+      }
+    }
+    this.usableBindingKeyCache.set(key, usable);
+    return usable;
+  }
+
+  /**
+   * 引数名に使えないため式のスコープへ載せなかったキーを開発モードで報告します。
+   *
+   * キーごとに一度だけ出力します。除外したキーは式から参照できないため、
+   * 「値はあるのに式から見えない」原因に辿り着けるようにします。
+   *
+   * @param keys 除外したキーの一覧
+   * @returns 戻り値はありません。
+   */
+  private static reportUnusableBindingKeys(keys: string[]): void {
+    if (keys.length === 0 || !Dev.isEnabled()) {
+      return;
+    }
+    const unlogged = keys.filter(
+      key => !this.loggedUnusableBindingKeys.has(key),
+    );
+    if (unlogged.length === 0) {
+      return;
+    }
+    unlogged.forEach(key => this.loggedUnusableBindingKeys.add(key));
+    Log.warn(
+      '[Haori]',
+      'Binding key(s) that cannot be used as identifiers are excluded from' +
+        ` expressions: ${unlogged.join(', ')}.` +
+        ' Read them as haori.data[\'key\'], or use' +
+        ` ${Env.prefix}form-object to collect nested values.`,
+    );
   }
 
   /**
@@ -913,7 +1029,21 @@ export default class Expression {
       }
     }
     if (referencesBuiltins) {
-      runtimeBindings[this.BUILTIN_NAMESPACE] = this.BUILTIN_HELPERS;
+      // `haori.data` を参照する式にだけ、そのスコープの要素データを載せる。
+      // 識別子として書けないキー（`customer.email` など）は引数にできず式から
+      // 参照できないため、ブラケット記法で読める経路を用意する。
+      // 参照しない式では静的な組み込みヘルパーをそのまま渡し、評価ごとの
+      // オブジェクト生成を増やさない（`haori.date` などの既存の式が該当）。
+      if (this.BUILTIN_DATA_REFERENCE_PATTERN.test(expressionForDetection)) {
+        // 要素データの複製は名前空間の代入より前に評価されるため、`haori` 自身は
+        // 複製に入らない（自己参照にならない）。
+        runtimeBindings[this.BUILTIN_NAMESPACE] = {
+          ...this.BUILTIN_HELPERS,
+          [this.BUILTIN_DATA_PROPERTY]: {...runtimeBindings},
+        };
+      } else {
+        runtimeBindings[this.BUILTIN_NAMESPACE] = this.BUILTIN_HELPERS;
+      }
     }
     this.pruneResolvedIdentifiers(runtimeBindings);
     const allowMissingIdentifierRecovery =
@@ -1044,9 +1174,22 @@ export default class Expression {
     bindedValues: Record<string, unknown>,
     shadowNames: string[] = [],
   ): ExpressionEvaluatorSetup {
-    const bindKeys = Object.keys(bindedValues)
-      .filter(key => !this.FORBIDDEN_BINDING_NAMES.has(key))
-      .sort();
+    const safeKeys = Object.keys(bindedValues).filter(
+      key => !this.FORBIDDEN_BINDING_NAMES.has(key),
+    );
+    // 引数名として使えないキーは載せない。1 つ混ざるだけで引数リストが壊れ、
+    // そのスコープの全式が評価できなくなる（カンマ入りは無言で値をずらす）。
+    const bindKeys: string[] = [];
+    const unusableKeys: string[] = [];
+    safeKeys.forEach(key => {
+      if (this.isUsableBindingKey(key)) {
+        bindKeys.push(key);
+      } else {
+        unusableKeys.push(key);
+      }
+    });
+    bindKeys.sort();
+    this.reportUnusableBindingKeys(unusableKeys);
     const bindKeySet = new Set(bindKeys);
     // 引数・`const` 遮蔽と重複する宣言は構文エラーになるため取り除く。
     const declarations = shadowNames.filter(name => !bindKeySet.has(name));
@@ -1056,6 +1199,9 @@ export default class Expression {
 
     let evaluator = this.EXPRESSION_CACHE.get(cacheKey) || null;
     if (evaluator !== null) {
+      // このバインド集合ではコンパイルできているため、別集合で失敗した記録は
+      // 診断を誤らせる（下のコンパイル成功時と同じ扱いにする）。
+      this.compileFailedExpressions.delete(expression);
       return {
         bindKeys,
         evaluator,
@@ -1076,6 +1222,8 @@ export default class Expression {
         ...args: unknown[]
       ) => unknown;
       this.EXPRESSION_CACHE.set(cacheKey, evaluator);
+      // 別のバインド集合で失敗した記録が残っていると診断を誤らせるため取り消す。
+      this.compileFailedExpressions.delete(expression);
       return {
         bindKeys,
         evaluator,
@@ -1096,6 +1244,7 @@ export default class Expression {
         return this.prepareEvaluator(expression, bindedValues, []);
       }
       Log.error('[Haori]', 'Failed to compile expression:', expression, error);
+      this.compileFailedExpressions.add(expression);
       return {
         bindKeys,
         evaluator: null,
