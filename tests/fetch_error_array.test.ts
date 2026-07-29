@@ -187,7 +187,11 @@ describe('fetch エラー応答: トップレベル JSON 配列形式', () => {
     await waitForCondition(
       () =>
         emailWrapper.getAttribute('data-message') === null &&
-        form.getAttribute('data-message') === null,
+        form.getAttribute('data-message') === null &&
+        // 一度のクリアは name も含めて消すため、最新応答の name が書き直される
+        // ところまで待つ。クリア直後の中間状態でも前 2 条件は成立するので、
+        // これを含めないと「name が未反映」の瞬間を掴んで落ちることがある。
+        nameWrapper.getAttribute('data-message') !== null,
       {
         description: '2回目で前回の email / 全体エラーがクリアされる',
         maxAttempts: 30,

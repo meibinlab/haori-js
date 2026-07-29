@@ -275,14 +275,15 @@ export default class Core {
   /**
    * 配下の入力欄からユーザー編集の印を解除します。
    *
-   * 明示的に値を供給する操作（フェッチ応答や `data-{event}-bind` の反映、
+   * 明示的に値を供給する操作（フェッチ応答とそれに伴う `data-{event}-bind` の反映、
    * `data-{event}-reset`、`data-{event}-copy`、`data-each` の行データ差し替え）から
    * 呼び出します。解除後の再評価では宣言バインドの評価結果が入力欄へ再適用され、
    * 「再取得したのに古い入力が残る」状態になりません。
    *
    * 逆に、`change` / `input` の双方向コミットや `data-url-param` の再評価のような
    * 「値の供給ではない更新」からは呼び出しません。呼び出すと編集値が評価結果へ
-   * 巻き戻ります。
+   * 巻き戻ります。フェッチを伴わない `change` / `input` の `data-{event}-bind` も
+   * 双方向コミットに含みます（`Procedure` の `twoWayCommitBind` を参照）。
    *
    * @param fragment 対象フラグメント（配下すべてが対象）
    * @param upTo この通し番号までの編集を解除対象とする（既定は現在の最新）

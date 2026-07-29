@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>data-change-bind による確定済み編集の巻き戻しの回帰確認</title>
+  </head>
+  <body>
+    <!--
+      入力要素自身に data-change-bind を付け、宣言バインド（data-attr-value）が
+      参照するキー（record.*）とは別のキー（draft）へ書き込む編集フォーム。
+      コミットのたびにバインド先配下の「編集済みの印」が解除されていたため、
+      次の項目を編集した瞬間に、まだ更新されていない参照キーの評価結果（空）で
+      前の項目が上書きされていた。
+      実ブラウザは dirty value flag（利用者が触った入力は value 属性の変更を
+      DOM 値へ反映しない）を持ち、jsdom とは値の権威の伝わり方が異なるため、
+      実ブラウザでも実際に入力して確認する。
+    -->
+    <div id="state" data-bind='{"record":{"a":"","b":"","c":""}}'>
+      <form id="f">
+        <label
+          >A
+          <input
+            id="ia"
+            name="a"
+            data-attr-value="{{record.a}}"
+            data-change-bind="#state"
+            data-change-bind-arg="draft"
+        /></label>
+        <label
+          >B
+          <input
+            id="ib"
+            name="b"
+            data-attr-value="{{record.b}}"
+            data-change-bind="#state"
+            data-change-bind-arg="draft"
+        /></label>
+        <label
+          >C
+          <input
+            id="ic"
+            name="c"
+            data-attr-value="{{record.c}}"
+            data-change-bind="#state"
+            data-change-bind-arg="draft"
+        /></label>
+      </form>
+    </div>
+
+    <!-- 派生欄の対照。手編集していない欄は選択の変更に追従する。 -->
+    <div id="derived-state" data-bind='{"plan":{"kind":"A"}}'>
+      <form id="g">
+        <select
+          id="kind"
+          name="kind"
+          data-change-bind="#derived-state"
+          data-change-bind-arg="plan"
+        >
+          <option value="A">A</option>
+          <option value="B">B</option>
+        </select>
+        <input
+          id="price"
+          name="price"
+          data-attr-value="{{plan.kind === 'A' ? '100' : '200'}}"
+        />
+      </form>
+    </div>
+
+    <p>
+      <button id="collect" type="button">収集</button>
+    </p>
+    <pre id="log">-</pre>
+
+    <script src="/dist/haori.iife.js"></script>
+    <script>
+      /* global Haori */
+      const $ = id => document.getElementById(id);
+      const ns = () => (Haori && Haori.default ? Haori : {default: Haori});
+
+      /**
+       * 画面の値・収集値・バインドデータを記録します。
+       */
+      const dump = () => {
+        const api = ns();
+        $('log').textContent = JSON.stringify({
+          dom: {a: $('ia').value, b: $('ib').value, c: $('ic').value},
+          collected: api.Form.getValues(api.Fragment.get($('f'))),
+          draft: api.Core.getBindingData($('state'), {resolved: true}).draft,
+          price: $('price').value,
+        });
+      };
+
+      $('collect').addEventListener('click', async () => {
+        await ns().Queue.waitForIdle();
+        dump();
+      });
+    </script>
+  </body>
+</html>

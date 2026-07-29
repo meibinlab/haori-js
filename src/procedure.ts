@@ -1885,6 +1885,17 @@ ${body}
    */
   private requestUserEditSequence: number | null = null;
 
+  /**
+   * 双方向コミット由来のバインドかどうか。
+   *
+   * `change` / `input` でフェッチを伴わない場合、バインドするデータは入力欄から
+   * 収集した値そのものです。これは「外部から新しい値が供給された」のではなく
+   * 「編集値をバインドデータへ写した」だけなので、ユーザー編集の印を解除しません
+   * （バインド先を指定しない暗黙のコミットと同じ扱い）。解除すると、続く再評価で
+   * 宣言バインドが確定済みの編集値を評価結果へ巻き戻します。
+   */
+  private twoWayCommitBind = false;
+
   /** reset-before 後に確定した historyForm スナップショット */
   private historyFormSnapshot: Record<string, unknown> | null | undefined;
 
@@ -2235,6 +2246,11 @@ ${body}
         !hasPayload &&
         !this.options.formFragment &&
         (this.eventType === 'change' || this.eventType === 'input');
+      // ここはフェッチ URL が無い経路なので、`change` / `input` のバインドは
+      // 収集した編集値をそのまま写す双方向コミットである。値の供給ではないため、
+      // 後続の bindResult でユーザー編集の印を解除しない（上の暗黙コミットと同じ）。
+      this.twoWayCommitBind =
+        this.eventType === 'change' || this.eventType === 'input';
       // File / Blob はバインドデータへ入れると JSON 化で `{}` に潰れるため、
       // ファイル名へ正規化してから bind する（送信用の payload には影響しない）。
       const merged = hasPayload ? sanitizeBinaryForBinding(payload) : {};
@@ -2965,6 +2981,11 @@ ${body}
    *    リクエストを組み立てた時点までの編集は応答（またはバインド指定）に権威を
    *    譲ります。解除しないと、宣言バインドの再適用が抑止されたままになり
    *    「再取得したのに古い入力が残る」状態になります。
+   *    ただしフェッチを伴わない `change` / `input` のバインドは例外で、解除しません
+   *    （`twoWayCommitBind`）。供給されるデータが入力欄から収集した編集値そのもの
+   *    であり、権威を譲る相手がいないためです。解除すると、参照キーと書込キーが
+   *    別の構成（`data-attr-value="{{record.a}}"` の欄を `bind-arg="draft"` へ
+   *    書き込む等）で、確定済みの編集が未更新の参照キーの評価結果で消えます。
    * 2. **送信より後の編集を応答データへ上書きし直す**。応答はリクエストを
    *    組み立てた時点の内容を反映したものなので、その後の編集より古い情報です。
    *    そのままバインドすると利用者の入力が画面からも収集値からも静かに消えます。
@@ -2991,7 +3012,7 @@ ${body}
     // 他のフェッチと同じ扱いにすると、入力してからしばらく置いた値が次の取得で
     // 静かに消える。そのため印は解除せず、これまでの編集すべてを応答へ上書きし直す。
     const isAutomaticPoll = this.eventType === 'poll';
-    if (!isAutomaticPoll) {
+    if (!isAutomaticPoll && !this.twoWayCommitBind) {
       // 送信時点までの編集は応答に権威を譲る。それより後の編集の印は残るため、
       // 飛行中の通信の応答で新しい編集が消えることはない。
       Core.clearUserEditMarks(fragment, baseline);

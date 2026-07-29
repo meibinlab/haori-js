@@ -1110,7 +1110,25 @@ HTML のラジオボタンは「同じフォームの中の同名要素」で 1 
 
 典型は「フォームは `name` で平坦なキー（例 `category`）に書き込むのに、`data-attr-selected` の式は別オブジェクト（例 祖先の `correspondenceItem.category`）を読む」構成です。
 
-**0.29.0 以降、この構成でも確定した編集は失われません。** 利用者が `change` / `input` で確定した入力欄は、明示的な値の供給（`data-fetch` / `data-{event}-bind` の応答反映、`data-{event}-reset`、`data-{event}-copy`、`Core.setBindingData()` の直接呼び出し）を受けるまで宣言バインドの再適用対象から外れます。0.16.0〜0.28.x では、フォーカスが外れた後の再評価で**選択や入力内容が評価結果へ巻き戻っていました**（`required` 検証も落ちました）。
+**0.29.0 以降、この構成でも確定した編集は失われません。** 利用者が `change` / `input` で確定した入力欄は、明示的な値の供給（`data-fetch` / `data-{event}-fetch` の応答反映、`data-{event}-reset`、`data-{event}-copy`、`Core.setBindingData()` の直接呼び出し）を受けるまで宣言バインドの再適用対象から外れます。0.16.0〜0.28.x では、フォーカスが外れた後の再評価で**選択や入力内容が評価結果へ巻き戻っていました**（`required` 検証も落ちました）。
+
+入力要素自身に `data-change-bind` を付け、`data-change-bind-arg` で参照キーとは別のキーへ書き込む構成も同じです。フェッチを伴わない `data-{event}-bind` は「編集値をバインドデータへ写す双方向コミット」なので、値の供給として扱いません。
+
+```html
+<!-- 確定した編集は保持される（参照キー record.* ／ 書込キー draft） -->
+<div id="state" data-bind='{"record":{"a":"","b":""}}'>
+  <form>
+    <input name="a" data-attr-value="{{record.a}}"
+      data-change-bind="#state" data-change-bind-arg="draft">
+    <input name="b" data-attr-value="{{record.b}}"
+      data-change-bind="#state" data-change-bind-arg="draft">
+  </form>
+</div>
+```
+
+> **導出値の欄は `readonly` にする**
+>
+> 上の規則の裏返しとして、利用者が一度編集した欄は明示的な供給を受けるまで評価結果に追従しません。`data-attr-value="{{plan.kind === 'A' ? '100' : '200'}}"` のように他の入力から導出した値を入れる欄で、前提が変わったら常に入れ直したい場合は、その欄を `readonly` にしてください（編集できない欄には印が付かないため、常に追従します）。編集も許したい場合は、`data-{event}-fetch` の応答や `data-{event}-reset` を契機にしてください。
 
 それでも、参照スコープと書込スコープを揃えたほうが素直です。揃えておくと次の利点があります。
 
