@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>data-store ウィザード（1画面目）</title>
+  </head>
+  <body>
+    <h2>1画面目: 契約者情報</h2>
+
+    <!-- 応答の一部（受付番号）の退避先。宣言したキーだけをレコードへミラーする。 -->
+    <div
+      id="state"
+      data-bind='{"receipt":{}}'
+      data-store="wizardApply"
+      data-store-params="receipt"
+    ></div>
+
+    <!-- 入力状態はフォーム自身のバインドデータとしてミラーする。 -->
+    <form id="customerForm" data-store="wizardApply" data-store-arg="customer">
+      <input id="name" name="name" type="text" />
+      <select id="kind" name="kind">
+        <option value="">未選択</option>
+        <option value="power">電力</option>
+        <option value="gas">ガス</option>
+      </select>
+      <input id="agreed" name="agreed" type="checkbox" value="true" />
+    </form>
+
+    <button id="next" data-click-redirect="/playwright/store-wizard-step2.html">
+      次へ
+    </button>
+
+    <!-- バインド → 遷移が同一手続きで走る導線。保存が遷移に間に合うかの確認用。 -->
+    <button
+      id="finish"
+      data-click-data='{"no":"A-1"}'
+      data-click-bind="#state"
+      data-click-bind-arg="receipt"
+      data-click-redirect="/playwright/store-wizard-step2.html"
+    >
+      確定
+    </button>
+
+    <script src="/dist/haori.iife.js"></script>
+  </body>
+</html>

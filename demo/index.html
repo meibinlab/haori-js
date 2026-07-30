@@ -450,6 +450,18 @@
             <p><code>&lt;head&gt;</code> もスキャン対象なので、<code>&lt;title&gt;</code> 自身に <code>data-fetch</code> / <code>data-bind</code> を付ければテキストの <code>{{}}</code> 補間が効きます。タブのタイトルに会社名を実行時取得で反映します。</p>
             <a class="demo-link" href="./fetch/title-head-bind-demo.html">title 実行時バインド デモを開く</a>
         </div>
+
+        <h2>17. 画面をまたぐ入力状態の保持 (data-store)</h2>
+        <div class="demo-section">
+            <p><code>data-store</code> でバインドデータの指定キーをブラウザストレージへミラーします。入力の退避・次画面での復元・応答の退避・破棄を <code>&lt;script&gt;</code> なしで宣言でき、復元値は <code>data-if</code> の条件や <code>data-each</code> の配列としてそのまま機能します。</p>
+            <a class="demo-link" href="./store/data-store-demo.html">data-store デモを開く</a>
+        </div>
+
+        <h2>18. セレクタ属性のテンプレート式</h2>
+        <div class="demo-section">
+            <p>セレクタを値に取る属性は <code>{{}}</code> を評価した結果をセレクタとして扱います。行ごとに一意な <code>id</code> を組み立てて、<code>data-each</code> の行の中から「その行の要素」をバインド先・コピー先に指定できます。</p>
+            <a class="demo-link" href="./selector/selector-template-demo.html">セレクタ式 デモを開く</a>
+        </div>
     </div>
 
         <script type="module">

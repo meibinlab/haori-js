@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-store デモ（1画面目）</title>
+  <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+  <h2>data-store デモ（1画面目: 入力）</h2>
+  <p>
+    入力を確定すると sessionStorage の <code>storeDemo</code> へ自動保存されます。
+    2画面目へ進むと復元され、<code>data-if</code> の条件・<code>data-each</code> の配列・
+    入力欄の初期値として機能します。JavaScript は書きません。
+  </p>
+
+  <!--
+    入力状態はフォーム自身のバインドデータとしてミラーする。双方向コミットは
+    フォーム要素自身へ書き込むため、祖先に宣言すると入力値は保存されない。
+    data-store-arg はレコード内のネストキー（ここでは customer 配下）。
+  -->
+  <form data-store="storeDemo" data-store-arg="customer">
+    <p>
+      <label>お名前 <input name="name" type="text"></label>
+    </p>
+    <p>
+      <label>種別
+        <select name="kind">
+          <option value="">未選択</option>
+          <option value="power">電力</option>
+          <option value="gas">ガス</option>
+        </select>
+      </label>
+    </p>
+    <p>
+      <label><input name="agreed" type="checkbox" value="true"> 規約に同意する</label>
+    </p>
+  </form>
+
+  <!--
+    配列は親要素側で配列キーを宣言して保存する（data-each の行の内側では
+    data-store は使えない）。data-click-bind-merge で既存の state を保ちつつ追記する。
+  -->
+  <div id="state" data-bind='{"contracts":[]}'
+    data-store="storeDemo" data-store-params="contracts">
+    <p>契約: {{contracts.length}} 件</p>
+    <div data-each="contracts">
+      <p>- {{no}}</p>
+    </div>
+  </div>
+
+  <p>
+    <button
+      data-click-data='{"contracts":[{"no":"C-1"},{"no":"C-2"}]}'
+      data-click-bind="#state"
+      data-click-bind-merge
+    >契約を2件追加</button>
+    <a href="./data-store-step2-demo.html">2画面目へ進む</a>
+  </p>
+</body>
+</html>

@@ -10,6 +10,7 @@ import HaoriEvent from './event';
 import Fragment, {ElementFragment} from './fragment';
 import Log from './log';
 import Procedure from './procedure';
+import Selector from './selector';
 
 /**
  * ポーリングが恒久停止した理由です。
@@ -687,7 +688,11 @@ export default class PollObserver {
     if (typeof selector !== 'string' || selector.trim() === '') {
       return fragment.getTarget().isConnected ? [fragment] : [];
     }
-    const elements = document.querySelectorAll<HTMLElement>(selector);
+    const elements = Selector.queryAll<HTMLElement>(
+      selector,
+      attrName,
+      document,
+    );
     if (elements.length === 0) {
       Log.error('[Haori]', `Poll state element not found: ${selector}`);
       return [];

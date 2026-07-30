@@ -13,6 +13,8 @@ import Haori from './haori';
 import Log from './log';
 import HaoriEvent from './event';
 import {checkAuthRedirect} from './auth_guard';
+import Selector from './selector';
+import Store, {StoreKind} from './store';
 import Url from './url';
 
 type ProcedureHaoriApi = Pick<
@@ -792,6 +794,12 @@ export interface ProcedureOptions {
   /** reset-before 後に確定した historyForm のスナップショット */
   historyFormSnapshot?: Record<string, unknown> | null;
 
+  /** 破棄するストレージレコードのキー（data-{event}-store-clear） */
+  storeClearKey?: string | null;
+
+  /** 破棄するストレージレコードの種別 */
+  storeClearKind?: StoreKind | null;
+
   /** リダイレクトURL */
   redirectUrl?: string | null;
 
@@ -1134,11 +1142,15 @@ export default class Procedure {
       }
       // form（イベント）
       if (fragment.hasAttribute(Procedure.attrName(event, 'form'))) {
-        const formSelector = fragment.getRawAttribute(
+        const formSelector = Selector.read(
+          fragment,
           Procedure.attrName(event, 'form'),
-        ) as string | null;
+        );
         if (formSelector) {
-          const formElement = document.body.querySelector(formSelector);
+          const formElement = Selector.query(
+            formSelector,
+            Procedure.attrName(event, 'form'),
+          );
           if (formElement !== null) {
             options.formFragment = Form.getFormFragment(
               Fragment.get(formElement) as ElementFragment,
@@ -1402,9 +1414,9 @@ ${body}
       ? Procedure.attrName(event, 'bind')
       : Procedure.attrName(null, 'bind', true);
     if (fragment.hasAttribute(bindAttr)) {
-      const bindSelector = fragment.getRawAttribute(bindAttr) as string | null;
+      const bindSelector = Selector.read(fragment, bindAttr);
       if (bindSelector) {
-        const bindElements = document.body.querySelectorAll(bindSelector);
+        const bindElements = Selector.queryAll(bindSelector, bindAttr);
         if (bindElements.length > 0) {
           options.bindFragments = [];
           bindElements.forEach(element => {
@@ -1494,11 +1506,15 @@ ${body}
     }
     if (event) {
       if (fragment.hasAttribute(Procedure.attrName(event, 'adjust'))) {
-        const adjustSelector = fragment.getRawAttribute(
+        const adjustSelector = Selector.read(
+          fragment,
           Procedure.attrName(event, 'adjust'),
-        ) as string | null;
+        );
         if (adjustSelector) {
-          const adjustElements = document.body.querySelectorAll(adjustSelector);
+          const adjustElements = Selector.queryAll(
+            adjustSelector,
+            Procedure.attrName(event, 'adjust'),
+          );
           if (adjustElements.length > 0) {
             options.adjustFragments = [];
             adjustElements.forEach(element => {
@@ -1605,12 +1621,15 @@ ${body}
         options.historyDataAttrName = Procedure.attrName(event, 'history-data');
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'history-form'))) {
-        const historyFormSelector = fragment.getRawAttribute(
+        const historyFormSelector = Selector.read(
+          fragment,
           Procedure.attrName(event, 'history-form'),
-        ) as string | null;
+        );
         if (historyFormSelector) {
-          const historyFormElement =
-            document.body.querySelector(historyFormSelector);
+          const historyFormElement = Selector.query(
+            historyFormSelector,
+            Procedure.attrName(event, 'history-form'),
+          );
           if (historyFormElement !== null) {
             options.historyFormFragment = Form.getFormFragment(
               Fragment.get(historyFormElement) as ElementFragment,
@@ -1642,10 +1661,10 @@ ${body}
         if (!fragment.hasAttribute(attrName)) {
           return;
         }
-        const selector = fragment.getRawAttribute(attrName) as string | null;
+        const selector = Selector.read(fragment, attrName);
         const list: ElementFragment[] = [];
         if (selector) {
-          const elements = document.body.querySelectorAll(selector);
+          const elements = Selector.queryAll(selector, attrName);
           elements.forEach(el => {
             const frag = Fragment.get(el);
             if (frag) {
@@ -1700,11 +1719,9 @@ ${body}
       // copy-source（単一セレクタ）
       const copySourceAttrName = Procedure.attrName(event, 'copy-source');
       if (fragment.hasAttribute(copySourceAttrName)) {
-        const selector = fragment.getRawAttribute(copySourceAttrName) as
-          | string
-          | null;
+        const selector = Selector.read(fragment, copySourceAttrName);
         if (selector) {
-          const el = document.body.querySelector(selector);
+          const el = Selector.query(selector, copySourceAttrName);
           if (el !== null) {
             const frag = Fragment.get(el);
             if (frag) {
@@ -1735,11 +1752,15 @@ ${body}
         options.dataAttrName = Procedure.attrName(null, 'data', true);
       }
       if (fragment.hasAttribute(Procedure.attrName(null, 'form', true))) {
-        const formSelector = fragment.getRawAttribute(
+        const formSelector = Selector.read(
+          fragment,
           Procedure.attrName(null, 'form', true),
-        ) as string | null;
+        );
         if (formSelector) {
-          const formElement = document.body.querySelector(formSelector);
+          const formElement = Selector.query(
+            formSelector,
+            Procedure.attrName(null, 'form', true),
+          );
           if (formElement !== null) {
             options.formFragment = Form.getFormFragment(
               Fragment.get(formElement) as ElementFragment,
@@ -1764,12 +1785,10 @@ ${body}
       ? Procedure.attrName(event, 'fetch-state')
       : Procedure.attrName(null, 'state', true);
     if (fragment.hasAttribute(fetchStateAttrName)) {
-      const selector = fragment.getRawAttribute(fetchStateAttrName) as
-        | string
-        | null;
+      const selector = Selector.read(fragment, fetchStateAttrName);
       const list: ElementFragment[] = [];
       if (selector) {
-        const elements = document.body.querySelectorAll(selector);
+        const elements = Selector.queryAll(selector, fetchStateAttrName);
         elements.forEach(el => {
           const frag = Fragment.get(el);
           if (frag) {
@@ -1788,6 +1807,40 @@ ${body}
       }
       if (list.length > 0) {
         options.fetchStateFragments = list;
+      }
+    }
+
+    // store-clear（ストレージレコードの破棄。イベント・非イベント双方で解釈する。
+    // 属性値はストレージキーで、式は使用できない）
+    const storeClearAttrName = event
+      ? Procedure.attrName(event, 'store-clear')
+      : Procedure.attrName(null, 'store-clear', true);
+    if (fragment.hasAttribute(storeClearAttrName)) {
+      const rawKey = fragment.getRawAttribute(storeClearAttrName) as
+        | string
+        | null;
+      const key = rawKey === null ? '' : rawKey.trim();
+      if (key === '') {
+        Log.error(
+          'Haori',
+          `ストレージキーが指定されていません (${storeClearAttrName})`,
+        );
+      } else {
+        options.storeClearKey = key;
+        const rawKind = fragment.getRawAttribute(
+          `${storeClearAttrName}-type`,
+        ) as string | null;
+        const kind = rawKind === null ? 'session' : rawKind.trim();
+        if (kind === 'local' || kind === 'session') {
+          options.storeClearKind = kind;
+        } else {
+          Log.warn(
+            'Haori',
+            `${storeClearAttrName}-type は session または local を指定して` +
+              `ください（session として扱います）: ${kind}`,
+          );
+          options.storeClearKind = 'session';
+        }
       }
     }
 
@@ -2465,9 +2518,14 @@ ${body}
         this.options.toastLevel ?? 'info',
       );
     }
+    this.clearStore();
     this.pushHistory();
     if (this.options.scrollTarget) {
-      const el = document.querySelector<HTMLElement>(this.options.scrollTarget);
+      const el = Selector.query<HTMLElement>(
+        this.options.scrollTarget,
+        Procedure.attrName(this.eventType, 'scroll'),
+        document,
+      );
       el?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
     }
     if (this.options.redirectUrl) {
@@ -2494,6 +2552,20 @@ ${body}
       window.location.href = destination;
     }
     return true;
+  }
+
+  /**
+   * `data-{event}-store-clear` で指定されたストレージレコードを破棄します。
+   *
+   * 破棄後もミラーは停止せず、宣言要素の書き出し基準を現在値へ更新します
+   * （以後は値が変わったときだけ再保存されます）。未指定の場合は何もしません。
+   */
+  private clearStore(): void {
+    const key = this.options.storeClearKey;
+    if (!key) {
+      return;
+    }
+    Store.clear(key, this.options.storeClearKind ?? 'session');
   }
 
   /**
@@ -3544,9 +3616,9 @@ ${body}
       return null;
     }
     const attrName = Procedure.attrName(this.eventType, attributeKey);
-    const selector = target.getRawAttribute(attrName);
+    const selector = Selector.read(target, attrName);
     if (selector !== null && selector.trim() !== '') {
-      const element = document.querySelector(selector);
+      const element = Selector.query(selector, attrName, document);
       if (element === null) {
         Log.error(
           'Haori',

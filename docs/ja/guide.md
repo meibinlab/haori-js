@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.31.0
+バージョン: 0.32.0
 
 ## 目次
 
@@ -1518,6 +1518,190 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 </body>
 </html>
 ```
+
+---
+
+## 繰り返し行の中で「その行の要素」を対象にする
+
+`data-{event}-bind` や `data-{event}-copy` のようにセレクタで対象を指定する属性は、`{{}}` を評価した結果をセレクタとして扱います。行ごとに一意な `id` を組み立てれば、`data-each` の行の中から「その行の要素」だけを対象にできます。
+
+### 行ごとのバインド先を指定する
+
+```html
+<div data-bind='{"rows":[{},{}]}'>
+  <div data-each="rows" data-each-index="i">
+    <div>
+      <select name="area"
+        data-change-fetch="/api/plans.json"
+        data-change-bind="#plan-scope-{{i}}"
+        data-change-bind-arg="plans">
+        <option value="">未選択</option>
+        <option value="tokyo">東京</option>
+      </select>
+
+      <!-- 取得結果はこの行の中だけに反映される -->
+      <div id="plan-scope-{{i}}">
+        <p>{{plans.name}}</p>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+### 「契約者住所と同じ」で行の住所欄へ複写する
+
+コピー先も式で指定できます。コピー元は `data-{event}-copy-source` で指定します。
+
+```html
+<div id="owner" data-bind='{"zip":"1000001","city":"千代田区"}'></div>
+
+<div data-bind='{"rows":[{},{}]}'>
+  <div data-each="rows" data-each-index="i">
+    <div>
+      <form id="addr-{{i}}">
+        <input name="zip">
+        <input name="city">
+      </form>
+      <button
+        data-click-copy="#addr-{{i}}"
+        data-click-copy-source="#owner"
+        data-click-copy-params="zip&city"
+      >契約者住所と同じ</button>
+    </div>
+  </div>
+</div>
+```
+
+コピー先がフォームなら、複写した値はそのまま入力欄へ反映されます。
+
+### 気をつけること
+
+- 対象はセレクタを値に取る属性です。`data-{event}-bind-arg` や `-copy-params` のようなキー名を並べる属性は評価されません。
+- セレクタとして不正な値になった場合はログを出してその属性だけをスキップします。同じ手続きの後続のアクションは実行されます。
+- `{{}}` が解決できなかった場合は「値の指定なし」として扱われます。`data-{event}-close` のように値を省略したときの既定動作がある属性では、その動作になります。
+- 行の `id` は `data-each-index` の値などで一意にしてください。重複すると他の行にも反映されます。
+
+---
+
+## 画面をまたいで入力を持ち回る（`data-store`）
+
+複数画面にわたる申込フォームのように、入力を次の画面へ引き継ぎたいことがあります。`data-store` を宣言すると、バインドデータの指定キーがブラウザのストレージへ自動的に保存され、次の画面で自動的に復元されます。JavaScript は書きません。
+
+### 保存と復元
+
+`data-store` に保存場所の名前（ストレージキー）を指定し、`data-store-arg` または `data-store-params` で対象のキーを指定します。
+
+```html
+<!-- 1画面目: 入力を customer キーへ退避する -->
+<form data-store="apply" data-store-arg="customer">
+  <input name="name" placeholder="お名前">
+  <input name="zip" placeholder="郵便番号">
+</form>
+<button data-click-redirect="/step2.html">次へ</button>
+```
+
+入力を確定した時点（フォーカスを外す、選択する）で保存されます。ボタン側に保存の宣言は要りません。
+
+```html
+<!-- 2画面目: 1画面目の入力が復元される -->
+<div data-bind='{"customer":{}}' data-store="apply" data-store-params="customer">
+  <p>お名前: {{customer.name}}</p>
+</div>
+```
+
+復元された値は初期 `data-bind` と同じ扱いです。`data-if` の条件、`data-each` の配列、入力欄の初期値としてそのまま機能します。
+
+```html
+<!-- 復元した配列をそのまま行にできる -->
+<div data-bind='{"contracts":[]}' data-store="apply" data-store-params="contracts">
+  <div data-each="contracts">
+    <p>{{no}}</p>
+  </div>
+</div>
+```
+
+### 入力欄へ戻すときはフォームに宣言する
+
+保存されるのは、`data-store` を書いた要素**自身**のバインドデータです。フォームの入力値はフォーム要素自身に書き込まれるため、入力状態を保存したいときは `<form>` に宣言してください。
+
+```html
+<!-- OK: フォーム自身に宣言する -->
+<form data-store="apply" data-store-arg="customer">
+  <input name="name">
+</form>
+
+<!-- OK: data-form-arg のキーと同じ名前を指定する -->
+<div data-bind='{"customer":{}}'>
+  <form data-form-arg="customer" data-store="apply" data-store-params="customer">
+    <input name="name">
+  </form>
+</div>
+
+<!-- NG: 祖先に書いても入力値は保存されない（表示だけの用途になる） -->
+<div data-bind='{"customer":{}}' data-store="apply" data-store-params="customer">
+  <form><input name="name"></form>
+</div>
+```
+
+### サーバー応答の一部を残す
+
+バインド先の要素に `data-store` を宣言しておくと、フェッチ応答のうち必要なキーだけが保存されます。受付番号や確認済みフラグを次の画面へ渡すときに使います。
+
+```html
+<div id="state" data-bind='{"receipt":{}}'
+  data-store="apply" data-store-params="receipt"></div>
+
+<button
+  data-click-fetch="/api/apply"
+  data-click-form="#customerForm"
+  data-click-bind="#state"
+  data-click-bind-arg="receipt"
+  data-click-redirect="/done.html"
+>申込</button>
+```
+
+保存はバインドと同時に行われるため、同じクリックで画面遷移しても取りこぼしません。
+
+### 送信本文を組み立てる
+
+復元した状態はバインドデータに載っているので、`data-click-data` の JSON へ式で埋め込めます。ネストした本文も属性だけで作れます。
+
+```html
+<button
+  data-click-fetch="/api/apply"
+  data-click-data='{"customer":{{customer}},"contracts":{{contracts}}}'
+>申込</button>
+```
+
+### 完了したら破棄する
+
+`data-{event}-store-clear` でレコードを破棄します。復元は破棄より先に行われるため、保存した値を表示してから消せます。
+
+```html
+<html data-load-store-clear="apply">
+  <body>
+    <div data-bind='{"receipt":{}}' data-store="apply" data-store-params="receipt">
+      <p>受付番号: {{receipt.no}}</p>
+    </div>
+  </body>
+</html>
+```
+
+ボタンで破棄することもできます。
+
+```html
+<button data-click-store-clear="apply" data-click-redirect="/">最初から</button>
+```
+
+### 気をつけること
+
+- 保存対象のキー（`data-store-params` か `data-store-arg`）は必須です。省略すると警告が出て無効になります（うっかり全部を保存しないための仕様です）。
+- ファイル添付（`input[type=file]`）は復元できません。ファイル名だけが残るため、画面をまたいだら選び直しが必要です。
+- `data-each` の行の中では使えません。行のデータは親要素側で配列のキーを指定して保存してください。
+- 既定の保存先はタブを閉じると消える `session` です。`data-store-type="local"` にすると閉じても残るため、個人情報では避けてください。
+- 保存先は同じサイトの他のスクリプトからも読めます。保存するキーは必要な範囲だけにしてください。
+- 破棄する画面で対象キーを更新すると、レコードが作り直されます。破棄する画面では対象キーを触らない構成にしてください。
+- 画面ごとに担当のキーだけを宣言すれば、他の画面が保存した内容は壊れません。
 
 ---
 

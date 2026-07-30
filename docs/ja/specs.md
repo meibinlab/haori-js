@@ -1,7 +1,7 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.31.0
-最終更新: 2026-07-29
+バージョン: 0.32.0
+最終更新: 2026-07-30
 
 ## 目次
 
@@ -125,6 +125,8 @@ src/
 ├── form.ts              - フォーム双方向バインディング
 ├── queue.ts             - 非同期キュー管理 (requestAnimationFrame)
 ├── import.ts            - HTMLインポート機能
+├── selector.ts          - セレクタ属性の解決 (テンプレート式の評価と安全な照会)
+├── store.ts             - ブラウザストレージ連携 (data-store)
 ├── url.ts               - URLパラメータ取得
 ├── log.ts               - ログ出力管理
 ├── env.ts               - 環境検出 (prefix, 開発モード)
@@ -149,6 +151,7 @@ core.ts (中心的なオーケストレーター)
   ├─ form.ts
   ├─ fragment.ts
   ├─ procedure.ts
+  ├─ store.ts
   ├─ url.ts
   ├─ import.ts
   └─ event.ts
@@ -175,7 +178,19 @@ procedure.ts (イベント処理)
   ├─ core.ts
   ├─ form.ts
   ├─ haori.ts
+  ├─ selector.ts
+  ├─ store.ts
   └─ event.ts
+
+selector.ts (セレクタ属性の解決)
+  ├─ fragment.ts
+  └─ log.ts
+
+store.ts (ブラウザストレージ連携)
+  ├─ core.ts
+  ├─ env.ts
+  ├─ fragment.ts
+  └─ log.ts
 ```
 
 ---
@@ -221,6 +236,7 @@ Core.setAttributeは以下の優先順位で属性を処理します：
 
 1. **優先属性** (この順で処理)
   - `data-bind`: バインディングデータ設定
+  - `data-store`: ブラウザストレージからの復元
   - `data-url-param`: URLパラメータバインド
   - `data-if`: 条件分岐評価
   - `data-each`: 繰り返し処理評価
@@ -1631,6 +1647,35 @@ static async openDialog(element: HTMLElement): Promise<void> {
 }
 ```
 
+### 9. Store (store.ts)
+
+**役割**: `data-store` によるブラウザストレージとバインディングデータのミラー
+
+```typescript
+class Store {
+  // 保存済みの値をバインディングデータへ復元する（優先属性 data-store の処理）
+  static restore(fragment: ElementFragment): Promise<void>
+
+  // バインディングデータをレコードへ書き出す（Core.setBindingData から同期で呼ぶ）
+  static mirror(fragment: ElementFragment): void
+
+  // レコードを破棄する（data-{event}-store-clear の処理）
+  static clear(key: string, kind: StoreKind): void
+}
+```
+
+#### 呼び出し位置
+
+| 処理 | 呼び出し元 | 位置づけ |
+| ---- | ---------- | -------- |
+| 復元 | `Core.setAttribute()` の優先属性処理 | `data-bind` の後、`data-url-param` の前 |
+| 保存 | `Core.setBindingData()` | 内部バインドデータの確定直後（同期） |
+| 破棄 | `Procedure.run()` | `data-{event}-history` の直前 |
+
+保存を `Queue`（`requestAnimationFrame`）へ遅延させず同期で行うのは、`data-{event}-redirect` による遷移や背面タブで次フレームが来ず、遷移直前の保存を取りこぼすためです。書き込みの間引きは「直前の書き出し内容と変わらなければ書かない」だけで行い、まずキーごとの参照同一性で比較して直列化そのものを省きます（`_fetch` / `_poll` などの高頻度更新で直列化が繰り返されないようにするためです）。
+
+なお `localStorage` / `sessionStorage` は式の[禁止識別子](#禁止識別子リスト)であり、式から直接読み書きすることはできません。ストレージへのアクセスは `data-store` 系の属性に限られます。
+
 ---
 
 ## HTML属性仕様
@@ -1681,7 +1726,7 @@ data-bind="{JSON | URLSearchParams形式}"
 - **未解決参照**: 式評価時に参照先が存在せず解決できない状態です。`null`、`false` とは区別します。式の評価結果が `undefined` になる参照（バインドに無いキー、`null` を経由したメンバーアクセスなど）はすべて未解決参照として扱います。
 
 **評価順**:
-1. `data-bind` と `data-url-param` のような入力系属性を先に反映します。
+1. `data-bind`、`data-store`、`data-url-param` のような入力系属性を先に反映します（この順に重ねます）。
 2. `data-if`、`data-each` のような制御属性を評価します。
 3. 通常属性とテキストノードを評価します。
 4. `data-fetch`、`data-import` のような副作用属性を最後に評価します。
@@ -2346,6 +2391,111 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 
 ---
 
+### ブラウザストレージ
+
+#### `data-store`
+
+バインディングデータの指定キーを、ブラウザストレージのレコードと双方向にミラーします。画面をまたいで入力状態を持ち回るウィザードなどを、`<script>` を書かずに宣言できます。
+
+**構文**:
+```html
+data-store="storageKey"          <!-- ストレージキー（レコードの名前）。式は使用できない -->
+data-store-params="a&b"          <!-- 対象トップレベルキー（& 区切り） -->
+data-store-arg="argName"         <!-- レコード内のネストキー -->
+data-store-type="session|local"  <!-- ストレージ種別。既定は session -->
+```
+
+`data-store-params` と `data-store-arg` は**どちらか一方が必須**です。両方を省略した場合は警告ログを出して無効になります（意図しないキーの保存を防ぐため）。
+
+**例**:
+
+```html
+<!-- 1画面目: 契約者フォームの入力状態を customer キーへ退避する -->
+<form data-store="apply" data-store-arg="customer">
+  <input name="name">
+  <input name="zip">
+</form>
+
+<!-- 2画面目: 退避した内容を初期表示に使い、配列は data-each で描画する -->
+<div data-bind='{"customer":{},"contracts":[]}'
+  data-store="apply" data-store-params="customer&contracts">
+  <p>{{customer.name}}</p>
+  <div data-each="contracts"><span>{{no}}</span></div>
+</div>
+```
+
+**レコードの構造**:
+
+1 つのストレージキーに 1 つの JSON オブジェクト（レコード）を保存します。書き込みは宣言したキーだけを置換し、レコード内の他のキーは保持します。そのため画面ごと・要素ごとに担当キーだけを宣言でき、他の画面が保存した値は壊れません。
+
+| 宣言 | レコードの形 |
+| ---- | ------------ |
+| `data-store-params="customer"` | `{"customer": ...}` |
+| `data-store-arg="customer"` | `{"customer": {要素のバインディングデータ全体}}` |
+| `data-store-arg="step2"` + `data-store-params="contracts"` | `{"step2": {"contracts": ...}}` |
+
+`data-store-arg` を単独で指定した場合は、その要素のバインディングデータの**全キー**（予約キーを除く）が対象になります。収集値だけを持つ `<form>` 向けの用法で、作業用のデータを `data-bind` で持つ要素では `data-store-params` を併用してください。
+
+**復元（ストレージ → バインディングデータ）**:
+
+- 優先属性として `data-bind` の直後に処理されるため、復元値は `data-if` の条件・`data-each` の配列・入力欄の初期値として機能します（初期 `data-bind` と同じ扱いです）。
+- キー単位の差し替えで、深いマージは行いません。レコードに無いキーは `data-bind` で宣言した既定値をそのまま保ちます。
+- 復元は**その要素を初めてスキャンしたとき**だけです。`data-if` の表示切替などで再評価されても繰り返しません（利用者の編集を初期値へ巻き戻さないため）。
+- `<form>` に宣言した場合は、[初期 `data-bind` からの入力欄復元](#初期-data-bind-からの入力欄復元)と同じ経路で入力欄へ反映されます。`<select>` の選択状態やチェック状態も含みます。
+- 復元対象が 1 つも無い場合はバインディングデータを作りません（不要なシャドーイングを増やさないためです）。
+
+**保存（バインディングデータ → ストレージ）**:
+
+- 対象キーの値が変わったときに自動で書き出します（明示的な保存指定は不要です）。フォームの双方向コミット・`data-{event}-bind`・`data-fetch` の応答反映はいずれも同じ導線を通るため、**フェッチ応答の一部の退避**も宣言だけで行えます。
+- 書き出しはバインディングデータの確定と**同期**で行います。`requestAnimationFrame` を待たないため、`data-{event}-redirect` による遷移の直前や背面タブでも取りこぼしません。
+- 直前に書き出した内容と同じ場合は書き込みません。
+- 宣言したキーがその要素のバインディングデータに**存在しない**場合、レコードは変更しません。削除は `data-{event}-store-clear` だけが行います。
+- `_fetch` / `_poll` などの予約キー（先頭が `_`）は常に対象外です。
+- 復元より前には書き出しません（`data-bind` の既定値で保存済みの値を潰さないためです）。
+
+**対象は宣言した要素自身のバインディングデータです（重要）**:
+
+フォームの双方向コミットは**フォーム要素自身**のバインディングデータへ書き込みます。そのため、入力状態を保存する場合は `<form>` に `data-store` を宣言します。祖先要素に宣言しても入力値は保存されません。
+
+```html
+<!-- OK: フォーム自身に宣言する -->
+<form data-store="apply" data-store-arg="customer">
+  <input name="name">
+</form>
+
+<!-- OK: data-form-arg のキーと同名を指定する -->
+<div data-bind='{"customer":{}}'>
+  <form data-form-arg="customer" data-store="apply" data-store-params="customer">
+    <input name="name">
+  </form>
+</div>
+
+<!-- NG: 祖先に宣言しても入力値は保存されない（表示のみの用途になる） -->
+<div data-bind='{"customer":{}}' data-store="apply" data-store-params="customer">
+  <form><input name="name"></form>
+</div>
+```
+
+**制約**:
+
+- `data-each` の行の内側では使用できません（同一のレコードへ全行が書き込むため）。警告ログを出して無効になります。行データは親要素側で配列キーを指定して保存します。
+- `input[type=file]` の内容は復元できません。バインディングデータにはファイル名だけが入るため（[`input[type=file]` の値収集](#inputtypefile-の値収集)）、添付は画面をまたぐと再選択が必要です。
+- 属性値に式（`{{}}`）は使用できません。`{{` を含む場合は警告ログを出して無効になります。
+- 他のタブとの同期（`storage` イベントの追従）は行いません。
+- 同一のストレージキーで同一のキーを複数の要素が宣言した場合、後から書き込んだ内容が残ります（競合の検出は行いません）。
+- ストレージが無効な環境、容量超過、保存済み JSON の破損、オブジェクトでないレコードは、警告ログを出して継続します（画面は壊しません）。
+
+**`data-url-param` との併用**:
+
+処理順は `data-bind`（既定値）→ `data-store` → `data-url-param` で、URL クエリが最優先です。`data-url-arg` を省略した `data-url-param` は要素のバインディングデータを**全置換**するため、復元値も消えます。併用する場合は `data-url-arg` を指定してください（省略時は警告ログを出します）。
+
+**セキュリティ**:
+
+- 既定の `session` はタブを閉じると消えます。個人情報を含む状態では `local` を避け、破棄の導線（`data-{event}-store-clear`）を必ず宣言してください。
+- ストレージは同一オリジンの他のスクリプトから読み取れます。保存対象は `data-store-params` / `data-store-arg` で必要な範囲に限定してください。
+
+---
+
 ### フォーム属性
 
 #### `name`
@@ -2504,6 +2654,54 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
   data-on-fetch="/api/init.json" data-on-bind="#app"></body>
 ```
 
+#### セレクタを値に取る属性の解決
+
+バインド先やコピー先を CSS セレクタで指定する属性は、**テンプレート式（`{{}}`）を評価した結果**をセレクタとして扱います。評価は手続きの実行時に、その要素のバインディングデータで行われます。これにより `data-each` の行の中から「その行の要素」を対象にできます（行ごとに一意な `id` を組み立てる）。
+
+対象の属性:
+
+| 分類 | 属性 |
+| ---- | ---- |
+| バインド | `data-{event}-bind` / `data-fetch-bind` / `data-{event}-fetch-state` / `data-fetch-state` |
+| フォーム | `data-{event}-form` / `data-fetch-form` / `data-{event}-history-form` |
+| 要素操作 | `data-{event}-copy` / `data-{event}-copy-source` / `data-{event}-reset` / `data-{event}-reset-before` / `data-{event}-refetch` / `data-{event}-click` / `data-{event}-open` / `data-{event}-close` / `data-{event}-adjust` / `data-{event}-scroll` |
+| 行操作 | `data-{event}-row-add` / `data-{event}-row-remove` / `data-{event}-row-prev` / `data-{event}-row-next` |
+| トリガー | `data-intersect-root` / `data-each-visible-root` / `data-poll-state` |
+
+```html
+<!-- 行ごとのバインド先・コピー先を指定する -->
+<div data-each="rows" data-each-index="i">
+  <div>
+    <select name="area"
+      data-change-fetch="/api/plans.json"
+      data-change-bind="#plan-scope-{{i}}"
+      data-change-bind-arg="plans">
+      <option value="">未選択</option>
+    </select>
+    <div id="plan-scope-{{i}}">{{plans.name}}</div>
+
+    <!-- 契約者住所をこの行の住所欄へ複写する -->
+    <form id="addr-{{i}}">
+      <input name="zip">
+      <input name="city">
+    </form>
+    <button
+      data-click-copy="#addr-{{i}}"
+      data-click-copy-source="#owner"
+      data-click-copy-params="zip&city">契約者住所と同じ</button>
+  </div>
+</div>
+```
+
+**解決できない場合の扱い**:
+
+- CSS セレクタとして**不正**な値は、`Log.error` でログ出力してその属性をスキップします。例外にしないため、同じ手続きの後続のアクションは実行されます。
+- 単体プレースホルダが[未解決参照](#未解決参照の診断)になった場合は、**値の指定が無い**ものとして扱います（通常属性の未解決参照を属性削除として扱う規則に合わせます）。値を省略したときの既定動作（`data-{event}-form` なら先祖のフォーム、`data-{event}-close` なら最も近い `<dialog>` など）になります。
+- 文字列埋め込みの一部が未解決参照の場合は、その部分が空文字として連結されます（`#plan-` のように一致しないセレクタになり、従来どおり「要素が見つからない」ログになります）。
+- セレクタに一致する要素が無い場合は従来どおり `Log.error` でログ出力してスキップします。
+
+**注意**: `data-{event}-bind-arg` / `-bind-params` / `-copy-params` のようなキー名を並べる属性は評価の対象外です（セレクタ属性のみが対象）。
+
 #### 処理順序
 
 イベント属性は以下の順序で実行されます:
@@ -2524,8 +2722,9 @@ data-url-arg="argName"  <!-- オプション: ネストするキー名 -->
 14. `data-{event}-click`: クリック実行
 15. `data-{event}-open` / `data-{event}-close`: ダイアログ操作
 16. `data-{event}-dialog` / `data-{event}-toast`: メッセージ表示
-17. `data-{event}-history`: 履歴 pushState 実行
-18. `data-{event}-redirect`: リダイレクト実行
+17. `data-{event}-store-clear`: ストレージレコードの破棄
+18. `data-{event}-history`: 履歴 pushState 実行
+19. `data-{event}-redirect`: リダイレクト実行
 
 なお `data-{event}-run`（フェッチを伴わない任意 JS 実行）は、`event.preventDefault()` を有効にするため、上記 2（confirm）より前の**同期タイミング**で実行されます。`data-{event}-fetch` と併用した場合は run → fetch の順になります。
 
@@ -3386,6 +3585,34 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 <button data-click-fetch="/api/save" data-click-toast="保存しました">
   保存
 </button>
+```
+
+##### `data-{event}-store-clear`
+
+`data-store` で保存したレコードを破棄します。属性値はストレージキーで、式は使用できません。
+
+**構文**:
+```html
+data-{event}-store-clear="storageKey"
+data-{event}-store-clear-type="session|local"  <!-- 既定は session -->
+```
+
+- 非イベントの `data-fetch` では `data-fetch-store-clear` を使用します。
+- 破棄後もミラーは停止しません。破棄した時点の値をすぐ書き戻さないよう、そのレコードを宣言している要素の書き出し基準を現在値へ更新し、以後は**値が変わったとき**だけ再保存します。そのため、破棄する画面で対象キーを更新する構成（定期取得やフェッチ）ではレコードが復活します。破棄する画面では対象キーを更新しない構成にしてください。
+- 復元は優先属性として破棄より先に済むため、保存した値を表示してから破棄できます。
+
+```html
+<!-- 完了画面: 受付番号を復元して表示し、ページ読み込み時に下書きを破棄する -->
+<html data-load-store-clear="apply">
+  <body>
+    <div data-bind='{"receipt":{}}' data-store="apply" data-store-params="receipt">
+      <p>受付番号: {{receipt.no}}</p>
+    </div>
+  </body>
+</html>
+
+<!-- ボタン操作で破棄する -->
+<button data-click-store-clear="apply" data-click-redirect="/">最初へ戻る</button>
 ```
 
 ##### `data-{event}-history`

@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.31.0
+バージョン: 0.32.0
 
 ---
 
@@ -102,6 +102,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `data-fetch` — サーバーからデータを取得してバインド
 - `data-import` — 外部 HTML を読み込んで挿入
 - `data-url-param` — URL のクエリパラメータをバインディングに取り込む
+- `data-store` — 宣言したバインディングキーをブラウザストレージへミラーします（1 ストレージキー = 1 JSON レコード）。復元は `data-bind` の直後に処理されるため、`data-if` の条件・`data-each` の配列・入力欄の初期値としてそのまま機能します。対象キーは `data-store-params="a&b"` で選び、`data-store-arg="名前"` でレコード内へネストできます（どちらか一方が必須）。`data-store-type="session|local"` で保存先を選べます（既定 `session`）。保存は対象キーの値が変わったときに自動で行われ（フォームの双方向コミットとフェッチ応答を含む）、バインディングと同期で書き出すため `data-{event}-redirect` の直前でも取りこぼしません。書き込みは宣言したキーだけを置換するので、画面ごとに担当キーを持てます。入力状態を保存する場合は `<form>` 自身に宣言してください。破棄は `data-{event}-store-clear="キー"`（＋ `-type`）で行います。これにより複数画面のウィザードを JavaScript なしで実現できます。
 - `data-unauthorized-redirect` / `data-forbidden-redirect` — `<body>`/`<html>` に宣言する認証ガード。Haori の fetch 応答が 401／403 のとき指定 URL（式可）へ遷移します。全 fetch 経路（`data-fetch`・イベント fetch・`data-import`）に適用。ステータス別オプトイン。`*-return-param="クエリ名"` を併用すると、ログイン後復帰用に現在の `pathname+search+hash` を戻り先クエリとして自動付与します（遷移先に同名クエリがあればそちらを優先）。
 - `data-{event}-redirect-return-param="クエリ名"` — 上記の対称な受け手側。手続きの成功後リダイレクト先を URL クエリから解決し、**安全な同一オリジンのローカルパス**のときのみそこへ遷移します（オープンリダイレクト対策を内蔵）。安全でない／値が無い場合は `data-{event}-redirect` へフォールバック。認証ガードの `*-return-param` と同名クエリで使えば付与 → 消費が対称になり、従来必要だった手書きの検証 JS が不要になります。
 
@@ -116,6 +117,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `data-poll-*` — タイマーで手続きを繰り返し起動します（定期取得）。別端末や別プロセスでの操作完了を待つ画面に使います。アクション語彙は `data-{event}-*` と共通（`data-poll-fetch`・`data-poll-bind`・`data-poll-bind-arg` など）。設定属性は `data-poll-interval`（取得間隔ミリ秒。既定 5000、下限 100）、`data-poll-timeout`（打ち切りミリ秒。省略時は無制限）、`data-poll-until="{{式}}"`（真になった時点で恒久停止。各リクエスト前とバインド反映後に評価）、`data-poll-error-limit`（連続失敗回数の上限。省略時は継続）、`data-poll-disabled`（真の間は抑止）、`data-poll-state`（`_poll` 状態の注入先。`running`・`paused`・`stopped`・`timedOut`・`stopReason`・`count`・`elapsedMs`）です。初回は即時実行、2回目以降は前回完了時点から計測するためリクエストは多重化せず、`data-if` で非表示の間は一時停止して再表示で再開し、DOM から外れた時点で恒久停止します。バックグラウンドタブではブラウザがタイマーを抑制するため指定間隔は保証されません（タブが表示に戻った時点で即時に取得し直します）。
 - `data-input-*` — テキスト入力1文字ごと（`input` イベント）に手続きを起動します。逐次発火するため `data-input-*` を**明示した要素のみ**が対象（オプトイン）で、`change` 同様に先祖フォームを自動検出して双方向バインディングへ反映します。検索欄の逐次絞り込みなどに使えます（例: `<input name="q" data-input-form>`）。
 - `data-on="イベント名"` ＋ `data-on-*` — `window` / `document` へ dispatch された**任意のカスタムイベント**を契機に手続きを起動します（アクション語彙は `data-{event}-*` と共通）。ネイティブ橋の準備完了通知など、組み込みイベント以外での初期化を宣言的に書けます（例: `<body data-on="appReady" data-on-fetch="/api/init.json" data-on-bind="#app">`）。イベント名は属性値で保持（属性名の小文字化対策）、`window` キャプチャ1本で二重発火なく購読、後挿入要素も追従。組み込みイベント名（click/change/input/load）は警告し購読しません。Haori 購読開始前に発火したイベントは受け取れない点に注意。
+- **CSS セレクタ**を値に取る属性（`data-{event}-bind`・`-form`・`-copy`・`-copy-source`・`-reset`・`-refetch`・`-click`・`-open`・`-close`・`-adjust`・`-row-*`・`data-fetch-bind`・`data-fetch-state` など）は、照会の前に `{{ ... }}` を評価します。`data-each` の行の中から「その行の要素」を対象にでき（`id="plan-scope-{{i}}"` と `data-change-bind="#plan-scope-{{i}}"` の組み合わせ）、行ごとのバインドや住所複写が属性だけで書けます。不正なセレクタは例外にせずログしてスキップし、単体プレースホルダの未解決参照は「値の指定なし」として扱います（値を省略したときの既定動作になります）。`-bind-arg`・`-copy-params` のようなキー名を並べる属性は評価しません。
 - `data-click-copy-source` — `data-click-copy` のコピー元要素を明示指定します（既定は `data-click-form` のフォーム、無ければイベント発火元の binding）。
 - `data-click-no-disabled` / `data-click-defer` — 他ライブラリとの併用補助です。`no-disabled` はクリック手続き実行中に `disabled` 属性を付与せず実行します（Bootstrap collapse など disabled 要素を無視するライブラリ・CSS が動作し続けます。多重実行は内部マーカーで防止）。`defer` はクリック手続きを次フレーム（`requestAnimationFrame`／`setTimeout(0)`）で実行し、他ライブラリの同期 click ハンドラを先に完了させます。遅延後は `preventDefault()` できないため、`<a href>` や `type="submit"` への `defer` 併用は避けてください。
 - `data-{event}-prevent`（例: `data-click-prevent`）— そのイベントでブラウザのネイティブなデフォルト動作（`type="submit"` ボタンのフォーム送信、`<a href>` の遷移など）を抑止します。`preventDefault()` はクリックの同期区間で呼ぶため `data-click-defer` と併用しても確実に抑止でき、`stopPropagation()` は呼ばないので他ライブラリのイベント伝播には影響しません。これにより `type="submit"` のまま `data-click-fetch` 等を付けても、ページ再読込なしに動作します。

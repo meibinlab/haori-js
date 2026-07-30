@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>セレクタ属性のテンプレート式 デモ</title>
+  <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+  <h2>セレクタ属性のテンプレート式 デモ</h2>
+  <p>
+    セレクタを値に取る属性（<code>data-{event}-bind</code>・<code>-copy</code> など）は
+    <code>{{}}</code> を評価した結果をセレクタとして扱います。行ごとに一意な
+    <code>id</code> を組み立てれば、<code>data-each</code> の行の中から
+    「その行の要素」を対象にできます。
+  </p>
+
+  <div data-bind='{"rows":[{"label":"1件目"},{"label":"2件目"}]}'>
+    <!-- コピー元（契約者住所）。この要素のバインドデータを行の住所欄へ複写する -->
+    <div id="owner" data-bind='{"zip":"1000001","city":"千代田区"}'>
+      <p>契約者住所: {{zip}} {{city}}</p>
+    </div>
+
+    <div data-each="rows" data-each-arg="row" data-each-index="i">
+      <fieldset>
+        <legend>{{row.label}}</legend>
+
+        <!-- コピー先を行ごとに指定する（住所複写） -->
+        <form id="addr-{{i}}">
+          <p><label>郵便番号 <input name="zip" type="text"></label></p>
+          <p><label>市区町村 <input name="city" type="text"></label></p>
+        </form>
+        <p>
+          <button
+            data-click-copy="#addr-{{i}}"
+            data-click-copy-source="#owner"
+            data-click-copy-params="zip&amp;city"
+          >契約者住所と同じ</button>
+        </p>
+
+        <!-- バインド先を行ごとに指定する -->
+        <p>
+          <button
+            data-click-data='{"plans":["標準","割引"]}'
+            data-click-bind="#plan-{{i}}"
+          >この行のプランを取得</button>
+        </p>
+        <div id="plan-{{i}}">
+          <p>プラン: {{plans.length}} 件</p>
+          <div data-each="plans" data-each-arg="plan">
+            <p>- {{plan}}</p>
+          </div>
+        </div>
+      </fieldset>
+    </div>
+  </div>
+</body>
+</html>

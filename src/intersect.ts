@@ -6,6 +6,7 @@ import Env from './env';
 import Fragment, {ElementFragment} from './fragment';
 import Log from './log';
 import Procedure from './procedure';
+import Selector from './selector';
 
 interface IntersectRegistration {
   fragment: ElementFragment;
@@ -195,7 +196,7 @@ export default class IntersectObserver {
     if (typeof selector !== 'string' || selector.trim() === '') {
       return null;
     }
-    const root = document.querySelector(selector);
+    const root = Selector.query(selector, attrName, document);
     if (IntersectObserver.isHtmlElement(root)) {
       return root;
     }

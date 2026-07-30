@@ -11,6 +11,7 @@ import Form from './form';
 import Fragment, {ElementFragment, TextFragment} from './fragment';
 import Log from './log';
 import Procedure from './procedure';
+import Store from './store';
 import Url from './url';
 import {Import} from './import';
 import Queue from './queue';
@@ -64,6 +65,9 @@ export default class Core {
   /** 優先処理する属性のサフィックス（処理順序で定義） */
   private static readonly PRIORITY_ATTRIBUTE_SUFFIXES = [
     'bind',
+    // `store` は `bind`（既定値）の後、`url-param` の前に置く。URL クエリで明示
+    // された値を保存済みの値より優先するため。
+    'store',
     'url-param',
     'derive-name',
     'derive',
@@ -84,6 +88,7 @@ export default class Core {
     'fetch',
     'import',
     'url-param',
+    'store',
   ];
 
   /** 属性内プレースホルダ検出用の正規表現 */
@@ -115,6 +120,10 @@ export default class Core {
       'form-list',
       'form-object',
       'form-detach',
+      'store',
+      'store-params',
+      'store-arg',
+      'store-type',
     ]);
 
   /** data-fetch の自動再評価状態 */
@@ -770,9 +779,26 @@ export default class Core {
           promises.push(Core.executeManagedImport(fragment));
         }
         break;
+      case `${Env.prefix}store`:
+        if (value !== null) {
+          // 属性の削除では復元しない（削除時点の生属性はまだ残っているため、
+          // 判定を省くと保存済みの値で現在のバインドデータを上書きしてしまう）。
+          promises.push(Store.restore(fragment));
+        }
+        break;
       case `${Env.prefix}url-param`: {
         const arg = fragment.getAttribute(`${Env.prefix}url-arg`);
         const params = Url.readParams();
+        if (arg === null && fragment.hasAttribute(`${Env.prefix}store`)) {
+          // data-url-arg 省略時の url-param は生バインドデータを全置換するため、
+          // data-store が復元した値も消える。併用時は data-url-arg を指定する。
+          Log.warn(
+            'Haori',
+            `${Env.prefix}url-param を ${Env.prefix}url-arg なしで ` +
+              `${Env.prefix}store と併用すると復元した値が消えます` +
+              `（${Env.prefix}url-arg を指定してください）。`,
+          );
+        }
         // data-url-param の再評価は evaluateAll（= setBindingData の work）内から
         // 同一フラグメントへ再帰し得るため reentrant=true で即時実行する。
         if (arg === null) {
@@ -861,6 +887,12 @@ export default class Core {
     // 通知の氾濫を避け、「非ミラーの一時更新は外部通知もしない」と意味を揃える）。
     if (reflectToAttribute) {
       HaoriEvent.bindChange(element, previous, data, 'manual');
+      // ブラウザストレージへのミラーは、in-memory が確定したこの時点で同期実行する。
+      // Queue（requestAnimationFrame）へ遅延させると、data-{event}-redirect による
+      // 遷移や背面タブで次フレームが来ず、遷移直前の保存を取りこぼす。
+      // reflectToAttribute=false（`_fetch` / `_poll` などのエンジン管理変数の注入）は
+      // ミラーの対象外とし、外部通知と扱いを揃える。
+      Store.mirror(fragment);
     }
 
     // 同一要素への並行呼出で適用順が逆転しないよう、DOM 反映・再評価を呼出順

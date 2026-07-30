@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-store デモ（2画面目）</title>
+  <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+  <h2>data-store デモ（2画面目: 復元と破棄）</h2>
+  <p>
+    1画面目で保存した内容を復元して表示します。復元は優先属性として
+    <code>data-bind</code> の直後に処理されるため、初期 <code>data-bind</code> と同じ扱いです。
+  </p>
+
+  <div data-bind='{"customer":{},"contracts":[]}'
+    data-store="storeDemo" data-store-params="customer&amp;contracts">
+    <p>お名前: {{customer.name}}</p>
+    <p>種別: {{customer.kind}}</p>
+    <!-- 復元値が data-if の条件として機能する -->
+    <p data-if="customer.agreed">規約に同意済みです。</p>
+    <p>契約: {{contracts.length}} 件</p>
+    <!-- 復元値が data-each の配列として機能する -->
+    <div data-each="contracts">
+      <p>- {{no}}</p>
+    </div>
+  </div>
+
+  <!-- 入力欄へ戻すときはフォーム自身に宣言する -->
+  <form data-store="storeDemo" data-store-arg="customer">
+    <p>
+      <label>お名前（編集できます） <input name="name" type="text"></label>
+    </p>
+  </form>
+
+  <p>
+    <a href="./data-store-demo.html">1画面目へ戻る</a>
+    <button data-click-store-clear="storeDemo">保存内容を破棄</button>
+  </p>
+  <p>
+    破棄した後に再読み込みすると復元されません。破棄後もミラーは止まらないため、
+    値を変更すればまた保存されます。
+  </p>
+</body>
+</html>

@@ -16,6 +16,7 @@ import Core from './core';
 import Env from './env';
 import Fragment, {ElementFragment} from './fragment';
 import Log from './log';
+import Selector from './selector';
 
 /**
  * 公開する可視範囲のスナップショットです。
@@ -315,7 +316,7 @@ export default class VisibleRangeObserver {
     if (typeof selector !== 'string' || selector.trim() === '') {
       return null;
     }
-    const root = document.querySelector(selector);
+    const root = Selector.query(selector, attrName, document);
     if (VisibleRangeObserver.isHtmlElement(root)) {
       return root;
     }
