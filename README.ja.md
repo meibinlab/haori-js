@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.32.0
+バージョン: 0.33.0
 
 ---
 
@@ -117,6 +117,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `data-poll-*` — タイマーで手続きを繰り返し起動します（定期取得）。別端末や別プロセスでの操作完了を待つ画面に使います。アクション語彙は `data-{event}-*` と共通（`data-poll-fetch`・`data-poll-bind`・`data-poll-bind-arg` など）。設定属性は `data-poll-interval`（取得間隔ミリ秒。既定 5000、下限 100）、`data-poll-timeout`（打ち切りミリ秒。省略時は無制限）、`data-poll-until="{{式}}"`（真になった時点で恒久停止。各リクエスト前とバインド反映後に評価）、`data-poll-error-limit`（連続失敗回数の上限。省略時は継続）、`data-poll-disabled`（真の間は抑止）、`data-poll-state`（`_poll` 状態の注入先。`running`・`paused`・`stopped`・`timedOut`・`stopReason`・`count`・`elapsedMs`）です。初回は即時実行、2回目以降は前回完了時点から計測するためリクエストは多重化せず、`data-if` で非表示の間は一時停止して再表示で再開し、DOM から外れた時点で恒久停止します。バックグラウンドタブではブラウザがタイマーを抑制するため指定間隔は保証されません（タブが表示に戻った時点で即時に取得し直します）。
 - `data-input-*` — テキスト入力1文字ごと（`input` イベント）に手続きを起動します。逐次発火するため `data-input-*` を**明示した要素のみ**が対象（オプトイン）で、`change` 同様に先祖フォームを自動検出して双方向バインディングへ反映します。検索欄の逐次絞り込みなどに使えます（例: `<input name="q" data-input-form>`）。
 - `data-on="イベント名"` ＋ `data-on-*` — `window` / `document` へ dispatch された**任意のカスタムイベント**を契機に手続きを起動します（アクション語彙は `data-{event}-*` と共通）。ネイティブ橋の準備完了通知など、組み込みイベント以外での初期化を宣言的に書けます（例: `<body data-on="appReady" data-on-fetch="/api/init.json" data-on-bind="#app">`）。イベント名は属性値で保持（属性名の小文字化対策）、`window` キャプチャ1本で二重発火なく購読、後挿入要素も追従。組み込みイベント名（click/change/input/load）は警告し購読しません。Haori 購読開始前に発火したイベントは受け取れない点に注意。
+- 編集可能な行（`data-each` と `data-form-list` の併用）では、行要素をセレクタで指した `data-{event}-copy` / `data-{event}-bind` が、行に対応する**配列要素**へ書き戻されます。行の入力欄の値は配列の要素データが権威なので、これにより他の行に影響せず複数の入力欄へまとめて値を流し込めます（「契約者住所と同じ」の複写や、郵便番号から住所を引いて行へ入れる処理）。`data-form-list` を持つ外側の `<form>` が必要な構成では入れ子の `<form>` を置けないため、行の中に `<form>` を置く書き方の代わりに使います。
 - **CSS セレクタ**を値に取る属性（`data-{event}-bind`・`-form`・`-copy`・`-copy-source`・`-reset`・`-refetch`・`-click`・`-open`・`-close`・`-adjust`・`-row-*`・`data-fetch-bind`・`data-fetch-state` など）は、照会の前に `{{ ... }}` を評価します。`data-each` の行の中から「その行の要素」を対象にでき（`id="plan-scope-{{i}}"` と `data-change-bind="#plan-scope-{{i}}"` の組み合わせ）、行ごとのバインドや住所複写が属性だけで書けます。不正なセレクタは例外にせずログしてスキップし、単体プレースホルダの未解決参照は「値の指定なし」として扱います（値を省略したときの既定動作になります）。`-bind-arg`・`-copy-params` のようなキー名を並べる属性は評価しません。
 - `data-click-copy-source` — `data-click-copy` のコピー元要素を明示指定します（既定は `data-click-form` のフォーム、無ければイベント発火元の binding）。
 - `data-click-no-disabled` / `data-click-defer` — 他ライブラリとの併用補助です。`no-disabled` はクリック手続き実行中に `disabled` 属性を付与せず実行します（Bootstrap collapse など disabled 要素を無視するライブラリ・CSS が動作し続けます。多重実行は内部マーカーで防止）。`defer` はクリック手続きを次フレーム（`requestAnimationFrame`／`setTimeout(0)`）で実行し、他ライブラリの同期 click ハンドラを先に完了させます。遅延後は `preventDefault()` できないため、`<a href>` や `type="submit"` への `defer` 併用は避けてください。
