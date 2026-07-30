@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>編集可能な行への copy / bind デモ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+    }
+
+    h2 {
+      margin: 24px 0 8px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      line-height: 1.6;
+    }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+
+    th,
+    td {
+      padding: 8px 6px;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      font-size: 14px;
+      vertical-align: middle;
+    }
+
+    th {
+      color: #475569;
+      font-weight: 600;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    button {
+      padding: 6px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      background: #eef2ff;
+    }
+
+    .owner {
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      border: 1px solid #c7d2fe;
+      border-radius: 6px;
+      background: #eef2ff;
+      font-size: 14px;
+    }
+
+    #summary {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 13px;
+      line-height: 1.8;
+      color: #334155;
+    }
+
+    code {
+      background: #eef2ff;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+  <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+<main>
+  <h1>編集可能な行への copy / bind</h1>
+  <p>
+    <code>data-each</code> と <code>data-form-list</code> を併用した行では、入力欄の値は
+    配列の要素データが権威です。行要素を <code>data-{event}-copy</code> /
+    <code>data-{event}-bind</code> のセレクタで指すと、行フラグメントではなく対応する
+    配列要素へ書き戻されるため、複数の入力欄へまとめて値が流し込まれます。行ごとに
+    一意な <code>id</code> は <code>data-each-index</code> の値で組み立てます。
+  </p>
+
+  <div class="panel">
+    <form id="applyForm" data-bind='{
+      "owner": {"zip": "1000001", "city": "東京都千代田区", "street": "千代田1-1"},
+      "contracts": [
+        {"name": "東京本社", "zip": "", "city": "", "street": ""},
+        {"name": "大阪支店", "zip": "5300001", "city": "大阪府大阪市北区",
+         "street": "梅田1-1"}
+      ]
+    }'>
+      <div class="owner">
+        契約者住所:
+        <span id="ownerAddress" data-bind='{
+          "zip": "1000001", "city": "東京都千代田区", "street": "千代田1-1"
+        }'>{{zip}} {{city}} {{street}}</span>
+      </div>
+
+      <h2>設置場所</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 22%">名称</th>
+            <th style="width: 16%">郵便番号</th>
+            <th style="width: 24%">市区町村</th>
+            <th style="width: 22%">番地</th>
+            <th style="width: 16%">操作</th>
+          </tr>
+        </thead>
+        <tbody id="contractRows" data-form-list="contracts" data-each="contracts"
+               data-each-arg="c" data-each-index="i">
+          <tr id="row-{{i}}">
+            <td><input type="text" name="name"></td>
+            <td><input type="text" name="zip"></td>
+            <td><input type="text" name="city"></td>
+            <td><input type="text" name="street"></td>
+            <td>
+              <!-- コピー先に行要素自身を指す。値は #ownerAddress のバインドデータ -->
+              <button type="button"
+                      data-click-copy="#row-{{i}}"
+                      data-click-copy-source="#ownerAddress"
+                      data-click-copy-params="zip&amp;city&amp;street">
+                契約者住所と同じ
+              </button>
+              <button type="button" data-click-row-add>行追加</button>
+              <button type="button" data-click-row-remove>削除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>収集される送信データ</h2>
+      <ul id="summary" data-each="contracts" data-each-arg="c"
+          data-each-index="n">
+        <li>
+          {{n + 1}}: name={{c.name}} / zip={{c.zip}} / city={{c.city}}
+          / street={{c.street}}
+        </li>
+      </ul>
+    </form>
+  </div>
+</main>
+</body>
+</html>

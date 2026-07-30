@@ -462,6 +462,12 @@
             <p>セレクタを値に取る属性は <code>{{}}</code> を評価した結果をセレクタとして扱います。行ごとに一意な <code>id</code> を組み立てて、<code>data-each</code> の行の中から「その行の要素」をバインド先・コピー先に指定できます。</p>
             <a class="demo-link" href="./selector/selector-template-demo.html">セレクタ式 デモを開く</a>
         </div>
+
+        <h2>19. 編集可能な行への copy / bind</h2>
+        <div class="demo-section">
+            <p><code>data-each</code> と <code>data-form-list</code> を併用した行では入力欄の値は配列の要素データが権威です。行要素をセレクタで指した <code>data-{event}-copy</code> / <code>data-{event}-bind</code> は対応する配列要素へ書き戻されるため、他の行に影響せず複数の入力欄へまとめて値を流し込めます。</p>
+            <a class="demo-link" href="./form/row-copy-bind-demo.html">行への copy デモを開く</a>
+        </div>
     </div>
 
         <script type="module">

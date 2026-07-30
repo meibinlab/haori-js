@@ -1612,6 +1612,21 @@ export default class Core {
   }
 
   /**
+   * `data-each` の差分更新が実行中かどうかを返します。
+   *
+   * 行の描画中に起動された処理（行の中の `data-fetch` など）が、その行の要素データ
+   * を書き換えて所有者へ書き戻すとき、完了を待つべきかの判定に使います。実行中の
+   * 描画ループの完了を待つと、ループ側は行の初期化（= その処理）の完了を待っている
+   * ため相互に待ち合って止まります。
+   *
+   * @param fragment `data-each` コンテナのフラグメント
+   * @returns 差分更新が実行中なら true
+   */
+  public static isEachUpdateRunning(fragment: ElementFragment): boolean {
+    return Core.getEachUpdateState(fragment).running;
+  }
+
+  /**
    * data-each の差分更新を、再評価要求が無くなるまで直列に繰り返し実行します。
    * 進行中・後続の再実行を含む完了 Promise を state に保持し、再入した呼び出し元が
    * 同じ Promise を待てるようにします。
@@ -2710,12 +2725,17 @@ export default class Core {
   /**
    * リスト比較用のキーを生成します。
    *
+   * `data-each` の差分更新で行と要素データを対応付けるキーです。行を指した書き込み
+   * （`Procedure` の行への copy / bind）でも、`data-each-key` 指定時に「どの配列
+   * 要素がその行か」をキーで特定するために使うため公開しています。生成規則を
+   * 呼び出し側で作り直すと差分更新との対応が崩れるためです。
+   *
    * @param item 対象オブジェクト
    * @param keyArg リストキーに使用するプロパティ名
    * @param index 配列のインデックス
    * @returns リストキー
    */
-  private static createListKey(
+  public static createListKey(
     item: Record<string, unknown> | string | number,
     keyArg: string | null,
     index: number,

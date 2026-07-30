@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.32.0
+バージョン: 0.33.0
 
 ## 目次
 
@@ -1574,12 +1574,50 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 
 コピー先がフォームなら、複写した値はそのまま入力欄へ反映されます。
 
+### 編集可能な行（`data-form-list`）の入力欄へ複写する
+
+上の例は行の中に `<form>` を置ける構成です。行を配列として送信する `data-form-list` を使う場合、外側に `<form>` が必要になるため入れ子の `<form>` は置けません（HTML の制約）。この構成では**行要素自身**をコピー先に指してください。行の入力欄の値は配列の要素データが権威なので、Haori が対応する配列要素へ複写して入力欄まで反映します。
+
+```html
+<form data-bind='{"contracts":[{"name":"東京本社"},{"name":"大阪支店"}]}'>
+  <div id="owner" data-bind='{"zip":"1000001","city":"千代田区"}'></div>
+
+  <div data-each="contracts" data-each-arg="c" data-each-index="i"
+       data-form-list="contracts">
+    <!-- 行要素に一意な id を振り、それをコピー先に指す -->
+    <div id="addr-{{i}}">
+      <input name="name">
+      <input name="zip">
+      <input name="city">
+      <button type="button"
+        data-click-copy="#addr-{{i}}"
+        data-click-copy-source="#owner"
+        data-click-copy-params="zip&city"
+      >契約者住所と同じ</button>
+    </div>
+  </div>
+</form>
+```
+
+他の行は変わらず、複写した値はそのまま送信データ（`contracts` の該当要素）になります。同じ書き方でフェッチ結果を行へ流し込めます（郵便番号から住所を引く処理など）。
+
+```html
+<input name="zip"
+  data-change-fetch="/api/address"
+  data-change-bind="#addr-{{i}}"
+  data-change-bind-merge>
+```
+
+`data-{event}-bind` は既定で要素データを置き換えるため、応答に無いキーの入力欄は空になります。入力済みの項目を残したいときは上の例のように `data-{event}-bind-merge` を併記してください。
+
 ### 気をつけること
 
 - 対象はセレクタを値に取る属性です。`data-{event}-bind-arg` や `-copy-params` のようなキー名を並べる属性は評価されません。
 - セレクタとして不正な値になった場合はログを出してその属性だけをスキップします。同じ手続きの後続のアクションは実行されます。
 - `{{}}` が解決できなかった場合は「値の指定なし」として扱われます。`data-{event}-close` のように値を省略したときの既定動作がある属性では、その動作になります。
 - 行の `id` は `data-each-index` の値などで一意にしてください。重複すると他の行にも反映されます。
+- 行要素を対象にできるのは `data-each` と `data-form-list` を併用したコンテナの行です。行の**内側**の要素を指した場合は、その要素自身のバインディングデータが更新されます（行内のスコープ用要素へのバインドはこれまでどおり書けます）。
+- 対象行が見つからない場合（応答を待つ間に行が削除された、`data-each-key` に一致する要素が無いなど）は警告ログを出して書き込みを捨てます。無関係な行を書き換えないためです。
 
 ---
 

@@ -818,6 +818,16 @@ export interface ProcedureOptions {
 
   /** 成功時にスクロールする要素のCSSセレクター */
   scrollTarget?: string | null;
+
+  /**
+   * バインド先・コピー先のうち編集可能な行にあたるものと、その `data-each`
+   * コンテナの対応。
+   *
+   * 値が `null` の要素は `data-each-before` / `data-each-after` の固定要素で、行
+   * として扱えないことを表します。属性を読んだ時点で記録します
+   * （`recordRowWriteTargets()` を参照）。
+   */
+  rowWriteTargets?: Map<ElementFragment, ElementFragment | null> | null;
 }
 
 interface ExecutionLockState {
@@ -827,6 +837,47 @@ interface ExecutionLockState {
   /** 今回の処理で disabled 属性を付与したかどうか */
   appliedDisabledAttribute: boolean;
 }
+
+/**
+ * 編集可能な行への書き込み要求。
+ *
+ * `data-each` と `data-form-list` を併用したコンテナの行では、入力欄の値は配列の
+ * 要素データが権威です（行フラグメントのバインドデータは描画のたびに作り直される
+ * 一時スコープ）。そのため行を指した copy / bind は、行へ直接書くのではなく対応
+ * する配列要素を書き換え、所有者へ書き戻します。
+ */
+interface RowWrite {
+  /** `data-each` かつ `data-form-list` のコンテナ */
+  container: ElementFragment;
+
+  /** 書き込み先の行フラグメント */
+  row: ElementFragment;
+
+  /** ログ出力に用いる属性名 */
+  attributeName: string;
+
+  /**
+   * 要素データの書き換え内容。
+   *
+   * 書き戻す直前に呼び出されるため、参照する配列・編集状態は常に最新です。
+   *
+   * @param item 現在の要素データ
+   * @returns 書き換え後の要素データ
+   */
+  apply: (item: Record<string, unknown>) => Record<string, unknown>;
+}
+
+/**
+ * 書き込み先の解決結果。
+ *
+ * `row` は編集可能な行として配列要素へ書き戻すもの、`skip` は行だったものが失われ
+ * ている等で書き込まないもの、`plain` は行ではなくその要素自身のバインドデータを
+ * 更新するものです。
+ */
+type RowWriteResolution =
+  | {kind: 'row'; container: ElementFragment}
+  | {kind: 'skip'}
+  | {kind: 'plain'};
 
 /**
  * 手続き的処理管理クラスです。
@@ -1853,7 +1904,49 @@ ${body}
       // 明示指定ではなく既定で補った self-bind であることを記録する。
       options.defaultSelfBind = true;
     }
+    Procedure.recordRowWriteTargets(options);
     return options;
+  }
+
+  /**
+   * バインド先・コピー先のうち、編集可能な行にあたるものを記録します。
+   *
+   * 記録は属性を読んだこの時点で行います。応答が届くまでに行が削除されると親子
+   * 関係が失われ、後から「行だったか」を判定できなくなるためです（判定できないと、
+   * 消えた行への書き込みを黙って別の場所へ書いてしまいます）。
+   *
+   * 値が `null` の要素は `data-each-before` / `data-each-after` の固定要素です。
+   * 行として扱えないため、書き込み時に警告してスキップします。
+   *
+   * @param options 記録先の手続きオプション
+   * @returns 戻り値はありません。
+   */
+  private static recordRowWriteTargets(options: ProcedureOptions): void {
+    const targets = new Map<ElementFragment, ElementFragment | null>();
+    const candidates = [
+      ...(options.bindFragments ?? []),
+      ...(options.copyFragments ?? []),
+    ];
+    for (const candidate of candidates) {
+      const container = candidate.getParent();
+      if (
+        !container ||
+        !container.hasAttribute(`${Env.prefix}each`) ||
+        !container.hasAttribute(`${Env.prefix}form-list`)
+      ) {
+        // 編集可能な行のコンテナ配下ではない。従来どおり自身へ書き込む。
+        continue;
+      }
+      targets.set(
+        candidate,
+        Procedure.getRowFragments(container).includes(candidate)
+          ? container
+          : null,
+      );
+    }
+    if (targets.size > 0) {
+      options.rowWriteTargets = targets;
+    }
   }
 
   /**
@@ -2961,8 +3054,46 @@ ${body}
         return undefined;
       }
       const promises: Promise<unknown>[] = [];
+      // 行を指したバインドは配列の要素データへ書き戻す（`applyRowWrites()`）。
+      const bindAttributeName = this.eventType
+        ? Procedure.attrName(this.eventType, 'bind')
+        : Procedure.attrName(null, 'bind', true);
+      const rowWrites: RowWrite[] = [];
       if (this.options.bindArg) {
         this.options.bindFragments!.forEach(fragment => {
+          const resolution = this.resolveRowWrite(fragment, bindAttributeName);
+          if (resolution.kind === 'skip') {
+            return;
+          }
+          if (resolution.kind === 'row') {
+            const bindArg = this.options.bindArg as string;
+            rowWrites.push({
+              container: resolution.container,
+              row: fragment,
+              attributeName: bindAttributeName,
+              apply: item => {
+                const next = {...item};
+                if (data && typeof data === 'object' && !Array.isArray(data)) {
+                  const currentValue = item[bindArg];
+                  const currentObject =
+                    currentValue !== null &&
+                    typeof currentValue === 'object' &&
+                    !Array.isArray(currentValue)
+                      ? (currentValue as Record<string, unknown>)
+                      : {};
+                  next[bindArg] = this.mergeAppendBindingData(
+                    fragment,
+                    data as Record<string, unknown>,
+                    currentObject,
+                  );
+                } else {
+                  next[bindArg] = data;
+                }
+                return this.reconcileRowUserEdits(fragment, next);
+              },
+            });
+            return;
+          }
           // バインド先の「自身の」最新 binding（getRawBindingData）を基底にして
           // bindArg キーだけを更新する。getBindingData()（継承込み）を基底にすると
           // 継承キーが own の data-bind に混入してしまうため、own のみを対象にする。
@@ -3024,6 +3155,31 @@ ${body}
         );
       } else {
         this.options.bindFragments!.forEach(fragment => {
+          const resolution = this.resolveRowWrite(fragment, bindAttributeName);
+          if (resolution.kind === 'skip') {
+            return;
+          }
+          if (resolution.kind === 'row') {
+            rowWrites.push({
+              container: resolution.container,
+              row: fragment,
+              attributeName: bindAttributeName,
+              apply: item => {
+                // 既定は全置換（要素データに無いキーの入力欄は空になる）。
+                // `bind-merge` 指定時だけ要素データへ浅くマージする。
+                const resolvedData = this.mergeAppendBindingData(
+                  fragment,
+                  data as Record<string, unknown>,
+                  item,
+                );
+                const next = this.options.bindMerge
+                  ? {...item, ...resolvedData}
+                  : resolvedData;
+                return this.reconcileRowUserEdits(fragment, next);
+              },
+            });
+            return;
+          }
           const resolvedData = this.mergeAppendBindingData(
             fragment,
             data as Record<string, unknown>,
@@ -3048,6 +3204,7 @@ ${body}
           );
         });
       }
+      promises.push(this.applyRowWrites(rowWrites));
       return Promise.all(promises).then(() => {
         // バインドと対象配下の再評価（data-if / data-each 等）の完了後に
         // bindcomplete を発火し、外部スクリプトが同期処理を行えるようにする。
@@ -3137,6 +3294,45 @@ ${body}
   }
 
   /**
+   * 編集可能な行へのバインドについて、送信後の編集を要素データへ上書きし直します。
+   *
+   * `reconcileUserEditsForBind()` はバインド先が `<form>` でない場合、配下の
+   * `data-form-arg` フォーム向けの経路へ進むため、行の入力欄の編集は保護されません。
+   * 行では入力欄の `name` が要素データのキーと直接対応するので、行から収集した編集
+   * 分をそのまま要素データへ重ねます。
+   *
+   * 呼び出しは書き戻す直前（`applyRowWrites()` の中）なので、収集する編集は常に
+   * 最新です。
+   *
+   * @param row 行のフラグメント
+   * @param item バインド後の要素データ
+   * @returns ユーザー編集分を上書きした要素データ
+   */
+  private reconcileRowUserEdits(
+    row: ElementFragment,
+    item: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const baseline = this.requestUserEditSequence;
+    if (baseline === null) {
+      return item;
+    }
+    // ポーリングは利用者が要求した再取得ではないため、印は解除せずこれまでの編集
+    // すべてを応答へ上書きし直す（`reconcileUserEditsForBind()` と同じ規則）。
+    const isAutomaticPoll = this.eventType === 'poll';
+    if (!isAutomaticPoll && !this.twoWayCommitBind) {
+      Core.clearUserEditMarks(row, baseline);
+    }
+    const edited = Form.getValuesEditedAfter(
+      row,
+      isAutomaticPoll ? 0 : baseline,
+    );
+    if (Object.keys(edited).length === 0) {
+      return item;
+    }
+    return mergeUserEdits(item, edited) as Record<string, unknown>;
+  }
+
+  /**
    * 祖先へのバインドについて、配下の `data-form-arg` フォームで送信後に行われた
    * 編集を応答データへ上書きし直します。
    *
@@ -3215,20 +3411,52 @@ ${body}
 
     const sourceData = this.resolveCopySourceData();
     const copyData = this.pickCopyData(sourceData);
-    const promises = this.options.copyFragments.map(fragment => {
+    const attributeName = Procedure.attrName(this.eventType, 'copy');
+    const rowWrites: RowWrite[] = [];
+    const promises: Promise<void>[] = [];
+    this.options.copyFragments.forEach(fragment => {
+      const resolution = this.resolveRowWrite(fragment, attributeName);
+      if (resolution.kind === 'skip') {
+        return;
+      }
+      if (resolution.kind === 'row') {
+        // 編集可能な行では配列の要素データが権威なので、そこへマージする。行へ
+        // 直接書いても入力欄には届かず、次の再描画で消える。
+        rowWrites.push({
+          container: resolution.container,
+          row: fragment,
+          attributeName,
+          apply: item => ({...item, ...copyData}),
+        });
+        return;
+      }
       // コピーは明示的な値の供給なので、setBindingData の既定どおり
       // コピー先のユーザー編集の印を解除する。
+      //
+      // 基底はコピー先「自身の」バインドデータに限る。`getBindingData()` は祖先と
+      // のマージ結果なので、それを書き込むと祖先のキーがコピー先へ焼き付き、以降
+      // その祖先の更新が古いコピーにシャドーされて届かなくなる（双方向コミットや
+      // bind-arg が生データを基底にしているのと同じ理由）。
       const bindingData = {
-        ...fragment.getBindingData(),
+        ...(fragment.getRawBindingData() ?? {}),
         ...copyData,
       };
-      return Core.setBindingData(fragment.getTarget(), bindingData);
+      promises.push(Core.setBindingData(fragment.getTarget(), bindingData));
     });
+    promises.push(this.applyRowWrites(rowWrites));
     return Promise.all(promises).then(() => undefined);
   }
 
   /**
    * copy のコピー元データを取得します。
+   *
+   * 入力欄を持つフォームからは収集値を、それ以外の要素からはその要素「自身の」
+   * バインドデータを取ります。`getBindingData()`（祖先とのマージ結果）を使うと、
+   * 祖先が持つ無関係なキー（一覧の配列など）までコピーされ、コピー先へ焼き付いて
+   * 以降の祖先の更新をシャドーします。フォームからの収集がその要素の入力欄だけを
+   * 対象にしているのと扱いを揃えます。
+   *
+   * @returns コピー元のデータ
    */
   private resolveCopySourceData(): Record<string, unknown> {
     // コピー先はバインドデータになるため、File はファイル名へ正規化する
@@ -3238,13 +3466,13 @@ ${body}
       if (sourceTarget.tagName === 'FORM') {
         return collectFormValuesForBinding(this.options.copySourceFragment);
       }
-      return {...this.options.copySourceFragment.getBindingData()};
+      return {...(this.options.copySourceFragment.getRawBindingData() ?? {})};
     }
     if (this.options.formFragment) {
       return collectFormValuesForBinding(this.options.formFragment);
     }
     if (this.options.targetFragment) {
-      return {...this.options.targetFragment.getBindingData()};
+      return {...(this.options.targetFragment.getRawBindingData() ?? {})};
     }
     return {};
   }
@@ -3772,6 +4000,223 @@ ${body}
           !child.hasAttribute(`${Env.prefix}each-before`) &&
           !child.hasAttribute(`${Env.prefix}each-after`),
       );
+  }
+
+  /**
+   * 書き込み先が編集可能な行かどうかを判定し、書き込み方法を決めます。
+   *
+   * 判定には属性を読んだ時点の記録（`recordRowWriteTargets()`）を使います。応答が
+   * 届くまでに行が削除された場合は親子関係が失われるため、その場では判定できま
+   * せん。
+   *
+   * @param fragment 書き込み先のフラグメント
+   * @param attributeName ログ出力に用いる属性名
+   * @returns `row` は配列要素へ書き戻す、`skip` は書き込まない、`plain` は従来
+   *     どおりその要素自身のバインドデータを更新する
+   */
+  private resolveRowWrite(
+    fragment: ElementFragment,
+    attributeName: string,
+  ): RowWriteResolution {
+    const targets = this.options.rowWriteTargets;
+    if (!targets || !targets.has(fragment)) {
+      return {kind: 'plain'};
+    }
+    const container = targets.get(fragment) ?? null;
+    if (container === null) {
+      // `data-each-before` / `data-each-after` の固定要素。行ではないため、行デー
+      // タへの書き込みとしては扱えない。
+      Log.warn(
+        'Haori',
+        'Target is not a row of the' +
+          ` ${Env.prefix}each container (${attributeName}).`,
+      );
+      return {kind: 'skip'};
+    }
+    if (!Procedure.getRowFragments(container).includes(fragment)) {
+      // 応答を待つ間に行が削除された場合。無関係な行やデタッチ済みの行へ書かない。
+      Log.warn(
+        'Haori',
+        'The target row is no longer in the' +
+          ` ${Env.prefix}each container; the write was skipped` +
+          ` (${attributeName}).`,
+      );
+      return {kind: 'skip'};
+    }
+    return {kind: 'row', container};
+  }
+
+  /**
+   * 行への書き込みを、`data-each` が参照する配列へ反映します。
+   *
+   * コンテナごとにまとめて 1 回だけ書き戻します。行単位に書き戻すと、各呼び出しが
+   * それぞれ配列のコピーを作るため、後の書き込みが前の書き込みを消します。
+   *
+   * @param writes 行への書き込み要求
+   * @returns 反映完了の Promise
+   */
+  private applyRowWrites(writes: RowWrite[]): Promise<void> {
+    if (writes.length === 0) {
+      return Promise.resolve();
+    }
+    const groups = new Map<ElementFragment, RowWrite[]>();
+    for (const write of writes) {
+      const group = groups.get(write.container);
+      if (group) {
+        group.push(write);
+      } else {
+        groups.set(write.container, [write]);
+      }
+    }
+    const promises: Promise<void>[] = [];
+    groups.forEach((group, container) => {
+      // 配列は書き戻す直前に読み直す。手続きの開始時点で読んだコピーを使うと、
+      // 送信から応答までの間に他の行で確定した編集を巻き戻してしまう。
+      const resolved = Procedure.resolveEachArray(container);
+      if (!resolved) {
+        // resolveEachArray がエラーログを出す。手続きは止めない。
+        return;
+      }
+      const nextArray = resolved.array.slice();
+      let changed = false;
+      for (const write of group) {
+        const index = Procedure.resolveRowArrayIndex(write, nextArray);
+        if (index === null) {
+          continue;
+        }
+        const item = nextArray[index];
+        if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+          // プリミティブ配列の行は入力欄の name と対応付けられない
+          // （`Core.applyRowFormValues` と同じ条件）。
+          Log.warn(
+            'Haori',
+            'Row data is not an object; the write was skipped' +
+              ` (${write.attributeName}).`,
+          );
+          continue;
+        }
+        const nextItem = write.apply(item as Record<string, unknown>);
+        if (Procedure.isSameRowItem(item, nextItem)) {
+          // 内容が変わらないなら書き戻さない。書き戻すと所有者の再評価が走り、
+          // 行内の `data-fetch` が再発火して往復が止まらなくなる（同じ値を書く
+          // 二度目のコピーで無用な再描画を起こさないためでもある）。
+          continue;
+        }
+        nextArray[index] = nextItem;
+        changed = true;
+      }
+      if (!changed) {
+        return;
+      }
+      const write = Core.setBindingData(
+        resolved.owner.getTarget(),
+        Procedure.withPathValue(resolved.ownerData, resolved.path, nextArray),
+        new Set(),
+        // マネージド `data-fetch` はバインドワークの内部から起動・await される。
+        // 所有者が実行中のバインドワークを持つときに FIFO キューへ積むと、相互に
+        // 待ち合って自己デッドロックするため、その場合だけ reentrant（即時実行）に
+        // する（`bindResult()` の各分岐と同じ扱い）。
+        this.reentrantBind && resolved.owner.isExecutingBindingWork(),
+        true,
+        // 対象は配列の一部の要素だけなので、他の行の編集の印は解除しない。要素
+        // データが入れ替わる再利用行の印は差分更新（Core.updateDiff）が個別に
+        // 解除する（`spliceRows()` と同じ扱い）。
+        null,
+      );
+      if (Core.isEachUpdateRunning(container)) {
+        // 行の描画中に起動された処理（行の中の `data-fetch` など）からの書き戻し。
+        // 完了を待つと、描画ループ側はこの処理を含む行の初期化の完了を待っている
+        // ため相互に待ち合って止まる。バインドデータは `Core.setBindingData()` が
+        // 同期で確定しており、描画は進行中のループが再実行で拾うため待たない。
+        write.catch(error => {
+          Log.error('Haori', 'Failed to write row data.', error);
+        });
+        return;
+      }
+      promises.push(write);
+    });
+    return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * 行の要素データが同じ内容かどうかを判定します。
+   *
+   * 直列化できない値（循環参照など）は「変わった」と扱います。キーの並びが違えば
+   * 別物と判定しますが、書き戻した後は同じ並びになるため往復は 1 回で収束します。
+   *
+   * @param before 書き込み前の要素データ
+   * @param after 書き込み後の要素データ
+   * @returns 同じ内容なら true
+   */
+  private static isSameRowItem(before: unknown, after: unknown): boolean {
+    if (before === after) {
+      return true;
+    }
+    try {
+      return JSON.stringify(before) === JSON.stringify(after);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 行に対応する配列要素のインデックスを解決します。
+   *
+   * `data-each-key` 指定時はキーで対応付けます。位置で決めると、応答を待つ間に
+   * 並べ替えや行の増減があったとき別のレコードへ書いてしまいます。
+   *
+   * @param write 行への書き込み要求
+   * @param array 現在の配列
+   * @returns 配列のインデックス。解決できない場合は null
+   */
+  private static resolveRowArrayIndex(
+    write: RowWrite,
+    array: unknown[],
+  ): number | null {
+    const position = Procedure.getRowFragments(write.container).indexOf(
+      write.row,
+    );
+    if (position === -1) {
+      // 応答を待つ間に行が削除された場合。無関係な行へ書かないよう捨てる。
+      Log.warn(
+        'Haori',
+        'The target row is no longer in the' +
+          ` ${Env.prefix}each container; the write was skipped` +
+          ` (${write.attributeName}).`,
+      );
+      return null;
+    }
+    const keyArg = write.container.getAttribute(`${Env.prefix}each-key`);
+    const listKey = write.row.getListKey();
+    if (keyArg && listKey !== null) {
+      const found = array.findIndex(
+        (item, index) =>
+          Core.createListKey(
+            item as Record<string, unknown> | string | number,
+            String(keyArg),
+            index,
+          ) === listKey,
+      );
+      if (found === -1) {
+        Log.warn(
+          'Haori',
+          'No array element matches the target row key' +
+            ` "${listKey}"; the write was skipped` +
+            ` (${write.attributeName}).`,
+        );
+        return null;
+      }
+      return found;
+    }
+    if (position >= array.length) {
+      Log.warn(
+        'Haori',
+        'The target row index is out of range; the write was skipped' +
+          ` (${write.attributeName}).`,
+      );
+      return null;
+    }
+    return position;
   }
 
   /**
