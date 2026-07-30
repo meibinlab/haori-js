@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.30.1
+バージョン: 0.31.0
 
 ## 目次
 
@@ -1233,7 +1233,26 @@ HTML のラジオボタンは「同じフォームの中の同名要素」で 1 
 </form>
 ```
 
-レコード（例 `correspondenceItem`）を編集するフォームでは、フォームの `data-bind` をそのオブジェクトのフィールドで初期化する（`category` に `correspondenceItem.category` を入れて束縛する）か、フォームをそのオブジェクトへ束縛して `name` をそのフィールドに対応させると、初期表示・編集・保存が一貫します。要は **`data-attr-selected` / `data-attr-checked` / `data-attr-value` の式が参照するキーと、その要素の `name` がフォームへ書き込むキーを一致させる**ことです。
+**推奨③: レコードを祖先に置いたまま、`data-form-arg` でそのキーを編集する。** 祖先が持つレコード（例 `correspondenceItem`）をフォームへコピーせずに、そのキーを `data-form-arg` に指定します。入力欄には祖先のレコードの値が入り、`name` の書込先も同じキー配下（`correspondenceItem.category`）になります。
+
+```html
+<!-- ✅ 推奨③: 祖先がレコードを所有し、フォームがそのキーを編集する -->
+<div id="state" data-bind='{"correspondenceItem":{"id":7,"category":"BILLING_OTHER"}}'>
+  <form data-form-arg="correspondenceItem">
+    <select name="category" required>
+      <option value=""></option>
+      <option value="BILLING_OTHER">請求その他</option>
+    </select>
+    <!-- 入力欄に無いフィールドもコミット後に参照できる -->
+    <button data-click-fetch="/api/items/{{correspondenceItem.id}}"
+      data-click-form>保存</button>
+  </form>
+</div>
+```
+
+一覧で選んだ行を編集フォームへ出す構成では、祖先（`#state`）の `correspondenceItem` を差し替えるだけで入力欄が入れ替わります。値が変わっていない更新では入力欄に触らないため、編集中の内容が同じ値で巻き戻ることもありません。対象は祖先の `data-bind` が持つキーで、`data-each` の行データは対象外です（行の編集は `data-form-list` を使います）。
+
+いずれの書き方でも、要点は **`data-attr-selected` / `data-attr-checked` / `data-attr-value` の式が参照するキーと、その要素の `name` がフォームへ書き込むキーを一致させる**ことです。
 
 ### 数値フィールド（`type="number"`）は数値型で扱われる
 

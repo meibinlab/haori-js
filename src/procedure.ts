@@ -2224,7 +2224,16 @@ ${body}
         // 食い違い、宣言バインドの参照元が更新されない。
         const formArg = formFragment.getAttribute(`${Env.prefix}form-arg`);
         if (formArg) {
-          bindingData[String(formArg)] = formValues;
+          const key = String(formArg);
+          // 祖先が当該キーを所有する場合はその値を土台に収集値を重ねる。収集値だけで
+          // 置き換えると入力欄に無いフィールド（`id` など）が抜け落ち、このコピーが
+          // 祖先をシャドーするためフォーム内の式から参照できなくなる。祖先が当該キーを
+          // 更新したときはコピーを解除して入れ直すため（`Form.syncAncestorArgForms()`）、
+          // 古い値が残り続けることはない。
+          const ancestor = Form.resolveAncestorArgOwner(formFragment, key);
+          bindingData[key] = ancestor
+            ? {...ancestor.value, ...formValues}
+            : formValues;
         } else {
           Object.assign(bindingData, formValues);
         }
@@ -3000,8 +3009,11 @@ ${body}
    *    （`Form.syncValues`）と宣言バインドの再評価（`data-attr-*` など）の双方が
    *    この 1 か所で整合します。
    *
-   * 上書き（2）の対象は `<form>` へのバインドだけです。入力欄への書き戻しが
-   * 起きるのは `Core.setBindingData()` がフォームを対象にしたときに限られます。
+   * 上書き（2）の対象は、`<form>` へのバインドと、配下に `data-form-arg` フォームを
+   * 持つ要素へのバインドです。後者は祖先が所有するレコードをフォームが編集する構成で、
+   * 祖先の更新がそのフォームの入力欄へ流し込まれます
+   * （`Form.syncAncestorArgForms()`）。それ以外のバインドでは入力欄への書き戻しが
+   * 起きないため、上書きは不要です。
    *
    * @param fragment バインド先のフラグメント
    * @param data バインドする応答データ
@@ -3025,7 +3037,11 @@ ${body}
       Core.clearUserEditMarks(fragment, baseline);
     }
     if (!(fragment.getTarget() instanceof HTMLFormElement)) {
-      return data;
+      return this.reconcileAncestorArgFormEdits(
+        fragment,
+        data,
+        isAutomaticPoll ? 0 : baseline,
+      );
     }
     const edited = Form.getValuesEditedAfter(
       fragment,
@@ -3046,6 +3062,45 @@ ${body}
       return {...data, [key]: mergeUserEdits(base, edited)};
     }
     return mergeUserEdits(data, edited) as Record<string, unknown>;
+  }
+
+  /**
+   * 祖先へのバインドについて、配下の `data-form-arg` フォームで送信後に行われた
+   * 編集を応答データへ上書きし直します。
+   *
+   * 祖先が所有するレコードは、更新時にそのキーを指定したフォームの入力欄へ
+   * 流し込まれます（`Form.syncAncestorArgForms()`）。応答は送信時点の内容を
+   * 反映したものなので、そのまま流し込むと送信後の編集が画面からも収集値からも
+   * 静かに消えます。フォーム自身へのバインドと同じ扱いに揃えます。
+   *
+   * @param fragment バインド先のフラグメント
+   * @param data バインドする応答データ
+   * @param baseline この通し番号より後の編集を保護する
+   * @return ユーザー編集分を上書きしたデータ
+   */
+  private reconcileAncestorArgFormEdits(
+    fragment: ElementFragment,
+    data: Record<string, unknown>,
+    baseline: number,
+  ): Record<string, unknown> {
+    let result = data;
+    for (const {form, key} of Form.collectArgForms(fragment)) {
+      if (!Object.prototype.hasOwnProperty.call(result, key)) {
+        // 応答が当該キーを含まない場合は流し込みが起きないため対象外。
+        continue;
+      }
+      const edited = Form.getValuesEditedAfter(form, baseline);
+      if (Object.keys(edited).length === 0) {
+        continue;
+      }
+      const scoped = result[key];
+      const base =
+        scoped && typeof scoped === 'object' && !Array.isArray(scoped)
+          ? (scoped as Record<string, unknown>)
+          : {};
+      result = {...result, [key]: mergeUserEdits(base, edited)};
+    }
+    return result;
   }
 
   /**

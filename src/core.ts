@@ -905,6 +905,12 @@ export default class Core {
           );
         });
       }
+      // 配下の `data-form-arg` フォームのうち、このフラグメントが当該キーを所有する
+      // ものへ値を流し込む。祖先がレコードを持ち、フォームがそのキーを編集する構成
+      // （`data-form-arg` と祖先のキーが対応する構成）を成立させるため。
+      // 再評価より前に行うのは自フォームへの書き戻しと同じ理由（宣言バインドの
+      // 評価結果を後から入れ直す）。
+      chain = chain.then(() => Form.syncAncestorArgForms(fragment));
       chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
       chain = chain.then(() =>
         Core.reevaluateReactiveSpecialAttributes(fragment, skipFragments),
@@ -1147,7 +1153,14 @@ export default class Core {
         if (!bindingData) {
           bindingData = {};
         }
-        bindingData[String(arg)] = values;
+        const key = String(arg);
+        // 祖先が当該キーを所有する場合は、その値を土台に収集値を重ねる。収集値だけで
+        // 置き換えると、入力欄に無いフィールド（`id` など）がフォーム自身のコピーから
+        // 抜け落ち、そのコピーが祖先をシャドーするためフォーム内の式から参照できなく
+        // なる。祖先が当該キーを更新したときはこのコピーを解除して入れ直すため
+        // （`Form.syncAncestorArgForms()`）、古い値が残り続けることはない。
+        const ancestor = Form.resolveAncestorArgOwner(formFragment, key);
+        bindingData[key] = ancestor ? {...ancestor.value, ...values} : values;
       } else {
         bindingData = values;
       }

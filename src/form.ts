@@ -53,6 +53,18 @@ export default class Form {
   private static readonly INITIAL_RESTORED_FORMS = new WeakSet<HTMLElement>();
 
   /**
+   * `data-form-arg` のキーを祖先から流し込んだ最後の内容（JSON 文字列）。
+   *
+   * 祖先のバインド更新は、当該キーの値が実際に変わったときだけ入力欄へ反映します。
+   * 変わっていない更新（同じ祖先の別キーの更新など）でも反映すると、利用者が
+   * 確定した編集を同じ値で上書きし直して巻き戻してしまうためです。
+   */
+  private static readonly LAST_ANCESTOR_ARG_VALUES = new WeakMap<
+    HTMLElement,
+    string
+  >();
+
+  /**
    * フォーム内にある入力エレメントの値をオブジェクトとして取得します。
    * data-form-object属性があると、そのエレメント内の値はオブジェクトとして処理されます。
    * 入力エレメントにdata-form-list属性があると、そのエレメントの値はリストとして処理されます。
@@ -604,6 +616,10 @@ export default class Form {
    * オブジェクトでなければ空オブジェクトを返します（フォーム外のキーを入力欄へ
    * 書き戻さないため）。指定が無ければバインディングデータ全体が対象です。
    *
+   * フォーム自身が当該キーを持たない場合は、祖先の `data-bind` が所有する同名の
+   * キーへフォールバックします（`resolveAncestorArgOwner()` を参照）。祖先が
+   * レコードを所有し、フォームがそのキーを編集する構成を成立させるためです。
+   *
    * @param form フォームのElementFragment
    * @param data 対象のバインディングデータ
    * @returns 入力欄へ書き戻す値
@@ -616,10 +632,168 @@ export default class Form {
     if (!arg) {
       return data;
     }
-    const scoped = data[String(arg)];
-    return scoped && typeof scoped === 'object' && !Array.isArray(scoped)
-      ? (scoped as Record<string, unknown>)
-      : {};
+    const key = String(arg);
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      // フォーム自身が所有するキーは祖先をシャドーする。
+      return Form.asPlainRecord(data[key]) ?? {};
+    }
+    return Form.resolveAncestorArgOwner(form, key)?.value ?? {};
+  }
+
+  /**
+   * `data-form-arg` のキーを所有する祖先を解決します。
+   *
+   * 対象はフォームより外側の要素の**生バインドデータ**（`data-bind` で宣言・更新
+   * された値）だけです。`data-derive` の派生データと `data-each` の行データは対象外
+   * とします。どちらも描画のたびに作り直される仮想スコープで、行単位の書き戻しは
+   * `data-form-list` が担うため、ここで扱うと反映が行生成と競合します。
+   *
+   * 最も近い所有者だけを見ます。その値がオブジェクトでない場合、または所有者が
+   * `data-each` の行である場合は、より外側は探しません（近い方が権威という
+   * シャドーの規則に従うため）。
+   *
+   * @param form フォームのElementFragment
+   * @param key `data-form-arg` で指定されたキー名
+   * @returns 所有する祖先フラグメントとその値。見つからない場合は null
+   */
+  public static resolveAncestorArgOwner(
+    form: ElementFragment,
+    key: string,
+  ): {owner: ElementFragment; value: Record<string, unknown>} | null {
+    let cursor = form.getParent();
+    while (cursor) {
+      const raw = cursor.getRawBindingData();
+      if (raw && Object.prototype.hasOwnProperty.call(raw, key)) {
+        if (cursor.getListKey() !== null) {
+          // `data-each` の行データは対象外。
+          return null;
+        }
+        const value = Form.asPlainRecord(raw[key]);
+        return value ? {owner: cursor, value} : null;
+      }
+      cursor = cursor.getParent();
+    }
+    return null;
+  }
+
+  /**
+   * 配列でないプレーンなオブジェクトであれば、その値を返します。
+   *
+   * @param value 判定する値
+   * @returns オブジェクトの場合はその値。それ以外は null
+   */
+  private static asPlainRecord(
+    value: unknown,
+  ): Record<string, unknown> | null {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  /**
+   * 祖先のバインドデータ更新を、配下の `data-form-arg` フォームの入力欄へ反映します。
+   *
+   * 対象は「当該キーを所有するのが更新された祖先自身」であるフォームだけです。
+   * 間に同名キーを持つ要素があればそちらが権威なので対象外とします。
+   *
+   * @param fragment 更新された祖先のフラグメント
+   * @returns 反映完了の Promise
+   */
+  public static syncAncestorArgForms(
+    fragment: ElementFragment,
+  ): Promise<void> {
+    const promises: Promise<void>[] = [];
+    for (const {form, key} of Form.collectArgForms(fragment)) {
+      const owner = Form.resolveAncestorArgOwner(form, key);
+      if (!owner || owner.owner !== fragment) {
+        continue;
+      }
+      promises.push(Form.pushAncestorArgValue(form, key, owner.value));
+    }
+    return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * 指定要素の配下にある `data-form-arg` 付きフォームを列挙します。
+   *
+   * @param root 走査の起点フラグメント
+   * @returns フォームフラグメントと `data-form-arg` のキー名の組
+   */
+  public static collectArgForms(
+    root: ElementFragment,
+  ): Array<{form: ElementFragment; key: string}> {
+    const attribute = `${Env.prefix}form-arg`;
+    const elements = root.getTarget().querySelectorAll(`form[${attribute}]`);
+    const result: Array<{form: ElementFragment; key: string}> = [];
+    elements.forEach(element => {
+      const form = Fragment.get(element as HTMLElement);
+      if (!(form instanceof ElementFragment)) {
+        return;
+      }
+      const arg = form.getAttribute(attribute);
+      if (!arg) {
+        return;
+      }
+      result.push({form, key: String(arg)});
+    });
+    return result;
+  }
+
+  /**
+   * 祖先が所有するレコードを、フォームの入力欄へ流し込みます。
+   *
+   * 前回流し込んだ内容と同じであれば何もしません。同じ値でも書き戻すと、利用者が
+   * 確定した編集を巻き戻してしまうためです。
+   *
+   * フォーム自身が同名のキーを持っている場合（双方向コミットが書き込んだコピー）は
+   * それを取り除きます。残したままにすると以降の祖先の更新がシャドーされ、
+   * フォーム内の式が参照する値と入力欄の内容が食い違います。
+   *
+   * @param form フォームのElementFragment
+   * @param key `data-form-arg` で指定されたキー名
+   * @param value 祖先が所有する値
+   * @returns 反映完了の Promise
+   */
+  private static pushAncestorArgValue(
+    form: ElementFragment,
+    key: string,
+    value: Record<string, unknown>,
+  ): Promise<void> {
+    const element = form.getTarget();
+    const signature = Form.createArgValueSignature(value);
+    if (signature !== null) {
+      if (Form.LAST_ANCESTOR_ARG_VALUES.get(element) === signature) {
+        return Promise.resolve();
+      }
+      Form.LAST_ANCESTOR_ARG_VALUES.set(element, signature);
+    } else {
+      Form.LAST_ANCESTOR_ARG_VALUES.delete(element);
+    }
+    const raw = form.getRawBindingData();
+    if (raw && Object.prototype.hasOwnProperty.call(raw, key)) {
+      const rest = {...raw};
+      delete rest[key];
+      // フォーム自身のバインドデータ更新に伴う逆方向同期で入力欄へ反映される
+      // （`resolveSyncValues()` が祖先へフォールバックする）。
+      return Core.setBindingData(element, rest);
+    }
+    return Form.syncValues(form, value);
+  }
+
+  /**
+   * 流し込み済み判定に使う値の署名を作ります。
+   *
+   * @param value 対象の値
+   * @returns JSON 文字列。直列化できない場合は null（毎回反映する扱いにする）
+   */
+  private static createArgValueSignature(
+    value: Record<string, unknown>,
+  ): string | null {
+    try {
+      return JSON.stringify(value) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -631,10 +805,10 @@ export default class Form {
    * 残り、最初の `change` で全項目を収集した際に空値として確定して他項目の値を失う
    * 問題がありました。本メソッドは初回スキャン時に一度だけ逆方向同期を適用します。
    *
-   * 対象は `<form>` 要素のうち `data-bind` を持つものだけです（`Core.setBindingData()`
-   * の逆方向同期と同じ範囲）。`data-bind` に含まれないキーの入力欄は
-   * `setPartValues()` の規則により既存値が維持されるため、HTML の `value` 属性で
-   * 与えた初期値は保たれます。
+   * 対象は `<form>` 要素のうち `data-bind` を持つもの、および `data-form-arg` の
+   * キーを祖先の `data-bind` が所有するものです。`data-bind` に含まれないキーの
+   * 入力欄は `setPartValues()` の規則により既存値が維持されるため、HTML の `value`
+   * 属性で与えた初期値は保たれます。
    *
    * @param root 走査の起点要素
    * @returns 反映完了の Promise
@@ -657,13 +831,30 @@ export default class Form {
         continue;
       }
       const data = fragment.getRawBindingData();
-      if (!data) {
-        // data-bind を持たないフォームは反映対象が無い。
+      const arg = fragment.getAttribute(`${Env.prefix}form-arg`);
+      const key = arg ? String(arg) : null;
+      // フォーム自身が当該キーを持たない場合は祖先所有のレコードを探す。
+      const ancestor =
+        key !== null &&
+        !(data && Object.prototype.hasOwnProperty.call(data, key))
+          ? Form.resolveAncestorArgOwner(fragment, key)
+          : null;
+      if (!data && !ancestor) {
+        // data-bind も祖先所有キーも無いフォームは反映対象が無い。
         continue;
       }
       Form.INITIAL_RESTORED_FORMS.add(form);
+      if (ancestor) {
+        promises.push(
+          Form.pushAncestorArgValue(fragment, key as string, ancestor.value),
+        );
+        continue;
+      }
       promises.push(
-        Form.syncValues(fragment, Form.resolveSyncValues(fragment, data)),
+        Form.syncValues(
+          fragment,
+          Form.resolveSyncValues(fragment, data as Record<string, unknown>),
+        ),
       );
     }
     return Promise.all(promises).then(() => undefined);
@@ -991,7 +1182,17 @@ export default class Form {
       // 意図的に初期宣言キーを保持したうえでフォーム値を上書きする。
       const bindingData = {...(initial || {})};
       if (arg) {
-        bindingData[String(arg)] = values;
+        const key = String(arg);
+        // 祖先が所有するキー（初期宣言に無いキー）は、リセット後もフォーム自身に
+        // コピーを作らない。祖先を権威のままにするためで、作ると以降その祖先を
+        // 更新してもフォーム自身の古いコピーにシャドーされて届かなくなる。
+        // 入力欄の内容はこの前段の `Core.setBindingData()` で祖先の値へ戻っている。
+        const ancestorOwned =
+          !Object.prototype.hasOwnProperty.call(initial ?? {}, key) &&
+          Form.resolveAncestorArgOwner(formFragment, key) !== null;
+        if (!ancestorOwned) {
+          bindingData[key] = values;
+        }
       } else {
         Object.assign(bindingData, values);
       }
