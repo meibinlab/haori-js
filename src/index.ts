@@ -42,4 +42,4 @@ export const enhancers = Haori.enhancers;
 export default Haori;
 
 // バージョン情報
-export const version = '0.37.1';
+export {VERSION as version} from './version';

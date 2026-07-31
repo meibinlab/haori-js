@@ -172,8 +172,7 @@ export default class Enhance {
     if (!root || typeof root.querySelectorAll !== 'function') {
       return;
     }
-    const selector =
-      `[${Env.prefix}enhance],[${Env.prefix}enhance-new]`;
+    const selector = `[${Env.prefix}enhance],[${Env.prefix}enhance-new]`;
     if (typeof root.matches === 'function' && root.matches(selector)) {
       callback(root);
     }

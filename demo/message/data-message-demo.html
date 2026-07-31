@@ -44,8 +44,9 @@
   <h3>スクリプトから付け外しする</h3>
   <p>
     画面個別の JavaScript からは addMessage() / addErrorMessage() / clearMessages() で
-    付け外しできます。iife 版のグローバルはモジュールの名前空間なので、クラスは
-    <code>Haori.Haori</code>（ESM では <code>import Haori from 'haori'</code>）で取り出します。
+    付け外しできます。iife 版のグローバル <code>window.Haori</code> がそのままクラスなので、
+    <code>Haori.addErrorMessage(...)</code> と書けます（ESM では
+    <code>import Haori from 'haori'</code>）。
   </p>
   <!--
     addMessage() は入力要素を渡すと「その親要素」へ属性を付けるため、
@@ -59,28 +60,15 @@
   <button type="button" id="clear-message">消す</button>
 
   <script>
-    /**
-     * Haori のクラス API を取り出します。
-     *
-     * @returns Haori クラス（見つからない場合は null）
-     */
-    function haoriApi() {
-      return (
-        (window.Haori &&
-          (window.Haori.Haori || window.Haori.default || window.Haori)) ||
-        null
-      );
-    }
-
     document.getElementById('add-error').addEventListener('click', function () {
       // 入力要素を渡すと、その親要素へ付きます。
-      haoriApi().addErrorMessage(
+      window.Haori.addErrorMessage(
         document.getElementById('tel'),
         '電話番号の桁数が足りません',
       );
     });
     document.getElementById('clear-message').addEventListener('click', function () {
-      haoriApi().clearMessages(document.getElementById('dynamic-field'));
+      window.Haori.clearMessages(document.getElementById('dynamic-field'));
     });
   </script>
 </body>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-click-copy デモ（値の転送）</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; max-width: 960px; }
+    h1 { border-bottom: 3px solid #4CAF50; padding-bottom: 8px; }
+    h2 { color: #2e7d32; margin-top: 28px; }
+    .panel { border: 1px solid #ddd; border-radius: 4px; padding: 12px 16px; background: #fafafa; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+    th { background: #eef5ee; }
+    button { padding: 4px 10px; }
+    .note { color: #555; font-size: 13px; }
+    .warn { border-left: 4px solid #ef6c00; background: #fff8e1; padding: 8px 12px; }
+    dl { margin: 0; }
+    dt { font-weight: bold; color: #555; }
+    dd { margin: 0 0 6px 1em; }
+  </style>
+</head>
+<body>
+  <h1>data-click-copy デモ（値の転送）</h1>
+  <p>
+    <code>data-{event}-copy</code> は、コピー元のバインディングデータを別の要素の
+    バインドスコープへ転送します。取得（fetch）を伴わずに、画面内で値を受け渡したい
+    ときに使います。
+  </p>
+
+  <h2>1. フォームの入力値を確定パネルへ写す</h2>
+  <p class="note">
+    <code>data-{event}-form</code> を指定すると、そのフォームの現在の入力値がコピー元に
+    なります。<code>data-{event}-copy-params</code> で転送するキーを絞れます。
+  </p>
+  <form class="panel" id="search-form">
+    <label>キーワード <input name="keyword" value="haori"></label>
+    <label>ページ <input name="page" type="number" value="1" style="width: 5em;"></label>
+    <button
+      type="button"
+      id="commit-search"
+      data-click-form="#search-form"
+      data-click-copy="#search-committed"
+      data-click-copy-params="keyword"
+    >検索条件を確定（keyword だけ）</button>
+  </form>
+  <div class="panel" id="search-committed" data-bind='{"keyword":"","page":""}'>
+    <dl>
+      <dt>確定したキーワード</dt>
+      <dd id="committed-keyword">{{keyword}}</dd>
+      <dt>確定したページ（コピー対象外なので空のまま）</dt>
+      <dd id="committed-page">{{page}}</dd>
+    </dl>
+  </div>
+
+  <h2>2. 一覧の行から、行の外の共有パネルへ写す</h2>
+  <p class="note">
+    行ごとのボタンから「その行の値」を行の外へ渡す使い方です。行の値を
+    <code>data-{event}-copy-source</code> で明示するのが要点です。
+  </p>
+  <div class="warn">
+    <p class="note" style="margin: 0;">
+      <strong>コピー元は「その要素自身が持つ値」だけです。</strong>
+      祖先から継承した値は含みません（祖先が持つ一覧の配列などがコピー先へ焼き付き、
+      以降の更新を隠してしまうためです）。行の中のボタンは自分のバインディング
+      データを持たないため、<code>data-{event}-copy-source</code>
+      を省くと何もコピーされません。行に一意な id を組み立てて、行そのものを
+      コピー元に指定してください。
+    </p>
+  </div>
+  <div class="panel" data-bind='{"members":[
+    {"id":"M-01","name":"山田太郎","plan":"standard"},
+    {"id":"M-02","name":"佐藤花子","plan":"premium"},
+    {"id":"M-03","name":"鈴木一郎","plan":"standard"}
+  ]}'>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>氏名</th><th>プラン</th><th>操作</th></tr>
+      </thead>
+      <tbody data-each="members" data-each-key="id">
+        <!-- コピー元として指せるように、行ごとに一意な id を組み立てる -->
+        <tr id="member-row-{{id}}">
+          <td>{{id}}</td>
+          <td>{{name}}</td>
+          <td>{{plan == 'premium' ? '上位' : '標準'}}</td>
+          <td>
+            <button
+              type="button"
+              class="pick"
+              data-click-copy="#member-detail"
+              data-click-copy-source="#member-row-{{id}}"
+              data-click-copy-params="id&name&plan"
+            >詳細へ写す</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="panel" id="member-detail" data-bind='{"id":"","name":"","plan":""}'>
+    <dl>
+      <dt>選択した会員</dt>
+      <dd id="detail-name">{{name}}</dd>
+      <dt>会員ID</dt>
+      <dd id="detail-id">{{id}}</dd>
+      <dt>プラン</dt>
+      <dd id="detail-plan">{{plan}}</dd>
+    </dl>
+    <!-- 送信用の hidden 値。value 属性は data-attr-value で反映する -->
+    <input type="hidden" name="id" data-attr-value="{{id}}">
+  </div>
+
+  <h2>3. コピー元の指定を省いた場合</h2>
+  <p class="note">
+    比較のため、<code>data-{event}-copy-source</code> を省いた同じボタンを置きます。
+    押しても転送先は変わりません（ボタン自身がバインディングデータを持たないため）。
+    0.32.0 以前は祖先から継承した値もコピー元に含めていたため、この書き方でも
+    行の値が写っていました。0.33.0 で継承分を含めない仕様へ変更しています。
+  </p>
+  <div class="panel" data-bind='{"rows":[{"code":"A-1","label":"アルファ"}]}'>
+    <ul data-each="rows" data-each-key="code">
+      <li>
+        <span>{{label}}</span>
+        <button
+          type="button"
+          id="pick-without-source"
+          data-click-copy="#legacy-detail"
+          data-click-copy-params="code&label"
+        >コピー元を省いて写す</button>
+      </li>
+    </ul>
+  </div>
+  <div class="panel" id="legacy-detail" data-bind='{"code":"(未設定)","label":"(未設定)"}'>
+    <dl>
+      <dt>コード</dt>
+      <dd id="legacy-code">{{code}}</dd>
+      <dt>名称</dt>
+      <dd id="legacy-label">{{label}}</dd>
+    </dl>
+  </div>
+
+  <p><a href="../index.html">デモ一覧へ戻る</a></p>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

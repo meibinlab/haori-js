@@ -3692,6 +3692,32 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 </button>
 ```
 
+**`data-each` の行から行の外へ転送する場合は本属性が必須です。** 行の中のボタンは
+自分のバインディングデータを持たないため、コピー元を省くと（祖先の行の値は継承分
+として除外されるため）何もコピーされません。行に一意な `id` を組み立てて、行その
+ものをコピー元に指定します。
+
+```html
+<tbody data-each="members" data-each-key="id">
+  <!-- コピー元として指せるように、行ごとに一意な id を組み立てる -->
+  <tr id="member-row-{{id}}">
+    <td>{{name}}</td>
+    <td>
+      <button
+        data-click-copy="#member-detail"
+        data-click-copy-source="#member-row-{{id}}"
+        data-click-copy-params="id&name"
+      >詳細へ写す</button>
+    </td>
+  </tr>
+</tbody>
+```
+
+> **0.32.0 以前からの移行**: 0.32.0 以前はコピー元に祖先から継承した値も含めていた
+> ため、本属性を省いても行の値が写っていました。0.33.0 の変更後は、コピー元の指定を
+> 省いた箇所がエラーも警告も出さずに何もコピーしなくなります。該当箇所には本属性を
+> 追記してください。
+
 #### フィールド間の条件
 
 `data-attr-required` / `data-attr-disabled` と `data-if` はフィールド間の条件を**表示**できますが、押下の**ブロック**には使えません。属性値の反映はキュー（`requestAnimationFrame`）で行われるため、「最後の欄を直してそのまま次へを押す」操作ではクリック時点の属性が 1 フレーム古く、条件を満たしていない状態で手続きが走ります（逆に、直した直後は `disabled` が残っていてクリックが無視されます）。
@@ -4234,7 +4260,16 @@ Haori.jsは以下のカスタムイベントを発火します。すべてのイ
 
 #### `haori:ready`
 
-Haori.js初期化完了時に発火します。
+Haori.js初期化完了時に `document` で発火します。発火するのは、初期スキャンと
+初期フェッチが終わり、`<body>` へ [`data-haori-ready`](#data-haori-ready-属性) を
+付与し、DOM 監視と表示範囲の同期を整え、初期化中に保留していた手続きを解除した
+**後**です。そのため購読側から Haori の機能をその場で呼び出せます。初期化が
+失敗した場合は発火しません。
+
+購読は**ライブラリの読み込みより前**に登録してください（`<script src>` より前の
+インラインスクリプトなど）。読み込み後に登録すると、初期化が先に完了していた
+場合に取りこぼします。CSS で初期表示のちらつきを防ぐだけなら、イベントではなく
+`data-haori-ready` 属性を使うほうが取りこぼしがありません。
 
 ```javascript
 document.addEventListener('haori:ready', (event) => {
@@ -4244,7 +4279,7 @@ document.addEventListener('haori:ready', (event) => {
 
 **detail**:
 ```typescript
-{ version: string }
+{ version: string }  // ライブラリのバージョン（例: '0.37.1'）
 ```
 
 > **補足**: `data-each` の描画完了を検知したい場合は、専用の完了マーカー
@@ -4319,9 +4354,19 @@ element.addEventListener('haori:eachupdate', (event) => {
 }
 ```
 
+#### 行イベントの共通仕様
+
+`haori:rowadd` / `haori:rowremove` / `haori:rowmove` は、`data-each` の差分更新で行ごとに発火します。共通の仕様は次のとおりです。
+
+- 発火対象は**行要素**（`data-row` が付いた要素）です。`bubbles: true` のため、`data-each` コンテナや `document` でまとめて購読できます。
+- `key` は差分更新で使うリストキーです（`data-each-key` を指定した場合はそのプロパティの値、指定しない場合は内部生成のキー）。
+- インデックスは `data-each-before` / `data-each-after` の固定要素を除いた、**行だけの並び**で数えます。
+- リスト全体を 1 回で受け取りたい場合は `haori:eachupdate` を使います。行イベントは行数だけ発火するため、大きなリストでは購読側の処理量に注意してください。
+- 外部ライブラリの初期化・後片付けが目的であれば、行イベントを購読する代わりに `data-enhance` の宣言を使えます。
+
 #### `haori:rowadd`
 
-行が追加された時に発火します。
+行が追加された時に発火します。行の内容（`{{...}}` の補間や入れ子の `data-each`）の描画と、`data-form-list` 配下の入力欄への値の反映を終えてから発火するため、購読側から行内の DOM をそのまま参照できます。
 
 ```javascript
 element.addEventListener('haori:rowadd', (event) => {
@@ -4335,14 +4380,14 @@ element.addEventListener('haori:rowadd', (event) => {
 ```typescript
 {
   key: string
-  index: number
-  item: unknown
+  index: number  // 新しい配列でのインデックス
+  item: unknown  // 行の要素データ
 }
 ```
 
 #### `haori:rowremove`
 
-行が削除された時に発火します。
+行が削除された時に発火します。行が DOM から外れる**前**に発火します（外れた後では祖先へ伝播せず、コンテナで購読できないためです）。`event.target` から削除される行要素を参照できます。
 
 ```javascript
 element.addEventListener('haori:rowremove', (event) => {
@@ -4355,13 +4400,13 @@ element.addEventListener('haori:rowremove', (event) => {
 ```typescript
 {
   key: string
-  index: number
+  index: number  // 削除前の並びでのインデックス
 }
 ```
 
 #### `haori:rowmove`
 
-行が移動した時に発火します。
+行が移動した時に発火します。差分更新で行の位置が実際に変わった場合だけ発火し、位置が変わらない行では発火しません。
 
 ```javascript
 element.addEventListener('haori:rowmove', (event) => {
@@ -4375,8 +4420,8 @@ element.addEventListener('haori:rowmove', (event) => {
 ```typescript
 {
   key: string
-  from: number
-  to: number
+  from: number  // 移動前のインデックス（削除の反映後・追加の反映前）
+  to: number    // 新しい配列でのインデックス
 }
 ```
 
@@ -4573,6 +4618,7 @@ element.addEventListener('haori:pollstop', (event) => {
 // クラス
 export {
   Core,      // コア機能
+  Enhance,   // 外部ライブラリ連携（data-enhance）
   Env,       // 環境管理
   Fragment,  // Fragment基底クラス + ElementFragment, TextFragment
   Form,      // フォーム操作
@@ -4583,16 +4629,49 @@ export {
 
 // 型
 export type {HaoriRuntime} from './env'
+export type {Enhancer} from './enhance'
 
 // 関数: すべてのレンダリングタスク（追従投入分を含む）の完了を待つ
 export const waitForRenders: () => Promise<void>
+
+// 外部ライブラリ連携の登録窓口
+export const enhancers: typeof Haori.enhancers
 
 // デフォルトエクスポート
 export default Haori
 
 // バージョン
-export const version = '0.10.0'
+export const version: string
 ```
+
+### ブラウザのグローバル (`window.Haori`)
+
+`<script src=".../haori.iife.js">` で読み込んだ場合、グローバル `Haori` は
+**`Haori` クラスそのもの**です。したがってクラスの静的メソッドを直接呼べます。
+
+```javascript
+Haori.addErrorMessage(element, '入力が不正です')
+Haori.clearMessages(element)
+await Haori.waitForRenders()
+Haori.enhancers.register('choices', {init, refresh, destroy})
+```
+
+名前空間側のエクスポート（`Core` / `Enhance` / `Env` / `Form` / `Fragment` /
+`Log` / `Queue` / `version`）は、同じグローバルのプロパティとして参照します。
+
+```javascript
+Haori.Core.dumpScope(element)
+Haori.version // '0.37.1'
+```
+
+`Haori.Haori` と `Haori.default` はグローバル自身への自己参照です
+（`Haori.Haori === Haori`）。0.37.1 以前のグローバルはモジュールの名前空間
+オブジェクトで、クラス API を `Haori.Haori.addMessage(...)` のように 2 段で
+取り出す必要がありました。その書き方は自己参照によって引き続き動作します。
+
+ES Module（`import`）では名前空間の形が変わらないため、クラスは
+`import Haori from 'haori'`、個別のクラスは
+`import {Core, Env} from 'haori'` で取り出します。
 
 ### Core クラス
 

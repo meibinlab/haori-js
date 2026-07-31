@@ -180,3 +180,55 @@ test.describe('data-click-reset / refetch', () => {
     await expect(page.locator('li.user').first()).toHaveText('クリック三郎');
   });
 });
+
+test.describe('data-click-copy / copy-source / copy-params', () => {
+  test('フォームの入力値を、指定したキーだけ転送する', async ({page}) => {
+    const errors = await open(page, '/demo/click/data-click-copy-demo.html');
+    await expect(page.locator('#committed-keyword')).toHaveText('');
+
+    await page.fill('input[name="keyword"]', 'ハオリ');
+    await page.fill('input[name="page"]', '3');
+    await page.locator('#commit-search').click();
+
+    await expect(page.locator('#committed-keyword')).toHaveText('ハオリ');
+    // copy-params に page が無いため、転送先は空のまま。
+    await expect(page.locator('#committed-page')).toHaveText('');
+    expect(errors).toEqual([]);
+  });
+
+  test('行のボタンから、行の値を行の外の共有パネルへ転送する', async ({page}) => {
+    const errors = await open(page, '/demo/click/data-click-copy-demo.html');
+    await expect(page.locator('tbody tr[data-row]')).toHaveCount(3);
+    await expect(page.locator('#detail-name')).toHaveText('');
+
+    // 2 行目（佐藤花子）を選ぶ。copy-source が行を指すため、その行の値が写る。
+    await page.locator('tbody tr[data-row]').nth(1).locator('.pick').click();
+    await expect(page.locator('#detail-name')).toHaveText('佐藤花子');
+    await expect(page.locator('#detail-id')).toHaveText('M-02');
+    await expect(page.locator('#detail-plan')).toHaveText('premium');
+    // hidden 値へも反映される。
+    await expect(page.locator('#member-detail input[name="id"]')).toHaveValue(
+      'M-02',
+    );
+
+    // 別の行を選ぶと、共有パネルの内容が入れ替わる。
+    await page.locator('tbody tr[data-row]').nth(2).locator('.pick').click();
+    await expect(page.locator('#detail-name')).toHaveText('鈴木一郎');
+    await expect(page.locator('#detail-id')).toHaveText('M-03');
+    expect(errors).toEqual([]);
+  });
+
+  test('コピー元を省くと、行の値は転送されない（0.33.0 の仕様変更）', async ({
+    page,
+  }) => {
+    const errors = await open(page, '/demo/click/data-click-copy-demo.html');
+    await expect(page.locator('#legacy-code')).toHaveText('(未設定)');
+
+    await page.locator('#pick-without-source').click();
+    // ボタン自身はバインディングデータを持たないため、転送先は変わらない。
+    // 0.32.0 以前は祖先から継承した行の値が写っていた。
+    await expect(page.locator('#legacy-code')).toHaveText('(未設定)');
+    await expect(page.locator('#legacy-label')).toHaveText('(未設定)');
+    expect(errors).toEqual([]);
+  });
+});

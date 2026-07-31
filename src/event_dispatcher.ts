@@ -239,9 +239,7 @@ export default class EventDispatcher {
     root
       .querySelectorAll(`[${this.onAttributeName}]`)
       .forEach(element =>
-        this.subscribeCustomEvent(
-          element.getAttribute(this.onAttributeName),
-        ),
+        this.subscribeCustomEvent(element.getAttribute(this.onAttributeName)),
       );
   }
 

@@ -4,7 +4,7 @@
   "description": "A lightweight HTML-first UI engine powered by declarative data bindings and expressions.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && vite build --config vite.config.iife.ts",
     "dev:demo": "vite --config demo/vite.config.ts",
     "build:demo": "vite build --config demo/vite.config.ts",
     "preview:demo": "vite preview --config demo/vite.config.ts",
@@ -20,7 +20,7 @@
     "clean": "rm -rf dist",
     "prepare": "npm run compile",
     "pretest": "npm run compile",
-    "posttest": "npm run lint"
+    "posttest": "npm run lint && npm run format:check"
   },
   "repository": {
     "type": "git",

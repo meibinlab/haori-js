@@ -162,6 +162,17 @@ test.describe('haori:* イベント', () => {
         items.map(item => item.getAttribute('data-event-name')),
       );
 
+    // 初期化完了（haori:ready）が発火し、detail にバージョンが入る。
+    await expect.poll(names).toContain('ready');
+    await expect(log.locator('li[data-event-name="ready"]')).toContainText(
+      /"version":"\d+\.\d+\.\d+"/,
+    );
+
+    // 初期描画で行ごとに rowadd が発火する（りんご・みかんの 2 行）。
+    await expect
+      .poll(async () => (await names()).filter(name => name === 'rowadd').length)
+      .toBeGreaterThanOrEqual(2);
+
     // 部分テンプレートの読み込みは表示までに発火する。
     await expect.poll(names).toContain('importstart');
     await expect.poll(names).toContain('importend');
@@ -177,15 +188,28 @@ test.describe('haori:* イベント', () => {
     await expect.poll(names).toContain('bindchange');
     await expect(page.locator('#bind-output')).toContainText('更新しました');
 
-    // 行を追加・削除すると一覧更新（eachupdate）が発火する。
+    // 行を下へ動かすと rowmove が発火する（キーが一意な初期状態で確かめる）。
+    await page.locator('.row-next').first().click();
+    await expect(page.locator('.row-name').first()).toHaveText('みかん');
+    await expect.poll(names).toContain('rowmove');
+
+    // 行を追加すると一覧更新（eachupdate）と行追加（rowadd）が発火する。
     const beforeRows = (await names()).filter(name => name === 'eachupdate')
       .length;
+    const beforeAdds = (await names()).filter(name => name === 'rowadd').length;
     await page.locator('.row-add').first().click();
     await expect
       .poll(async () =>
         (await names()).filter(name => name === 'eachupdate').length,
       )
       .toBeGreaterThan(beforeRows);
+    await expect
+      .poll(async () => (await names()).filter(name => name === 'rowadd').length)
+      .toBeGreaterThan(beforeAdds);
+
+    // 行を削除すると rowremove が発火する。
+    await page.locator('.row-remove').first().click();
+    await expect.poll(names).toContain('rowremove');
 
     // 表示の切り替えで show / hide が発火する。
     await page.uncheck('#visible-toggle');

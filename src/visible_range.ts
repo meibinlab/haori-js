@@ -387,9 +387,7 @@ export default class VisibleRangeObserver {
    *
    * @param registration 対象の登録
    */
-  private static scheduleCompute(
-    registration: VisibleRangeRegistration,
-  ): void {
+  private static scheduleCompute(registration: VisibleRangeRegistration): void {
     if (registration.scheduled) {
       return;
     }

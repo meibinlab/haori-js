@@ -2570,9 +2570,15 @@ export default class Core {
       );
     const previousKeys = childElements.map(child => child.getListKey());
     const removedChildren = new Set<ElementFragment>();
-    childElements = childElements.filter(child => {
+    childElements = childElements.filter((child, previousIndex) => {
       if (!newKeySet.has(String(child.getListKey()))) {
         removedChildren.add(child);
+        const removedKey = child.getListKey();
+        if (removedKey !== null) {
+          // rowremove は行が DOM から外れる前に発火する。外れた後に発火しても
+          // 祖先（data-each コンテナ）へ伝播しないため購読できない。
+          HaoriEvent.rowRemove(child.getTarget(), removedKey, previousIndex);
+        }
         removalPromises.push(child.remove());
         return false;
       }
@@ -2621,7 +2627,18 @@ export default class Core {
               child,
               insertTargets,
               currentInsertIndex,
-            ).then(() => {
+            ).then(movedFrom => {
+              if (movedFrom !== null) {
+                // 行の位置が実際に変わったときだけ rowmove を発火する。
+                // インデックスは固定要素（data-each-before / -after）を除いた
+                // 行だけの並びで数える。
+                HaoriEvent.rowMove(
+                  child.getTarget(),
+                  newKey,
+                  movedFrom - baseInsertIndex,
+                  loopIndex,
+                );
+              }
               if (!changed) {
                 // 行の入力が同一なら子孫の再評価も値の再適用も行わない。
                 return undefined;
@@ -2657,9 +2674,12 @@ export default class Core {
                 insertTargets.splice(currentInsertIndex, 0, child);
               })
               .then(() => Core.initializeFreshEachRow(child))
-              .then(() =>
-                Core.applyRowFormValues(parent, child, item),
-              );
+              .then(() => Core.applyRowFormValues(parent, child, item))
+              .then(() => {
+                // rowadd は行の内容描画と入力値の反映まで終えてから発火する。
+                // 購読側がその場で行内の DOM を参照できるようにするため。
+                HaoriEvent.rowAdd(child.getTarget(), newKey, itemIndex, item);
+              });
           }),
         );
       }
@@ -2706,22 +2726,23 @@ export default class Core {
    * @param row 移動対象の行フラグメント
    * @param insertTargets 現在の子並び（この呼び出しで更新される）
    * @param targetIndex 移動先のインデックス
-   * @returns 移動完了の Promise
+   * @returns 移動した場合は移動前のインデックス、移動していない場合は null で
+   *   解決される Promise（`haori:rowmove` の発火判定に使う）
    */
   private static repositionEachRow(
     parent: ElementFragment,
     row: ElementFragment,
     insertTargets: ElementFragment[],
     targetIndex: number,
-  ): Promise<void> {
+  ): Promise<number | null> {
     const currentIndex = insertTargets.indexOf(row);
     if (currentIndex === -1 || currentIndex === targetIndex) {
-      return Promise.resolve();
+      return Promise.resolve(null);
     }
     insertTargets.splice(currentIndex, 1);
     const referenceChild = insertTargets[targetIndex] ?? null;
     insertTargets.splice(targetIndex, 0, row);
-    return parent.insertBefore(row, referenceChild);
+    return parent.insertBefore(row, referenceChild).then(() => currentIndex);
   }
 
   /**

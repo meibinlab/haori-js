@@ -1,0 +1,16 @@
+# 改行コードはリポジトリ内・作業ツリーともに LF で統一する。
+#
+# Prettier の設定（.prettierrc.json の endOfLine: "lf"）と揃えるためである。
+# Windows で core.autocrlf=true の場合、この宣言が無いと作業ツリーの改行が CRLF に
+# 変換され、`npm run format:check` が改行だけを理由に失敗する。
+* text=auto eol=lf
+
+# バイナリは変換しない。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.zip binary

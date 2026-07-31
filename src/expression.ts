@@ -555,7 +555,7 @@ export default class Expression {
       '[Haori]',
       'Binding key(s) that cannot be used as identifiers are excluded from' +
         ` expressions: ${unlogged.join(', ')}.` +
-        ' Read them as haori.data[\'key\'], or use' +
+        " Read them as haori.data['key'], or use" +
         ` ${Env.prefix}form-object to collect nested values.`,
     );
   }
@@ -783,7 +783,7 @@ export default class Expression {
   ): string[] {
     const message = String(error.message || '');
     const matched = shadowNames.filter(name =>
-      ['\'', '"', '`'].some(quote =>
+      ["'", '"', '`'].some(quote =>
         message.includes(`${quote}${name}${quote}`),
       ),
     );
@@ -1388,9 +1388,7 @@ export default class Expression {
     error: ReferenceError,
   ): string | null {
     const message = String(error.message || '');
-    const match = message.match(
-      /^([A-Za-z_$][A-Za-z0-9_$]*) is not defined$/,
-    );
+    const match = message.match(/^([A-Za-z_$][A-Za-z0-9_$]*) is not defined$/);
     return match?.[1] || null;
   }
 
@@ -1409,8 +1407,7 @@ export default class Expression {
       return false;
     }
     return (
-      bindedValues[identifier] === undefined &&
-      !(identifier in bindedValues)
+      bindedValues[identifier] === undefined && !(identifier in bindedValues)
     );
   }
 
@@ -1663,7 +1660,7 @@ export default class Expression {
         return null;
       }
 
-      if (current === '"' || current === '\'') {
+      if (current === '"' || current === "'") {
         const stringToken = this.readStringToken(expression, index);
         if (stringToken === null) {
           return null;
@@ -2112,17 +2109,20 @@ export default class Expression {
    *
    * @param obj チェック対象の値
    * @param seen 循環参照検出用の訪問済み集合
+   * @param forbiddenValues 危険値の集合。省略すると組み立てる。再帰呼び出しでは
+   *   作り直さないよう、組み立てた集合を引き回す
    * @return 危険値が含まれていればtrue
    */
   protected static containsForbiddenBindingValues(
     obj: unknown,
     seen: WeakSet<object> = new WeakSet<object>(),
-    forbiddenBindingValues: ReadonlySet<unknown> =
-    this.getForbiddenBindingValueSet(),
+    forbiddenValues?: ReadonlySet<unknown>,
   ): boolean {
     if (!obj || typeof obj !== 'object') {
       return false;
     }
+    const forbiddenBindingValues =
+      forbiddenValues ?? this.getForbiddenBindingValueSet();
 
     const cached = this.forbiddenBindingValueCache.get(obj as object);
     if (cached !== undefined) {

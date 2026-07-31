@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* global require, console */
-// バグ報告の実ブラウザ再現（haori@0.15.0 + runtime=demo + haori-bootstrap）。
+// バグ報告の回帰確認（ローカルビルド + runtime=demo + 公開版 haori-bootstrap）。
+// 固定版の CDN ではなく現在のビルドを読み込むため、修正が壊れたらここで落ちる。
 const {test, expect} = require('@playwright/test');
 
 test.describe('click バグ再現（bootstrap + demo runtime）', () => {

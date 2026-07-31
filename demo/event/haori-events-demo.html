@@ -57,10 +57,17 @@
     <p id="bind-output">メッセージ: {{message}} / カウント: {{count}}</p>
   </form>
 
-  <h2>2. 行の増減と並べ替え（haori:eachupdate）</h2>
+  <h2>2. 行の増減と並べ替え（haori:eachupdate / rowadd / rowremove / rowmove）</h2>
   <p class="note">
-    eachupdate は差分の反映と行内容の描画が終わった時点で発火します。detail に
-    追加・削除・移動したキーが入るため、行ごとの個別イベントを待つ必要はありません。
+    eachupdate は差分の反映と行内容の描画が終わった時点で、まとめて 1 回だけ発火します。
+    detail に追加・削除されたキーと最終的な順序が入るため、リスト全体を見たい用途では
+    こちらが扱いやすいです。
+  </p>
+  <p class="note">
+    行ごとに処理したい場合は rowadd / rowremove / rowmove を使います。いずれも行要素で
+    発火し、伝播によって <code>data-each</code> コンテナや <code>document</code> でも
+    受け取れます。rowadd は行の描画が終わってから、rowremove は行が DOM から外れる
+    <strong>前</strong>に発火します（外れた後では伝播しないためです）。
   </p>
   <div class="panel" data-bind='{"items":[{"name":"りんご"},{"name":"みかん"}]}'>
     <ul class="rows" data-each="items" data-each-arg="item" data-each-key="name">
@@ -100,12 +107,15 @@
     // Haori のイベントは document へ伝播するため、ライブラリの読み込みより前に
     // 登録しておけば初期化完了（haori:ready）から観測できる。
     (function () {
-      // 現在の実装が発火するイベント。行の増減・並べ替えは eachupdate として
-      // 通知されるため、行ごとの個別イベントは購読していない。
+      // 現在の実装が発火するイベント。
       var names = [
+        'ready',
         'bindchange',
         'bindcomplete',
         'eachupdate',
+        'rowadd',
+        'rowremove',
+        'rowmove',
         'show',
         'hide',
         'fetchstart',

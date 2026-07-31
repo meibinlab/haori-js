@@ -6,12 +6,14 @@
  */
 import Core from './core';
 import Env from './env';
+import HaoriEvent from './event';
 import EventDispatcher from './event_dispatcher';
 import {IF_DISABLED_MARKER} from './fragment';
 import IntersectObserver from './intersect';
 import Log from './log';
 import PollObserver from './poll';
 import Queue from './queue';
+import {VERSION} from './version';
 import VisibleRangeObserver from './visible_range';
 
 /**
@@ -88,6 +90,10 @@ export class Observer {
       // 監視と表示範囲の同期をすべて整えてから、保留していた手続きを実行する。
       dispatcher.release();
     }
+    // 初期化完了を通知する。保留していた手続きの解除まで済んだ後に発火するため、
+    // 購読側からその場で Haori の機能を呼び出せる。初期化が失敗した場合は
+    // 例外が上へ抜けるため、ここには到達せず発火しない。
+    HaoriEvent.ready(VERSION);
   }
 
   /**

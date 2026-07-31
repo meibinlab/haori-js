@@ -777,9 +777,9 @@ export default class Form {
     const scope: Record<string, unknown> = {...fragment.getBindingData()};
     const valueSource = sourceOverride
       ? {
-        source: sourceOverride,
-        argKey: Form.resolveFormArgKey(sourceOverride),
-      }
+          source: sourceOverride,
+          argKey: Form.resolveFormArgKey(sourceOverride),
+        }
       : Form.resolveConditionValueSource(fragment);
     if (!valueSource) {
       // 収集値の取得元が無い（フォーム外の手続き）。バインドデータだけで評価する。
@@ -1046,9 +1046,7 @@ export default class Form {
    * @param value 判定する値
    * @returns オブジェクトの場合はその値。それ以外は null
    */
-  private static asPlainRecord(
-    value: unknown,
-  ): Record<string, unknown> | null {
+  private static asPlainRecord(value: unknown): Record<string, unknown> | null {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;
@@ -1063,9 +1061,7 @@ export default class Form {
    * @param fragment 更新された祖先のフラグメント
    * @returns 反映完了の Promise
    */
-  public static syncAncestorArgForms(
-    fragment: ElementFragment,
-  ): Promise<void> {
+  public static syncAncestorArgForms(fragment: ElementFragment): Promise<void> {
     const promises: Promise<void>[] = [];
     for (const {form, key} of Form.collectArgForms(fragment)) {
       const owner = Form.resolveAncestorArgOwner(form, key);

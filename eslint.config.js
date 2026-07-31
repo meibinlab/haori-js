@@ -27,8 +27,14 @@ export default tseslint.config(
     rules: {
       // Google TypeScript Style Guide rules
       'max-len': ['error', {code: 80}],
-      indent: ['error', 2, {SwitchCase: 1}],
-      quotes: ['error', 'single'],
+      // インデントは Prettier（`npm run format`）が決める。三項演算子やメソッド
+      // チェーンの折り返しで indent ルールと結論が異なり、両方を満たせないため
+      // ここでは検査しない（幅は max-len で担保する）。
+      indent: 'off',
+      // 文字列にシングルクォートが含まれる場合はダブルクォートを許す。
+      // エスケープを避ける書き方は Google style でも認められており、Prettier も
+      // エスケープが減る側のクォートを選ぶ。
+      quotes: ['error', 'single', {avoidEscape: true}],
       semi: ['error', 'always'],
       'comma-dangle': ['error', 'only-multiline'],
       'object-curly-spacing': ['error', 'never'],

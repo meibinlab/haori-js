@@ -1616,6 +1616,44 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 
 `data-{event}-bind` は既定で要素データを置き換えるため、応答に無いキーの入力欄は空になります。入力済みの項目を残したいときは上の例のように `data-{event}-bind-merge` を併記してください。
 
+### 行の値を、行の外の共有パネルへ複写する
+
+上の 2 例は「行の外の値 → 行へ」でした。逆向き（「行の値 → 行の外へ」）は、一覧の行の操作ボタンから共有のモーダルや詳細パネルへ対象を引き渡す使い方です。よくある画面ですが、**コピー元の指定を省くと何もコピーされません**。
+
+コピー元のバインディングデータは、その要素**自身が持つ値**だけです。祖先から継承した値は含みません（含めると、祖先が持つ一覧の配列などまでコピー先へ焼き付き、以降の祖先の更新を隠してしまいます）。行の中のボタンは自分のバインディングデータを持たないため、暗黙のコピー元では空になります。
+
+行に一意な `id` を組み立て、`data-{event}-copy-source` で行そのものを指してください。
+
+```html
+<div data-bind='{"members":[
+  {"id":"M-01","name":"山田太郎"},
+  {"id":"M-02","name":"佐藤花子"}
+]}'>
+  <table>
+    <tbody data-each="members" data-each-key="id">
+      <!-- コピー元として指せるように、行ごとに一意な id を組み立てる -->
+      <tr id="member-row-{{id}}">
+        <td>{{name}}</td>
+        <td>
+          <button type="button"
+            data-click-copy="#member-detail"
+            data-click-copy-source="#member-row-{{id}}"
+            data-click-copy-params="id&name"
+          >詳細へ写す</button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 共有パネルは 1 つだけ置く（行ごとに複製しない） -->
+<div id="member-detail" data-bind="{}">
+  <p>{{name}}（{{id}}）</p>
+</div>
+```
+
+> **0.32.0 以前からの移行**: 0.32.0 以前はコピー元に祖先から継承した値も含めていたため、`data-{event}-copy-source` を書かなくても行の値が写っていました。0.33.0 でこの動作を変更したため、コピー元の指定を省いた画面は**エラーも警告も出さずに何もコピーしなくなります**。行の中のボタンから行の外へ複写している箇所は、上のように `data-{event}-copy-source` を追記してください。動く例は `demo/click/data-click-copy-demo.html` にあります。
+
 ### 気をつけること
 
 - 対象はセレクタを値に取る属性です。`data-{event}-bind-arg` や `-copy-params` のようなキー名を並べる属性は評価されません。
@@ -3750,23 +3788,54 @@ await page.evaluate(() => Haori.waitForRenders())
 
 iife（`<script src>`）読み込み時はグローバル `Haori.waitForRenders()`、ES Module では `import {waitForRenders} from 'haori'`（または `import Haori from 'haori'; Haori.waitForRenders()`）で利用できます。
 
+### グローバル `Haori` の形
+
+`<script src>` で読み込んだときのグローバル `Haori` は、`Haori` クラスそのものです。メッセージの付け外しなどのクラス API はそのまま呼び出せます。
+
+```javascript
+Haori.addErrorMessage(document.getElementById('tel'), '桁数が足りません')
+Haori.clearMessages(document.getElementById('tel-field'))
+```
+
+`Core` や `Env` などのクラスは、同じグローバルのプロパティとして参照します。
+
+```javascript
+Haori.Core.dumpScope(element)
+console.log(Haori.version)
+```
+
+`Haori.Haori` はグローバル自身への自己参照です。0.37.1 以前はグローバルがモジュールの名前空間オブジェクトだったため、クラス API を `Haori.Haori.addMessage(...)` と 2 段で取り出す必要がありました。その書き方も引き続き動作するため、既存のコードを直す必要はありません。
+
+### 行ごとのイベント（rowadd / rowremove / rowmove）
+
+`data-each` の差分更新では、リスト全体を 1 回で通知する `haori:eachupdate` に加えて、行ごとに `haori:rowadd` / `haori:rowremove` / `haori:rowmove` が発火します。いずれも**行要素**で発火し、伝播するため `data-each` コンテナや `document` でまとめて購読できます。
+
 ```javascript
 listElement.addEventListener('haori:rowadd', (event) => {
   console.log('行が追加されました')
   console.log('キー:', event.detail.key)
   console.log('インデックス:', event.detail.index)
   console.log('データ:', event.detail.item)
+  // event.target が追加された行要素。内容の描画は完了している。
 })
 
 listElement.addEventListener('haori:rowremove', (event) => {
   console.log('行が削除されました')
   console.log('キー:', event.detail.key)
+  // 行が DOM から外れる前に発火するため、event.target をまだ参照できる。
 })
 
 listElement.addEventListener('haori:rowmove', (event) => {
   console.log(`行が移動: ${event.detail.from} → ${event.detail.to}`)
 })
 ```
+
+使い分けの目安は次のとおりです。
+
+- リスト全体をまとめて扱いたい（描画完了の検知、件数表示の更新など）→ `haori:eachupdate`
+- 行ごとに処理したい（行の要素を外部ライブラリへ渡す、行の消滅時に後片付けするなど）→ 行イベント
+
+外部ライブラリの初期化が目的であれば、行イベントを自分で購読する代わりに `data-enhance` の宣言を使えます。新規行では `init`、描画確定では `refresh`、DOM から外れたときは `destroy` が自動で呼ばれます。
 
 ### フェッチイベント
 

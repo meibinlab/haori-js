@@ -8,6 +8,7 @@
  * 1. デモが使う `data-*` 属性が仕様書（`docs/ja/specs.md`）に載っていること
  * 2. すべてのデモページが `demo/index.html` の一覧から辿れること
  * 3. デモ内の相対リンク・スクリプト・部分テンプレートの参照先が存在すること
+ * 4. ライブラリ本体の読み込みが公開ビルドで書き換え可能な形に揃っていること
  */
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import path from 'node:path';
@@ -95,6 +96,32 @@ function markupOnly(source: string): string {
 const INTENTIONAL_MISSING = new Set([
   // 失敗状態（data-fetch-state）を見せるための、意図的に存在しない取得先
   'fetch/data-fetch-state-demo.html: ./not-found-404.json',
+]);
+
+/**
+ * ライブラリ本体の読み込みに使う書き方。
+ *
+ * 公開ビルド（`demo/vite.config.ts` の `haori-demo-library` プラグイン）は、この
+ * 文字列を `dist/demo/lib/haori.iife.js` への絶対パスへ書き換えます。別の綴りで
+ * 書くと書き換えの対象外になり、公開サイトでライブラリが 404 になります。
+ */
+const LIBRARY_LOCAL_REF = '../../dist/haori.iife.js';
+
+/**
+ * 一覧ページの読み込み方。
+ * Vite が解決してバンドルするため、書き換えの対象外です。
+ */
+const LIBRARY_INDEX_REF = '../dist/haori.es.js';
+
+/**
+ * ライブラリ本体を読み込まないページ。
+ * `data-import` 用の断片と、Haori の宣言を持たない遷移先です。
+ */
+const LIBRARY_EXEMPT = new Set([
+  'components/header.html',
+  'import/components/header.html',
+  'form/late-attribute-complete.html',
+  'form/late-attribute-pay.html',
 ]);
 
 const demoPages = listDemoPages(demoRoot);
@@ -252,6 +279,44 @@ describe('デモの整合性', () => {
       expect(
         dangling,
         `存在しない id を指すセレクタ:\n${dangling.join('\n')}`,
+      ).toEqual([]);
+    });
+  });
+
+  describe('規則4: ライブラリの読み込み方を揃える', () => {
+    it('各デモがローカルのビルド成果物を規定の書き方で読み込む', () => {
+      const violations: string[] = [];
+      for (const page of demoPages) {
+        if (LIBRARY_EXEMPT.has(page)) {
+          continue;
+        }
+        const source = readFileSync(path.join(demoRoot, page), 'utf8');
+        const expected =
+          page === 'index.html' ? LIBRARY_INDEX_REF : LIBRARY_LOCAL_REF;
+        if (!source.includes(expected)) {
+          violations.push(`${page}: ${expected} を読み込んでいない`);
+        }
+      }
+      expect(
+        violations,
+        `ライブラリの読み込み方が揃っていないデモ:\n${violations.join('\n')}`,
+      ).toEqual([]);
+    });
+
+    it('公開済みバージョンを固定した CDN からライブラリを読み込まない', () => {
+      // 固定版を読むデモは、現在のコードを検証できず、ネットワークにも依存する。
+      const pinned: string[] = [];
+      for (const page of demoPages) {
+        const source = readFileSync(path.join(demoRoot, page), 'utf8');
+        for (const match of source.matchAll(
+          /https:\/\/cdn\.jsdelivr\.net\/npm\/haori@[^/"']+/g,
+        )) {
+          pinned.push(`${page}: ${match[0]}`);
+        }
+      }
+      expect(
+        pinned,
+        `固定版の CDN を読み込むデモ:\n${pinned.join('\n')}`,
       ).toEqual([]);
     });
   });

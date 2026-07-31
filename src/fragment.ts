@@ -62,17 +62,17 @@ interface EvaluationProfileElementSnapshot {
 
 type EvaluationProfileContext =
   | {
-    kind: 'attribute';
-    element: HTMLElement;
-    rawName: string;
-    template: string;
-  }
+      kind: 'attribute';
+      element: HTMLElement;
+      rawName: string;
+      template: string;
+    }
   | {
-    kind: 'text';
-    element: HTMLElement;
-    childIndex: number;
-    template: string;
-  };
+      kind: 'text';
+      element: HTMLElement;
+      childIndex: number;
+      template: string;
+    };
 
 interface EvaluationProfileCounter {
   template: string;
@@ -1433,10 +1433,7 @@ export class ElementFragment extends Fragment {
       }).finally(() => {
         this.skipChangeValue = false;
       }) as Promise<void>;
-    } else if (
-      element instanceof HTMLSelectElement &&
-      element.multiple
-    ) {
+    } else if (element instanceof HTMLSelectElement && element.multiple) {
       // 複数選択 select は配列（または単一値・null）を option の選択状態へ反映する。
       // option を都度走査して冪等に適用し、実際に選択が変化した場合のみ change を
       // 発火する（バインド反映ループでの不要な再発火を防ぐ）。
@@ -2687,15 +2684,12 @@ export class TextFragment extends Fragment {
       this.skipMutation = true;
       let nextText = this.text;
       if (this.contents.isRawEvaluate) {
-        nextText = this.contents.evaluate(
-          this.parent!.getBindingData(),
-          {
-            kind: 'text',
-            element: this.parent!.getTarget(),
-            childIndex: this.parent!.getChildren().indexOf(this),
-            template: this.text,
-          },
-        )[0] as string;
+        nextText = this.contents.evaluate(this.parent!.getBindingData(), {
+          kind: 'text',
+          element: this.parent!.getTarget(),
+          childIndex: this.parent!.getChildren().indexOf(this),
+          template: this.text,
+        })[0] as string;
       } else if (this.contents.isEvaluate) {
         nextText = TextContents.joinEvaluateResults(
           this.contents.evaluate(this.parent!.getBindingData(), {

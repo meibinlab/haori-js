@@ -1261,7 +1261,10 @@ export default class Procedure {
         options.conditionExpression = Form.unwrapConditionExpression(raw);
         options.conditionAttributeName = conditionAttrName;
       } else {
-        Log.warn('Haori', `${conditionAttrName} に条件式が指定されていません。`);
+        Log.warn(
+          'Haori',
+          `${conditionAttrName} に条件式が指定されていません。`,
+        );
       }
     }
     if (event) {
@@ -1573,16 +1576,10 @@ ${body}
       }
     }
     const bindArgAttrEvent = Procedure.attrName(event, 'bind-arg');
-    const bindArgAttrNonEventLegacy = Procedure.attrName(
-      null,
-      'arg',
-      true,
-    ); // data-fetch-arg
-    const bindArgAttrNonEventNew = Procedure.attrName(
-      null,
-      'bind-arg',
-      true,
-    ); // data-fetch-bind-arg (less common)
+    // data-fetch-arg（旧称）
+    const bindArgAttrNonEventLegacy = Procedure.attrName(null, 'arg', true);
+    // data-fetch-bind-arg（こちらの綴りは使用例が少ない）
+    const bindArgAttrNonEventNew = Procedure.attrName(null, 'bind-arg', true);
     if (event) {
       if (fragment.hasAttribute(bindArgAttrEvent)) {
         options.bindArg = fragment.getRawAttribute(bindArgAttrEvent) as
@@ -2364,9 +2361,7 @@ ${body}
         // 上書きがメソッドを GET のままにして body を付けた場合、再正規化は
         // 何もしないため body はクエリにならず、収集済みの送信データだけが
         // 消えてしまう（この組み合わせは fetch 自体が TypeError になる）。
-        const overrideMethod = (
-          fetchOptions?.method || 'GET'
-        ).toUpperCase();
+        const overrideMethod = (fetchOptions?.method || 'GET').toUpperCase();
         const overrideReplacesPayload =
           !urlOverridden &&
           optionsOverridden &&
@@ -4151,10 +4146,7 @@ ${body}
   } | null {
     const expression = container.getRawAttribute(`${Env.prefix}each`);
     if (expression === null) {
-      Log.error(
-        'Haori',
-        `Row container has no ${Env.prefix}each expression.`,
-      );
+      Log.error('Haori', `Row container has no ${Env.prefix}each expression.`);
       return null;
     }
     const path = expression.trim().split('.');

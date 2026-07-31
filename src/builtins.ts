@@ -198,7 +198,7 @@ export function date(
     /'([^']*)'|yyyy|yy|MM|dd|HH|mm|ss|M|d|H/g,
     (matched, literal: string | undefined) => {
       if (literal !== undefined) {
-        return literal === '' ? '\'' : literal;
+        return literal === '' ? "'" : literal;
       }
       return resolvedTokens[matched];
     },
@@ -603,10 +603,7 @@ export function pageSummary(
     return emptyResult;
   }
   const source = page as Record<string, unknown>;
-  const total = toFiniteInt(
-    source.totalElements ?? source.totalCount,
-    0,
-  );
+  const total = toFiniteInt(source.totalElements ?? source.totalCount, 0);
   if (total <= 0) {
     return emptyResult;
   }
@@ -640,11 +637,7 @@ export function pageSummary(
  * @param value 一致させたい値（文字列化して比較）
  * @returns 一致した最初の要素。無ければ null（非配列・空配列も null）
  */
-export function findBy(
-  array: unknown,
-  key: string,
-  value: unknown,
-): unknown {
+export function findBy(array: unknown, key: string, value: unknown): unknown {
   if (!Array.isArray(array) || array.length === 0) {
     return null;
   }

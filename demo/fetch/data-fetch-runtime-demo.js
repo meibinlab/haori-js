@@ -2,8 +2,9 @@ const eventLog = document.querySelector('#eventLog');
 const runtimeStatus = document.querySelector('#runtimeStatus');
 const runtimeBadge = document.querySelector('#runtimeBadge');
 
+// iife 版のグローバル window.Haori はそのまま Haori クラスである。
 function resolveHaoriApi() {
-  return (window.Haori && (window.Haori.Haori || window.Haori.default || window.Haori)) || null;
+  return window.Haori || null;
 }
 
 function appendLog(message) {

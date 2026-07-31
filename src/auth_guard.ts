@@ -112,8 +112,8 @@ function applyReturnParam(
   }
   const current =
     window.location.pathname + window.location.search + window.location.hash;
-  const pair =
-    `${encodeURIComponent(paramName)}=${encodeURIComponent(current)}`;
+  const key = encodeURIComponent(paramName);
+  const pair = `${key}=${encodeURIComponent(current)}`;
   // フラグメント（#...）があればその手前にクエリを挿入する。
   const hashIndex = url.indexOf('#');
   const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
