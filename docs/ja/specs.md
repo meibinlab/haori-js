@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.37.0
+バージョン: 0.37.1
 最終更新: 2026-07-30
 
 ## 目次
@@ -319,6 +319,7 @@ HaoriEvent.eachUpdate(parent, addedKeys, removedKeys, allKeys)
 - 初回評価時: 最初の子要素をテンプレート化してDOMから削除
 - `data-each-before` 属性を持つ要素: テンプレート化せず、ループ前に表示
 - `data-each-after` 属性を持つ要素: テンプレート化せず、ループ後に表示
+- 判定は**ループコンテナの直接の子**に対して行います。テンプレート行の内側へ書いた `data-each-before` / `data-each-after` は固定要素として扱われず、行と一緒に複製されます
 
 **行外データの更新への追従**:
 
@@ -1912,8 +1913,8 @@ data-each="arrayExpression"
 - `data-each-arg`: 各要素のバインド名 (プリミティブ配列では必須)
 - `data-each-key`: 一意キープロパティ名 (差分検出用)
 - `data-each-index`: インデックスのバインド名。`data-each-arg` と併用した場合も**行スコープの直下**（`{{i}}`）で解決します。要素データの内側（`{{arg.i}}`）には入りません
-- `data-each-before`: ループ前に表示する要素をマーク
-- `data-each-after`: ループ後に表示する要素をマーク
+- `data-each-before`: ループ前に表示する要素をマーク（**ループコンテナの直接の子**に置きます）
+- `data-each-after`: ループ後に表示する要素をマーク（**ループコンテナの直接の子**に置きます）
 - `data-row`: 各行に自動付与されるキー (手動変更禁止)
 - `data-each-visible`: スクロール追従の可視行範囲を組み込み変数として公開（後述）
 - `data-each-done`: 全行の描画が安定して完了したときに **Haori が自動付与**するマーカー（手動指定不可）。新しい描画サイクルの開始時に外され、完了時に再付与されます。E2E テスト等で `[data-each-done]` の出現を待って描画完了を検知できます。**発火保証**: 初回描画・再 fetch・再バインドなど描画サイクルが走るたびに、コンテナ単位で「除去 → 再付与」が必ず一度行われます。差分更新で実際の DOM 変更がない場合でも、サイクルが安定した時点で再付与されます。これにより外部ウィジェットの再同期契機として利用できます
@@ -2703,8 +2704,15 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 
 #### `data-message` / `data-message-level`
 
-メッセージを表示します。フェッチエラー時に自動設定されます。
+メッセージの文字列を保持します。フェッチエラー時に自動設定されます。
 `data-message-level` でメッセージのレベルを表します（CSS でのスタイリングに使用）。
+
+ライブラリが行うのは属性の付け外しだけで、**表示はページの CSS が担います**（属性セレクタと `attr()` で組み立てます）。スクリプトからの付け外しは `Haori.addMessage()` / `Haori.addErrorMessage()` / `Haori.clearMessages()` です。入力要素を渡した場合は**その親要素**へ付きます（フォーム要素を渡した場合はその要素自身）。
+
+```css
+[data-message]::after { content: attr(data-message); display: block; }
+[data-message-level="error"]::after { color: #c62828; }
+```
 
 ```html
 <input name="email">

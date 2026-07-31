@@ -3,13 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <title>data-click-click デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    button { padding: 6px 12px; margin: 4px 0; display: block; }
+    input { width: 80px; }
+  </style>
 </head>
 <body>
   <h2>data-click-click デモ</h2>
-  <div>下のボタンで上のボタンのクリックを間接的に発火します</div>
-  <button id="submitBtn" onclick="alert('送信されました')">送信</button>
-  <button data-click-click="#submitBtn">送信 (間接)</button>
-  <button data-click-fetch="./data-click-click-demo.json" data-click-bind="#result">クリック</button>
+  <p>
+    data-click-click は、指定した要素のクリックを発火します。連鎖先のボタンは通常の
+    クリックと同じ処理を行うため、共通の処理を 1 か所へまとめられます。
+  </p>
+  <button type="button" id="target-button" data-click-adjust="#counter" data-click-adjust-value="1">
+    直接クリック（カウントを +1）
+  </button>
+  <label>カウント <input type="number" id="counter" value="0"></label>
+  <button type="button" id="indirect-button" data-click-click="#target-button">
+    間接クリック（上のボタンを押す）
+  </button>
   <script src="../../dist/haori.iife.js"></script>
 </body>
 </html>

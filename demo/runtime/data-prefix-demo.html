@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-prefix デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    .panel { border: 1px solid #ddd; border-radius: 4px; padding: 12px 16px; }
+    code { background: #f3f4f6; padding: 0.1rem 0.35rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h2>data-prefix デモ（属性の接頭辞を変える）</h2>
+  <p>
+    読み込むスクリプトへ <code>data-prefix</code> を付けると、Haori が解釈する属性の接頭辞が
+    変わります。このページは <code>haori-</code> を指定しているため、宣言は
+    <code>haori-bind</code> / <code>haori-each</code> / <code>haori-if</code> のように書きます。
+    式の記法（波括弧 2 つ）と、初期化完了の目印（<code>data-haori-ready</code>）は変わりません。
+  </p>
+  <p>
+    既存のページで <code>data-*</code> が別の用途に使われている場合や、他のライブラリと
+    衝突する場合に使います。1 ページに 2 種類の接頭辞を混在させることはできません。
+  </p>
+
+  <div class="panel" haori-bind='{"title":"接頭辞つきの宣言","items":["A","B","C"],"show":true}'>
+    <p id="title">{{title}}</p>
+    <ul haori-each="items" haori-each-arg="item">
+      <li>{{item}}</li>
+    </ul>
+    <p id="visible" haori-if="show">haori-if で表示しています。</p>
+    <p id="hidden" haori-if="!show">この段落は表示されません。</p>
+  </div>
+
+  <script src="../../dist/haori.iife.js" data-prefix="haori-"></script>
+</body>
+</html>

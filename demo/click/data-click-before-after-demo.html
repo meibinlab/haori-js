@@ -3,13 +3,35 @@
 <head>
   <meta charset="UTF-8">
   <title>data-click-before-run / after-run デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    #log { background: #eeeeee; padding: 8px; min-height: 1.4em; }
+    button { padding: 6px 12px; }
+  </style>
 </head>
 <body>
   <h2>data-click-before-run / after-run デモ</h2>
-  <div>送信前後にアラートを表示します</div>
-  <button data-click-fetch="./data-click-before-after-demo.json" data-click-before-run="alert('送信前'); return true" data-click-after-run="alert('送信後');" data-click-bind="#result">送信</button>
+  <p>
+    data-click-before-run は手続きの前に、data-click-after-run は手続きの後に実行されます。
+    before-run が false を返すと手続きを中止します（下の「中止する」ボタン）。
+  </p>
+  <button
+    id="send"
+    data-click-fetch="./data-click-before-after-demo.json"
+    data-click-before-run="document.getElementById('log').textContent += '送信前 '; return true"
+    data-click-after-run="document.getElementById('log').textContent += '送信後 '"
+    data-click-bind="#result"
+  >送信</button>
+  <button
+    id="cancel"
+    data-click-fetch="./data-click-before-after-demo.json"
+    data-click-before-run="document.getElementById('log').textContent += '中止 '; return false"
+    data-click-after-run="document.getElementById('log').textContent += '（呼ばれません）'"
+    data-click-bind="#result"
+  >中止する</button>
+  <p>実行の記録: <span id="log"></span></p>
   <div id="result">
-    <p>結果: {{result}}</p>
+    <p>結果: {{result ?? '（未取得）'}}</p>
   </div>
   <script src="../../dist/haori.iife.js"></script>
 </body>

@@ -3,13 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <title>data-form-detach デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    label { display: block; margin: 6px 0; }
+    .output { background: #e8f5e9; padding: 10px; border-left: 4px solid #4CAF50; }
+  </style>
   <script src="../../dist/haori.iife.js"></script>
 </head>
 <body>
   <h2>data-form-detach デモ</h2>
-  <form>
-    <input name="username" value="user1">
-    <input name="password" value="secret" data-form-detach>
+  <p>
+    data-form-detach を付けた入力は値の収集から外れます。バインディングデータへ載らないため、
+    式から参照しても値がありません（送信にも含まれません）。
+  </p>
+  <form data-form data-bind='{"username":"user1"}'>
+    <label>利用者名: <input name="username"></label>
+    <label>パスワード: <input name="password" value="secret" data-form-detach></label>
+    <p class="output" id="output">
+      収集された username: 「{{username}}」 / 収集された password: 「{{password ?? ''}}」
+    </p>
   </form>
 </body>
 </html>

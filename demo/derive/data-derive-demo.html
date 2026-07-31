@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-derive デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    label { display: block; margin: 10px 0; }
+    select { min-width: 240px; padding: 4px; }
+    .output { background: #e8f5e9; padding: 10px; border-left: 4px solid #4CAF50; }
+    code { background: #f3f4f6; padding: 0.1rem 0.35rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h2>data-derive デモ（親の選択から子候補を導出する）</h2>
+  <p>
+    data-derive は式の結果を派生値として供給し、data-derive-name で配下から参照する名前を決めます。
+    描画は data-each が担うため、「親の選択に応じて子の候補を切り替える」構成を画面個別の
+    JavaScript なしで書けます。派生値は宣言した要素の子孫からだけ参照できます。
+  </p>
+
+  <form data-form data-bind='{"contractId":"","optionId":"","contracts":[
+    {"id":"c1","name":"電気（従量）","options":[
+      {"id":"o1","optionName":"時間帯別"},
+      {"id":"o2","optionName":"オール電化"}
+    ]},
+    {"id":"c2","name":"ガス（一般）","options":[
+      {"id":"o3","optionName":"暖房割引"}
+    ]},
+    {"id":"c3","name":"セット契約","options":[]}
+  ]}'>
+    <label>
+      契約
+      <select
+        id="contract-select"
+        name="contractId"
+        data-each="contracts"
+        data-each-arg="contract"
+        data-each-key="id"
+      >
+        <option data-each-before value="">契約を選択してください</option>
+        <option value="{{contract.id}}">{{contract.name}}</option>
+      </select>
+    </label>
+
+    <div
+      data-derive="contracts.find(contract => contract.id === contractId)?.options ?? []"
+      data-derive-name="optionList"
+    >
+      <label>
+        オプション（選択した契約に応じて変わります）
+        <select
+          id="option-select"
+          name="optionId"
+          data-each="optionList"
+          data-each-arg="option"
+          data-each-key="id"
+        >
+          <option data-each-before value="">オプションを選択してください</option>
+          <option value="{{option.id}}">{{option.optionName}}</option>
+        </select>
+      </label>
+      <p class="output" id="derive-count">候補の件数: {{optionList.length}}</p>
+    </div>
+
+    <p class="output" id="selection">
+      選択: 契約 {{contractId}} / オプション {{optionId}}
+    </p>
+  </form>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

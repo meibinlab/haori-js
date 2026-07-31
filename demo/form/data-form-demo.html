@@ -3,16 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <title>data-form デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    label { display: block; margin: 6px 0; }
+    .output { background: #e8f5e9; padding: 10px; border-left: 4px solid #4CAF50; }
+  </style>
 </head>
 <body>
   <h2>data-form デモ</h2>
-  <form data-form>
-    <label>名前: <input name="username" value="山田太郎"></label>
-    <label>年齢: <input name="age" type="number" value="28"></label>
+  <p>
+    data-form を付けたフォームは、入力値をフォーム自身のバインディングデータへ双方向で同期します。
+    初期値はバインディングデータから入力欄へ反映され、入力を変えると同じフォームの中の
+    式が同時に更新されます。
+  </p>
+  <form data-form data-bind='{"username":"山田太郎","age":28}'>
+    <label>名前: <input name="username"></label>
+    <label>年齢: <input name="age" type="number"></label>
+    <p class="output" id="output">入力値: {{username}}（年齢: {{age}}）</p>
   </form>
-  <div>
-    <p>入力値: <span data-bind="username"></span>（年齢: <span data-bind="age"></span>）</p>
-  </div>
   <script src="../../dist/haori.iife.js"></script>
 </body>
 </html>

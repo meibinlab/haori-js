@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-each-visible デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    #list-scroll {
+      height: 220px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { padding: 10px 12px; border-bottom: 1px solid #eee; }
+    footer {
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: #e8f5e9;
+      border-left: 4px solid #4CAF50;
+    }
+  </style>
+</head>
+<body>
+  <h2>data-each-visible デモ（いま見えている行範囲）</h2>
+  <p>
+    data-each-visible をループコンテナに付けると、各行の交差状態から「見えている行範囲」を
+    指定した名前の変数として上位のバインドスコープへ公開します。スクロールすると下の表示が
+    追随します（画面個別の JavaScript は書きません）。
+  </p>
+  <p>
+    data-each-visible-root にスクロール枠のセレクタを指定します。省略するとビューポートが枠になります。
+  </p>
+
+  <div data-bind='{"items":[
+    {"id":1,"name":"項目 1"},{"id":2,"name":"項目 2"},{"id":3,"name":"項目 3"},
+    {"id":4,"name":"項目 4"},{"id":5,"name":"項目 5"},{"id":6,"name":"項目 6"},
+    {"id":7,"name":"項目 7"},{"id":8,"name":"項目 8"},{"id":9,"name":"項目 9"},
+    {"id":10,"name":"項目 10"},{"id":11,"name":"項目 11"},{"id":12,"name":"項目 12"},
+    {"id":13,"name":"項目 13"},{"id":14,"name":"項目 14"},{"id":15,"name":"項目 15"}
+  ]}'>
+    <div id="list-scroll">
+      <ul
+        data-each="items"
+        data-each-arg="item"
+        data-each-key="id"
+        data-each-visible="vr"
+        data-each-visible-root="#list-scroll"
+      >
+        <li>{{item.name}}</li>
+      </ul>
+    </div>
+    <footer id="range">
+      表示中: {{vr.firstLabel}} - {{vr.lastLabel}} / 読込済 {{vr.total}} 件（可視 {{vr.count}} 行）
+    </footer>
+  </div>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

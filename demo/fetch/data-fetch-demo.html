@@ -24,10 +24,10 @@
           <th>名前</th>
         </tr>
       </thead>
-      <tbody data-each="items" data-each-key="'id'" data-each-arg="item">
+      <tbody data-each="items" data-each-key="id" data-each-arg="item">
         <tr>
-          <td>{{typeof item === 'undefined' ? '' : item.id}}</td>
-          <td>{{typeof item === 'undefined' ? '' : item.name}}</td>
+          <td>{{item.id}}</td>
+          <td>{{item.name}}</td>
         </tr>
       </tbody>
     </table>

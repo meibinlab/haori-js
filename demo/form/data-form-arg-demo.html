@@ -3,12 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <title>data-form-arg デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    label { display: block; margin: 6px 0; }
+    .output { background: #e8f5e9; padding: 10px; border-left: 4px solid #4CAF50; }
+  </style>
   <script src="../../dist/haori.iife.js"></script>
 </head>
-  <body>
+<body>
   <h2>data-form-arg デモ</h2>
-  <form data-form-arg="formData">
-    <input name="username" value="user1">
+  <p>
+    data-form-arg を指定すると、収集した値がそのキーの下にまとまります。
+    双方向バインディングのコミット先も同じキーになるため、フォーム内の式は
+    formData.username のように参照します。
+  </p>
+  <form
+    data-form-arg="formData"
+    data-bind='{"formData":{"username":"user1","department":"開発部"}}'
+  >
+    <label>利用者名: <input name="username"></label>
+    <label>部署: <input name="department"></label>
+    <p class="output" id="output">収集結果: {{formData.username}} / {{formData.department}}</p>
   </form>
-  </body>
-  </html>
+</body>
+</html>

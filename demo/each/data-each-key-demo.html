@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <title>data-each-key デモ</title>
-  </head>
+</head>
 <body>
   <h2>data-each-key デモ</h2>
-  <div>各要素のidをキーにしてループ</div>
+  <div>各要素のidをキーにしてループ（生成された行には data-row="id の値" が付きます）</div>
   <div data-bind='{"users":[{"id":1,"name":"Taro"},{"id":2,"name":"Hanako"}]}' >
     <ul data-each="users" data-each-key="id"><li>{{name}}</li></ul>
   </div>
-</body>
   <script src="../../dist/haori.iife.js"></script>
+</body>
 </html>

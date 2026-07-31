@@ -1,5 +1,55 @@
 # CHANGELOG
 
+## [0.37.1] - 2026-07-31
+
+### Fixed
+
+- **`data-prefix` で接頭辞を変えたページで `data-if` / `data-each` / `data-derive` の式が評価されない問題を修正した**。これらの属性は値に `{{}}` を書かずに式を渡すため「プレースホルダが無くても評価する属性」として名前で判定していたが、その判定が `data-` / `hor-` の固定リストだったため、`data-prefix="haori-"` のページでは属性値が文字列のまま扱われていた。`data-each` は `Invalid each attribute` でコンソールエラーになり、`data-if` は常に真（非空文字列）と評価されて条件が効かなかった。判定を実行時の `Env.prefix` から組み立てるようにした（既定の `data-` と旧称 `hor-` も引き続き有効）。
+
+### Added
+
+- デモの一覧を `demo/index.html` に追加した。`demo/` 配下のすべてのページをカテゴリ別に辿れる。
+- 仕様書にあってデモが無かった機能のデモを追加した。
+  - `demo/derive/data-derive-demo.html`（親の選択から子候補を導出する）
+  - `demo/each/data-each-visible-demo.html`（スクロール中の可視行範囲）
+  - `demo/external/data-external-demo.html`（外部ライブラリの生成 DOM を監視から外す）
+  - `demo/click/data-click-run-demo.html`（宣言から任意の JS を実行し、既定動作を抑止する）
+  - `demo/runtime/data-prefix-demo.html`（属性の接頭辞を変える）
+  - `demo/runtime/data-dev-demo.html`（開発モードの診断）
+  - `demo/bind/data-bind-nested-demo.html`（バインドの入れ子・継承と上書き）
+  - `demo/event/haori-events-demo.html`（`haori:*` イベントの観測）
+
+### Changed
+
+- 実装に存在しない属性を使っていたデモを削除した（`demo/event/data-event-demo.html` の `data-event` / `data-event-arg`、`demo/event/event-test.html` の `data-haori` / `data-procedure-url` / `data-procedure-method`）。イベントの確認は `demo/event/haori-events-demo.html` へ置き換えた。
+- 属性名と内容が一致していなかったデモを差し替えた（`demo/bind/data-bind-arg-demo.html` は存在しない `data-bind-arg` を名乗って `data-each` を見せていたため、`demo/bind/data-bind-nested-demo.html` へ置き換え）。
+- 誤った書き方をしていたデモを修正した。
+  - `demo/fetch/data-fetch-demo.html`: 禁止キーワード `typeof` を使った式を暗黙のオプショナルチェーンへ、`data-each-key="'id'"` を `id` へ
+  - `demo/fetch/data-fetch-method-demo.html`: スクリプトの二重読み込みと `</body>` 後のスクリプトを整理し、`data-fetch-method` を実際に使う形へ
+  - `demo/each/data-each-before-demo.html` / `data-each-after-demo.html`: 固定要素をループコンテナの直接の子へ移した（テンプレート内側に置くと行と一緒に複製される）
+  - `demo/click/data-click-click-demo.html`: 存在しない JSON への取得と `alert` を廃止し、連鎖の結果を観測できる形へ
+  - `demo/click/data-click-row-demo.html`: 行テンプレートを 1 要素にまとめた（複数の子を並べると最初の要素だけがテンプレートになる）
+  - `demo/click/data-click-reset-refetch-demo.html`: 取得結果とリセット対象を表示するようにした
+  - `demo/click/data-click-before-after-demo.html`: `alert` を記録表示に変え、`false` を返して中止する例を追加した
+  - `demo/form/data-form*-demo.html`: 収集結果を表示するようにした（初期値は `data-bind` から入力欄へ反映する構成へ）
+  - `demo/if/data-if-false-demo.html`: `<head>` に置かれていた本文要素を `<body>` へ移し、状態表示を属性の変化監視で更新するようにした
+  - `demo/message/data-message-demo.html`: CSS による表示とスクリプトからの付け外しの例にした
+  - `demo/row/data-row-demo.html`: `data-row` の説明を `data-each-key` との関係を含めて正した
+  - `demo/components/header.html` / `demo/import/components/header.html`: 壊れたリンクと、断片に混ざっていた文書全体の記述を修正した
+- `demo/vite.config.ts` のビルド入力を自動列挙にした。これまでは 4 ページを手書きで指定していたため、デモを追加しても公開ビルドに含まれず、削除した場合はビルドが失敗していた。
+
+### Tests
+
+- `playwright/demo-display.spec.cjs` の全ページ検査を強化した。可視領域に未展開の `{{式}}` が残らないこと（説明用の `code` / `pre` と `data-if` の非表示分岐は対象外）、Haori を読み込むページで `data-haori-ready` が付くこと、記述ミスを示す警告（禁止キーワード・属性値の解釈失敗）が出ないことを追加し、固定待ちを初期化完了とレンダリング完了の待機へ置き換えた。
+- `tests/demo-consistency.test.ts` を追加（6 件）。デモが使う `data-*` 属性がすべて仕様書に載っていること、すべてのデモページが `demo/index.html` から辿れること、相対リンク・スクリプト・部分テンプレート・取得先の参照先が存在すること、セレクタ属性が指す id が同じページにあることを、ファイルの内容から検査する。
+- デモの操作テストを追加した（Playwright、53 件）。`playwright/demo-bind-each-if.spec.cjs`（12 件）、`demo-form.spec.cjs`（5 件）、`demo-click.spec.cjs`（10 件）、`demo-fetch.spec.cjs`（10 件）、`demo-state.spec.cjs`（8 件）、`demo-advanced.spec.cjs`（8 件）。
+- `tests/prefix-force-evaluation.test.ts` を追加（3 件）。接頭辞を変えても `data-each` が配列として、`data-if` が条件として評価されることを検証する（本修正の回帰ガード）。
+
+### Docs
+
+- `docs/ja/specs.md` の `data-each-before` / `data-each-after` に、ループコンテナの直接の子へ置く必要があること（テンプレート内側では固定要素にならないこと）を明記した。
+- `docs/ja/specs.md` の `data-message` に、ライブラリは属性の付け外しだけを行い表示はページの CSS が担うこと、スクリプトからの付け外しの窓口と付与先の要素を明記した。
+
 ## [0.37.0] - 2026-07-31
 
 ### Added

@@ -175,6 +175,17 @@
             flex: 1;
             min-width: 240px;
         }
+        h3 {
+            color: #33691e;
+            margin: 24px 0 8px 0;
+        }
+        .demo-catalog li {
+            padding: 6px 10px;
+        }
+        .demo-catalog a {
+            color: #1b5e20;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -397,100 +408,122 @@
             <div id="dom-demo9" class="dom-viewer" style="display:none;"></div>
         </div>
 
-        <h2>10. IntersectionObserver デモ</h2>
-        <div class="demo-section">
-            <p><code>data-intersect-*</code> と <code>data-*-bind-append</code> を使った無限スクロールのデモです。</p>
-            <a class="demo-link" href="./intersect/data-intersect-infinite-demo.html">無限スクロールデモを開く</a>
-        </div>
+        <h2>10. 個別デモ一覧</h2>
+        <p>属性ごと・機能ごとの個別デモです。<code>demo/</code> 配下のすべてのページをここから辿れます。</p>
 
-        <h2>9-2. 編集可能な繰り返し行デモ</h2>
         <div class="demo-section">
-            <p><code>data-each</code> と <code>data-form-list</code> で可変件数（0〜N件）の明細を入力するデモです。行の追加・削除・並べ替えがバインディングデータへ反映されます。</p>
-            <a class="demo-link" href="./form/data-form-list-editable-demo.html">編集可能な繰り返し行デモを開く</a>
-        </div>
+            <h3>データバインディング</h3>
+            <ul class="demo-catalog">
+                <li><a href="./bind/data-bind-demo.html">data-bind</a> — JSON を要素に与え、テキストの補間で表示する最小例。</li>
+                <li><a href="./bind/data-bind-nested-demo.html">data-bind の入れ子</a> — 祖先からの継承と、内側の同名キーによる上書き。</li>
+                <li><a href="./bind/data-bind-urlparam-demo.html">data-bind の URL パラメータ形式</a> — <code>key=value&amp;key2=value2</code> 形式の文字列でも与えられます。</li>
+                <li><a href="./derive/data-derive-demo.html">data-derive</a> — 親の選択から子の候補を導出し、配下の名前として供給します。</li>
+                <li><a href="./builtins/haori-builtins-demo.html">組み込みヘルパー</a> — <code>haori.date</code> / <code>haori.now</code> / <code>haori.number</code> / <code>haori.pages</code> と <code>data-click-prevent</code>。</li>
+                <li><a href="./selector/selector-template-demo.html">セレクタ属性のテンプレート式</a> — セレクタを値に取る属性は評価結果をセレクタとして扱います。</li>
+            </ul>
 
-        <h2>10-2. 定期取得（ポーリング）デモ</h2>
-        <div class="demo-section">
-            <p><code>data-poll-*</code> で完了待ち画面を作るデモです。取得間隔・打ち切り時間・停止条件・一時停止の挙動を確認できます。</p>
-            <a class="demo-link" href="./poll/data-poll-approval-demo.html">定期取得デモを開く</a>
-        </div>
+            <h3>条件分岐</h3>
+            <ul class="demo-catalog">
+                <li><a href="./if/data-if-demo.html">data-if</a> — 条件で表示・非表示を切り替えます。</li>
+                <li><a href="./if/data-if-false-demo.html">data-if-false</a> — 非表示の分岐に付く属性と、条件を戻したときの再表示。</li>
+            </ul>
 
-        <h2>11. runtime デモ</h2>
-        <div class="demo-section">
-            <p><code>data-runtime="demo"</code> を使い、非 GET の fetch が GET に正規化される挙動を確認します。</p>
-            <a class="demo-link" href="./fetch/data-fetch-runtime-demo.html">runtime デモを開く</a>
-        </div>
+            <h3>繰り返し</h3>
+            <ul class="demo-catalog">
+                <li><a href="./each/data-each-demo.html">data-each</a> — 配列を行に展開する最小例。</li>
+                <li><a href="./each/data-each-index-demo.html">data-each-index</a> — 行番号を式から参照します。</li>
+                <li><a href="./each/data-each-key-demo.html">data-each-key</a> — 差分更新のキー（生成された行の <code>data-row</code> に入ります）。</li>
+                <li><a href="./each/data-each-before-demo.html">data-each-before</a> — 行の前に固定要素を残します。</li>
+                <li><a href="./each/data-each-after-demo.html">data-each-after</a> — 行の後に固定要素を残します。</li>
+                <li><a href="./each/data-each-before-after-demo.html">data-each-before / after</a> — 前後の固定要素を同時に使います。</li>
+                <li><a href="./row/data-row-demo.html">data-row</a> — 生成された行に自動で付く識別属性。</li>
+                <li><a href="./each/data-each-visible-demo.html">data-each-visible</a> — スクロール中の可視行範囲を変数として公開します。</li>
+                <li><a href="./each/data-each-pagination-repro.html">ページネーション</a> — <code>haori.pages()</code> を使った一覧とページ送り。</li>
+            </ul>
 
-        <h2>12. history.pushState デモ</h2>
-        <div class="demo-section">
-            <p><code>data-click-history</code> で履歴 URL を更新し、フォーム値やクエリパラメータを反映します。</p>
-            <a class="demo-link" href="./click/data-click-history-demo.html">history.pushState デモを開く</a>
-        </div>
+            <h3>フォーム</h3>
+            <ul class="demo-catalog">
+                <li><a href="./form/data-form-demo.html">data-form</a> — 入力値とバインディングデータの双方向同期。</li>
+                <li><a href="./form/data-form-arg-demo.html">data-form-arg</a> — 収集した値を指定キーの下にまとめます。</li>
+                <li><a href="./form/data-form-object-demo.html">data-form-object</a> — 入力名の階層をオブジェクトとして収集します。</li>
+                <li><a href="./form/data-form-list-demo.html">data-form-list</a> — 同名の行入力を配列として収集します。</li>
+                <li><a href="./form/data-form-list-editable-demo.html">編集可能な繰り返し行</a> — 0〜N 件の明細の追加・削除・並べ替えを配列へ反映します。</li>
+                <li><a href="./form/data-form-detach-demo.html">data-form-detach</a> — 値の収集対象から外します。</li>
+                <li><a href="./form/data-if-form-exclusion-demo.html">data-if の送信除外</a> — 非表示の分岐にある入力は収集されません。</li>
+                <li><a href="./form/data-change-bind-radio-demo.html">同一 name ラジオの data-change-bind</a> — 選択値を 1 キーへ書き、依存欄を出し分けます。</li>
+                <li><a href="./form/field-condition-demo.html">フィールド間検証</a> — <code>data-validity</code> と <code>data-{event}-if</code> で他の欄の値を条件にします。</li>
+                <li><a href="./form/late-attribute-demo.html">応答の値で遷移先を切り替える</a> — バインドより後のアクションは使用直前に属性を再評価します。</li>
+                <li><a href="./form/row-copy-bind-demo.html">編集可能な行への copy / bind</a> — 行を指したセレクタは対応する配列要素へ書き戻します。</li>
+                <li><a href="./form/row-declarative-value-demo.html">行の中で候補から 1 件を引く</a> — 行ごとの取得結果から選択中の 1 件を hidden へ載せます。</li>
+            </ul>
 
-        <h2>13. フェッチ状態の宣言的参照 (data-fetch-state)</h2>
-        <div class="demo-section">
-            <p><code>data-fetch-state</code> でフェッチの読み込み中・成功・失敗を <code>_fetch</code> として参照し、<code>data-if</code> だけでエラー表示や再取得導線を出し分けます。</p>
-            <a class="demo-link" href="./fetch/data-fetch-state-demo.html">data-fetch-state デモを開く</a>
-        </div>
+            <h3>クリックのアクション</h3>
+            <ul class="demo-catalog">
+                <li><a href="./click/data-click-fetch-demo.html">data-click-fetch</a> — クリックで取得し、応答をバインドします。</li>
+                <li><a href="./click/data-click-fetch-method-demo.html">data-click-fetch-method / headers / content-type</a> — メソッド・ヘッダー・本文形式の指定。</li>
+                <li><a href="./click/data-click-form-demo.html">data-click-form</a> — 対象フォームの値を送信します。</li>
+                <li><a href="./click/data-click-data-demo.html">data-click-data</a> — 送信データを属性で足します。</li>
+                <li><a href="./click/data-click-bind-params-demo.html">data-click-bind-arg / bind-params</a> — 応答のバインド先とパラメータの指定。</li>
+                <li><a href="./click/data-click-before-after-demo.html">data-click-before-run / after-run</a> — 手続きの前後で画面個別の関数を呼びます。</li>
+                <li><a href="./click/data-click-confirm-demo.html">data-click-confirm</a> — 実行前に確認します。</li>
+                <li><a href="./click/data-click-click-demo.html">data-click-click</a> — 別の要素のクリックへつなぎます。</li>
+                <li><a href="./click/data-click-adjust-demo.html">data-click-adjust</a> — 数値の加算・減算。</li>
+                <li><a href="./click/data-click-dialog-demo.html">data-click-open / close / dialog</a> — ダイアログの開閉。</li>
+                <li><a href="./click/data-click-row-demo.html">data-click-row-add / remove / prev / next</a> — 行の追加・削除・並べ替え。</li>
+                <li><a href="./click/data-click-reset-refetch-demo.html">data-click-reset / refetch</a> — 入力の初期値復元と再取得。</li>
+                <li><a href="./click/data-click-history-demo.html">data-click-history</a> — 履歴（pushState）の更新。</li>
+                <li><a href="./click/data-click-run-demo.html">data-click-run</a> — 任意の JS を宣言から呼び出し、既定動作も抑止できます。</li>
+            </ul>
 
-        <h2>14. 同一 name ラジオの data-change-bind</h2>
-        <div class="demo-section">
-            <p>同じ <code>name</code> のラジオを <code>data-change-bind</code> で別要素の1キーへ書き、選択値で依存欄を <code>data-if</code> 出し分け。前後どちらの遷移でもスカラ更新・即時再評価されます。</p>
-            <a class="demo-link" href="./form/data-change-bind-radio-demo.html">同一 name ラジオ デモを開く</a>
-        </div>
+            <h3>通信</h3>
+            <ul class="demo-catalog">
+                <li><a href="./fetch/data-fetch-demo.html">data-fetch</a> — 表示時に取得して一覧へ展開します。</li>
+                <li><a href="./fetch/data-fetch-demo-simple.html">data-fetch（最小）</a> — 1 キーだけを取得する最小例。</li>
+                <li><a href="./fetch/data-fetch-bind-demo.html">data-fetch-bind</a> — 応答のバインド先を指定します。</li>
+                <li><a href="./fetch/data-fetch-bind-params-demo.html">data-fetch-bind-params</a> — 取得時に渡すパラメータ。</li>
+                <li><a href="./fetch/data-fetch-arg-demo.html">data-fetch-arg</a> — 応答を指定キーの下にまとめます。</li>
+                <li><a href="./fetch/data-fetch-form-demo.html">data-fetch-form</a> — 送信元のフォームを指定します。</li>
+                <li><a href="./fetch/data-fetch-headers-demo.html">data-fetch-headers</a> — 追加のリクエストヘッダー。</li>
+                <li><a href="./fetch/data-fetch-method-demo.html">data-fetch-method</a> — メソッドと送信データの指定。</li>
+                <li><a href="./fetch/data-fetch-content-type-demo.html">data-fetch-content-type</a> — 本文の形式。</li>
+                <li><a href="./fetch/data-fetch-state-demo.html">data-fetch-state</a> — 読み込み中・成功・失敗を <code>_fetch</code> として参照します。</li>
+                <li><a href="./fetch/data-fetch-runtime-demo.html">data-runtime="demo"</a> — 確認モードで非 GET を GET へ正規化します。</li>
+                <li><a href="./fetch/title-head-bind-demo.html">&lt;title&gt; への実行時バインド</a> — <code>&lt;head&gt;</code> も走査対象です。</li>
+                <li><a href="./intersect/data-intersect-infinite-demo.html">data-intersect（無限スクロール）</a> — 表示到達で次ページを追記します。</li>
+                <li><a href="./poll/data-poll-approval-demo.html">data-poll（定期取得）</a> — 間隔・打ち切り・停止条件・一時停止。</li>
+            </ul>
 
-        <h2>15. data-if 非表示分岐はフォーム送信対象外</h2>
-        <div class="demo-section">
-            <p>同じ <code>name</code> の入力を <code>data-if</code> で出し分けても、非表示分岐（<code>data-if-false</code>）の値はフォーム値収集の対象外。表示中の分岐の値だけが送信されます。</p>
-            <a class="demo-link" href="./form/data-if-form-exclusion-demo.html">data-if 送信除外 デモを開く</a>
-        </div>
+            <h3>状態保持・URL・画面連携</h3>
+            <ul class="demo-catalog">
+                <li><a href="./store/data-store-demo.html">data-store（1画面目）</a> — 指定キーをブラウザストレージへミラーします。</li>
+                <li><a href="./store/data-store-step2-demo.html">data-store（2画面目）</a> — 復元と破棄。</li>
+                <li><a href="./url/data-url-param-demo.html">data-url-param</a> — URL のクエリをバインドします。</li>
+                <li><a href="./url/data-url-param-arg-demo.html">data-url-arg</a> — クエリを指定キーの下にまとめます。</li>
+                <li><a href="./import/data-import-demo.html">data-import</a> — 部分テンプレートを読み込みます。</li>
+                <li><a href="./message/data-message-demo.html">data-message</a> — 表示用メッセージの定義と参照。</li>
+            </ul>
 
-        <h2>16. &lt;title&gt; への実行時バインド</h2>
-        <div class="demo-section">
-            <p><code>&lt;head&gt;</code> もスキャン対象なので、<code>&lt;title&gt;</code> 自身に <code>data-fetch</code> / <code>data-bind</code> を付ければテキストの <code>{{}}</code> 補間が効きます。タブのタイトルに会社名を実行時取得で反映します。</p>
-            <a class="demo-link" href="./fetch/title-head-bind-demo.html">title 実行時バインド デモを開く</a>
-        </div>
+            <h3>外部ライブラリ・イベント</h3>
+            <ul class="demo-catalog">
+                <li><a href="./enhance/data-enhance-demo.html">data-enhance / data-enhance-new</a> — 外部ライブラリの適用・再同期・破棄を宣言します。</li>
+                <li><a href="./external/data-external-demo.html">data-external</a> — 外部ライブラリの生成 DOM を自動監視から外します。</li>
+                <li><a href="./event/haori-events-demo.html">haori:* イベント</a> — バインド変更・一覧更新・表示切替・通信・読み込みの節目で発火するイベントの観測。</li>
+            </ul>
 
-        <h2>17. 画面をまたぐ入力状態の保持 (data-store)</h2>
-        <div class="demo-section">
-            <p><code>data-store</code> でバインドデータの指定キーをブラウザストレージへミラーします。入力の退避・次画面での復元・応答の退避・破棄を <code>&lt;script&gt;</code> なしで宣言でき、復元値は <code>data-if</code> の条件や <code>data-each</code> の配列としてそのまま機能します。</p>
-            <a class="demo-link" href="./store/data-store-demo.html">data-store デモを開く</a>
-        </div>
+            <h3>実行時の設定（スクリプトタグの属性）</h3>
+            <ul class="demo-catalog">
+                <li><a href="./runtime/data-prefix-demo.html">data-prefix</a> — 解釈する属性の接頭辞を変えます。</li>
+                <li><a href="./runtime/data-dev-demo.html">data-dev</a> — 開発モードの診断（未解決参照の警告）を強制します。</li>
+                <li><a href="./fetch/data-fetch-runtime-demo.html">data-runtime="demo"</a> — 静的サーバ向けに非 GET を GET へ正規化します。</li>
+            </ul>
 
-        <h2>18. セレクタ属性のテンプレート式</h2>
-        <div class="demo-section">
-            <p>セレクタを値に取る属性は <code>{{}}</code> を評価した結果をセレクタとして扱います。行ごとに一意な <code>id</code> を組み立てて、<code>data-each</code> の行の中から「その行の要素」をバインド先・コピー先に指定できます。</p>
-            <a class="demo-link" href="./selector/selector-template-demo.html">セレクタ式 デモを開く</a>
-        </div>
-
-        <h2>19. 編集可能な行への copy / bind</h2>
-        <div class="demo-section">
-            <p><code>data-each</code> と <code>data-form-list</code> を併用した行では入力欄の値は配列の要素データが権威です。行要素をセレクタで指した <code>data-{event}-copy</code> / <code>data-{event}-bind</code> は対応する配列要素へ書き戻されるため、他の行に影響せず複数の入力欄へまとめて値を流し込めます。</p>
-            <a class="demo-link" href="./form/row-copy-bind-demo.html">行への copy デモを開く</a>
-        </div>
-
-        <h2>20. フィールド間検証（data-validity / data-{event}-if）</h2>
-        <div class="demo-section">
-            <p>属性値の再描画はキュー経由のため <code>data-attr-disabled</code> では押下をブロックしきれません。<code>data-validity</code> は条件を <code>setCustomValidity</code> へ反映してネイティブ検証に相乗りし、<code>data-{event}-if</code> は手続きの実行条件になります。いずれも実行時に同期評価するため、直前に変更した入力を含めて判定されます。</p>
-            <a class="demo-link" href="./form/field-condition-demo.html">フィールド間検証 デモを開く</a>
-        </div>
-
-        <h2>21. 応答の値で遷移先を切り替える</h2>
-        <div class="demo-section">
-            <p><code>data-{event}-redirect</code> や <code>data-{event}-toast</code> のようにバインドより後で実行されるアクションは、使用する直前に属性を評価し直します。応答を自要素または祖先へバインドしておけば、遷移先やメッセージを応答の値で切り替えられます。</p>
-            <a class="demo-link" href="./form/late-attribute-demo.html">遷移先の切り替え デモを開く</a>
-        </div>
-
-        <h2>22. 行の中で候補から 1 件を引く</h2>
-        <div class="demo-section">
-            <p>行ごとに取得した候補から選択中の 1 件の名称を hidden へ載せます。<code>data-attr-value</code> のように宣言バインドで値が決まる入力は、行の値反映で上書きされません。応答のバインド先は式を書いた要素自身または祖先である必要があるため、行の内側のラッパへ <code>data-fetch-bind</code> で寄せています。</p>
-            <a class="demo-link" href="./form/row-declarative-value-demo.html">行の宣言バインド デモを開く</a>
-        </div>
-
-        <h2>23. 外部ライブラリ連携（data-enhance）</h2>
-        <div class="demo-section">
-            <p>DOM を走査して機能を付加する外部ライブラリを宣言で適用します。<code>Haori.enhancers.register()</code> で登録した連携が、初期表示・行追加・<code>data-if</code> の再表示・行削除の契機で <code>init</code> / <code>refresh</code> / <code>destroy</code> として呼ばれます。登録が不要な簡易形 <code>data-enhance-new</code> は、ドット区切りのグローバル参照を対象要素で <code>new</code> します。</p>
-            <a class="demo-link" href="./enhance/data-enhance-demo.html">外部ライブラリ連携 デモを開く</a>
+            <h3>不具合の再現ページ</h3>
+            <ul class="demo-catalog">
+                <li><a href="./click/repro-confirm-local-demo.html">confirm（ローカル更新）</a> — 取得を伴わない確認ダイアログの再現。</li>
+                <li><a href="./click/repro-confirm-bootstrap-demo.html">confirm（bootstrap 版）</a> — 公開版 + haori-bootstrap での再現。</li>
+                <li><a href="./click/repro-click-click-order-demo.html">data-click-click の順序</a> — 連鎖クリックの発火タイミングの再現。</li>
+                <li><a href="./click/repro-click-click-bootstrap-demo.html">data-click-click の順序（bootstrap 版）</a> — 公開版 + haori-bootstrap での再現。</li>
+            </ul>
         </div>
     </div>
 

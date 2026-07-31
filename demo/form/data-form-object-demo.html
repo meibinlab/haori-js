@@ -3,15 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <title>data-form-object デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    label { display: block; margin: 6px 0; }
+    .output { background: #e8f5e9; padding: 10px; border-left: 4px solid #4CAF50; }
+  </style>
   <script src="../../dist/haori.iife.js"></script>
 </head>
 <body>
   <h2>data-form-object デモ</h2>
-  <form>
-    <div data-form-object="address">
-      <input name="city" value="Tokyo">
-      <input name="zip" value="100-0001">
-    </div>
+  <p>
+    data-form-object を付けた要素の配下は、指定したキーのオブジェクトとしてまとまります。
+    入力名が同じでも、まとまる先が違えば別のキーになります。
+  </p>
+  <form
+    data-form
+    data-bind='{"name":"山田太郎","address":{"city":"Tokyo","zip":"100-0001"}}'
+  >
+    <fieldset data-form-object="address">
+      <legend>住所</legend>
+      <label>市区町村: <input name="city"></label>
+      <label>郵便番号: <input name="zip"></label>
+    </fieldset>
+    <label>氏名: <input name="name"></label>
+    <p class="output" id="output">
+      氏名: {{name}} / 住所: {{address.city}} {{address.zip}}
+    </p>
   </form>
 </body>
 </html>

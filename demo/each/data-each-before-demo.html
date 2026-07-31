@@ -10,9 +10,16 @@
 </head>
 <body>
   <h2>data-each-before デモ</h2>
+  <p>
+    data-each-before を付けた要素はテンプレート化されず、生成した行の前に固定表示されます。
+    ループコンテナ（data-each を付けた要素）の直接の子として置く必要があります。
+  </p>
   <div data-bind='{"items":["りんご", "バナナ", "みかん"]}'>
-    <ul data-each="items" data-each-arg="item"><li><span data-each-before class="before">ここはループ前に表示されます</span>{{item}}</li></ul>
+    <ul data-each="items" data-each-arg="item">
+      <li data-each-before class="before">ここはループ前に表示されます</li>
+      <li>{{item}}</li>
+    </ul>
   </div>
-</body>
   <script src="../../dist/haori.iife.js"></script>
+</body>
 </html>

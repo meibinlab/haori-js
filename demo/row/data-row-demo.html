@@ -4,23 +4,30 @@
   <meta charset="UTF-8">
   <title>data-row デモ</title>
   <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
     table { border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 0.5em; }
-    .row-key { color: #888; font-size: 0.9em; }
+    code { background: #f3f4f6; padding: 0.1rem 0.35rem; border-radius: 4px; }
   </style>
 </head>
 <body>
   <h2>data-row デモ</h2>
-  <div>data-row属性でテーブル行を操作するデモ</div>
-  <div data-bind='{"items":["A","B","C"]}'>
+  <p>
+    data-each で生成した行には、行を識別するための data-row 属性が自動で付きます。
+    data-each-key を指定した場合はそのプロパティの値、指定しない場合は生成した一意な値です。
+    手で書き換えてはいけません。行を対象にする属性（data-{event}-row-add など）は、
+    この属性で行を特定します。
+  </p>
+  <p>開発者ツールで &lt;tr&gt; の属性を見ると、id の値がそのまま入っていることを確認できます。</p>
+  <div data-bind='{"users":[{"id":"u-1","name":"Taro"},{"id":"u-2","name":"Hanako"},{"id":"u-3","name":"Jiro"}]}'>
     <table>
       <thead>
-        <tr><th>値</th><th>data-row キー</th></tr>
+        <tr><th>id（data-each-key に指定）</th><th>名前</th></tr>
       </thead>
-      <tbody data-each="items" data-each-arg="item">
+      <tbody data-each="users" data-each-arg="user" data-each-key="id">
         <tr>
-          <td>{{item}}</td>
-          <td class="row-key">{{item}}</td>
+          <td>{{user.id}}</td>
+          <td>{{user.name}}</td>
         </tr>
       </tbody>
     </table>

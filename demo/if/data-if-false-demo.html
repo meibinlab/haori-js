@@ -4,12 +4,16 @@
   <meta charset="UTF-8">
   <title>data-if-false デモ</title>
   <style>
-    .hidden { color: #aaa; }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    #attr-status { color: #555; margin-top: 8px; }
   </style>
-  <h2>data-if-false デモ</h2>
-  <div>data-if-false属性の動作確認デモ</div>
 </head>
 <body>
+  <h2>data-if-false デモ</h2>
+  <p>
+    data-if が偽になった要素は DOM から消えず、data-if-false 属性が付いて非表示になります。
+    この属性が付いている間は、配下の入力はフォームの値収集の対象外です。
+  </p>
   <!--
     切替は宣言的に行う。data-click-data で反転した値を組み立て、data-click-bind で
     同じスコープへ書き戻すことで data-if が再評価される。
@@ -26,18 +30,30 @@
   </div>
   <script>
     // data-if-false 属性の付与状況を表示する（デモの確認用）。
-    function updateAttrStatus() {
-      const el = document.getElementById('target');
-      const has = el.hasAttribute('data-if-false');
-      document.getElementById('attr-status').textContent =
-        has ? 'data-if-false属性: あり' : 'data-if-false属性: なし';
-    }
-    document.getElementById('scope').addEventListener('click', function () {
-      setTimeout(updateAttrStatus, 0);
-    });
-    window.addEventListener('DOMContentLoaded', function() {
-      setTimeout(updateAttrStatus, 0);
-    });
+    // 属性の書き換えはキュー（requestAnimationFrame）で行われるため、クリック直後の
+    // setTimeout では間に合わない。属性の変化そのものを監視して表示を更新する。
+    (function () {
+      /** 現在の付与状況を表示へ反映します。 */
+      function updateAttrStatus() {
+        var target = document.getElementById('target');
+        var status = document.getElementById('attr-status');
+        if (!target || !status) {
+          return;
+        }
+        status.textContent = target.hasAttribute('data-if-false')
+          ? 'data-if-false属性: あり'
+          : 'data-if-false属性: なし';
+      }
+
+      window.addEventListener('DOMContentLoaded', function () {
+        var target = document.getElementById('target');
+        new MutationObserver(updateAttrStatus).observe(target, {
+          attributes: true,
+          attributeFilter: ['data-if-false'],
+        });
+        updateAttrStatus();
+      });
+    })();
   </script>
   <script src="../../dist/haori.iife.js"></script>
 </body>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-dev デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    .panel { border: 1px solid #ddd; border-radius: 4px; padding: 12px 16px; margin: 12px 0; }
+    #warn-log {
+      background: #263238; color: #ffcc80; padding: 8px;
+      font-family: 'Courier New', monospace; font-size: 12px; min-height: 3em;
+      white-space: pre-wrap;
+    }
+    code { background: #f3f4f6; padding: 0.1rem 0.35rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h2>data-dev デモ（開発モードの診断）</h2>
+  <p>
+    読み込むスクリプトへ <code>data-dev</code> を付けると開発モードになり、書き間違いを
+    見つけるための診断がコンソールへ出ます（localhost などでは自動で有効になります）。
+    本番では出力しないため、実行時のコストになりません。
+  </p>
+  <p>
+    下の宣言は、どこにも供給されていないキー <code>typoKey</code> を参照しています。
+    未解決参照は正常系として空表示になりますが、開発モードでは描画の完了後に 1 回だけ
+    まとめて警告します。このページはその警告を下の枠へも書き出しています。
+  </p>
+
+  <div class="panel" data-bind='{"userName":"山田太郎"}'>
+    <p id="ok">正しい参照: {{userName}}</p>
+    <p id="typo">書き間違いの参照: 「{{typoKey}}」（空になります）</p>
+  </div>
+
+  <p>コンソールの警告:</p>
+  <div id="warn-log">（まだ出ていません）</div>
+
+  <script>
+    // 開発モードの警告を画面へも出す（デモの確認用）。
+    (function () {
+      var original = console.warn;
+      var lines = [];
+      console.warn = function () {
+        var text = Array.prototype.map
+          .call(arguments, function (value) {
+            return String(value);
+          })
+          .join(' ');
+        if (text.indexOf('[Haori]') === 0) {
+          lines.push(text);
+          var log = document.getElementById('warn-log');
+          if (log) {
+            log.textContent = lines.join('\n');
+          }
+        }
+        return original.apply(console, arguments);
+      };
+    })();
+  </script>
+  <script src="../../dist/haori.iife.js" data-dev></script>
+</body>
+</html>

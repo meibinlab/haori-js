@@ -1,13 +1,5 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-	<meta charset="UTF-8">
-	<title>import header</title>
-</head>
-<body>
-	<main>
-		<h1>import header</h1>
-		<header style="background:#eee;padding:1em 2em;">ヘッダー（importデモ用）</header>
-	</main>
-</body>
-</html>
+<!-- data-import で読み込む断片。文書全体ではなく、差し込む要素だけを書く。 -->
+<header style="background:#eee;padding:1em 2em;">
+  <h2 id="imported-title">読み込まれたヘッダー</h2>
+  <p>この内容は components/header.html から読み込まれました。</p>
+</header>

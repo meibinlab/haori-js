@@ -3053,15 +3053,17 @@ class TextContents {
  * 一度生成されると内部は変更しません。
  */
 class AttributeContents extends TextContents {
-  /** 強制評価する属性名 */
-  private static readonly FORCE_EVALUATION_ATTRIBUTES = [
-    'data-if',
-    'hor-if',
-    'data-each',
-    'hor-each',
-    'data-derive',
-    'hor-derive',
-  ];
+  /** 強制評価する属性の接尾辞（プレースホルダが無くても式として評価する） */
+  private static readonly FORCE_EVALUATION_SUFFIXES = ['if', 'each', 'derive'];
+
+  /** 接尾辞と組み合わせる接頭辞（`data-prefix` で変えた接頭辞と既定・旧称） */
+  private static readonly FORCE_EVALUATION_PREFIXES = ['data-', 'hor-'];
+
+  /** 強制評価する属性名の集合（`Env.prefix` ごとに作り置きする） */
+  private static forceEvaluationNames: Set<string> | null = null;
+
+  /** {@link forceEvaluationNames} を作ったときの接頭辞 */
+  private static forceEvaluationPrefix: string | null = null;
 
   /** 強制評価フラグ（プレースホルダでなくても評価する） */
   private readonly forceEvaluation: boolean;
@@ -3074,8 +3076,37 @@ class AttributeContents extends TextContents {
    */
   constructor(name: string, value: string) {
     super(value);
-    this.forceEvaluation =
-      AttributeContents.FORCE_EVALUATION_ATTRIBUTES.includes(name);
+    this.forceEvaluation = AttributeContents.needsForceEvaluation(name);
+  }
+
+  /**
+   * 属性名が強制評価の対象かどうかを判定します。
+   *
+   * `data-prefix` で接頭辞を変えた場合にも追従する必要があるため、実行時の
+   * `Env.prefix` と既定・旧称の接頭辞を組み合わせて判定します。属性ごとに
+   * 呼ばれるため、名前の集合は接頭辞が変わるまで作り置きします。
+   *
+   * @param name 属性名
+   * @returns 強制評価の対象なら true
+   */
+  private static needsForceEvaluation(name: string): boolean {
+    if (
+      AttributeContents.forceEvaluationNames === null ||
+      AttributeContents.forceEvaluationPrefix !== Env.prefix
+    ) {
+      const names = new Set<string>();
+      for (const prefix of [
+        Env.prefix,
+        ...AttributeContents.FORCE_EVALUATION_PREFIXES,
+      ]) {
+        for (const suffix of AttributeContents.FORCE_EVALUATION_SUFFIXES) {
+          names.add(`${prefix}${suffix}`);
+        }
+      }
+      AttributeContents.forceEvaluationNames = names;
+      AttributeContents.forceEvaluationPrefix = Env.prefix;
+    }
+    return AttributeContents.forceEvaluationNames.has(name);
   }
 
   /**

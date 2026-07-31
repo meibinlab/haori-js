@@ -3,14 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <title>data-fetch-method デモ</title>
-  <!-- ...existing code... -->
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    code { background: #f3f4f6; padding: 0.1rem 0.35rem; border-radius: 4px; }
+  </style>
 </head>
 <body>
-  <div data-fetch="./data-fetch-method-demo.json" data-fetch-data='{"name":"Taro"}'>
-    <p>送信結果: {{result}}</p>
+  <h2>data-fetch-method デモ</h2>
+  <p>
+    data-fetch-method で HTTP メソッドを、data-fetch-data で送信データを指定します。
+    このページは静的ファイルしか返せないため、読み込むスクリプトへ data-runtime="demo" を
+    付けて非 GET を GET へ正規化しています（送信データはクエリとして付きます）。
+    実行モードはスクリプトタグの属性で決まります。
+  </p>
+  <div
+    data-fetch="./data-fetch-method-demo.json"
+    data-fetch-method="POST"
+    data-fetch-data='{"name":"Taro"}'
+  >
+    <p id="result">送信結果: {{result}}</p>
   </div>
-  <!-- ※ /api/create へのPOSTはダミーです。実際のAPIエンドポイントに合わせて下さい -->
-  <script src="../../dist/haori.iife.js"></script>
+  <script src="../../dist/haori.iife.js" data-runtime="demo"></script>
 </body>
-  <script src="../../dist/haori.iife.js"></script>
 </html>

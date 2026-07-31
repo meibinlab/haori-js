@@ -3,16 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <title>data-click-reset/refetch デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    button { padding: 6px 12px; margin: 4px 0; }
+    ul { padding-left: 1.2em; }
+  </style>
 </head>
 <body>
   <h2>data-click-reset/refetch デモ</h2>
-  <div>フォームのリセットとリストの再取得デモ</div>
-  <form id="myForm">
-    <input name="username" value="testuser">
+  <p>
+    data-click-reset は対象フォームの入力を初期値へ戻し、data-click-refetch は対象要素の
+    data-fetch をもう一度実行します。
+  </p>
+
+  <h3>入力の初期値復元</h3>
+  <form id="myForm" data-form>
+    <label>利用者名 <input name="username" value="testuser"></label>
+    <p id="form-output">現在の値: {{username}}</p>
   </form>
-  <button data-click-reset="#myForm">リセット</button>
-  <div id="userList" data-fetch="./data-click-refetch-demo.json"></div>
-  <button data-click-refetch="#userList">再読み込み</button>
+  <button type="button" id="reset-button" data-click-reset="#myForm">リセット</button>
+
+  <h3>一覧の再取得</h3>
+  <div id="userList" data-fetch="./data-click-refetch-demo.json" data-fetch-arg="users">
+    <ul data-each="users" data-each-arg="user" data-each-key="id">
+      <li class="user">{{user.name}}</li>
+    </ul>
+  </div>
+  <button type="button" id="refetch-button" data-click-refetch="#userList">再読み込み</button>
   <script src="../../dist/haori.iife.js"></script>
 </body>
 </html>

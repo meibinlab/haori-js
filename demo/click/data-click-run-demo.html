@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-click-run デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    .panel { border: 1px solid #ddd; border-radius: 4px; padding: 12px 16px; margin: 12px 0; }
+    #log { background: #eeeeee; padding: 8px; min-height: 1.4em; }
+    button { padding: 6px 12px; margin: 2px; }
+    code { background: #f3f4f6; padding: 0.1rem 0.35rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h2>data-click-run デモ（イベント時に任意の JS を実行する）</h2>
+  <p>
+    data-{event}-run は、フェッチを伴わない処理を宣言から呼び出すための属性です。
+    本体は実 JavaScript として実行され、this は起点要素、引数 event は起点のイベントです。
+    同期的に false を返したときだけ既定動作を抑止します。
+  </p>
+
+  <div class="panel">
+    <h3>関数を呼ぶ（type="button" では抑止は不要）</h3>
+    <button type="button" id="count-button" data-click-run="Demo.increment()">
+      カウントを増やす
+    </button>
+    <p>カウント: <span id="count">0</span></p>
+  </div>
+
+  <div class="panel">
+    <h3>this と event を使う</h3>
+    <button type="button" id="self-button" data-click-run="Demo.describe(this, event)">
+      押した要素を調べる
+    </button>
+    <p id="describe">（未実行）</p>
+  </div>
+
+  <div class="panel">
+    <h3>行ごとの値を渡す（<code>{{}}</code> はレンダリング時に展開）</h3>
+    <p>
+      展開結果はコードとして実行されるため、埋め込むのは自分で制御する値（行番号など）だけにします。
+    </p>
+    <div data-bind='{"rows":[{"label":"1 行目"},{"label":"2 行目"},{"label":"3 行目"}]}'>
+      <ul data-each="rows" data-each-arg="row" data-each-index="i">
+        <li>
+          {{row.label}}
+          <button type="button" class="pick" data-click-run="Demo.pick({{i}})">選ぶ</button>
+        </li>
+      </ul>
+    </div>
+    <p id="picked">選んだ行: （未選択）</p>
+  </div>
+
+  <div class="panel">
+    <h3>既定動作を抑止する（return false）</h3>
+    <p>
+      リンクの遷移を止めます。<code>return false</code> を返さない場合は遷移します。
+    </p>
+    <a
+      id="blocked-link"
+      href="./data-click-run-demo.html?moved=1"
+      data-click-run="Demo.log('リンクの遷移を止めました'); return false"
+    >遷移しないリンク</a>
+  </div>
+
+  <p>実行の記録: <span id="log"></span></p>
+
+  <script>
+    // 画面個別の処理はグローバルの名前空間へ置き、宣言から呼び出す。
+    window.Demo = {
+      /** カウントを 1 増やします。 */
+      increment: function () {
+        var count = document.getElementById('count');
+        count.textContent = String(Number(count.textContent) + 1);
+        Demo.log('increment');
+      },
+
+      /**
+       * 起点要素とイベントの情報を表示します。
+       *
+       * @param element 起点要素（this）
+       * @param event 起点の DOM イベント
+       */
+      describe: function (element, event) {
+        document.getElementById('describe').textContent =
+          'this の id: ' + element.id + ' / event.type: ' + event.type;
+        Demo.log('describe');
+      },
+
+      /**
+       * 選んだ行番号を表示します。
+       *
+       * @param index 0 始まりの行番号
+       */
+      pick: function (index) {
+        document.getElementById('picked').textContent =
+          '選んだ行: ' + String(index + 1) + ' 行目';
+        Demo.log('pick:' + index);
+      },
+
+      /**
+       * 実行の記録へ追記します。
+       *
+       * @param text 追記する文字列
+       */
+      log: function (text) {
+        var log = document.getElementById('log');
+        log.textContent = (log.textContent + ' ' + text).trim();
+      },
+    };
+  </script>
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>
