@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.36.0
+バージョン: 0.37.0
 最終更新: 2026-07-30
 
 ## 目次
@@ -1917,7 +1917,7 @@ data-each="arrayExpression"
 - `data-row`: 各行に自動付与されるキー (手動変更禁止)
 - `data-each-visible`: スクロール追従の可視行範囲を組み込み変数として公開（後述）
 - `data-each-done`: 全行の描画が安定して完了したときに **Haori が自動付与**するマーカー（手動指定不可）。新しい描画サイクルの開始時に外され、完了時に再付与されます。E2E テスト等で `[data-each-done]` の出現を待って描画完了を検知できます。**発火保証**: 初回描画・再 fetch・再バインドなど描画サイクルが走るたびに、コンテナ単位で「除去 → 再付与」が必ず一度行われます。差分更新で実際の DOM 変更がない場合でも、サイクルが安定した時点で再付与されます。これにより外部ウィジェットの再同期契機として利用できます
-- `data-each-rendered-run`: 描画が確定し `data-each-done` が付与されるたびに、**コンテナ単位で一度だけ**実行する任意の JS（`data-{event}-run` と同じ式評価）。本体内の `this` は対象コンテナ要素に束縛されます。外部の select 拡張ライブラリ（Choices.js 等）の再同期フック（例: `data-each-rendered-run="window.__choicesRefresh(this)"`）として利用できます
+- `data-each-rendered-run`: 描画が確定し `data-each-done` が付与されるたびに、**コンテナ単位で一度だけ**実行する任意の JS（`data-{event}-run` と同じ式評価）。本体内の `this` は対象コンテナ要素に束縛されます。外部の select 拡張ライブラリ（Choices.js 等）の再同期フック（例: `data-each-rendered-run="window.__choicesRefresh(this)"`）として利用できます。適用の冪等性やインスタンスの保持まで宣言に寄せる場合は [`data-enhance`](#data-enhance) を使ってください（`data-enhance` の再同期はこのフックより前に実行されます）
 - `data-each-rendered-change`: 描画確定後に、対象コンテナ要素へ `change` イベント（バブリングあり）を発火します。API から取得した候補を `data-each` で流し込んだ `<select>` について、「既定選択を確定して初期データを取得する」パターンをインライン JS なしで宣言できます。`<select>` はブラウザが先頭 `<option>` を自動選択するため、描画確定後の `change` がそのまま既定選択の確定になります。`data-each-rendered-run` より後に実行されるため、外部ウィジェットの再同期を先に済ませた状態で発火します
   - 属性値を省略、または `once`: 描画行が 1 件以上ある**最初の描画確定時のみ**発火します（既定）
   - `always`: 描画確定ごとに毎回発火します
@@ -2171,6 +2171,62 @@ data-each="arrayExpression"
 ```
 
 `<option>` は `data-each` で配列バインドし、外部生成 DOM は `data-external` で監視除外、描画確定のたびに `data-each-rendered-run` で外部ウィジェットを再同期します。選択結果は `<select multiple>` の配列値としてフォーム送信値（`data-click-form` 等）に反映されます。任意の select 拡張ライブラリへ一般化できます。
+
+#### `data-enhance`
+
+登録した外部ライブラリ連携を、宣言した要素へ適用します。適用・再適用・破棄の契機を Haori が与えるため、画面ごとの JavaScript（適用対象の判定、冪等性の管理、インスタンスの保持）が不要になります。
+
+**構文**:
+```html
+<select data-enhance="choices" data-each="items" data-each-arg="it">…</select>
+<div data-enhance="choices tooltip">…</div>
+```
+
+**登録**（1 度だけ。iife グローバルは `Haori.enhancers`、ESM は `import {enhancers} from 'haori'`）:
+```js
+Haori.enhancers.register('choices', {
+  init: element => new Choices(element),           // 必須。戻り値をインスタンスとして保持
+  refresh: (element, instance) => instance.refresh(),  // 省略可
+  destroy: (element, instance) => instance.destroy(),  // 省略可
+});
+```
+
+**契機**:
+
+| 契機 | 対象 | 呼び出し |
+|---|---|---|
+| 初期スキャン、後から追加されたノード、`data-each` の新規行 | 追加された部分だけ | `init`（未適用の要素だけ） |
+| `data-each` の描画確定（`data-each-done` の付与時） | そのコンテナの配下 | `refresh`（未適用なら `init`） |
+| `data-if` の非表示 → 表示 | その分岐の配下 | `refresh`（未適用なら `init`） |
+| 要素が DOM から外れたとき（行削除など） | 外れた部分の配下 | `destroy` |
+
+`init` が走るのは**未適用の要素だけ**です（行の追加・並べ替えで既存行が作り直されることはありません）。一方 `refresh` は描画が確定したコンテナ配下の適用済み要素すべてに対して呼ばれるため、**軽く・何度呼ばれても同じ結果になる実装**にしてください（`data-each-rendered-run` と同じ粒度です）。`data-if` の非表示では `destroy` を呼ばず、インスタンスを保持したまま再表示で `refresh` します。
+
+**挙動**:
+
+- 適用は**要素ごと・名前ごとに一度だけ**です。再スキャンや再描画で `init` を繰り返しません（外部ライブラリは冪等でないものが多いため）。
+- 走査は宣言した要素の**配下に限定**されます（`document` 全体を走査し直しません）。ただし引数を受け取らず自分で `document` を走査するライブラリでは、Haori が担保できるのは呼び出し回数だけです。
+- 空白区切りで複数の連携を宣言できます。属性値は**評価しません**（登録名をそのまま使います。`{{式}}` は展開されません）。
+- **登録はスクリプトの読み込み順に依存しません。** 未登録の名前は適用を保留し、`register()` の時点で `document.body` 配下を遡って適用します（開発モードでは保留を一度だけ警告します）。
+- `init` / `refresh` / `destroy` の例外は `error` ログに記録して続行します。1 つの連携の失敗で描画や他の要素の適用を止めません。
+- `data-each` の描画確定では `data-enhance` の `refresh` を `data-each-rendered-run` より**前**に実行します（外部ウィジェットの再同期を先に済ませてから任意の JS を動かすため）。
+- 外部ライブラリが生成した DOM を監視対象外にする場合は [`data-external`](#data-external) を併用してください（生成 DOM とバインド対象を含む外側のコンテナへ宣言します）。**対象要素を生成コンテナの内側へ再配置するライブラリ（Choices.js など）では併用が必須です。** `data-external` が無いと、移動が「削除 → 追加」として観測されて `destroy` と再 `init` が走ります。
+
+#### `data-enhance-new`
+
+登録なしで、**グローバル参照を `new` するだけ**の簡易形です。JavaScript ファイルを持たずに宣言だけで完結させたい場合に使います。
+
+**構文**:
+```html
+<div class="h-adr" data-enhance-new="YubinBango.MicroformatDom">…</div>
+```
+
+**挙動**:
+
+- 値は**ドット区切りのグローバル参照だけ**を許します（識別子とドット以外を含む値はエラーログを出して何もしません）。属性値をコードとして実行しません。
+- `new 参照(対象要素)` を**要素ごとに一度だけ**呼びます。引数を受け取らない実装でも害はありません。
+- 再同期（`refresh`）と後始末（`destroy`）はありません。インスタンスの再同期が必要なライブラリ（Choices.js など）は `data-enhance` を使ってください。
+- 対象のグローバルは、Haori の初期スキャンより前に定義されている必要があります（解決できない場合は開発モードで一度だけ警告します）。
 
 ---
 

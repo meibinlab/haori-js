@@ -9,6 +9,7 @@ import Log from './log';
 import Expression from './expression';
 import Env from './env';
 import Dev from './dev';
+import Enhance from './enhance';
 
 /**
  * `data-if` が偽の分岐で、エンジンが `disabled` を付与した入力に立てる印。
@@ -916,6 +917,11 @@ export class ElementFragment extends Fragment {
    */
   public remove(unmount = true): Promise<void> {
     const promises: Promise<void>[] = [];
+    if (unmount) {
+      // DOM から外れる要素の外部ライブラリ連携を破棄する（子孫を含む）。
+      // 子の再帰呼び出し（unmount=false）では、起点の走査でまとめて破棄済み。
+      Enhance.destroySubtree(this.getTarget());
+    }
     this.children.forEach(child => {
       promises.push(child.remove(false));
     });

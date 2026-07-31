@@ -486,6 +486,12 @@
             <p>行ごとに取得した候補から選択中の 1 件の名称を hidden へ載せます。<code>data-attr-value</code> のように宣言バインドで値が決まる入力は、行の値反映で上書きされません。応答のバインド先は式を書いた要素自身または祖先である必要があるため、行の内側のラッパへ <code>data-fetch-bind</code> で寄せています。</p>
             <a class="demo-link" href="./form/row-declarative-value-demo.html">行の宣言バインド デモを開く</a>
         </div>
+
+        <h2>23. 外部ライブラリ連携（data-enhance）</h2>
+        <div class="demo-section">
+            <p>DOM を走査して機能を付加する外部ライブラリを宣言で適用します。<code>Haori.enhancers.register()</code> で登録した連携が、初期表示・行追加・<code>data-if</code> の再表示・行削除の契機で <code>init</code> / <code>refresh</code> / <code>destroy</code> として呼ばれます。登録が不要な簡易形 <code>data-enhance-new</code> は、ドット区切りのグローバル参照を対象要素で <code>new</code> します。</p>
+            <a class="demo-link" href="./enhance/data-enhance-demo.html">外部ライブラリ連携 デモを開く</a>
+        </div>
     </div>
 
         <script type="module">

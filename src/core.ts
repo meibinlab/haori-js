@@ -6,6 +6,7 @@
  */
 import Env from './env';
 import Dev from './dev';
+import Enhance from './enhance';
 import Expression from './expression';
 import Form from './form';
 import Fragment, {ElementFragment, TextFragment} from './fragment';
@@ -127,6 +128,8 @@ export default class Core {
       'store-params',
       'store-arg',
       'store-type',
+      'enhance',
+      'enhance-new',
     ]);
 
   /** data-fetch の自動再評価状態 */
@@ -539,9 +542,13 @@ export default class Core {
     }
     // 初期化（data-each の行生成を含む）が完了してから、初期 data-bind の値を
     // 入力欄へ反映する。行が生成される前に反映しても新規行には値が入らない。
-    return Core.initializeElementFragment(fragment, false).then(() =>
-      Form.restoreInitialValues(element),
-    );
+    return Core.initializeElementFragment(fragment, false)
+      .then(() => Form.restoreInitialValues(element))
+      .then(() => {
+        // 外部ライブラリ連携（`data-enhance` / `data-enhance-new`）は、内容の描画と
+        // 初期値の反映が済んだ状態で適用する。
+        Enhance.applySubtree(element);
+      });
   }
 
   /**
@@ -558,6 +565,8 @@ export default class Core {
       if (Core.needsScheduledEvaluateAll(fragment)) {
         Core.scheduleEvaluateAll(fragment);
       }
+      // 追加された行にだけ外部ライブラリ連携を適用する。
+      Enhance.applySubtree(fragment.getTarget());
       return undefined;
     });
   }
@@ -1557,6 +1566,8 @@ export default class Core {
           // 毎回の再評価で発火させると無限ループや過剰実行を招くため、遷移時に限定する。
           if (!wasVisible) {
             Core.triggerLoadOnShow(fragment);
+            // 再表示された分岐の中の外部ライブラリ連携を再同期する（未適用なら適用）。
+            Enhance.refreshSubtree(fragment.getTarget());
           }
         }),
       );
@@ -1673,6 +1684,10 @@ export default class Core {
         // 外部テストは `[data-each-done]` を待機して描画完了を検知できる。
         const target = fragment.getTarget();
         target.setAttribute(`${Env.prefix}each-done`, '');
+        // 外部ライブラリ連携（`data-enhance`）を描画確定ごとに再同期する。
+        // 宣言だけで Choices.js 等の `refresh()` を呼べるようにするため、
+        // `data-each-rendered-run` より前に実行する。
+        Enhance.refreshSubtree(target);
         // data-each-rendered-run: 描画確定ごとに一度、任意 JS を実行する。
         // 外部の select 拡張ライブラリ（Choices.js 等）の再同期フックに使える。
         Core.runEachRenderedScript(target);

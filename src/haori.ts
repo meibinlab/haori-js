@@ -1,5 +1,7 @@
 import Log from './log';
 import Env from './env';
+import Enhance from './enhance';
+import type {Enhancer} from './enhance';
 import Queue from './queue';
 import {
   date,
@@ -47,6 +49,47 @@ export default class Haori {
   public static setRuntime(runtime: string): void {
     Env.setRuntime(runtime);
   }
+
+  /**
+   * 外部ライブラリ連携（`data-enhance`）の登録窓口です。
+   *
+   * `register(名前, {init, refresh, destroy})` で登録すると、`data-enhance="名前"` を
+   * 宣言した要素へ Haori が適用します。適用は要素ごと・名前ごとに一度だけで、
+   * `data-each` の再描画や `data-if` の再表示では `refresh`、DOM から外れたときは
+   * `destroy` が呼ばれます。登録より前に描画された要素へも遡って適用するため、
+   * スクリプトの読み込み順に依存しません。
+   *
+   * 例:
+   * ```js
+   * Haori.enhancers.register('choices', {
+   *   init: element => new Choices(element),
+   *   refresh: (element, instance) => instance.refresh(),
+   *   destroy: (element, instance) => instance.destroy(),
+   * });
+   * ```
+   */
+  public static readonly enhancers = {
+    /**
+     * 外部ライブラリ連携を登録します。
+     *
+     * @param name `data-enhance` に書く名前
+     * @param enhancer 連携の定義
+     * @return 戻り値はありません。
+     */
+    register(name: string, enhancer: Enhancer): void {
+      Enhance.register(name, enhancer);
+    },
+
+    /**
+     * 登録済みの連携かどうかを返します。
+     *
+     * @param name 連携名
+     * @return 登録済みなら true
+     */
+    has(name: string): boolean {
+      return Enhance.has(name);
+    },
+  };
 
   /**
    * 進行中・追従して投入されるものを含め、すべてのレンダリングタスクの完了を待ちます。

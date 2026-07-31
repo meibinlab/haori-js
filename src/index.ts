@@ -5,6 +5,7 @@
  */
 
 import Core from './core';
+import Enhance from './enhance';
 import Env from './env';
 import Fragment from './fragment';
 import Form from './form';
@@ -15,8 +16,9 @@ import Queue from './queue';
 import './observer';
 
 // メインクラスとユーティリティをエクスポート
-export {Core, Env, Fragment, Form, Haori, Log, Queue};
+export {Core, Enhance, Env, Fragment, Form, Haori, Log, Queue};
 export type {HaoriRuntime} from './env';
+export type {Enhancer} from './enhance';
 
 /**
  * すべてのレンダリングタスク（追従投入分を含む）の完了を待ちます。
@@ -27,6 +29,14 @@ export type {HaoriRuntime} from './env';
  * @return すべてのレンダリングが完了したら解決される Promise
  */
 export const waitForRenders = (): Promise<void> => Haori.waitForRenders();
+
+/**
+ * 外部ライブラリ連携（`data-enhance`）の登録窓口です。
+ *
+ * iife グローバルからは `Haori.enhancers.register(名前, 定義)`、ESM では
+ * `import {enhancers} from 'haori'` で利用できます。
+ */
+export const enhancers = Haori.enhancers;
 
 // デフォルトエクスポート（Haoriをメインとして提供）
 export default Haori;

@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.36.0
+バージョン: 0.37.0
 
 ## 目次
 
@@ -4081,7 +4081,64 @@ class ProgressManager {
 new ProgressManager()
 ```
 
-### select 拡張ライブラリ（Choices.js）との連携
+### 外部ライブラリを宣言で適用する（`data-enhance`）
+
+DOM を走査して機能を付加する外部ライブラリは、`data-each` の行追加や `data-if` の再表示で DOM が入れ替わるたびに再適用が必要です。`data-enhance` を使うと、適用の契機・冪等性・インスタンスの保持を Haori が引き受けるため、画面ごとの JavaScript が不要になります。登録は 1 度だけです。
+
+```javascript
+// 登録スクリプト（画面ごとではなく、共通で 1 度だけ読み込む）
+Haori.enhancers.register('choices', {
+  init: element => new Choices(element, {removeItemButton: true}),
+  refresh: (element, instance) => instance.refresh(),
+  destroy: (element, instance) => instance.destroy(),
+})
+```
+
+```html
+<!-- 宣言はこれだけ。行が増えても、選択肢が再描画されても Haori が面倒を見る -->
+<div data-external>
+  <select
+    name="planName"
+    multiple
+    data-enhance="choices"
+    data-each="plans.content"
+    data-each-key="id"
+    data-each-arg="p"
+  >
+    <option value="{{p.planName}}">{{p.planName}}</option>
+  </select>
+</div>
+```
+
+呼ばれる契機は次のとおりです。
+
+| 契機 | 呼び出し |
+| ---- | -------- |
+| 初期表示、後から追加された要素、`data-each` の新規行 | `init`（未適用の要素だけ） |
+| `data-each` の描画確定、`data-if` の再表示 | `refresh`（未適用なら `init`） |
+| 要素が DOM から外れたとき（行削除など） | `destroy` |
+
+登録が後（外部ライブラリの読み込みが遅い場合など）でも、`register()` の時点で既に描画済みの要素へ遡って適用されるため、読み込み順を気にする必要はありません。
+
+インスタンスの再同期が不要で、単にコンストラクタを呼べばよいライブラリは、登録なしの簡易形が使えます。値はドット区切りのグローバル参照だけを受け付け、対象要素を引数に渡します。
+
+```html
+<!-- 行が追加されるたびに、その行の要素で 1 度だけ new される -->
+<div class="h-adr" data-enhance-new="YubinBango.MicroformatDom">
+  <input type="text" class="p-postal-code" name="postalCode">
+  <input type="text" class="p-region" name="region">
+</div>
+```
+
+### 気をつけること
+
+- 適用は要素ごと・名前ごとに一度だけです。再描画で `init` は呼ばれません（再同期は `refresh` に書いてください）。
+- 走査は宣言した要素の配下に限定されますが、引数を受け取らず自分で `document` 全体を走査するライブラリでは、Haori が保証できるのは呼び出し回数だけです。
+- `data-enhance-new` には式やコードを書けません（属性値をコードとして実行しないためです）。対象のグローバルは Haori の初期表示より前に読み込んでください。
+- 外部ライブラリが生成した DOM は `data-external` で監視対象から外してください。
+- `init` の失敗はログに記録して先へ進みます。1 つの連携の失敗で画面が止まりません。
+
+### select 拡張ライブラリ（Choices.js）との連携（`data-each-rendered-run` を使う書き方）
 
 API から取得した選択肢を `data-each` で動的生成しつつ、検索可能なタグ型マルチセレクト（[Choices.js](https://github.com/Choices-js/Choices) など。MIT ライセンス）で表示するレシピです。任意の select 拡張ライブラリへ一般化できます。
 

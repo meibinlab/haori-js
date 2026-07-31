@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>外部ライブラリ連携 デモ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main {
+      max-width: 820px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+    }
+
+    h2 {
+      margin: 24px 0 8px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      line-height: 1.6;
+    }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    .row-block {
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+
+    button {
+      margin-right: 8px;
+      padding: 8px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #fff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #eef2ff;
+    }
+
+    select {
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    /* 外部ライブラリの生成 DOM を模したタグ表示 */
+    .fake-tags {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    .fake-tag {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #e0e7ff;
+      font-size: 12px;
+    }
+
+    .log {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #a5f3fc;
+      font-size: 12px;
+      min-height: 20px;
+      white-space: pre-wrap;
+    }
+
+    code {
+      background: #eef2ff;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+  <script src="../../dist/haori.iife.js"></script>
+  <script>
+    // 外部ライブラリの代わりに使うスタブ。選択肢からタグ表示を生成し、
+    // 再同期（refresh）で作り直す。Choices.js の連携と同じ形。
+    class FakeTagWidget {
+      constructor(select) {
+        this.select = select;
+        this.list = document.createElement('div');
+        this.list.className = 'fake-tags';
+        select.insertAdjacentElement('afterend', this.list);
+        this.refresh();
+      }
+
+      refresh() {
+        this.list.textContent = '';
+        Array.from(this.select.options).forEach(option => {
+          if (!option.value) {
+            return;
+          }
+          const tag = document.createElement('span');
+          tag.className = 'fake-tag';
+          tag.textContent = option.textContent;
+          this.list.appendChild(tag);
+        });
+      }
+
+      destroy() {
+        this.list.remove();
+      }
+    }
+
+    // 郵便番号ライブラリの代わりに使うスタブ。対象要素の配下を初期化する。
+    class FakeAddressHelper {
+      constructor(element) {
+        const mark = element.querySelector('.address-status');
+        if (mark) {
+          mark.textContent = '住所補完が有効です';
+        }
+      }
+    }
+
+    window.FakeLib = {TagWidget: FakeTagWidget, AddressHelper: FakeAddressHelper};
+
+    // 登録は 1 回だけ。以降は HTML の宣言だけで適用・再同期・破棄される。
+    Haori.enhancers.register('tags', {
+      init: element => new FakeTagWidget(element),
+      refresh: (element, instance) => instance.refresh(),
+      destroy: (element, instance) => instance.destroy(),
+    });
+  </script>
+</head>
+<body>
+<main>
+  <h1>外部ライブラリ連携（<code>data-enhance</code>）</h1>
+  <p>
+    DOM を走査して機能を付加する外部ライブラリは、行の追加や再描画のたびに再適用が
+    必要になります。<code>data-enhance</code> は登録した連携を宣言で適用し、適用は
+    要素ごとに一度だけ、再描画では <code>refresh</code>、削除では
+    <code>destroy</code> を呼びます。
+  </p>
+
+  <div class="panel" id="host" data-bind='{"plans":[{"id":"p1","name":"標準プラン"}],"rows":[{"no":1}]}'>
+    <h2>再描画のたびに再同期する</h2>
+    <p>
+      選択肢を増やすと <code>data-each</code> が再描画され、宣言だけで
+      <code>refresh</code> が呼ばれます（タグ表示が追随します）。
+    </p>
+    <select id="plan" data-enhance="tags" data-each="plans" data-each-arg="p" data-each-key="id">
+      <option value="{{p.id}}">{{p.name}}</option>
+    </select>
+    <div>
+      <button type="button" id="add-plan"
+              data-click-bind="#host"
+              data-click-bind-merge
+              data-click-data='{"plans":[{"id":"p1","name":"標準プラン"},{"id":"p2","name":"夜間プラン"}]}'>
+        選択肢を増やす
+      </button>
+    </div>
+
+    <h2>追加した行にだけ適用する</h2>
+    <p>
+      行を追加すると、追加された行の要素にだけ <code>init</code> が走ります。行を
+      削除すると <code>destroy</code> が呼ばれ、生成された DOM も片付きます。
+    </p>
+    <div id="rows" data-each="rows" data-each-arg="c" data-each-index="i">
+      <div class="row-block">
+        <span>{{i + 1}} 行目</span>
+        <select class="row-plan" data-enhance="tags" data-each="plans" data-each-arg="p" data-each-key="id">
+          <option value="{{p.id}}">{{p.name}}</option>
+        </select>
+        <button type="button" data-click-row-add>行を追加</button>
+        <button type="button" data-click-row-remove>削除</button>
+      </div>
+    </div>
+
+    <h2>登録なしで使う簡易形</h2>
+    <p>
+      <code>data-enhance-new="FakeLib.AddressHelper"</code> は、ドット区切りの
+      グローバル参照を対象要素で <code>new</code> するだけの宣言です。値にコードは
+      書けません。
+    </p>
+    <div class="row-block" data-enhance-new="FakeLib.AddressHelper">
+      <span class="address-status">住所補完は未適用です</span>
+    </div>
+
+    <div class="log" id="values">選択肢: {{plans.length}} 件 / 行: {{rows.length}} 行</div>
+  </div>
+</main>
+</body>
+</html>

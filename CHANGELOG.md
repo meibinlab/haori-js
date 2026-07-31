@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## [0.37.0] - 2026-07-31
+
+### Added
+
+- **外部ライブラリ連携の宣言 `data-enhance` / `data-enhance-new` を追加した**。DOM を走査して機能を付加する外部ライブラリ（Choices.js・郵便番号補完など）は、`data-each` の行追加や `data-if` の再表示で DOM が入れ替わるたびに再適用が必要になる。従来は `data-each-rendered-run` から画面側の JavaScript を呼び、適用対象の判定・冪等性・インスタンスの保持をアプリ側で持つ必要があった。
+  - `data-enhance="名前"`: `Haori.enhancers.register(名前, {init, refresh, destroy})` で登録した連携を適用する（iife グローバルは `Haori.enhancers`、ESM は `import {enhancers} from 'haori'`）。契機は、初期スキャン・後から追加されたノード・`data-each` の新規行で `init`、`data-each` の描画確定（`data-each-done` 付与時）と `data-if` の非表示→表示で `refresh`（未適用なら `init`）、要素が DOM から外れたときに `destroy`。
+  - 適用は**要素ごと・名前ごとに一度だけ**で、走査は宣言した要素の配下に限定される。空白区切りで複数の連携を宣言できる。
+  - **登録はスクリプトの読み込み順に依存しない**。未登録の名前は適用を保留し、`register()` の時点で `document.body` 配下を遡って適用する（開発モードでは保留を一度だけ警告する）。
+  - `init` / `refresh` / `destroy` の例外は `error` ログへ記録して続行する。1 つの連携の失敗で描画や他要素の適用を止めない。
+  - `data-each` の描画確定では、`data-enhance` の `refresh` を `data-each-rendered-run` より前に実行する（外部ウィジェットの再同期を先に済ませる）。
+  - `data-enhance-new="Global.Ctor"`: 登録なしでグローバル参照を `new` するだけの簡易形。値はドット区切りのグローバル参照だけを許し（属性値をコードとして実行しない）、対象要素を引数に渡して要素ごとに一度だけ呼ぶ。再同期と後始末は無いため、インスタンスの再同期が必要なライブラリは `data-enhance` を使う。
+  - 引数を受け取らず自分で `document` 全体を走査するライブラリでは、Haori が担保できるのは呼び出し回数だけである（走査範囲の限定はライブラリ側の対応が必要）。
+  - 外部ライブラリの生成 DOM は従来どおり `data-external` で監視対象から外せる（`data-enhance` と併用できる）。
+
+### Tests
+
+- `tests/enhance.test.ts` を追加（14 件）。初期スキャンでの適用、再スキャンでの二重適用の防止、空白区切りの複数指定、行追加で追加行にだけ適用すること、`data-each` の描画確定と `data-if` の再表示での再同期（`init` を繰り返さないこと）、行削除での `destroy`、描画より後の登録で遡って適用すること、未登録名の開発モード警告が一度だけであること、`data-enhance-new` がグローバル参照を要素ごと一度だけ `new` すること、式やコードを受け付けないこと、解決できない参照の警告と描画継続、`init` の例外でも描画が続くこと、`data-external` 配下でも適用されることを検証する。
+- `tests/enhance-external-move.test.ts` を追加（2 件）。ライブ監視下で対象要素を生成コンテナへ再配置したとき、`data-external` を併用すればインスタンスが保持され、併用しないと `destroy` と再 `init` が走ることを検証する（併用が必要な理由の回帰ガード）。
+- `playwright/enhance.spec.cjs` を追加（2 件）。実ブラウザで、適用・再同期（選択肢の追加に追随）・追加行だけへの適用・行削除での生成 DOM の片付け、および `data-enhance-new` の `new` を確認する。
+
+### Docs
+
+- `docs/ja/specs.md` に「`data-enhance`」「`data-enhance-new`」を追加し、`data-each-rendered-run` の説明から相互参照した。
+- `docs/ja/guide.md` に「外部ライブラリを宣言で適用する（`data-enhance`）」を追加し、既存の Choices.js レシピを `data-each-rendered-run` を使う書き方として明示した。
+- `README.md` / `README.ja.md` に項目を追加した。
+- `demo/enhance/data-enhance-demo.html` を追加し、`demo/index.html` に 23 番のカードを追加した。
+
 ## [0.36.0] - 2026-07-31
 
 ### Fixed
