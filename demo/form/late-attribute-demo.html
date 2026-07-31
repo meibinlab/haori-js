@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>応答の値で遷移先を切り替える デモ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main {
+      max-width: 780px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+    }
+
+    h2 {
+      margin: 24px 0 8px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      line-height: 1.6;
+    }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    button {
+      margin-right: 8px;
+      padding: 8px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #fff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #eef2ff;
+    }
+
+    .log {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #a5f3fc;
+      font-size: 12px;
+      min-height: 20px;
+    }
+
+    code {
+      background: #eef2ff;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+  <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+<main>
+  <h1>応答の値で遷移先を切り替える</h1>
+  <p>
+    <code>data-{event}-redirect</code> などバインド（処理順 9）より後に実行される
+    アクションは、使用する直前に属性を評価し直します。応答を
+    <code>data-{event}-bind</code> で自要素または祖先へ反映しておけば、そのまま式から
+    参照できます。
+  </p>
+
+  <!-- 応答のバインド先はボタンの祖先。ここへ反映した値を遷移先の式が参照する -->
+  <div class="panel" id="state" data-bind='{"nextAction":"","redirectUrl":"","no":""}'>
+    <h2>遷移先の切り替え</h2>
+    <p>
+      同じ <code>data-click-redirect</code> の式で、応答の <code>nextAction</code> に
+      よって決済ページと完了ページへ振り分けます。
+    </p>
+    <button type="button" id="pay"
+            data-click-fetch="./late-attribute-pay.json"
+            data-click-bind="#state"
+            data-click-redirect="{{nextAction === 'pay' ? redirectUrl : './late-attribute-complete.html'}}">
+      決済が必要な申込
+    </button>
+    <button type="button" id="free"
+            data-click-fetch="./late-attribute-free.json"
+            data-click-bind="#state"
+            data-click-redirect="{{nextAction === 'pay' ? redirectUrl : './late-attribute-complete.html'}}">
+      決済が不要な申込
+    </button>
+
+    <h2>メッセージと履歴</h2>
+    <p>
+      <code>data-click-toast</code> と <code>data-click-history</code> も同じ規則で
+      評価されるため、受付番号を応答から埋め込めます。
+    </p>
+    <button type="button" id="receipt"
+            data-click-fetch="./late-attribute-free.json"
+            data-click-bind="#state"
+            data-click-toast="受付番号 {{no}} で受け付けました"
+            data-click-toast-level="success"
+            data-click-history="./late-attribute-demo.html?no={{no}}">
+      受付番号を受け取る
+    </button>
+
+    <div class="log" id="result">
+      nextAction: {{nextAction}} / redirectUrl: {{redirectUrl}} / no: {{no}}
+    </div>
+  </div>
+</main>
+</body>
+</html>

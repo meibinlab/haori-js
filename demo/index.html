@@ -474,6 +474,12 @@
             <p>属性値の再描画はキュー経由のため <code>data-attr-disabled</code> では押下をブロックしきれません。<code>data-validity</code> は条件を <code>setCustomValidity</code> へ反映してネイティブ検証に相乗りし、<code>data-{event}-if</code> は手続きの実行条件になります。いずれも実行時に同期評価するため、直前に変更した入力を含めて判定されます。</p>
             <a class="demo-link" href="./form/field-condition-demo.html">フィールド間検証 デモを開く</a>
         </div>
+
+        <h2>21. 応答の値で遷移先を切り替える</h2>
+        <div class="demo-section">
+            <p><code>data-{event}-redirect</code> や <code>data-{event}-toast</code> のようにバインドより後で実行されるアクションは、使用する直前に属性を評価し直します。応答を自要素または祖先へバインドしておけば、遷移先やメッセージを応答の値で切り替えられます。</p>
+            <a class="demo-link" href="./form/late-attribute-demo.html">遷移先の切り替え デモを開く</a>
+        </div>
     </div>
 
         <script type="module">

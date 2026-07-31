@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## [0.35.0] - 2026-07-31
+
+### Changed
+
+- **応答のバインドより後に実行するアクションの属性値を、使用する直前に評価するようにした**。従来は手続きの開始時（クリック時点）に評価した文字列を使っていたため、`data-{event}-redirect="{{redirectUrl || '/complete.html'}}"` と書いても応答の値が反映されず、遷移先が既定のままだった（バインドは処理順 9、リダイレクトは 20 で、応答は遷移前に確定していた。0.34.0 実測）。同じ原因で `data-{event}-dialog` / `-toast` のメッセージも応答の値が欠落していた。
+  - 対象は `data-{event}-dialog` / `-toast`（17、表示直前）、`-history`（19、`pushState()` 直前）、`-scroll`（19 の後、スクロール直前）、`-redirect` / `-redirect-return-param`（20、遷移直前）。これにより `{{nextAction === 'pay' ? redirectUrl : '/complete.html'}}` のような応答による振り分けを属性だけで書ける。
+  - 評価スコープは属性を宣言した要素のバインディングデータ（祖先からの継承を含む。`data-each` の行では行スコープ）。応答を参照するには `data-{event}-bind` の対象を**その要素自身または祖先**にする（兄弟要素などへのバインドはスコープに入らないため参照できない）。
+  - 使用直前の評価で参照が解決できず、かつ手続き開始時には解決できていた場合は、開始時の値を使い開発モードで警告する。`data-{event}-bind` の全置換で参照キーが消える構成で、再評価結果（空）を採ると遷移や表示そのものが静かに止まるため。開始時から解決できない場合は従来どおり「指定なし」として扱う。
+  - **後方互換の注意**: 応答に式が参照しているキーと同名のキーがある場合、遷移先やメッセージが応答の値へ変わる（これが本変更の目的）。開始時の値を使い続けたい場合は、参照するキーを応答が上書きしない位置（別のバインド先や `data-{event}-bind-arg`）へ分けてください。
+  - 対象外は、バインドより前に使う属性（`-confirm` / `-fetch` / `-data` / `-form` など）、式を使えない生値（`-store-clear` / `-store-clear-type` / `-toast-level`）、検証失敗時に使う `-scroll-error`、および従来から実行時に解決している `-history-data` / `-history-form`（`-reset-before` 直後のスナップショット規則も現状維持）。
+  - 反映されるのはその手続き自身が完了させた更新だけで、`-refetch` / `-click` が起動した別の手続きの完了は待たない。`data-store` のミラーはバインディングの確定と同期なので、遷移の前に必ず完了している（破棄と遷移は `-store-clear` → `-history` → `-redirect` の順）。
+  - `ProcedureOptions` を直接渡す内部経路（属性を伴わない）では再評価せず、渡された値をそのまま使う。
+
+### Tests
+
+- `tests/late-attribute-evaluation.test.ts` を追加（19 件）。応答の値による遷移先の切り替えと振り分け、自要素へのバインド、非祖先バインドでは参照できないこと、参照が消えた場合の開始時の値へのフォールバックと警告、開始時から未解決なら遷移しないこと、`-redirect-return-param` の再評価、`data-each` の行スコープ、`-bind-arg` 配下の参照、`data-{event}-if` が偽なら評価も遷移も行わないこと、`data-store` のミラーが遷移前に完了していること、`-store-clear` が遷移より前に実行されること、`ProcedureOptions` 直接指定の不変、`-dialog` の `
+` 復元、`-toast`（レベルは生値）、`-history` の URL、`-scroll` のセレクタ、`data-{event}-reset` と併用してもフォーム値を参照できること、同じ要素を 2 回操作しても毎回応答の値で切り替わること（属性の描画で DOM 上の値が評価結果へ置き換わっても、再評価は宣言に対して行う）を検証する。
+- `playwright/late-attribute.spec.cjs` を追加（2 件）。実ブラウザで、応答の `nextAction` によって決済ページと完了ページへ振り分けられること、`-toast` と `-history` にも応答の値が入ることを確認する。
+
+### Docs
+
+- `docs/ja/specs.md` に「バインド後に実行するアクションの評価タイミング」を追加し（対象属性・評価スコープ・未解決参照の 4 象限・対象外・注意）、`-dialog` / `-toast` / `-redirect` / `-redirect-return-param` / `-history` の各節と処理順序・実行フローへ反映した。
+- `docs/ja/guide.md` に「応答の値で遷移先やメッセージを決める」を追加した。
+- `README.md` / `README.ja.md` に項目を追加した。
+- `demo/form/late-attribute-demo.html`（＋遷移先 2 ページと応答 JSON 2 件）を追加し、`demo/index.html` に 21 番のカードを追加した。
+
 ## [0.34.0] - 2026-07-31
 
 ### Added

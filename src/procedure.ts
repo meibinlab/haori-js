@@ -840,6 +840,29 @@ export interface ProcedureOptions {
    * （`recordRowWriteTargets()` を参照）。
    */
   rowWriteTargets?: Map<ElementFragment, ElementFragment | null> | null;
+
+  /**
+   * bind より後で実行するアクションの属性について、手続き開始時に読み取った
+   * 情報。キーはアクション名（`dialog` / `redirect` など）です。
+   *
+   * これらのアクションは応答のバインド（処理順 9）より後に実行されるため、
+   * 使用直前に属性を評価し直します（`resolveLateAttribute()` を参照）。
+   */
+  lateAttributes?: Map<string, LateAttributeRecord> | null;
+}
+
+/**
+ * bind より後で使うアクション属性の、手続き開始時の読み取り結果。
+ *
+ * 使用直前の再評価で参照が解決できなくなった場合に開始時の値へ戻せるよう、
+ * 属性名と開始時の未解決参照の有無を控えます。
+ */
+interface LateAttributeRecord {
+  /** 評価元の属性名（例 `data-click-redirect`） */
+  attributeName: string;
+
+  /** 手続き開始時の評価で未解決参照があったかどうか */
+  hasUnresolvedReference: boolean;
 }
 
 interface ExecutionLockState {
@@ -933,6 +956,45 @@ export default class Procedure {
     return hasFetchFallback
       ? `${Env.prefix}fetch-${key}`
       : `${Env.prefix}${key}`;
+  }
+
+  /**
+   * bind より後で使うアクション属性を読み取り、開始時の評価情報を記録します。
+   *
+   * 評価値は型変換せずそのまま返します。`String()` を挟むと、評価結果が `false`
+   * の属性が `"false"` になり「指定なし」（falsy）の扱いが変わってしまいます。
+   *
+   * @param fragment 対象フラグメント
+   * @param options 記録先のオプション
+   * @param key アクション名（`dialog` / `redirect` など）
+   * @param attributeName 属性名
+   * @returns 手続き開始時の評価値
+   */
+  private static readLateAttribute(
+    fragment: ElementFragment,
+    options: ProcedureOptions,
+    key: string,
+    attributeName: string,
+  ): string | null {
+    const evaluation = fragment.getAttributeEvaluation(attributeName);
+    if (!options.lateAttributes) {
+      options.lateAttributes = new Map();
+    }
+    options.lateAttributes.set(key, {
+      attributeName,
+      hasUnresolvedReference: evaluation?.hasUnresolvedReference ?? false,
+    });
+    return (evaluation?.value ?? null) as string | null;
+  }
+
+  /**
+   * 属性値の `\n` 表記を改行へ復元します。
+   *
+   * @param value 属性の評価値
+   * @returns 改行を復元した値。文字列以外はそのまま返します
+   */
+  private static unescapeNewlines(value: string | null): string | null {
+    return typeof value === 'string' ? value.replace(/\\n/g, '\n') : value;
   }
 
   /**
@@ -1649,14 +1711,22 @@ ${body}
         }
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'dialog'))) {
-        options.dialogMessage = (
-          fragment.getAttribute(Procedure.attrName(event, 'dialog')) as string
-        ).replace(/\\n/g, '\n');
+        options.dialogMessage = Procedure.unescapeNewlines(
+          Procedure.readLateAttribute(
+            fragment,
+            options,
+            'dialog',
+            Procedure.attrName(event, 'dialog'),
+          ),
+        );
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'toast'))) {
-        options.toastMessage = fragment.getAttribute(
+        options.toastMessage = Procedure.readLateAttribute(
+          fragment,
+          options,
+          'toast',
           Procedure.attrName(event, 'toast'),
-        ) as string;
+        );
         const rawLevel = fragment.getRawAttribute(
           Procedure.attrName(event, 'toast-level'),
         );
@@ -1666,33 +1736,45 @@ ${body}
         options.toastLevel = isValidLevel ? (rawLevel as ToastLevel) : null;
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'redirect'))) {
-        options.redirectUrl = fragment.getAttribute(
+        options.redirectUrl = Procedure.readLateAttribute(
+          fragment,
+          options,
+          'redirect',
           Procedure.attrName(event, 'redirect'),
-        ) as string;
+        );
         // 戻り先クエリ名は redirect が指定されている場合のみ有効とする。
         const returnParamAttr = Procedure.attrName(
           event,
           'redirect-return-param',
         );
         if (fragment.hasAttribute(returnParamAttr)) {
-          options.redirectReturnParam = fragment.getAttribute(
+          options.redirectReturnParam = Procedure.readLateAttribute(
+            fragment,
+            options,
+            'redirect-return-param',
             returnParamAttr,
-          ) as string;
+          );
         }
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'scroll-error'))) {
         options.scrollOnError = true;
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'scroll'))) {
-        options.scrollTarget = fragment.getAttribute(
+        options.scrollTarget = Procedure.readLateAttribute(
+          fragment,
+          options,
+          'scroll',
           Procedure.attrName(event, 'scroll'),
-        ) as string;
+        );
       }
       // history（data-{event}-history / history-data / history-form）
       if (fragment.hasAttribute(Procedure.attrName(event, 'history'))) {
-        options.historyUrl = fragment.getAttribute(
+        options.historyUrl = Procedure.readLateAttribute(
+          fragment,
+          options,
+          'history',
           Procedure.attrName(event, 'history'),
-        ) as string | null;
+        );
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'history-data'))) {
         options.historyDataAttrName = Procedure.attrName(event, 'history-data');
@@ -2641,30 +2723,45 @@ ${body}
     }
     // 仕様順序: 先に各種操作（bind/adjust/row/reset/refetch/click/open/close）を完了
     await Promise.all(deferredPromises);
-    // その後にダイアログ/トーストを表示
-    if (this.options.dialogMessage) {
-      await activeHaori.dialog(this.options.dialogMessage);
+    // その後にダイアログ/トーストを表示（いずれも使用直前に属性を評価し直す）
+    const dialogMessage = Procedure.unescapeNewlines(
+      this.resolveLateAttribute('dialog', this.options.dialogMessage),
+    );
+    if (dialogMessage) {
+      await activeHaori.dialog(dialogMessage);
     }
-    if (this.options.toastMessage) {
-      await activeHaori.toast(
-        this.options.toastMessage,
-        this.options.toastLevel ?? 'info',
-      );
+    const toastMessage = this.resolveLateAttribute(
+      'toast',
+      this.options.toastMessage,
+    );
+    if (toastMessage) {
+      await activeHaori.toast(toastMessage, this.options.toastLevel ?? 'info');
     }
     this.clearStore();
     this.pushHistory();
-    if (this.options.scrollTarget) {
+    const scrollTarget = this.resolveLateAttribute(
+      'scroll',
+      this.options.scrollTarget,
+    );
+    if (scrollTarget) {
       const el = Selector.query<HTMLElement>(
-        this.options.scrollTarget,
+        scrollTarget,
         Procedure.attrName(this.eventType, 'scroll'),
         document,
       );
       el?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
     }
-    if (this.options.redirectUrl) {
-      let destination = this.options.redirectUrl;
+    const redirectUrl = this.resolveLateAttribute(
+      'redirect',
+      this.options.redirectUrl,
+    );
+    if (redirectUrl) {
+      let destination = redirectUrl;
       // 戻り先クエリ名が指定されていれば、安全なローカルパスのみ遷移先に採用する。
-      const returnParam = this.options.redirectReturnParam;
+      const returnParam = this.resolveLateAttribute(
+        'redirect-return-param',
+        this.options.redirectReturnParam,
+      );
       if (returnParam) {
         // クエリ値は URLSearchParams で1回だけデコードして読み取る（二重デコード回避）。
         const params = new URLSearchParams(window.location.search);
@@ -2702,6 +2799,48 @@ ${body}
   }
 
   /**
+   * bind より後で使うアクション属性を、使用直前に評価し直します。
+   *
+   * `data-{event}-redirect` などは応答のバインド（処理順 9）より後に実行される
+   * ため、手続き開始時の評価値では応答を参照できません。使用する各アクションの
+   * 直前にその時点のバインディングデータで評価し直します。属性を伴わない経路
+   * （`ProcedureOptions` の直接指定）では開始時の値をそのまま使います。
+   *
+   * @param key アクション名（`dialog` / `redirect` など）
+   * @param earlyValue 手続き開始時の評価値
+   * @returns 使用する値
+   */
+  private resolveLateAttribute(
+    key: string,
+    earlyValue: string | null | undefined,
+  ): string | null {
+    const early = earlyValue ?? null;
+    const record = this.options.lateAttributes?.get(key) ?? null;
+    const fragment = this.options.targetFragment ?? null;
+    if (!record || !fragment || !fragment.hasAttribute(record.attributeName)) {
+      return early;
+    }
+    const evaluation = fragment.getAttributeEvaluation(record.attributeName);
+    if (evaluation === null) {
+      return early;
+    }
+    if (evaluation.hasUnresolvedReference && !record.hasUnresolvedReference) {
+      // 手続きの途中で参照が消えた場合（`data-{event}-bind` の全置換でキーが
+      // 無くなるなど）は開始時の値を使う。再評価結果（空）を採ると、遷移や表示
+      // そのものが静かに止まる。
+      if (Dev.isEnabled()) {
+        Log.warn(
+          'Haori',
+          `${record.attributeName} の参照が手続きの途中で解決できなくなった` +
+            'ため、手続き開始時の値を使います',
+        );
+      }
+      return early;
+    }
+    return (evaluation.value ?? null) as string | null;
+  }
+
+  /**
    * history.pushState を実行します。
    *
    * `historyUrl` / `historyData` / `historyFormFragment` の内容を基に URL を組み立て、
@@ -2709,8 +2848,12 @@ ${body}
    * 不正 URL・オリジン違反・例外は `Log.error` でログ出力してスキップし、後続処理は継続します。
    */
   private pushHistory(): void {
-    const hasHistoryUrl =
-      this.options.historyUrl !== undefined && this.options.historyUrl !== null;
+    // URL は使用直前に評価し直す（応答のバインドを反映するため）。
+    const historyUrl = this.resolveLateAttribute(
+      'history',
+      this.options.historyUrl,
+    );
+    const hasHistoryUrl = historyUrl !== undefined && historyUrl !== null;
     const historyDataValues = this.resolveHistoryDataValues();
     const historyFormValues = this.resolveHistoryFormValues();
     const hasHistoryData =
@@ -2724,7 +2867,7 @@ ${body}
 
     try {
       const baseUrlString = hasHistoryUrl
-        ? (this.options.historyUrl as string)
+        ? (historyUrl as string)
         : window.location.pathname;
       const url = new URL(baseUrlString, window.location.href);
 

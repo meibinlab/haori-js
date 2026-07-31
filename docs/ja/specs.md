@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.34.0
+バージョン: 0.35.0
 最終更新: 2026-07-30
 
 ## 目次
@@ -869,6 +869,9 @@ interface ProcedureOptions {
   // バインド先・コピー先のうち編集可能な行と、その data-each コンテナの対応
   // （値が null の要素は data-each-before / -after の固定要素）
   rowWriteTargets?: Map<ElementFragment, ElementFragment | null> | null
+  // バインドより後で使うアクション属性の、手続き開始時の読み取り結果
+  // （キーはアクション名。属性名と開始時の未解決参照の有無を控える）
+  lateAttributes?: Map<string, LateAttributeRecord> | null
 }
 ```
 
@@ -965,24 +968,29 @@ async run(): Promise<void> {
     this.closeDialogs()
   ])
 
-  // 11. UI表示
-  if (this.dialogMessage) {
-    await Haori.dialog(this.dialogMessage)
+  // 11. UI表示（resolveLateAttribute で属性を使用直前に評価し直す）
+  const dialogMessage = this.resolveLateAttribute('dialog', this.dialogMessage)
+  if (dialogMessage) {
+    await Haori.dialog(dialogMessage)
   }
-  if (this.toastMessage) {
-    await Haori.toast(this.toastMessage, 'info')
+  const toastMessage = this.resolveLateAttribute('toast', this.toastMessage)
+  if (toastMessage) {
+    await Haori.toast(toastMessage, 'info')
   }
 
   // 12. スクロール（成功時）
-  if (this.scrollTarget) {
-    document.querySelector(this.scrollTarget)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  const scrollTarget = this.resolveLateAttribute('scroll', this.scrollTarget)
+  if (scrollTarget) {
+    document.querySelector(scrollTarget)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
 
   // 13. リダイレクト（redirectReturnParam があれば安全なローカルパスのみ採用）
-  if (this.redirectUrl) {
-    let destination = this.redirectUrl
-    if (this.redirectReturnParam) {
-      const raw = new URLSearchParams(window.location.search).get(this.redirectReturnParam)
+  const redirectUrl = this.resolveLateAttribute('redirect', this.redirectUrl)
+  if (redirectUrl) {
+    let destination = redirectUrl
+    const returnParam = this.resolveLateAttribute('redirect-return-param', this.redirectReturnParam)
+    if (returnParam) {
+      const raw = new URLSearchParams(window.location.search).get(returnParam)
       if (raw !== null) {
         const trimmed = raw.trim()
         if (Url.isSafeLocalPath(trimmed)) {
@@ -2734,9 +2742,65 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 19. `data-{event}-history`: 履歴 pushState 実行
 20. `data-{event}-redirect`: リダイレクト実行
 
+17 以降（および 19 の後のスクロール）の属性値は、手続きの開始時ではなく**使用する直前**に評価します（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。
+
 なお `data-{event}-run`（フェッチを伴わない任意 JS 実行）は、`event.preventDefault()` を有効にするため、上記 3（confirm）より前の**同期タイミング**で実行されます。ただし 2（`data-{event}-if`）より後なので、条件が偽のときは `run` も実行されません。`data-{event}-fetch` と併用した場合は run → fetch の順になります。
 
 また `data-{event}-prevent` は上記の手続き順序とは独立に、イベントの委譲（`EventDispatcher.delegate`）の**最初の同期段**で `event.preventDefault()` を呼びます。手続き本体（fetch 等）の成否や `await` に依存せずネイティブのデフォルト動作を抑止するためで、`data-{event}-defer` で手続きを遅延させても抑止は確実に効きます。
+
+#### バインド後に実行するアクションの評価タイミング
+
+処理順 9（`data-{event}-bind`）より後で実行するアクションの属性値は、**そのアクションを実行する直前**に、その時点のバインディングデータで評価します。手続きの開始時に評価した文字列を使うと、応答をバインドしても遷移先やメッセージへ反映できないためです。
+
+対象は次の属性です。
+
+| 属性 | 処理順 | 評価する時点 |
+|---|---|---|
+| `data-{event}-dialog` / `data-{event}-toast` | 17 | 表示直前 |
+| `data-{event}-history` | 19 | `history.pushState()` 直前 |
+| `data-{event}-scroll` | 19 の後 | スクロール直前 |
+| `data-{event}-redirect` / `data-{event}-redirect-return-param` | 20 | 遷移直前 |
+
+**評価スコープ**: 属性を宣言した要素のバインディングデータ（祖先からの継承を含む）です。`data-each` の行の中にある要素は行スコープで評価されます。応答を参照するには、`data-{event}-bind` の対象を**その要素自身または祖先**にしてください。兄弟要素などへバインドした応答は評価スコープに入らないため参照できません。
+
+```html
+<!-- 応答の nextAction で遷移先を切り替える -->
+<div id="state">
+  <button
+    data-click-fetch="/api/apply"
+    data-click-bind="#state"
+    data-click-redirect="{{nextAction === 'pay' ? redirectUrl : '/complete.html'}}"
+    data-click-toast="受付番号 {{no}} で受け付けました"
+  >申込を確定する</button>
+</div>
+```
+
+**未解決参照の扱い**: 手続きをブロックする目的の宣言ではないため、開始時と使用直前の評価結果を次のように組み合わせます。
+
+| 手続き開始時 | 使用直前 | 採用する値 |
+|---|---|---|
+| 未解決 | 解決 | 使用直前の値（応答で決まる遷移先やメッセージ） |
+| 解決 | 解決 | 使用直前の値（応答に同名のキーがあれば値が変わります） |
+| 解決 | 未解決 | **開始時の値**（開発モードで警告します） |
+| 未解決 | 未解決 | 指定が無いものとして扱う（遷移や表示を行いません） |
+
+3 行目は、`data-{event}-bind` の全置換で参照していたキーが消える構成の保護です。使用直前の評価結果（空）をそのまま採ると、遷移や表示そのものが静かに止まります。
+
+**対象外**:
+
+- `data-{event}-confirm` / `-fetch` / `-data` / `-form` など、バインドより前に使う属性は従来どおり手続きの開始時に評価します。
+- `data-{event}-store-clear` / `-store-clear-type` / `-toast-level` は式を使えない生値です。
+- `data-{event}-scroll-error` は検証失敗時（前段）に使うため対象外です。
+- `data-{event}-history-data` / `-history-form` は従来どおり実行時に解決し、`data-{event}-reset-before` を指定した場合はそのリセット直後のスナップショットを使います。
+
+**注意**:
+
+- 反映されるのは、その手続き自身が完了させた更新です。`data-{event}-refetch` / `-click` が起動した**別の手続き**の完了は待たないため、その結果が反映されるとは限りません。
+- `data-store` のミラーはバインディングデータの確定と同期で行うため、遷移の前に必ず完了しています。破棄と遷移は `-store-clear`（18）→ `-history`（19）→ `-redirect`（20）の順です。
+- `data-{event}-dialog` の `
+` 表記は、使用直前に評価した値でも改行へ復元されます。
+- 属性の描画では DOM 上の値が評価結果へ置き換わりますが、再評価は宣言（テンプレート）に対して行うため、同じ要素を続けて操作しても毎回その時点のデータで評価されます。
+- 属性を伴わない経路（`ProcedureOptions` を直接渡す内部 API）では再評価せず、渡された値をそのまま使います。
 
 #### 交差監視トリガー (`data-intersect-*`)
 
@@ -3710,17 +3774,24 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 
 ##### `data-{event}-dialog`
 
-ダイアログメッセージを表示します。
+ダイアログメッセージを表示します。メッセージは**表示直前**に評価するため、応答の値を埋め込めます（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。`
+` は改行として表示します。
 
 ```html
 <button data-click-fetch="/api/save" data-click-dialog="保存しました">
   保存
 </button>
+
+<!-- 応答の受付番号を埋め込む（応答は自要素または祖先へバインドする） -->
+<div id="state">
+  <button data-click-fetch="/api/apply" data-click-bind="#state"
+          data-click-dialog="受付番号 {{no}} で受け付けました">申込</button>
+</div>
 ```
 
 ##### `data-{event}-toast`
 
-トーストメッセージを表示します (3秒表示)。
+トーストメッセージを表示します (3秒表示)。メッセージは**表示直前**に評価するため、応答の値を埋め込めます（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。`data-{event}-toast-level` は式を使えない生値です。
 
 ```html
 <button data-click-fetch="/api/save" data-click-toast="保存しました">
@@ -3768,7 +3839,7 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 ```
 
 **URL 組み立て規則**:
-- `data-{event}-history` が指定されている場合、その値をベース URL にする（相対パス可）
+- `data-{event}-history` が指定されている場合、その値をベース URL にする（相対パス可）。値は `pushState()` の**直前**に評価するため、応答の値を埋め込める（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）
 - 省略時は現在の `window.location.pathname` をベースにする
 - `data-{event}-history-data` / `data-{event}-history-form` の値をクエリパラメータとして追記する
 - `data-{event}-history-form` は明示指定した場合のみフォーム値を追記する。`data-{event}-form` からの自動補完は行わない
@@ -3819,7 +3890,7 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 
 ##### `data-{event}-redirect`
 
-指定URLにリダイレクトします。
+指定URLにリダイレクトします。遷移先は**遷移直前**に評価するため、応答の値で切り替えられます（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。応答を参照するには `data-{event}-bind` の対象をその要素自身または祖先にしてください。
 
 ```html
 <button
@@ -3828,6 +3899,15 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 >
   作成
 </button>
+
+<!-- 応答の nextAction で遷移先を振り分ける -->
+<div id="state">
+  <button
+    data-click-fetch="/api/apply"
+    data-click-bind="#state"
+    data-click-redirect="{{nextAction === 'pay' ? redirectUrl : '/complete.html'}}"
+  >申込を確定する</button>
+</div>
 ```
 
 ##### `data-{event}-redirect-return-param`
@@ -3852,7 +3932,8 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 
 - **`data-{event}-redirect` と併用**し、その既定遷移先を「安全な戻り先で上書きする」修飾子として動作します。**`data-{event}-redirect` が無い場合は本属性を無視**します（オプトイン。属性が無ければ従来どおり `data-{event}-redirect` のみが動作し、既存挙動は不変）。
 - 手続きが**成功**したとき、現在ページ URL から指定クエリ名の値を `URLSearchParams.get()` で**1回だけ**デコードして読み取ります（二重デコードによる検証回避を防ぐため、追加のデコードは行いません）。
-- 読み取った値を**こちら側で `trim()`** したうえで、**安全な同一オリジンのローカルパス**であればそこへ遷移します。安全でない／値が無い場合は `data-{event}-redirect`（静的な既定遷移先）へフォールバックします。
+- 読み取った値を**こちら側で `trim()`** したうえで、**安全な同一オリジンのローカルパス**であればそこへ遷移します。安全でない／値が無い場合は `data-{event}-redirect`（既定遷移先）へフォールバックします。
+- クエリ名は**遷移直前**に評価するため、応答の値で決めることもできます（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。
 - **「安全なローカルパス」の判定（ライブラリ内蔵）**: `trim()` 後の値が**単一の `/` で始まる**こと。`//`・`/\`（ともにプロトコル相対と解釈され得る）、スキームやオーソリティを含むものは拒否します（さらに現在オリジンを基準に解決したオリジンが一致することも確認します）。判定 NG の場合は `Log.warn('Haori', ...)` で警告してフォールバックします。
 - 許可は**同一オリジンの相対パスのみ**（外部遷移は常に不可）とし、オープンリダイレクトをライブラリ側で構造的に防ぎます。
 - 全 `{event}`（click / submit / change 等）と全 fetch 経路で一貫して利用できます。`data-{event}-history` と併用する場合の実行順は既存 redirect と同様です。
