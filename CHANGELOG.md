@@ -1,5 +1,53 @@
 # CHANGELOG
 
+## [0.38.0] - 2026-08-01
+
+仕様書に記載がありながら実装や公開物が追いついていなかった 5 点を解消した版です。
+
+### Added
+
+- **`haori:rowadd` / `haori:rowremove` / `haori:rowmove` を実装した**。仕様書には記載があったものの発火箇所が無く、購読しても何も起きなかった。`data-each` の差分更新で行ごとに行要素で発火する（伝播するためコンテナや `document` でも購読できる）。
+  - `rowadd` は行内容の描画と `data-form-list` 配下の入力欄への反映を終えてから発火するため、購読側から行内の DOM をそのまま参照できる。
+  - `rowremove` は行が DOM から外れる**前**に発火する。外れた後では祖先へ伝播せず、コンテナで購読できないためである。
+  - `rowmove` は行の位置が実際に変わったときだけ発火する。インデックスは `data-each-before` / `data-each-after` の固定要素を除いた行だけの並びで数える。
+- **`haori:ready` を実装した**。こちらも記載のみで発火箇所が無かった。初期スキャン・初期フェッチの完了、`data-haori-ready` の付与、監視の開始、保留していた手続きの解除まで済んだ後に `document` で発火する（`detail.version`）。
+- `demo/click/data-click-copy-demo.html` を追加した。`data-{event}-copy` で「フォーム → 確定パネル」と「一覧の行 → 行の外の共有パネル」を写す例で、後者はコピー元の指定を省いた場合の比較も含む。
+- デモの整合性検査に「ライブラリの読み込み方が揃っていること」「固定版の CDN を読まないこと」の 2 件を追加した（`tests/demo-consistency.test.ts`）。
+- バージョン表記の一致検査を追加した（`tests/version.test.ts`）。`package.json` を正として `src/version.ts`・`package-lock.json`・README・ガイド・技術仕様書・CHANGELOG の記載を突き合わせる。
+
+### Changed
+
+- **iife 配布物（`haori.iife.js`）のグローバル `Haori` を、モジュールの名前空間オブジェクトから `Haori` クラス本体へ変更した**。これまではクラス API を `Haori.Haori.addMessage(...)` と 2 段で取り出す必要があり、`window.Haori.setRuntime` などが存在しなかった。
+  - `Haori.addErrorMessage(...)` のようにクラスの静的 API を直接呼び出せる。
+  - `Core` / `Enhance` / `Env` / `Form` / `Fragment` / `Log` / `Queue` / `version` は同じグローバルのプロパティとして参照する（`Haori.Core.dumpScope(...)` など、従来から文書に載っていた書き方が実際に動くようになった）。
+  - `Haori.Haori` と `Haori.default` は自己参照として残すため、0.37.1 以前の書き方も引き続き動作する。
+  - iife だけエントリーポイントを分けたため（`src/global.ts` / `vite.config.iife.ts`）、`npm run build` は ES・CJS と iife の 2 回のビルドを実行する。ES / CJS 版の名前空間は変わらない。
+- **公開デモサイト（GitHub Pages）でライブラリが読み込めなかった問題を修正した**。個別デモは `../../dist/haori.iife.js` を読み込むが、公開ビルドは `dist/demo/` 配下だけを配信するためリポジトリのルートを前提とした相対パスが解決できず、すべての個別デモが 404 になっていた。デモのビルドで本体を `dist/demo/lib/` へ複製し、HTML の参照を書き換えるようにした（書き換え漏れはビルドが失敗する）。
+- `demo/click/repro-*-bootstrap-demo.html` が読み込む本体を、固定版の CDN（`haori@0.15.0`）からローカルのビルド成果物へ変更した。公開当時の版しか検証できず、現在のコードの回帰を捕まえられなかった。haori-bootstrap 側はバージョン指定を外し、常に最新の公開版との組み合わせを確かめる。
+- `demo/message/data-message-demo.html` と `demo/fetch/data-fetch-runtime-demo.js` から、グローバルの形を吸収していた回避コードを削除した。
+- `demo/event/haori-events-demo.html` の購読対象へ `ready` と行イベントを追加した。
+
+### Docs
+
+- **`data-{event}-copy` のコピー元が 0.33.0 で変わったことの移行注記を追加した**（技術仕様書・利用ガイド）。0.32.0 以前は祖先から継承した値もコピー元に含めていたため、`data-{event}-copy-source` を省いても行の値が写っていた。変更後は、コピー元の指定を省いた箇所がエラーも警告も出さずに何もコピーしなくなる。行の中のボタンから行の外へ写している箇所には `data-{event}-copy-source` の追記が必要である。
+- 行イベントの発火対象・発火順序・インデックスの基準を技術仕様書へ明記した。`haori:eachupdate` との使い分けと、外部ライブラリ連携なら `data-enhance` を使えることも併記した。
+- `haori:ready` の発火時点と、購読をライブラリの読み込みより前に登録する必要があることを明記した。
+- ブラウザのグローバル `window.Haori` の形を技術仕様書・利用ガイド・README へ明記した。
+- 技術仕様書の「エクスポート」節が古かったため、実際のエクスポート（`Enhance` / `enhancers` / `Enhancer` 型）に合わせ、`version` の固定値表記（`0.10.0`）を削除した。
+
+### Tests
+
+- 単体テストを追加した（行イベント 4 件、iife グローバル 7 件、バージョン一致 4 件、デモ整合性 2 件）。
+- Playwright を追加した（グローバルの形 2 件、`data-click-copy` 3 件）。`haori:*` イベントデモのテストへ `ready` / `rowadd` / `rowremove` / `rowmove` の確認を追加した。
+
+### Chore
+
+- **`npm run format:check` が通るようにした**。20 ファイルで失敗していた。
+  - うち 10 ファイルは改行コードだけの不一致だった。Prettier は `endOfLine: "lf"` を指定しているが、`.gitattributes` が無いため Windows（`core.autocrlf=true`）の作業ツリーでは CRLF に変換されていた。`.gitattributes` に `* text=auto eol=lf` を宣言し、作業ツリーの改行を LF に統一した（リポジトリに格納される内容は従来から LF のため、差分は生じない）。
+  - 残る 10 ファイルは `npm run format` で整形した。処理の変更は無い。
+  - Prettier と ESLint が両立しない指摘を解消した。`indent` は Prettier に委ねて検査を止め（三項演算子やメソッドチェーンの折り返しで結論が異なり両方を満たせない。幅は `max-len` で担保する）、`quotes` は `avoidEscape` を有効にした（文字列にシングルクォートを含む場合はダブルクォートを許す）。Prettier が 80 桁へ折り返せない 4 行は、変数の抽出・引数の見直し・行末コメントの移動で解消した。
+- `npm test` の `posttest` へ `format:check` を追加した。整形漏れが CI（`npm run test` を実行）とローカルの両方で検知される。
+
 ## [0.37.1] - 2026-07-31
 
 ### Fixed
