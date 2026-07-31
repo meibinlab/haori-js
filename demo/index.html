@@ -468,6 +468,12 @@
             <p><code>data-each</code> と <code>data-form-list</code> を併用した行では入力欄の値は配列の要素データが権威です。行要素をセレクタで指した <code>data-{event}-copy</code> / <code>data-{event}-bind</code> は対応する配列要素へ書き戻されるため、他の行に影響せず複数の入力欄へまとめて値を流し込めます。</p>
             <a class="demo-link" href="./form/row-copy-bind-demo.html">行への copy デモを開く</a>
         </div>
+
+        <h2>20. フィールド間検証（data-validity / data-{event}-if）</h2>
+        <div class="demo-section">
+            <p>属性値の再描画はキュー経由のため <code>data-attr-disabled</code> では押下をブロックしきれません。<code>data-validity</code> は条件を <code>setCustomValidity</code> へ反映してネイティブ検証に相乗りし、<code>data-{event}-if</code> は手続きの実行条件になります。いずれも実行時に同期評価するため、直前に変更した入力を含めて判定されます。</p>
+            <a class="demo-link" href="./form/field-condition-demo.html">フィールド間検証 デモを開く</a>
+        </div>
     </div>
 
         <script type="module">

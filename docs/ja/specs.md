@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.33.0
+バージョン: 0.34.0
 最終更新: 2026-07-30
 
 ## 目次
@@ -2713,27 +2713,28 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 
 イベント属性は以下の順序で実行されます:
 
-1. `data-{event}-validate`: バリデーション実行
-2. `data-{event}-confirm`: 確認ダイアログ表示
-3. `data-{event}-reset-before`: 送信前のリセット処理実行
-4. `data-{event}-data` / `data-{event}-form`: データ取得
-5. `data-{event}-before-run`: フェッチ前スクリプト実行
-6. `data-{event}-fetch`: HTTP通信実行
-7. `data-{event}-after-run`: フェッチ後スクリプト実行
-8. `data-{event}-bind`: データバインド実行
-9. `data-{event}-adjust`: 値調整実行
-10. `data-{event}-row-add` / `data-{event}-row-remove`（`data-{event}-row-remove-empty`）/ `data-{event}-row-prev` / `data-{event}-row-next`: 行データの変更
-11. `data-{event}-reset`: リセット処理実行
-12. `data-{event}-copy` / `data-{event}-copy-params`: 別要素へバインディング値をコピー
-13. `data-{event}-refetch`: 再フェッチ実行
-14. `data-{event}-click`: クリック実行
-15. `data-{event}-open` / `data-{event}-close`: ダイアログ操作
-16. `data-{event}-dialog` / `data-{event}-toast`: メッセージ表示
-17. `data-{event}-store-clear`: ストレージレコードの破棄
-18. `data-{event}-history`: 履歴 pushState 実行
-19. `data-{event}-redirect`: リダイレクト実行
+1. `data-{event}-validate`: バリデーション実行（`data-validity` の同期評価を含む）
+2. `data-{event}-if`: 手続きの実行条件の判定（偽なら以降を実行しない）
+3. `data-{event}-confirm`: 確認ダイアログ表示
+4. `data-{event}-reset-before`: 送信前のリセット処理実行
+5. `data-{event}-data` / `data-{event}-form`: データ取得
+6. `data-{event}-before-run`: フェッチ前スクリプト実行
+7. `data-{event}-fetch`: HTTP通信実行
+8. `data-{event}-after-run`: フェッチ後スクリプト実行
+9. `data-{event}-bind`: データバインド実行
+10. `data-{event}-adjust`: 値調整実行
+11. `data-{event}-row-add` / `data-{event}-row-remove`（`data-{event}-row-remove-empty`）/ `data-{event}-row-prev` / `data-{event}-row-next`: 行データの変更
+12. `data-{event}-reset`: リセット処理実行
+13. `data-{event}-copy` / `data-{event}-copy-params`: 別要素へバインディング値をコピー
+14. `data-{event}-refetch`: 再フェッチ実行
+15. `data-{event}-click`: クリック実行
+16. `data-{event}-open` / `data-{event}-close`: ダイアログ操作
+17. `data-{event}-dialog` / `data-{event}-toast`: メッセージ表示
+18. `data-{event}-store-clear`: ストレージレコードの破棄
+19. `data-{event}-history`: 履歴 pushState 実行
+20. `data-{event}-redirect`: リダイレクト実行
 
-なお `data-{event}-run`（フェッチを伴わない任意 JS 実行）は、`event.preventDefault()` を有効にするため、上記 2（confirm）より前の**同期タイミング**で実行されます。`data-{event}-fetch` と併用した場合は run → fetch の順になります。
+なお `data-{event}-run`（フェッチを伴わない任意 JS 実行）は、`event.preventDefault()` を有効にするため、上記 3（confirm）より前の**同期タイミング**で実行されます。ただし 2（`data-{event}-if`）より後なので、条件が偽のときは `run` も実行されません。`data-{event}-fetch` と併用した場合は run → fetch の順になります。
 
 また `data-{event}-prevent` は上記の手続き順序とは独立に、イベントの委譲（`EventDispatcher.delegate`）の**最初の同期段**で `event.preventDefault()` を呼びます。手続き本体（fetch 等）の成否や `await` に依存せずネイティブのデフォルト動作を抑止するためで、`data-{event}-defer` で手続きを遅延させても抑止は確実に効きます。
 
@@ -2976,11 +2977,42 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 フォームバリデーションを実行します。バリデーション失敗時は処理を中断します。
 
+対象フォームは `data-{event}-form` で解決したものです（値を省略すると自要素または祖先のフォーム）。**フォームが解決できない手続きでは検証は行われません**。検証の直前に `data-validity` の条件を同期評価して `setCustomValidity()` へ反映します（[フィールド間の条件](#フィールド間の条件)を参照）。
+
 ```html
 <form id="myForm">
   <input name="email" type="email" required>
 </form>
 <button data-click-validate data-click-form="#myForm">送信</button>
+```
+
+##### `data-{event}-if`
+
+手続きの**実行条件**です。条件が偽のときは、その手続きの以降のアクション（`data-{event}-run` / `-confirm` / `-reset-before` / `-before-run` / `-fetch` / `-bind` / `-store-clear` / `-history` / `-redirect` など）をすべて実行しません。非イベントの場合は `data-fetch-if` です。
+
+表示制御の `data-if` とは別物です。`data-if` は要素の表示を切り替え、`data-{event}-if` は手続きを実行するかどうかを決めます。
+
+- 条件は手続きの実行時に**同期評価**します。属性値の再描画（`requestAnimationFrame`）を待たないため、直前に変更した入力を含めて判定できます。
+- 評価は `data-{event}-validate` の**後**、`data-{event}-run` の**前**に行います。必須欄が空のようなネイティブ検証で表現できるエラーは先にバブル表示し、それ以外の条件でここで止めます。
+- 偽のときは停止するだけです（メッセージ表示は `data-if` / `data-message` と併用します）。開発モード（`data-haori-dev`）でのみ中断のログを出します。
+- 参照が解決できない場合は「条件を満たしていない」と扱い実行しません（ブロック目的の宣言なので安全側に倒します）。この場合は警告ログを出します。
+- 評価スコープは[フィールド間の条件](#フィールド間の条件)と同じです。
+
+```html
+<button
+  data-click-form
+  data-click-if="{{agreed}}"
+  data-click-fetch="/api/apply"
+  data-click-redirect="/done"
+>申込を確定する</button>
+
+<p class="error" data-if="{{!agreed}}">同意が必要です</p>
+```
+
+`data-fetch-if` は自動取得（`data-fetch`）の再取得判定にも参加します。条件の真偽が変わると再取得の対象になるため、「条件を満たしたら取得する」構成が書けます。
+
+```html
+<div data-fetch="/api/summary" data-fetch-if="{{customerId}}"></div>
 ```
 
 ##### `data-{event}-confirm`
@@ -3503,6 +3535,48 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
   反映
 </button>
 ```
+
+#### フィールド間の条件
+
+`data-attr-required` / `data-attr-disabled` と `data-if` はフィールド間の条件を**表示**できますが、押下の**ブロック**には使えません。属性値の反映はキュー（`requestAnimationFrame`）で行われるため、「最後の欄を直してそのまま次へを押す」操作ではクリック時点の属性が 1 フレーム古く、条件を満たしていない状態で手続きが走ります（逆に、直した直後は `disabled` が残っていてクリックが無視されます）。
+
+**`disabled` を押下のブロックに使わないでください。** HTML 仕様上、無効化されたフォーム部品はクリックイベントを発火しないため、「直したのに押せない」方向は実行時の判定では救えません。ブロックは `data-validity` または `data-{event}-if` で行い、`data-attr-disabled` は視覚的な合図としてのみ使うか `data-attr-class` に置き換えます。
+
+##### `data-validity` / `data-validity-message`
+
+入力要素（`input` / `select` / `textarea`）へ付ける宣言的な検証です。条件が偽のとき `setCustomValidity()` にメッセージを設定し、真のとき解除します。ネイティブ検証に相乗りするため、`data-{event}-validate` のバブル表示・フォーカス移動・`data-{event}-scroll-on-error` がそのまま働き、CSS の `:invalid` でも装飾できます。
+
+- 条件は `data-{event}-validate` の検証直前に**同期評価**します。属性の再描画を待たないため、直前に変更した入力を含めて判定できます。
+- `data-validity-message` を省略した場合は「入力内容を確認してください」を使います。メッセージは `{{}}` を評価できます。
+- 参照が解決できない場合は「条件を満たしていない」と扱い、メッセージを設定します（警告ログを出します）。
+- `data-{event}-validate` が無い手続きでは検証されません。開発モードではその状況を警告します。
+- `data-if` が偽の分岐配下は検証対象外です（配下の入力欄はエンジンが `disabled` にするため制約検証から外れます）。
+- 条件の評価結果は属性へ書き戻しません（属性には宣言したテンプレートが残ります）。そのため属性値を実行中に外部から書き換えても反映されません（`data-store` と同じく、宣言は静的なものとして扱います）。
+
+```html
+<form id="contact" data-bind='{"tel":"","mail":"","mail2":""}'>
+  <!-- いずれか必須: グループの代表となる欄へ宣言する -->
+  <input name="tel"
+    data-validity="{{tel || mail}}"
+    data-validity-message="電話番号かメールアドレスを入力してください">
+  <input name="mail" type="email">
+  <!-- 等値: 確認欄へ宣言する -->
+  <input name="mail2" type="email"
+    data-validity="{{mail === mail2}}"
+    data-validity-message="メールアドレスが一致しません">
+  <button data-click-form data-click-validate
+          data-click-fetch="/api/next">次へ</button>
+</form>
+```
+
+##### 条件の評価スコープ
+
+`data-validity` と `data-{event}-if` は同じスコープで評価します。バインディングデータ（継承込み）を土台に、**フォーム内で宣言されている収集キーを収集値で置き換えた**値です。
+
+- クリック時点で最新なのは**収集値**です。属性の再描画はキュー経由で、バインドデータへの双方向コミットも非同期のため、どちらもクリック時点では古いことがあります。入力欄の内部値は `change` / `input` の委譲内で同期更新されるため、収集値は常に最新です。
+- 収集値に現れないキーは**未定義**として扱います。`data-if` が偽の分岐配下の入力欄は収集対象外なので、バインドデータや祖先に残った古い値で条件が誤判定されるのを防ぎます。
+- 収集値の取得元は、`data-{event}-form` の指定があればそのフォーム、`data-form-list` の行の中ではその行、それ以外は祖先のフォームコンテナです。`data-form-arg` / `data-each-arg` の指定があるときは、そのキー配下へ収集値を重ねます（既存の式の書き方と揃えます）。
+- `data-form-list` を伴わない `data-each` の行では、入力欄と要素データが対応しないため行を取得元にしません（フォームコンテナへ遡ります）。
 
 #### 編集可能な行への書き込み
 

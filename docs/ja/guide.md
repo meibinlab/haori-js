@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.33.0
+バージョン: 0.34.0
 
 ## 目次
 
@@ -1618,6 +1618,65 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 - 行の `id` は `data-each-index` の値などで一意にしてください。重複すると他の行にも反映されます。
 - 行要素を対象にできるのは `data-each` と `data-form-list` を併用したコンテナの行です。行の**内側**の要素を指した場合は、その要素自身のバインディングデータが更新されます（行内のスコープ用要素へのバインドはこれまでどおり書けます）。
 - 対象行が見つからない場合（応答を待つ間に行が削除された、`data-each-key` に一致する要素が無いなど）は警告ログを出して書き込みを捨てます。無関係な行を書き換えないためです。
+
+---
+
+## フィールド間の条件でボタンを止める（`data-validity` / `data-{event}-if`）
+
+「連絡先はいずれか必須」「メールアドレスの一致」「合計 1 件以上」のようなフィールド間の条件は、`data-attr-disabled` で表示を切り替えるだけでは**押下を止められません**。属性の反映はキュー（`requestAnimationFrame`）で行われるため、最後の欄を直してそのまま次へを押すと、クリック時点の属性が 1 フレーム古いままです。
+
+条件を実行時に評価する属性が 2 つあります。
+
+### 入力欄に条件を宣言する（`data-validity`）
+
+ネイティブ検証に相乗りする書き方です。エラーのバブル表示とフォーカス移動が付きます。
+
+```html
+<form data-bind='{"tel":"","mail":"","mail2":""}'>
+  <!-- いずれか必須。グループの代表となる欄へ宣言する -->
+  <input name="tel"
+    data-validity="{{tel || mail}}"
+    data-validity-message="電話番号かメールアドレスを入力してください">
+  <input name="mail" type="email">
+
+  <!-- 等値。確認欄へ宣言する -->
+  <input name="mail2" type="email"
+    data-validity="{{mail === mail2}}"
+    data-validity-message="メールアドレスが一致しません">
+
+  <button type="button"
+    data-click-form
+    data-click-validate
+    data-click-fetch="/api/next">次へ</button>
+</form>
+```
+
+`data-{event}-validate` と、対象フォームを決める `data-{event}-form`（値は省略可）が必要です。`setCustomValidity()` へ反映されるので CSS の `:invalid` でも装飾できます。
+
+### 手続きに実行条件を付ける（`data-{event}-if`）
+
+フォーム全体の条件や、ステップをまたぐ条件に向きます。条件が偽なら fetch もリダイレクトも実行されません。
+
+```html
+<button type="button"
+  data-click-form
+  data-click-if="{{power.length + gas.length > 0}}"
+  data-click-fetch="/api/apply"
+  data-click-redirect="/done">申込を確定する</button>
+
+<p class="error" data-if="{{power.length + gas.length === 0}}">
+  1 件以上選んでください
+</p>
+```
+
+表示制御の `data-if` とは別物です。`data-if` は要素の表示、`data-{event}-if` は手続きの実行を決めます。メッセージは上のように `data-if` と併用してください。
+
+### 気をつけること
+
+- **`disabled` を押下のブロックに使わないでください。** 無効化されたボタンはクリックイベントを発火しないため、「直したのに押せない」状態は実行時の判定では救えません。合図として見せたいときは `data-attr-class` を使ってください。
+- 条件は「収集値（入力欄の現在値）」を優先して評価されます。`data-if` で非表示になった欄は収集対象外なので、未入力として扱われます。
+- 参照が解決できない条件（キー名の打ち間違いなど）は「満たしていない」と扱い、手続きを実行しません。警告ログにキー名が出ます。
+- `data-{event}-if` が偽のときは静かに止まります。理由を伝えるメッセージは `data-if` で表示してください。
 
 ---
 

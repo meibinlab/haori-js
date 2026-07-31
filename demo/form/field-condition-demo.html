@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>フィールド間検証 デモ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main {
+      max-width: 780px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+    }
+
+    h2 {
+      margin: 24px 0 8px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      line-height: 1.6;
+    }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    label {
+      display: block;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    input[type="text"],
+    input[type="email"] {
+      display: block;
+      width: 100%;
+      margin-top: 4px;
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    /* data-validity は setCustomValidity へ反映されるので :invalid が使える */
+    input:invalid {
+      border-color: #dc2626;
+      background: #fef2f2;
+    }
+
+    button {
+      padding: 8px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #fff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #eef2ff;
+    }
+
+    .error {
+      margin: 0 0 12px;
+      color: #b91c1c;
+      font-size: 13px;
+    }
+
+    .log {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #a5f3fc;
+      font-size: 12px;
+      min-height: 20px;
+    }
+
+    code {
+      background: #eef2ff;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+  <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+<main>
+  <h1>フィールド間検証</h1>
+  <p>
+    属性値の再描画はキュー（<code>requestAnimationFrame</code>）で行われるため、
+    <code>data-attr-disabled</code> で押下をブロックすると「最後の欄を直してそのまま
+    次へを押す」操作で判定が 1 フレーム遅れます。<code>data-validity</code> と
+    <code>data-{event}-if</code> は手続きの実行時に条件を同期評価するので、直前に
+    変更した入力を含めて確実に判定できます。
+  </p>
+
+  <div class="panel">
+    <h2>連絡先（いずれか必須）とメールアドレスの一致</h2>
+    <form id="contactForm" data-bind='{"tel":"","mail":"","mail2":""}'>
+      <label>
+        電話番号
+        <!-- いずれか必須。グループの代表欄へ条件を宣言する -->
+        <input type="text" name="tel"
+               data-validity="{{tel || mail}}"
+               data-validity-message="電話番号かメールアドレスを入力してください">
+      </label>
+      <label>
+        メールアドレス
+        <input type="email" name="mail">
+      </label>
+      <label>
+        メールアドレス（確認）
+        <input type="email" name="mail2"
+               data-validity="{{mail === mail2}}"
+               data-validity-message="メールアドレスが一致しません">
+      </label>
+
+      <p class="error" data-if="{{!tel && !mail}}">
+        電話番号かメールアドレスを入力してください
+      </p>
+      <p class="error" data-if="{{mail !== mail2}}">
+        メールアドレスが一致しません
+      </p>
+
+      <!-- ネイティブ検証に相乗りするので、フォーカス移動とバブル表示が付く -->
+      <button type="button" id="next"
+              data-click-form
+              data-click-validate
+              data-click-fetch="./field-condition-response.json"
+              data-click-bind="#result">次へ</button>
+    </form>
+
+    <h2>同意（実行条件）</h2>
+    <form id="agreeForm" data-bind='{"agreed":false,"count":0}'>
+      <label>
+        <input type="checkbox" name="agreed" value="true"> 規約に同意する
+      </label>
+      <p class="error" data-if="{{!agreed}}">同意が必要です</p>
+      <!-- 条件が偽なら fetch も redirect も実行しない -->
+      <button type="button" id="submit"
+              data-click-form
+              data-click-if="{{agreed}}"
+              data-click-fetch="./field-condition-response.json"
+              data-click-bind="#result">申込を確定する</button>
+    </form>
+
+    <div class="log" id="result">{{message}}</div>
+  </div>
+</main>
+</body>
+</html>

@@ -5,6 +5,7 @@
  */
 
 import Core from './core';
+import Dev from './dev';
 import Env from './env';
 import Expression from './expression';
 import Form from './form';
@@ -820,6 +821,17 @@ export interface ProcedureOptions {
   scrollTarget?: string | null;
 
   /**
+   * 手続きの実行条件（`data-{event}-if` / `data-fetch-if`）の式。
+   *
+   * 属性の再描画を待たずに実行時に同期評価するため、評価済みの値ではなく生の
+   * テンプレートを保持します。
+   */
+  conditionExpression?: string | null;
+
+  /** 実行条件の属性名（ログ出力用） */
+  conditionAttributeName?: string | null;
+
+  /**
    * バインド先・コピー先のうち編集可能な行にあたるものと、その `data-each`
    * コンテナの対応。
    *
@@ -1176,6 +1188,20 @@ export default class Procedure {
     const options: ProcedureOptions = {
       targetFragment: fragment,
     };
+    // 実行条件（data-{event}-if / 非イベントは data-fetch-if）。属性の再描画を
+    // 待たずに実行時へ同期評価するため、生のテンプレートを控える。
+    const conditionAttrName = event
+      ? Procedure.attrName(event, 'if')
+      : Procedure.attrName(null, 'if', true);
+    if (fragment.hasAttribute(conditionAttrName)) {
+      const raw = fragment.getRawAttribute(conditionAttrName);
+      if (typeof raw === 'string' && raw.trim() !== '') {
+        options.conditionExpression = Form.unwrapConditionExpression(raw);
+        options.conditionAttributeName = conditionAttrName;
+      } else {
+        Log.warn('Haori', `${conditionAttrName} に条件式が指定されていません。`);
+      }
+    }
     if (event) {
       // validate（spec: data-???-validate）
       if (fragment.hasAttribute(Procedure.attrName(event, 'validate'))) {
@@ -2146,6 +2172,20 @@ ${body}
       ) {
         return false;
       }
+      if (!this.options.formFragment && this.options.targetFragment) {
+        // 検証が走らない構成で data-validity が宣言されていれば開発モードで知らせる。
+        // 宣言は対象要素の配下ではなく祖先のフォーム内にあるため、そこを調べる。
+        Form.warnUnvalidatedCustomValidity(
+          Form.getFormFragment(this.options.targetFragment),
+          `${Env.prefix}${this.eventType ?? 'fetch'}-form が解決できません`,
+        );
+      }
+      // data-{event}-if: 手続きの実行条件。ネイティブ検証の後（入力欄単位のエラーを
+      // 先に見せる）、data-{event}-run の前（条件が偽なら run の副作用も起こさない）
+      // に、属性の再描画を待たず同期評価する。
+      if (!this.evaluateExecutionCondition()) {
+        return false;
+      }
       // data-{event}-run: 任意 JS を同期実行する。await を挟む前に実行することで、
       // クリックイベント中の event.preventDefault() が間に合う。本体が同期的に
       // false を返した場合はデフォルト動作（リンク遷移・フォーム送信）を抑止する。
@@ -2899,8 +2939,16 @@ ${body}
    */
   validate(fragment: ElementFragment): boolean {
     if (this.options.valid !== true) {
+      Form.warnUnvalidatedCustomValidity(
+        fragment,
+        `${Env.prefix}${this.eventType ?? 'fetch'}-validate の指定がありません`,
+      );
       return true;
     }
+    // data-validity の条件を検証の直前に同期評価して setCustomValidity へ反映する。
+    // 属性の再描画（requestAnimationFrame）に任せると、直前に直した入力が
+    // クリック時点では反映されておらず、判定を誤る。
+    Form.applyCustomValidity(fragment);
     const firstInvalid = this.findFirstInvalid(fragment);
     if (firstInvalid === null) {
       return true;
@@ -2915,6 +2963,58 @@ ${body}
       firstInvalid.scrollIntoView({behavior: 'smooth', block: 'nearest'});
     }
     return false;
+  }
+
+  /**
+   * `data-{event}-if` の実行条件を評価します。
+   *
+   * 評価スコープはバインディングデータ（継承込み）にフォームの収集値を重ねた値です
+   * （`Form.buildConditionScope()`）。クリック時点で最新なのは収集値だけなので、
+   * 直前に変更した入力を必ず条件へ含められます。
+   *
+   * 参照が解決できない場合は「条件を満たしていない」と扱い実行しません。ブロック
+   * 目的の宣言なので、解決できないときは安全側へ倒します。
+   *
+   * @param quiet ログを出さずに判定だけ行う（シグネチャ算出からの呼び出し用）
+   * @returns 実行してよい場合は true
+   */
+  private evaluateExecutionCondition(quiet = false): boolean {
+    const expression = this.options.conditionExpression;
+    if (!expression) {
+      return true;
+    }
+    const fragment = this.options.targetFragment;
+    if (!fragment) {
+      return true;
+    }
+    const attributeName =
+      this.options.conditionAttributeName ?? `${Env.prefix}if`;
+    // 収集値を重ねたスコープで評価する。クリック時点で最新なのは収集値だけなので、
+    // 直前に変更した入力を必ず条件へ含められる。
+    const scope = Form.buildConditionScope(
+      fragment,
+      this.options.formFragment ?? null,
+    );
+    const result = Expression.evaluateDetailed(expression, scope);
+    if (result.unresolvedReference) {
+      if (!quiet) {
+        Log.warn(
+          'Haori',
+          `${attributeName} の参照が解決できないため実行しません: ${expression}`,
+        );
+      }
+      return false;
+    }
+    if (!result.value) {
+      if (!quiet && Dev.isEnabled()) {
+        Log.warn(
+          'Haori',
+          `${attributeName} の条件が偽のため手続きを中断しました: ${expression}`,
+        );
+      }
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -3524,8 +3624,21 @@ ${body}
    */
   private resolveFetchSignature(): ResolvedFetchSignature {
     const preparedRequest = this.prepareFetchRequest();
+    if (
+      preparedRequest.signature === null ||
+      !this.options.conditionExpression
+    ) {
+      return {
+        signature: preparedRequest.signature,
+        hasUnresolvedReference: preparedRequest.hasUnresolvedReference,
+      };
+    }
+    // `data-fetch-if` の判定結果もシグネチャに含める。含めないと、条件が偽で見送った
+    // 後に条件だけが真へ変わっても「同じ内容」と判定されて再取得が起きない。
     return {
-      signature: preparedRequest.signature,
+      signature: `${preparedRequest.signature}|if=${String(
+        this.evaluateExecutionCondition(true),
+      )}`,
       hasUnresolvedReference: preparedRequest.hasUnresolvedReference,
     };
   }

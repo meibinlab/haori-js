@@ -89,6 +89,9 @@ export default class Core {
     'import',
     'url-param',
     'store',
+    // 条件は評価結果を DOM 属性へ書かない（式は実行時に生値から評価する）。
+    'validity',
+    'validity-message',
   ];
 
   /** 属性内プレースホルダ検出用の正規表現 */
@@ -369,6 +372,11 @@ export default class Core {
       return Promise.resolve();
     }
     const promises: Promise<void>[] = [];
+    if (fragment.hasAttribute(`${Env.prefix}validity`)) {
+      // 表示用（CSS の `:invalid` など）に検証状態を追随させる。ブロックの判定は
+      // 手続きの実行時に同期評価した結果が権威で、ここでの更新に依存しない。
+      Form.applyCustomValidity(fragment);
+    }
     if (fragment.hasAttribute(`${Env.prefix}fetch`)) {
       promises.push(Core.executeManagedFetch(fragment));
     }
@@ -786,6 +794,19 @@ export default class Core {
           promises.push(Store.restore(fragment));
         }
         break;
+      case `${Env.prefix}validity`:
+      case `${Env.prefix}validity-message`:
+        // 表示用の検証状態だけを更新し、共通処理（属性の DOM 反映）へは進まない。
+        // 進むと評価結果（`true` / `false`）が属性値として DOM へ書かれ、宣言した
+        // テンプレートが読めなくなる。ブロックの判定は手続きの実行時に生値から
+        // 同期評価する（`Form.applyCustomValidity()`）。
+        //
+        // この経路を通らないため、属性値を実行中に外部から書き換えても反映され
+        // ない（`data-store` と同じく、宣言は静的なものとして扱う）。
+        if (value !== null) {
+          Form.applyCustomValidity(fragment);
+        }
+        return Promise.all(promises).then(() => undefined);
       case `${Env.prefix}url-param`: {
         const arg = fragment.getAttribute(`${Env.prefix}url-arg`);
         const params = Url.readParams();

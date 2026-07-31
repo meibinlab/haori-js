@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## [0.34.0] - 2026-07-31
+
+### Added
+
+- **フィールド間の条件を宣言でブロックできるようにした**。従来、`data-attr-required` / `data-attr-disabled` と `data-if` のメッセージはフィールド間の条件を**表示**できたが、**押下のブロックには使えなかった**。属性値の反映はキュー（`requestAnimationFrame`）で行われるため、「最後の欄を直してそのまま次へを押す」操作ではクリック時点の属性が 1 フレーム古く、条件を満たしていない状態で手続きが走った（逆方向でも、直した直後は `disabled` が残っていてクリックが無視された。どちらも実測で再現）。ネイティブ検証（`data-{event}-validate`）はクリック時点の DOM を見るため確実だが、等値・いずれか必須はネイティブの制約では表現できなかった。
+  - **`data-validity="{{式}}"` / `data-validity-message="…"`** を追加した。入力要素へ宣言し、条件が偽のとき `setCustomValidity()` にメッセージを設定する。ネイティブ検証に相乗りするため、バブル表示・フォーカス移動・`data-{event}-scroll-on-error`・CSS の `:invalid` がそのまま働く。メッセージを省略すると「入力内容を確認してください」を使う。
+  - **`data-{event}-if="{{式}}"`**（非イベントは `data-fetch-if`）を追加した。条件が偽のときは以降のアクション（`-run` / `-confirm` / `-reset-before` / `-before-run` / `-fetch` / `-bind` / `-store-clear` / `-history` / `-redirect`）をすべて実行しない。停止するだけで、メッセージ表示は `data-if` / `data-message` と併用する（開発モードでのみ中断のログを出す）。表示制御の `data-if` とは別物であることを文書で明示した。
+  - どちらも手続きの**実行時に同期評価**する。評価順は `data-{event}-validate` の後、`data-{event}-run` の前（ネイティブ検証で表現できるエラーを先に見せ、条件が偽なら run の副作用も起こさない）。
+  - 評価スコープはバインディングデータ（継承込み）に、フォーム内で**宣言されている**収集キーを収集値で重ねた値。クリック時点で最新なのは収集値だけ（入力欄の内部値は `change` / `input` の委譲内で同期更新される）ため、直前に変更した入力が必ず条件に入る。収集値に現れないキーは未定義として扱い、`data-if` で非表示になった欄の古い値による誤判定を防ぐ。`data-form-arg` / `data-each-arg` の指定時はそのキー配下へ重ね、`data-form-list` の行ではその行の収集値を使う。
+  - 参照が解決できない条件は「満たしていない」と扱い実行しない（ブロック目的の宣言なので安全側へ倒す）。警告ログに属性名と式を出す。
+  - `data-fetch-if` は自動取得の再取得判定にも参加する（条件の真偽をシグネチャに含める）。含めないと、条件が偽で見送った後に条件だけが真へ変わっても再取得が起きない。
+  - `data-{event}-validate` はフォームが解決できない手続きでは働かないため、`data-validity` が宣言されているのに検証されない構成を開発モードで警告するようにした。
+
+### Changed
+
+- **押下のブロックに `disabled` を使わない方針を文書化した**。HTML 仕様上、無効化されたフォーム部品はクリックイベントを発火しないため、「直したのに押せない」方向は実行時の判定では救えない。ブロックは `data-validity` / `data-{event}-if` で行い、`data-attr-disabled` は視覚的な合図に限る（または `data-attr-class` に置き換える）。
+- `data-validity` / `data-validity-message` は評価結果を DOM 属性へ書き戻さない（属性には宣言したテンプレートが残る）。実行時は常に生値から評価する。この経路は共通の属性反映を通らないため、属性値を実行中に外部から書き換えても反映されない（`data-store` と同じく宣言は静的なものとして扱う）。
+
+### Tests
+
+- `tests/field-condition-validation.test.ts` を追加（18 件）。`data-{event}-if` は、一致→不一致に変えて即クリックしても実行されないこと、不一致→一致に直して即クリックすると実行されること、祖先が持つ古い値を非表示分岐の宣言キーがシャドーすること、偽のとき `run` / `confirm` / `redirect` が実行されないこと、中断後も再度押せること、未解決参照で実行しないこと、`data-form-arg` 構成、集約条件、非イベントの `data-fetch-if` を検証する。`data-validity` は、偽で止まりメッセージが設定されること、真で解除されること、既定文言、`data-{event}-validate` が無い場合の非検証と開発モード警告、非表示分岐の除外、いずれか必須、`data-form-list` の行ごとの判定、未解決参照、属性へ書き戻さないことを検証する。
+- `playwright/field-condition.spec.cjs` を追加（3 件）。実ブラウザで、`data-validity` がネイティブ検証としてブロックすること、最後の欄を直してそのまま押すと通ること、`data-{event}-if` が条件を満たすまで止めること、条件を壊した直後に押しても送信されないことを確認する。
+- `tests/procedure.test.ts` の疑似フラグメントに属性参照（`hasAttribute` / `getAttribute` / `getRawAttribute` / `getParent`）を補った。
+
+### Docs
+
+- `docs/ja/specs.md` に「フィールド間の条件」（`data-validity` / `data-validity-message` / 評価スコープ）と `data-{event}-if` を追加し、手続きの処理順序へ組み込んだ。`data-{event}-validate` の対象フォームの条件も明記した。
+- `docs/ja/guide.md` に「フィールド間の条件でボタンを止める」を追加した。
+- `README.md` / `README.ja.md` に両属性の項目を追加した。
+- `demo/form/field-condition-demo.html` を追加し、`demo/index.html` に 20 番のカードを追加した。
+
 ## [0.33.0] - 2026-07-31
 
 ### Added

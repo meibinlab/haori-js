@@ -17,6 +17,11 @@ class MockFragment {
     this.value = v;
   });
   getBindingData: () => Record<string, unknown> = vi.fn(() => ({}));
+  // 属性参照（data-validity の同期評価などで使う）
+  hasAttribute: (name: string) => boolean = vi.fn(() => false);
+  getAttribute: (name: string) => unknown = vi.fn(() => null);
+  getRawAttribute: (name: string) => string | null = vi.fn(() => null);
+  getParent: () => ElementFragment | null = vi.fn(() => null);
   setTarget(target: HTMLElement) {
     this.target = target;
   }

@@ -5,11 +5,16 @@
  */
 
 import Core from './core';
+import Dev from './dev';
 import Env from './env';
+import Expression from './expression';
 import Fragment, {ElementFragment} from './fragment';
 import Haori from './haori';
 import Log from './log';
 import Queue from './queue';
+
+/** `data-validity` のメッセージを省略したときの既定文言 */
+const DEFAULT_VALIDITY_MESSAGE = '入力内容を確認してください';
 
 type FormHaoriApi = Pick<typeof Haori, 'addErrorMessage' | 'clearMessages'>;
 
@@ -674,6 +679,290 @@ export default class Form {
       cursor = cursor.getParent();
     }
     return null;
+  }
+
+  /**
+   * 条件式（`data-validity` / `data-{event}-if`）の評価スコープを作ります。
+   *
+   * バインディングデータ（継承込み）を土台に、フォーム内で**宣言されている**収集
+   * キーを収集値で置き換えます。クリック時点で最新なのは収集値だけです（属性の
+   * 再描画は `requestAnimationFrame`、バインドデータへのコミットは非同期）。
+   * 収集値に無いキーは未定義にします。土台の値を残すと、`data-if` で非表示に
+   * なった入力欄の古い値で条件が誤判定されます。
+   *
+   * @param fragment 条件を宣言した要素のフラグメント
+   * @param sourceOverride 収集値の取得元（`data-{event}-form` の指定など）。
+   *     省略時は `data-form-list` の行、またはフォームコンテナから解決する
+   * @returns 条件式の評価スコープ
+   */
+  public static buildConditionScope(
+    fragment: ElementFragment,
+    sourceOverride: ElementFragment | null = null,
+  ): Record<string, unknown> {
+    const scope: Record<string, unknown> = {...fragment.getBindingData()};
+    const valueSource = sourceOverride
+      ? {
+        source: sourceOverride,
+        argKey: Form.resolveFormArgKey(sourceOverride),
+      }
+      : Form.resolveConditionValueSource(fragment);
+    if (!valueSource) {
+      // 収集値の取得元が無い（フォーム外の手続き）。バインドデータだけで評価する。
+      return scope;
+    }
+    const collected = Form.getValues(valueSource.source);
+    const keys = Form.collectDeclaredFieldKeys(valueSource.source);
+    if (valueSource.argKey === null) {
+      for (const key of keys) {
+        scope[key] = collected[key];
+      }
+      return scope;
+    }
+    // `data-form-arg` / `data-each-arg` 指定時は、そのキー配下が入力欄と対応する
+    // （双方向コミットの書き込み先と揃える）。
+    const scoped: Record<string, unknown> = {
+      ...(Form.asPlainRecord(scope[valueSource.argKey]) ?? {}),
+    };
+    for (const key of keys) {
+      scoped[key] = collected[key];
+    }
+    scope[valueSource.argKey] = scoped;
+    return scope;
+  }
+
+  /**
+   * 条件式で使う収集値の取得元を解決します。
+   *
+   * `data-form-list` の行の中では、その行の収集値が要素データに対応します。それ以外
+   * はフォームコンテナ（`<form>` または `data-form`）を使います。`data-form-list` を
+   * 伴わない `data-each` の行では入力欄と要素データが対応しないため、行を取得元には
+   * しません（フォームコンテナへ遡ります）。
+   *
+   * @param fragment 条件を宣言した要素のフラグメント
+   * @returns 取得元とキー名。取得元が無い場合は null
+   */
+  private static resolveConditionValueSource(
+    fragment: ElementFragment,
+  ): {source: ElementFragment; argKey: string | null} | null {
+    let cursor: ElementFragment | null = fragment;
+    while (cursor) {
+      const parent: ElementFragment | null = cursor.getParent();
+      if (
+        parent &&
+        parent.hasAttribute(`${Env.prefix}each`) &&
+        parent.hasAttribute(`${Env.prefix}form-list`)
+      ) {
+        const arg = parent.getRawAttribute(`${Env.prefix}each-arg`);
+        return {
+          source: cursor,
+          argKey: typeof arg === 'string' && arg !== '' ? arg : null,
+        };
+      }
+      cursor = parent;
+    }
+    const form = Form.getFormFragment(fragment);
+    return form ? {source: form, argKey: Form.resolveFormArgKey(form)} : null;
+  }
+
+  /**
+   * フォームコンテナの `data-form-arg` のキー名を返します。
+   *
+   * @param form フォームコンテナのフラグメント
+   * @returns キー名。指定が無い場合は null
+   */
+  private static resolveFormArgKey(form: ElementFragment): string | null {
+    const arg = form.getAttribute(`${Env.prefix}form-arg`);
+    return arg ? String(arg) : null;
+  }
+
+  /**
+   * 収集対象として**宣言されている**最上位のキー名を列挙します。
+   *
+   * `data-if` が偽の分岐配下も対象にします。値収集（`getValues()`）はそれらを除外
+   * するため、宣言だけを見て「そのキーは収集値が権威」と判断できるようにするため
+   * です。`data-form-object` / `data-form-list` に囲まれている場合はその名前だけを
+   * 加えます（キー全体が収集値で置き換わります）。
+   *
+   * 走査は実 DOM に対して行います。`data-if` が偽の分岐はフラグメントの子を保持
+   * しないことがあり、フラグメントだけを辿ると隠れた欄の宣言を取りこぼします。
+   *
+   * @param root 走査の起点フラグメント
+   * @returns 宣言されている最上位のキー名
+   */
+  public static collectDeclaredFieldKeys(root: ElementFragment): Set<string> {
+    const keys = new Set<string>();
+    const rootElement = root.getTarget();
+    const rootName = Form.resolveFieldName(root);
+    if (rootName) {
+      keys.add(String(rootName));
+    }
+    const objectAttribute = `${Env.prefix}form-object`;
+    const listAttribute = `${Env.prefix}form-list`;
+    // 収集対象になり得る要素だけを見る。`[name]` だけで拾うと `<button name>` の
+    // ような収集されない要素までキーとして扱い、同名のバインドキーを未定義で
+    // シャドーしてしまう。
+    const selector =
+      'input[name],select[name],textarea[name],' +
+      `[${Env.prefix}form-name],[${objectAttribute}],[${listAttribute}]`;
+    rootElement.querySelectorAll(selector).forEach(element => {
+      if (!(element instanceof HTMLElement)) {
+        return;
+      }
+      // 最も外側の入れ子コンテナがあれば、そのキー全体が収集値で置き換わる。
+      let outermost: HTMLElement | null = null;
+      let cursor: HTMLElement | null = element;
+      while (cursor && cursor !== rootElement) {
+        if (
+          cursor.hasAttribute(objectAttribute) ||
+          cursor.hasAttribute(listAttribute)
+        ) {
+          outermost = cursor;
+        }
+        cursor = cursor.parentElement;
+      }
+      const owner = outermost ?? element;
+      const name =
+        owner.getAttribute(objectAttribute) ||
+        owner.getAttribute(listAttribute) ||
+        owner.getAttribute(`${Env.prefix}form-name`) ||
+        owner.getAttribute('name');
+      if (name) {
+        keys.add(name);
+      }
+    });
+    return keys;
+  }
+
+  /**
+   * `data-validity` の条件を評価し、`setCustomValidity()` へ反映します。
+   *
+   * 評価は呼び出し時点で**同期**に行います。属性の再描画を待つ実装にすると、
+   * 「最後の欄を直してそのまま次へを押す」操作でクリック時点の状態が古くなり、
+   * ブロックの判定を誤ります。
+   *
+   * @param root 走査の起点フラグメント
+   * @returns 戻り値はありません。
+   */
+  public static applyCustomValidity(root: ElementFragment): void {
+    const attribute = `${Env.prefix}validity`;
+    const visit = (fragment: ElementFragment): void => {
+      if (fragment.hasAttribute(attribute)) {
+        Form.applyOneCustomValidity(fragment, attribute);
+      }
+      fragment.getChildElementFragments().forEach(visit);
+    };
+    visit(root);
+  }
+
+  /**
+   * 1 つの入力欄へ `data-validity` の評価結果を反映します。
+   *
+   * @param fragment 対象フラグメント
+   * @param attribute 属性名
+   * @returns 戻り値はありません。
+   */
+  private static applyOneCustomValidity(
+    fragment: ElementFragment,
+    attribute: string,
+  ): void {
+    const element = fragment.getTarget();
+    if (
+      !(element instanceof HTMLInputElement) &&
+      !(element instanceof HTMLSelectElement) &&
+      !(element instanceof HTMLTextAreaElement)
+    ) {
+      Log.warn(
+        'Haori',
+        `${attribute} は入力要素にのみ指定できます: ${element.tagName}`,
+      );
+      return;
+    }
+    const raw = fragment.getRawAttribute(attribute);
+    if (typeof raw !== 'string' || raw.trim() === '') {
+      element.setCustomValidity('');
+      return;
+    }
+    const scope = Form.buildConditionScope(fragment);
+    const result = Expression.evaluateDetailed(
+      Form.unwrapConditionExpression(raw),
+      scope,
+    );
+    if (result.unresolvedReference) {
+      // ブロック目的の宣言なので、解決できない条件は「満たしていない」と扱う。
+      Log.warn(
+        'Haori',
+        `${attribute} の参照が解決できないため無効として扱います: ${raw}`,
+      );
+      element.setCustomValidity(Form.resolveValidityMessage(fragment));
+      return;
+    }
+    element.setCustomValidity(
+      result.value ? '' : Form.resolveValidityMessage(fragment),
+    );
+  }
+
+  /**
+   * `data-validity-message` の文言を解決します。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 表示する文言
+   */
+  private static resolveValidityMessage(fragment: ElementFragment): string {
+    const message = fragment.getAttribute(`${Env.prefix}validity-message`);
+    if (typeof message === 'string' && message.trim() !== '') {
+      return message;
+    }
+    return DEFAULT_VALIDITY_MESSAGE;
+  }
+
+  /**
+   * 条件属性の値から式を取り出します。
+   *
+   * `{{式}}` の形でも、波括弧なしの式でも受け付けます。
+   *
+   * @param raw 属性の生値
+   * @returns 式文字列
+   */
+  public static unwrapConditionExpression(raw: string): string {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('{{{') && trimmed.endsWith('}}}')) {
+      return trimmed.slice(3, -3);
+    }
+    if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
+      return trimmed.slice(2, -2);
+    }
+    return trimmed;
+  }
+
+  /**
+   * 検証が走らない構成で `data-validity` が宣言されている場合に警告します。
+   *
+   * `data-validity` はネイティブ検証（`data-{event}-validate`）に相乗りするため、
+   * 検証を行わない手続きでは無言で効かなくなります。開発モードでのみ知らせます。
+   *
+   * @param root 走査の起点フラグメント
+   * @param reason 検証が行われない理由
+   * @returns 戻り値はありません。
+   */
+  public static warnUnvalidatedCustomValidity(
+    root: ElementFragment | null,
+    reason: string,
+  ): void {
+    if (!Dev.isEnabled() || !root) {
+      return;
+    }
+    const attribute = `${Env.prefix}validity`;
+    const has =
+      root.hasAttribute(attribute) ||
+      root.getTarget().querySelector(`[${attribute}]`) !== null;
+    if (has) {
+      Log.warn(
+        'Haori',
+        `${attribute} は指定されていますが検証は行われません（${reason}）。` +
+          `${Env.prefix}{event}-validate を指定するか、` +
+          `${Env.prefix}{event}-if を使用してください。`,
+      );
+    }
   }
 
   /**
