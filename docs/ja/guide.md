@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.35.0
+バージョン: 0.36.0
 
 ## 目次
 
@@ -1706,6 +1706,45 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 - `data-{event}-bind` は既定で**全置換**です。遷移先の式が使っているキーが応答に無いと参照できなくなりますが、その場合は手続き開始時の値で遷移します（開発モードで警告が出ます）。キーを残したいときは `data-{event}-bind-merge` を使ってください。
 - 参照が最初から解決できない式（キー名の打ち間違いなど）は「指定なし」として扱われ、遷移や表示は行われません。
 - `data-store` の保存は遷移の前に完了しているため、受付番号を退避してから遷移する構成も属性だけで書けます。
+
+---
+
+## 行の中で候補から選択中の 1 件を引く
+
+繰り返し行のそれぞれで候補を取得し、「選択したものの名称」を送信値や保存値として残したいことがあります。行の中で候補を取得する場合、**応答のバインド先はその式を書いた要素自身か祖先**でなければ参照できません。行全体で使うなら、行の内側のラッパへ `data-fetch-bind` で寄せます。
+
+```html
+<form data-form data-bind='{"rows":[{}]}'>
+  <div data-form-list="rows" data-each="rows" data-each-arg="c" data-each-index="i">
+    <div class="row">
+      <!-- 応答のバインド先。行の内側のラッパなので行内のどの式からも見える -->
+      <div id="row-body-{{i}}">
+        <select name="area">…</select>
+
+        <div data-fetch="{{c.area ? '/api/plans?area=' + c.area : null}}"
+             data-fetch-arg="planCandidates"
+             data-fetch-bind="#row-body-{{i}}">
+          <select name="planId" data-each="planCandidates.content ?? []" data-each-arg="p">
+            <option data-each-before value="">選択してください</option>
+            <option value="{{p.id}}">{{p.planName}}</option>
+          </select>
+        </div>
+
+        <!-- 選択中の 1 件の名称を hidden へ載せる（送信値・保存値として残る） -->
+        <input type="hidden" name="planName"
+               data-attr-value="{{haori.findBy(planCandidates.content ?? [], 'id', c.planId).planName}}">
+      </div>
+    </div>
+  </div>
+</form>
+```
+
+### 気をつけること
+
+- **バインド先を fetch した要素のままにすると、兄弟要素の式からは参照できません。** `?? []` などで既定値を書いていると、エラーにならず既定値のまま表示され続けます。開発モードでは「別のスコープでは供給されている」旨の警告が出ます。
+- **行要素自身をバインド先にしないでください。** `data-form-list` を併用したコンテナでは、行要素へのバインドは行データへの書き戻しになり、候補一覧そのものが収集値や保存値へ入ります。
+- `data-attr-value` で値が決まる入力は、行の値反映で上書きされません。ただしバインディングデータ（`data-store` の保存内容）へ入るのは次の収集の時点です。送信値は収集時に入力欄から読み直すため、選択した直後の送信でも正しい値が送られます。
+- 候補が届くまでは式が解決しないため、保存済みの値から復元した直後は行データの値が表示されます。候補が届いた後に評価結果へ切り替わります。
 
 ---
 

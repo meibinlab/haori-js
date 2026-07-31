@@ -1,0 +1,7 @@
+{
+  "content": [
+    {"id": "p1", "planName": "スタンダードプラン"},
+    {"id": "p2", "planName": "おトクプラン"},
+    {"id": "p3", "planName": "深夜割プラン"}
+  ]
+}

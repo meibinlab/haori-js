@@ -480,6 +480,12 @@
             <p><code>data-{event}-redirect</code> や <code>data-{event}-toast</code> のようにバインドより後で実行されるアクションは、使用する直前に属性を評価し直します。応答を自要素または祖先へバインドしておけば、遷移先やメッセージを応答の値で切り替えられます。</p>
             <a class="demo-link" href="./form/late-attribute-demo.html">遷移先の切り替え デモを開く</a>
         </div>
+
+        <h2>22. 行の中で候補から 1 件を引く</h2>
+        <div class="demo-section">
+            <p>行ごとに取得した候補から選択中の 1 件の名称を hidden へ載せます。<code>data-attr-value</code> のように宣言バインドで値が決まる入力は、行の値反映で上書きされません。応答のバインド先は式を書いた要素自身または祖先である必要があるため、行の内側のラッパへ <code>data-fetch-bind</code> で寄せています。</p>
+            <a class="demo-link" href="./form/row-declarative-value-demo.html">行の宣言バインド デモを開く</a>
+        </div>
     </div>
 
         <script type="module">

@@ -441,6 +441,28 @@ export default class Expression {
   /** 未解決識別子の集約報告をスケジュール済みかどうか */
   private static unresolvedReportScheduled = false;
 
+  /**
+   * いずれかのスコープで供給されたことがあるキー名（開発モードのみ記録）。
+   * 「このスコープには無いが別のスコープにはある」を判定するために使います。
+   */
+  private static readonly suppliedIdentifiers = new Set<string>();
+
+  /**
+   * スコープ外のキーを参照している式（開発モードのみ）。
+   * キーは式そのもので、値はその式がスコープに持たないキー名の一覧です。
+   * 同じ式の評価でキーが解決したら記録を取り消します。
+   */
+  private static readonly pendingScopeMissingIdentifiers = new Map<
+    string,
+    Set<string>
+  >();
+
+  /** スコープ外キーの集約報告をスケジュール済みかどうか */
+  private static scopeMissingReportScheduled = false;
+
+  /** スコープ外キーとして報告済みの「式 + キー名」 */
+  private static readonly loggedScopeMissingIdentifiers = new Set<string>();
+
   /** ブロック識別子の警告を出力済みの式 */
   private static readonly loggedBlockedIdentifierExpressions =
     new Set<string>();
@@ -843,6 +865,99 @@ export default class Expression {
   }
 
   /**
+   * 供給されたキー名を記録します（開発モードのみ）。
+   *
+   * 「このスコープには無いが、別のスコープでは供給されている」キーを見分けるための
+   * 材料です。バインド先を兄弟要素にしてしまった宣言は、`??` などで既定値を書いて
+   * いると値のある式として評価が通るため、未解決参照の診断では検出できません。
+   *
+   * @param bindings 評価に用いるバインド値
+   * @return 戻り値はありません。
+   */
+  private static recordSuppliedIdentifiers(
+    bindings: Record<string, unknown>,
+  ): void {
+    for (const key of Object.keys(bindings)) {
+      this.suppliedIdentifiers.add(key);
+    }
+  }
+
+  /**
+   * 式がスコープに持たないキー名を記録します（開発モードのみ）。
+   *
+   * 同じ式の評価でキーが揃った場合は記録を取り消します。行ごとに応答を取得する
+   * 構成では、ある行が先に解決している間、別の行の同じ宣言は一時的にスコープ外に
+   * なるためです。取り消しは式単位なので、同じ宣言が複数の行にある場合はどれか 1 つが
+   * 解決すると報告しません（誤検知より見落としを選びます）。
+   *
+   * @param names スコープに無いキー名の一覧（空なら記録を取り消す）
+   * @param expression 評価対象の式
+   * @return 戻り値はありません。
+   */
+  private static recordScopeMissingIdentifiers(
+    names: string[],
+    expression: string,
+  ): void {
+    if (names.length === 0) {
+      this.pendingScopeMissingIdentifiers.delete(expression);
+      return;
+    }
+    this.pendingScopeMissingIdentifiers.set(expression, new Set(names));
+    if (this.scopeMissingReportScheduled) {
+      return;
+    }
+    this.scopeMissingReportScheduled = true;
+    void Queue.waitForIdle().then(() => {
+      this.scopeMissingReportScheduled = false;
+      this.reportScopeMissingIdentifiers();
+    });
+  }
+
+  /**
+   * 描画完了時点で「別のスコープでは供給されているキー」を参照している式を警告します。
+   *
+   * 応答のバインド先を兄弟要素にしてしまった宣言（バインド先は自要素または祖先で
+   * なければ評価スコープに入りません）を名指しするための診断です。同じ式とキーの
+   * 組は一度だけ報告します。
+   *
+   * @return 戻り値はありません。
+   */
+  private static reportScopeMissingIdentifiers(): void {
+    if (this.pendingScopeMissingIdentifiers.size === 0) {
+      return;
+    }
+    const records = Array.from(this.pendingScopeMissingIdentifiers.entries());
+    this.pendingScopeMissingIdentifiers.clear();
+    for (const [expression, names] of records) {
+      const reported: string[] = [];
+      for (const name of names) {
+        if (!this.suppliedIdentifiers.has(name)) {
+          // どこにも供給されていないキーは未解決参照の集約報告が扱う。
+          continue;
+        }
+        const key = `${name}\n${expression}`;
+        if (this.loggedScopeMissingIdentifiers.has(key)) {
+          continue;
+        }
+        this.loggedScopeMissingIdentifiers.add(key);
+        reported.push(name);
+      }
+      if (reported.length === 0) {
+        continue;
+      }
+      Log.warn(
+        '[Haori]',
+        'Expression key(s) are missing from this scope but are provided in' +
+          ` another scope: ${reported.join(', ')}.` +
+          ' A binding is visible only to the target element itself and its' +
+          ' descendants, so bind the response to this element or one of its' +
+          ' ancestors (data-fetch-bind / data-{event}-bind):',
+        expression,
+      );
+    }
+  }
+
+  /**
    * バインドに無いキーを `undefined` とみなして、判定結果が出るかを試します。
    *
    * 「無いものを表示する」式は未解決参照（空表示）が妥当ですが、「無いものを
@@ -1046,6 +1161,10 @@ export default class Expression {
       }
     }
     this.pruneResolvedIdentifiers(runtimeBindings);
+    if (Dev.isEnabled()) {
+      // 未解決参照の遮蔽（下の `unknownIdentifiers`）を加える前のスコープを記録する。
+      this.recordSuppliedIdentifiers(runtimeBindings);
+    }
     const allowMissingIdentifierRecovery =
       this.canAttemptMissingIdentifierRecovery(expression);
 
@@ -1063,6 +1182,12 @@ export default class Expression {
         // 標準組み込み（`Math` など）は式から参照できる仕様のため遮蔽しない。
         !this.ALLOWED_GLOBAL_IDENTIFIERS.has(name),
     );
+    if (Dev.isEnabled()) {
+      // 「このスコープには無いが別のスコープでは供給されている」キーの診断材料。
+      // `??` などで既定値を書いた式は値のある結果になるため、未解決参照の診断では
+      // 検出できない（バインド先を兄弟要素にした宣言が無言で既定値のままになる）。
+      this.recordScopeMissingIdentifiers(unknownIdentifiers, expression);
+    }
     if (allowMissingIdentifierRecovery) {
       // `?.` / `??` / `||` / `&&` を含む式は、従来から未宣言識別子を undefined と
       // して評価を続ける。事前に undefined を渡せば ReferenceError による再試行が

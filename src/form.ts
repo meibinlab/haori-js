@@ -271,6 +271,81 @@ export default class Form {
   }
 
   /**
+   * 宣言バインドで値・状態が決まり、その評価が解決している入力かどうかを判定します。
+   *
+   * `data-each` の行へ値を反映するとき、この判定が真の入力は行データで上書きしま
+   * せん。上書きすると、直前の再評価で入れた値を収集値（多くは空文字）で潰し、その
+   * 空値が次の収集で行データへ焼き付いて以後ずっと空になります（行の中で候補から
+   * 選択中の 1 件を引いて hidden へ載せる構成が該当します）。
+   *
+   * 評価が未解決のときは偽を返し、従来どおり行データを反映します。保存済みレコード
+   * からの復元では、候補が届くまで式が解決しないため、ここで宣言バインドを権威に
+   * すると復元した値を失います。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 宣言バインドで値・状態が決まり、その評価が解決している場合 true
+   */
+  private static hasResolvedDeclarativeState(
+    fragment: ElementFragment,
+  ): boolean {
+    if (!Form.isDeclarativeStateBound(fragment)) {
+      return false;
+    }
+    const element = fragment.getTarget();
+    if (
+      element instanceof HTMLInputElement &&
+      (element.type === 'checkbox' || element.type === 'radio')
+    ) {
+      return Form.isDeclarationResolved(fragment, 'checked');
+    }
+    if (Form.hasDeclarativeBinding(fragment, 'value')) {
+      return Form.isDeclarationResolved(fragment, 'value');
+    }
+    if (element instanceof HTMLSelectElement) {
+      // 選択状態を宣言している `<option>` がすべて解決していれば、選択の権威は
+      // option 側にある。1 つでも未解決なら行データへ委ねる。
+      for (const option of Array.from(element.options)) {
+        const optionFragment = Fragment.get(option);
+        if (!(optionFragment instanceof ElementFragment)) {
+          continue;
+        }
+        if (
+          Form.hasDeclarativeBinding(optionFragment, 'selected') &&
+          !Form.isDeclarationResolved(optionFragment, 'selected')
+        ) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 宣言バインドの評価が解決しているかどうかを判定します。
+   *
+   * `data-attr-{name}` と `{name}="{{式}}"` のどちらの書き方でも、実際に評価して
+   * 未解決参照が無いことを確認します。
+   *
+   * @param fragment 対象フラグメント
+   * @param name 判定する属性名（`value` / `checked` / `selected`）
+   * @returns 未解決参照が無い場合 true
+   */
+  private static isDeclarationResolved(
+    fragment: ElementFragment,
+    name: string,
+  ): boolean {
+    for (const attributeName of [`${Env.prefix}attr-${name}`, name]) {
+      const evaluation = fragment.getAttributeEvaluation(attributeName);
+      if (evaluation === null) {
+        continue;
+      }
+      return !evaluation.hasUnresolvedReference;
+    }
+    return false;
+  }
+
+  /**
    * 値または状態が宣言バインドで決まる入力かどうかを判定します。
    *
    * 属性にテンプレート式を書いた場合、または対応する `data-attr-*` を持つ場合は、
@@ -1243,13 +1318,27 @@ export default class Form {
         // ただし宣言バインド（テンプレート式・`data-attr-*`）で値や状態が決まる入力は
         // 対象外とする。行データにキーが無くても、その値・状態はバインドの評価結果が
         // 権威であり、ここで空にすると宣言した値を消してしまう（URL パラメータ由来の
-        // 値を hidden へ載せる構成など）。行データにキーが「ある」場合は従来どおり
-        // 行データを優先する。
+        // 値を hidden へ載せる構成など）。
+        //
+        // 宣言バインドの評価が解決している場合は、行データにキーが「ある」場合も
+        // 上書きしない。行の反映は再評価（`Core.evaluateAll`）の直後に走るため、
+        // 上書きすると評価したばかりの値を収集値（多くは空文字）で潰し、その空値が
+        // 次の収集で行データへ焼き付いて以後ずっと空になる（行の中で候補から選択中の
+        // 1 件を引いて hidden へ載せる構成）。評価が未解決のときは従来どおり行データを
+        // 反映する（保存済みレコードからの復元で、候補が届くまでの間に値を失わない）。
+        const declarativeAuthority =
+          clearMissing && Form.hasResolvedDeclarativeState(fragment);
         const clearAsMissing =
           clearMissing &&
           typeof rawValue === 'undefined' &&
           !Form.isDeclarativeStateBound(fragment);
-        const value = clearAsMissing ? null : rawValue;
+        // undefined は「既存の入力値を維持する」の意味（後続の分岐を参照）。
+        let value: unknown = rawValue;
+        if (declarativeAuthority) {
+          value = undefined;
+        } else if (clearAsMissing) {
+          value = null;
+        }
         // input[type=file] へはブラウザの制約により任意の値を設定できない。
         // クリア（null / 空文字）のみ反映し、それ以外は静かにスキップする。
         // 双方向バインディングでファイル名が書き戻される正常系で警告が出るのを防ぐ。

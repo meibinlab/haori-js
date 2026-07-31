@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>行の中で候補から 1 件を引く デモ</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main {
+      max-width: 820px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+    }
+
+    h2 {
+      margin: 24px 0 8px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 0 0 16px;
+      line-height: 1.6;
+    }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    .row-block {
+      margin-bottom: 16px;
+      padding: 16px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+
+    .field {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .field > label {
+      width: 120px;
+      font-size: 14px;
+    }
+
+    select {
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    button {
+      margin-right: 8px;
+      padding: 8px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #fff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #eef2ff;
+    }
+
+    .kept {
+      font-weight: 600;
+    }
+
+    .warn {
+      margin-top: 24px;
+      padding: 16px;
+      border: 1px solid #fbcfe8;
+      border-radius: 6px;
+      background: #fff1f2;
+    }
+
+    .log {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #a5f3fc;
+      font-size: 12px;
+      min-height: 20px;
+      white-space: pre-wrap;
+    }
+
+    code {
+      background: #eef2ff;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+  <script src="../../dist/haori.iife.js"></script>
+</head>
+<body>
+<main>
+  <h1>行の中で候補から 1 件を引く</h1>
+  <p>
+    行ごとに候補を取得し、選択中の 1 件の名称を hidden へ載せます。応答のバインド先は
+    <strong>その式の要素自身または祖先</strong>である必要があるため、行の内側のラッパへ
+    <code>data-fetch-bind</code> で寄せています。宣言バインド
+    （<code>data-attr-value</code>）で値が決まる入力は、行の値反映で上書きされません。
+  </p>
+
+  <form class="panel" id="plan-form" data-form
+        data-bind='{"rows":[{}]}'>
+    <div id="rows" data-form-list="rows" data-each="rows" data-each-arg="c"
+         data-each-index="i">
+      <div class="row-block">
+        <!-- 応答のバインド先。行の内側のラッパなので、行内のどの式からも参照できる -->
+        <div class="row-body" id="row-body-{{i}}">
+          <div class="field">
+            <label for="area-{{i}}">エリア</label>
+            <select id="area-{{i}}" name="area">
+              <option value="">選択してください</option>
+              <option value="north">北エリア</option>
+              <option value="south">南エリア</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="type-{{i}}">契約種別</label>
+            <select id="type-{{i}}" name="contractType">
+              <option value="">選択してください</option>
+              <option value="light">電灯</option>
+              <option value="power">動力</option>
+            </select>
+          </div>
+
+          <!-- 候補の取得。応答は行内のラッパ（祖先）へバインドする -->
+          <div class="field" data-fetch="{{c.area && c.contractType ? './row-declarative-value-plans.json' : null}}"
+               data-fetch-arg="planCandidates"
+               data-fetch-bind="#row-body-{{i}}">
+            <label for="plan-{{i}}">プラン</label>
+            <select id="plan-{{i}}" name="planId"
+                    data-each="planCandidates.content ?? []" data-each-arg="p">
+              <option data-each-before value="">エリア・契約種別を選択してください</option>
+              <option value="{{p.id}}">{{p.planName}}</option>
+            </select>
+          </div>
+
+          <!-- 選択中の 1 件の名称。hidden は送信値・保存値として残す -->
+          <input type="hidden" name="planName" class="plan-name-field"
+                 data-attr-value="{{haori.findBy(planCandidates.content ?? [], 'id', c.planId).planName}}">
+          <p>
+            選択中のプラン名: <span class="kept plan-name">{{haori.findBy(planCandidates.content ?? [], 'id', c.planId).planName}}</span>
+          </p>
+
+          <button type="button" data-click-row-add>行を追加</button>
+          <button type="button" data-click-row-remove>この行を削除</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="log" id="values">収集値: {{JSON.stringify(rows)}}</div>
+  </form>
+
+  <div class="warn">
+    <h2>うまくいかない書き方</h2>
+    <p>
+      応答を <code>data-fetch-arg</code> だけで受け取ると、その値は
+      <strong>fetch を書いた要素とその子孫</strong>からしか見えません。下の hidden は
+      候補を取得する要素の外にあるため、式は常に既定値のままです（開発モードでは
+      「別スコープで供給されている」旨を警告します）。
+    </p>
+    <form data-form data-bind='{"rows":[{}]}'>
+      <div data-form-list="rows" data-each="rows" data-each-arg="c" data-each-index="i">
+        <div class="row-block">
+          <input type="hidden" name="planName" class="outside-field"
+                 data-attr-value="{{haori.findBy(planCandidates.content ?? [], 'id', c.planId).planName}}">
+          <span class="outside-probe">{{(planCandidates.content ?? []).length}}</span> 件の候補
+          <div class="field" data-fetch="./row-declarative-value-plans.json"
+               data-fetch-arg="planCandidates">
+            <label for="outside-plan-{{i}}">プラン</label>
+            <select id="outside-plan-{{i}}" name="planId"
+                    data-each="planCandidates.content ?? []" data-each-arg="p">
+              <option data-each-before value="">選択してください</option>
+              <option value="{{p.id}}">{{p.planName}}</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</main>
+</body>
+</html>
