@@ -1630,6 +1630,19 @@ export default class Core {
    * @return 差分更新（再実行を含む）の完了 Promise
    */
   public static evaluateEach(fragment: ElementFragment): Promise<void> {
+    if (Dev.isEnabled()) {
+      // 行スコープの名前は、描画をスキップする判定より前に登録する。スキップした
+      // 場合はテンプレートが切り出されないため、`scan` がそのまま行のマークアップ
+      // へ降りてコンテナのスコープで評価する。このとき行スコープの名前はスコープ外
+      // になるので、開発モードの診断が誤って「別のスコープでは供給されている」と
+      // 報告しないよう、先に名前を知らせておく必要がある。
+      // 本番では属性の評価コストも払わないよう、ここで分岐する
+      // （`evaluateEach` はバインド更新のたびに呼ばれる）。
+      Expression.recordRowScopeIdentifiers([
+        Core.getRowScopeName(fragment, 'each-arg'),
+        Core.getRowScopeName(fragment, 'each-index'),
+      ]);
+    }
     if (!fragment.isVisible() || !fragment.isMounted()) {
       return Promise.resolve();
     }
@@ -1641,6 +1654,24 @@ export default class Core {
       return state.settled ?? Promise.resolve();
     }
     return Core.runEachUpdateLoop(fragment, state);
+  }
+
+  /**
+   * `data-each` が行スコープへ公開する名前を返します。
+   *
+   * @param fragment `data-each` コンテナのフラグメント
+   * @param suffix 参照する属性のサフィックス（`each-arg` または `each-index`）
+   * @returns 公開される名前。指定が無い場合は null
+   */
+  private static getRowScopeName(
+    fragment: ElementFragment,
+    suffix: 'each-arg' | 'each-index',
+  ): string | null {
+    const value = fragment.getAttribute(`${Env.prefix}${suffix}`);
+    if (typeof value !== 'string' || value === '') {
+      return null;
+    }
+    return value;
   }
 
   /**

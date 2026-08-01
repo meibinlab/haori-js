@@ -466,6 +466,12 @@ export default class Expression {
   /** スコープ外キーの集約報告をスケジュール済みかどうか */
   private static scopeMissingReportScheduled = false;
 
+  /**
+   * `data-each` の行スコープとして公開される名前（開発モードのみ記録）。
+   * 「別のスコープでは供給されているキー」の診断から除外するために使います。
+   */
+  private static readonly rowScopeIdentifiers = new Set<string>();
+
   /** スコープ外キーとして報告済みの「式 + キー名」 */
   private static readonly loggedScopeMissingIdentifiers = new Set<string>();
 
@@ -975,6 +981,33 @@ export default class Expression {
   }
 
   /**
+   * `data-each` の行スコープとして公開される名前を記録します（開発モードのみ）。
+   *
+   * 行スコープの名前（`data-each-arg` / `data-each-index`）は、行の描画より前に
+   * 行テンプレートが評価される状況ではスコープに入りません（`data-each` が未マウント
+   * などで待機している間、テンプレートはコンテナのスコープで評価されます）。行が
+   * 描画されれば供給されるため、そのまま扱うと「別のスコープでは供給されている」
+   * 診断の条件を満たしてしまいます。行スコープの名前は応答のバインド先を取り違えた
+   * 宣言では供給されないため、診断の対象から外します。
+   *
+   * @param names 行スコープとして公開される名前（`null` と空文字は無視します）
+   * @return 戻り値はありません。
+   */
+  public static recordRowScopeIdentifiers(
+    names: readonly (string | null | undefined)[],
+  ): void {
+    if (!Dev.isEnabled()) {
+      // 本番では診断を行わないため、常駐量を増やさない。
+      return;
+    }
+    for (const name of names) {
+      if (typeof name === 'string' && name !== '') {
+        this.rowScopeIdentifiers.add(name);
+      }
+    }
+  }
+
+  /**
    * 式がスコープに持たないキー名を記録します（開発モードのみ）。
    *
    * 同じ式の評価でキーが揃った場合は記録を取り消します。行ごとに応答を取得する
@@ -1025,6 +1058,12 @@ export default class Expression {
       for (const name of names) {
         if (!this.suppliedIdentifiers.has(name)) {
           // どこにも供給されていないキーは未解決参照の集約報告が扱う。
+          continue;
+        }
+        if (this.rowScopeIdentifiers.has(name)) {
+          // 行スコープの名前は、行の描画より前のテンプレート評価では必ず
+          // スコープ外になる。バインド先の取り違えでは供給されない名前なので
+          // 報告しない（`recordRowScopeIdentifiers()` を参照）。
           continue;
         }
         const key = `${name}\n${expression}`;
