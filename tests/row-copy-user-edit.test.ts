@@ -12,7 +12,7 @@
  * コピーしないキー（住所）の編集値が旧値へ巻き戻り、要素データが変わらないために
  * コピーしたキー（チェック）も画面へ届きません。
  */
-import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
 import {waitForCondition, waitForDomSettled} from './helpers/async';
@@ -215,5 +215,85 @@ describe('行への書き戻しとユーザー編集', () => {
       municipality: '港区',
       street: '2-2',
     });
+  });
+});
+
+describe('行への bind とユーザー編集', () => {
+  let container: HTMLElement;
+  let dispatcher: EventDispatcher;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    dispatcher = new EventDispatcher(document);
+    dispatcher.start();
+    // 郵便番号から住所を引く応答を模す。
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({city: '千代田区'}), {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    ) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    dispatcher.stop();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it('取得の起点になった入力の編集が、応答の書き戻しで巻き戻らない', async () => {
+    // 行の中で「郵便番号を入れたら住所を引く」構成。応答は city だけを返すため、
+    // 起点になった zip は応答に含まれない。読み直した要素データをそのまま土台に
+    // すると、確定していない zip の編集が旧値（空）へ巻き戻る。
+    container.innerHTML = `
+      <div id="bind-owner" data-bind='{"rows":[
+        {"zip":"","city":"","note":"N"}
+      ]}'>
+        <div data-form-list="rows" data-each="rows"
+             data-each-arg="r" data-each-index="i">
+          <div id="bind-row-{{i}}">
+            <input name="zip"
+              data-change-fetch="/api/address"
+              data-change-bind="#bind-row-{{i}}"
+              data-change-bind-merge>
+            <input name="city">
+            <input name="note">
+          </div>
+        </div>
+      </div>`;
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const owner = container.querySelector<HTMLElement>('#bind-owner')!;
+    const zip = container.querySelector<HTMLInputElement>('input[name="zip"]')!;
+    const city = container.querySelector<HTMLInputElement>(
+      'input[name="city"]',
+    )!;
+    const note = container.querySelector<HTMLInputElement>(
+      'input[name="note"]',
+    )!;
+
+    zip.focus();
+    zip.value = '1000001';
+    zip.dispatchEvent(new Event('change', {bubbles: true}));
+    await waitForCondition(() => city.value === '千代田区', {
+      description: '応答の反映',
+      maxAttempts: 40,
+      delayMs: 50,
+    });
+    await waitForDomSettled();
+
+    const item = (
+      (Core.getBindingData(owner) as Record<string, unknown>)
+        .rows as Record<string, unknown>[]
+    )[0];
+    // 応答が持つキーは応答どおり。
+    expect(item.city).toBe('千代田区');
+    // 起点になった入力の編集は、画面・要素データとも残る。
+    expect(zip.value, '入力した郵便番号が消えている').toBe('1000001');
+    expect(item.zip, '要素データの郵便番号が消えている').toBe('1000001');
+    // 触っていないキーも保たれる。
+    expect(note.value).toBe('N');
+    expect(item.note).toBe('N');
   });
 });

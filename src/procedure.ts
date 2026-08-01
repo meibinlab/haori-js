@@ -3320,9 +3320,12 @@ ${body}
               row: fragment,
               attributeName: bindAttributeName,
               apply: item => {
-                const next = {...item};
+                // 書き込まない他のキーを巻き戻さないよう、土台を行の入力欄の
+                // 現在の状態まで進めてから応答を載せる。
+                const base = this.resolveCurrentRowItem(fragment, item);
+                const next = {...base};
                 if (data && typeof data === 'object' && !Array.isArray(data)) {
-                  const currentValue = item[bindArg];
+                  const currentValue = base[bindArg];
                   const currentObject =
                     currentValue !== null &&
                     typeof currentValue === 'object' &&
@@ -3415,13 +3418,22 @@ ${body}
               apply: item => {
                 // 既定は全置換（要素データに無いキーの入力欄は空になる）。
                 // `bind-merge` 指定時だけ要素データへ浅くマージする。
+                //
+                // マージでは、応答が持たないキーを行の入力欄の現在の状態から
+                // 引き継ぐ。読み直した要素データをそのまま土台にすると、起点に
+                // なった入力の編集（郵便番号を入れて住所を引く、など）が旧値へ
+                // 巻き戻る。全置換では要素データに無いキーを空にするのが仕様
+                // なので、土台は使わない。
+                const base = this.options.bindMerge
+                  ? this.resolveCurrentRowItem(fragment, item)
+                  : item;
                 const resolvedData = this.mergeAppendBindingData(
                   fragment,
                   data as Record<string, unknown>,
-                  item,
+                  base,
                 );
                 const next = this.options.bindMerge
-                  ? {...item, ...resolvedData}
+                  ? {...base, ...resolvedData}
                   : resolvedData;
                 return this.reconcileRowUserEdits(fragment, next);
               },
@@ -3697,14 +3709,42 @@ ${body}
   }
 
   /**
-   * 行の要素データへコピーの値を反映します。
+   * 読み直した行の要素データを、行の入力欄の現在の状態まで進めます。
    *
-   * 土台は「読み直した要素データ」に「行の入力欄が持つ編集値」を重ねたものです。
-   * 読み直した要素データだけを土台にすると、コピーしないキーの編集値が旧値へ
-   * 巻き戻ります。`change` を起点にした手続きでは、起点になった入力の編集が
-   * まだ要素データへ確定していないことがあるためです（所有者に収集の宣言が
-   * 無い構成では確定の機会そのものがありません）。巻き戻りは画面表示だけでなく
-   * 収集値・保存値にも及ぶため、入力の消失にあたります。
+   * 行への書き戻しは配列を読み直してから行いますが、読み直した要素データが行の
+   * 入力欄の状態と一致しているとは限りません。`change` を起点にした手続きでは、
+   * 起点になった入力の編集がまだ要素データへ確定していないためです（`data-fetch`
+   * を伴う手続きでは所有者への暗黙のコミットが走らず、収集の宣言を持つ `<form>`
+   * が外側に無い構成では確定の機会そのものがありません）。
+   *
+   * これを土台にしないと、書き込まないキーの編集値が旧値へ巻き戻ります。巻き戻り
+   * は画面表示だけでなく収集値・保存値にも及ぶため、入力の消失にあたります。
+   *
+   * 重ね方は `mergeUserEdits()` に委ねます。浅いスプレッドでは、値リスト
+   * （`data-form-list` を付けた同名入力）の未編集の位置を表す `null` の場所取りが
+   * そのまま入り、未編集の要素を潰してしまいます。
+   *
+   * 収集の基準は 0（これまでの編集すべて）です。手続きの起点になった編集は手続きの
+   * 開始より前に記録されるため、送信時点を基準にすると拾えません。送信より後の
+   * 編集を応答へ優先させる扱いは `reconcileRowUserEdits()` が別に行います。
+   *
+   * @param row 行のフラグメント
+   * @param item 書き戻す直前に読み直した要素データ
+   * @returns 行の入力欄の状態を反映した要素データ
+   */
+  private resolveCurrentRowItem(
+    row: ElementFragment,
+    item: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const edited = Form.getValuesEditedAfter(row, 0);
+    if (Object.keys(edited).length === 0) {
+      return item;
+    }
+    return mergeUserEdits(item, edited) as Record<string, unknown>;
+  }
+
+  /**
+   * 行の要素データへコピーの値を反映します。
    *
    * コピーする値は最後に載せます。コピーは明示的な値の供給なので、同じキーの
    * 編集値には優先します（利用者が操作したチェックボックスを宣言で外す、など）。
@@ -3719,15 +3759,7 @@ ${body}
     item: Record<string, unknown>,
     copyData: Record<string, unknown>,
   ): Record<string, unknown> {
-    // 基準を 0 にして行の編集値をすべて拾う。手続きの起点になった編集は手続きの
-    // 開始より前に記録されるため、送信時点を基準にすると拾えない
-    // （`reconcileRowUserEdits()` がポーリングで 0 を使うのと同じ理由）。
-    const edited = Form.getValuesEditedAfter(row, 0);
-    // 重ね方は `mergeUserEdits()` に委ねる。浅いスプレッドでは、値リスト
-    // （`data-form-list` を付けた同名入力）の未編集の位置を表す `null` の
-    // 場所取りがそのまま入り、未編集の要素を潰してしまう。
-    const base = mergeUserEdits(item, edited) as Record<string, unknown>;
-    return {...base, ...copyData};
+    return {...this.resolveCurrentRowItem(row, item), ...copyData};
   }
 
   /**
