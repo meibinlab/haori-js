@@ -874,6 +874,17 @@ interface ExecutionLockState {
 }
 
 /**
+ * 要素データが変わらなかったときに、行の入力欄へ値を反映する方法。
+ *
+ * - `supply`: ユーザー編集の印を解除してから反映します（`data-{event}-copy`）。
+ *   明示的な値の供給なので、利用者が操作した入力にも優先して届けます。
+ * - `reflect`: 印はそのままに反映します（`data-{event}-bind`）。送信時点を基準
+ *   にした印の解除は `reconcileRowUserEdits()` が済ませているため、ここで重ねて
+ *   解除すると送信後の編集の保護（ポーリングではこれまでの編集すべて）が壊れます。
+ */
+type UnchangedRowSync = 'supply' | 'reflect';
+
+/**
  * 編集可能な行への書き込み要求。
  *
  * `data-each` と `data-form-list` を併用したコンテナの行では、入力欄の値は配列の
@@ -902,14 +913,14 @@ interface RowWrite {
   apply: (item: Record<string, unknown>) => Record<string, unknown>;
 
   /**
-   * 明示的な値の供給かどうか（`data-{event}-copy` は true）。
+   * 要素データが変わらなかったときに、行の入力欄へ値を反映する方法。
    *
-   * true の場合、要素データが変わらなかったときも行の入力欄へ値を反映します。
    * 行の入力欄の状態が要素データへ確定していない構成（所有者に収集の宣言が
    * 無い、`change` の起点がまだコミットされていないなど）では、要素データが
-   * 変わらないために差分更新が走らず、供給した値が画面へ届かないためです。
+   * 変わらないために差分更新が走らず、書き戻した内容が画面へ届きません。
+   * 指定しない場合は何もしません。
    */
-  supplied?: boolean;
+  syncWhenUnchanged?: UnchangedRowSync;
 }
 
 /**
@@ -3319,6 +3330,7 @@ ${body}
               container: resolution.container,
               row: fragment,
               attributeName: bindAttributeName,
+              syncWhenUnchanged: 'reflect',
               apply: item => {
                 // 書き込まない他のキーを巻き戻さないよう、土台を行の入力欄の
                 // 現在の状態まで進めてから応答を載せる。
@@ -3415,6 +3427,7 @@ ${body}
               container: resolution.container,
               row: fragment,
               attributeName: bindAttributeName,
+              syncWhenUnchanged: 'reflect',
               apply: item => {
                 // 既定は全置換（要素データに無いキーの入力欄は空になる）。
                 // `bind-merge` 指定時だけ要素データへ浅くマージする。
@@ -3686,7 +3699,7 @@ ${body}
           container: resolution.container,
           row: fragment,
           attributeName,
-          supplied: true,
+          syncWhenUnchanged: 'supply',
           apply: item => this.applyCopyToRowItem(fragment, item, copyData),
         });
         return;
@@ -4426,12 +4439,20 @@ ${body}
           // 行内の `data-fetch` が再発火して往復が止まらなくなる（同じ値を書く
           // 二度目のコピーで無用な再描画を起こさないためでもある）。
           //
-          // ただし明示的な供給（copy）では、行の入力欄へ直接反映する。要素データが
-          // 変わらないと差分更新が走らないため、利用者が操作した入力の状態が
-          // 要素データへ確定していない構成では、供給した値が画面へ届かない
-          // （チェックを宣言で外しても外れない）。
-          if (write.supplied) {
-            promises.push(Procedure.syncSuppliedRowValues(write.row, nextItem));
+          // ただし書き戻す内容が決まっている copy / bind では、行の入力欄へ直接
+          // 反映する。要素データが変わらないと差分更新が走らないため、利用者が
+          // 操作した入力の状態が要素データへ確定していない構成では、書き戻した
+          // 内容が画面へ届かない（チェックを宣言で外しても外れない、応答が返した
+          // 値に画面が戻らない）。要素データが変わった場合は差分更新が同じ内容を
+          // 反映するので、変わらない場合だけここで揃える。
+          if (write.syncWhenUnchanged) {
+            promises.push(
+              Procedure.syncUnchangedRowValues(
+                write.row,
+                nextItem,
+                write.syncWhenUnchanged,
+              ),
+            );
           }
           continue;
         }
@@ -4472,22 +4493,32 @@ ${body}
   }
 
   /**
-   * 明示的に供給した要素データを、行の入力欄へ反映します。
+   * 書き戻した要素データを、行の入力欄へ反映します。
    *
    * 要素データが変わらなかった場合（差分更新が走らない場合）の反映経路です。
-   * コピーは明示的な値の供給なので、利用者が操作した入力にも反映します。その
-   * ためユーザー編集の印を先に解除します（`Core.setBindingData()` の既定や、
-   * 差分更新が変化した行に対して行う処理と同じ扱い）。
+   * 反映する内容は書き戻す予定だったものそのものなので、要素データが変わった
+   * 場合に差分更新が行う反映と結果は同じになります。
+   *
+   * ユーザー編集の印の扱いだけが経路で異なります。コピーは明示的な値の供給
+   * なので、利用者が操作した入力にも届くよう印を先に解除します
+   * （`Core.setBindingData()` の既定や、差分更新が変化した行に対して行う処理と
+   * 同じ扱い）。バインドでは解除しません。送信時点を基準にした解除は
+   * `reconcileRowUserEdits()` が済ませており、ここで重ねて解除すると送信後の
+   * 編集の保護が壊れるためです。
    *
    * @param row 行のフラグメント
-   * @param item 供給後の要素データ
+   * @param item 書き戻す予定だった要素データ
+   * @param mode 反映方法
    * @returns 反映完了の Promise
    */
-  private static syncSuppliedRowValues(
+  private static syncUnchangedRowValues(
     row: ElementFragment,
     item: Record<string, unknown>,
+    mode: UnchangedRowSync,
   ): Promise<void> {
-    Core.clearUserEditMarks(row);
+    if (mode === 'supply') {
+      Core.clearUserEditMarks(row);
+    }
     return Form.syncRowValues(row, item);
   }
 

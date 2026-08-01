@@ -15,6 +15,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
+import PollObserver from '../src/poll';
 import {waitForCondition, waitForDomSettled} from './helpers/async';
 
 describe('行への書き戻しとユーザー編集', () => {
@@ -295,5 +296,230 @@ describe('行への bind とユーザー編集', () => {
     // 触っていないキーも保たれる。
     expect(note.value).toBe('N');
     expect(item.note).toBe('N');
+  });
+});
+
+describe('要素データが変わらない書き戻しと画面の一致', () => {
+  let container: HTMLElement;
+  let dispatcher: EventDispatcher;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    dispatcher = new EventDispatcher(document);
+    dispatcher.start();
+  });
+
+  afterEach(() => {
+    dispatcher.stop();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  /**
+   * 行の中のボタンから行へ書き戻す構成を組み立て、`city` を編集してから押します。
+   *
+   * 応答（またはコピー元）は要素データと同じ内容にするため、書き戻しても要素
+   * データは変わりません。差分更新が走らないため、画面を揃える経路が無いと
+   * 編集値が残り、収集値と食い違います。
+   *
+   * @param buttonAttrs ボタンへ付ける属性
+   * @param response fetch が返す応答
+   * @returns 画面の入力と要素データ
+   */
+  async function runUnchangedWrite(
+    buttonAttrs: string,
+    response: Record<string, unknown>,
+  ): Promise<{
+    city: HTMLInputElement;
+    note: HTMLInputElement;
+    item: Record<string, unknown>;
+  }> {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(response), {
+        headers: {'Content-Type': 'application/json'},
+      }),
+    ) as unknown as typeof fetch;
+    container.innerHTML = `
+      <div id="same-src" hidden data-bind='{"city":"港区"}'></div>
+      <div id="same-owner" data-bind='{"rows":[{"city":"港区","note":"N"}]}'>
+        <div data-form-list="rows" data-each="rows"
+             data-each-arg="r" data-each-index="i">
+          <div id="same-row-{{i}}">
+            <input name="city">
+            <input name="note">
+            <button type="button" ${buttonAttrs}>実行</button>
+          </div>
+        </div>
+      </div>`;
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const city = container.querySelector<HTMLInputElement>(
+      'input[name="city"]',
+    )!;
+    const note = container.querySelector<HTMLInputElement>(
+      'input[name="note"]',
+    )!;
+
+    // 利用者が編集する。所有者に収集の宣言が無いため要素データへは確定しない。
+    city.focus();
+    city.value = '渋谷区';
+    city.dispatchEvent(new Event('change', {bubbles: true}));
+    await waitForDomSettled();
+    city.blur();
+    await waitForDomSettled();
+
+    container
+      .querySelector<HTMLButtonElement>('button')!
+      .dispatchEvent(new Event('click', {bubbles: true}));
+    await waitForCondition(() => city.value === '港区', {
+      description: '書き戻した内容の反映',
+      maxAttempts: 40,
+      delayMs: 50,
+    });
+    await waitForDomSettled();
+
+    const owner = container.querySelector<HTMLElement>('#same-owner')!;
+    return {
+      city,
+      note,
+      item: (
+        (Core.getBindingData(owner) as Record<string, unknown>)
+          .rows as Record<string, unknown>[]
+      )[0],
+    };
+  }
+
+  it('bind-merge: 応答が現在値と同じでも画面へ届く', async () => {
+    const {city, note, item} = await runUnchangedWrite(
+      'data-click-fetch="/api/address" data-click-bind="#same-row-{{i}}"' +
+        ' data-click-bind-merge',
+      {city: '港区'},
+    );
+
+    expect(city.value, '画面が応答の値へ戻っていない').toBe('港区');
+    expect(item.city, '要素データが変わってしまっている').toBe('港区');
+    // 応答が触れないキーは巻き戻さない。
+    expect(note.value).toBe('N');
+    expect(item.note).toBe('N');
+  });
+
+  it('bind 全置換: 応答が現在値と同じでも画面へ届く', async () => {
+    const {city, note, item} = await runUnchangedWrite(
+      'data-click-fetch="/api/address" data-click-bind="#same-row-{{i}}"',
+      {city: '港区', note: 'N'},
+    );
+
+    expect(city.value, '画面が応答の値へ戻っていない').toBe('港区');
+    expect(item.city).toBe('港区');
+    expect(note.value).toBe('N');
+    expect(item.note).toBe('N');
+  });
+
+  it('copy: 供給値が現在値と同じでも画面へ届く', async () => {
+    const {city, item} = await runUnchangedWrite(
+      'data-click-copy="#same-row-{{i}}" data-click-copy-source="#same-src"' +
+        ' data-click-copy-params="city"',
+      {},
+    );
+
+    expect(city.value).toBe('港区');
+    expect(item.city).toBe('港区');
+  });
+});
+
+describe('ポーリングの編集保護（非退行）', () => {
+  let container: HTMLElement;
+  let dispatcher: EventDispatcher;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    dispatcher = new EventDispatcher(document);
+    dispatcher.start();
+  });
+
+  afterEach(() => {
+    PollObserver.disconnectAll();
+    dispatcher.stop();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  /**
+   * 行の中の `data-poll-fetch` が行へ書き戻す構成で、編集後の状態を測ります。
+   *
+   * ポーリングは利用者が要求した再取得ではないため、これまでの編集すべてを応答へ
+   * 優先させる規則です。要素データが変わらない場合の画面同期を加えても、この
+   * 規則が壊れないことを確かめます。
+   *
+   * @param responseCity 応答が返す `city`
+   * @returns 画面の入力と要素データ
+   */
+  async function pollOnce(
+    responseCity: string,
+  ): Promise<{city: HTMLInputElement; item: Record<string, unknown>}> {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({city: responseCity}), {
+          headers: {'Content-Type': 'application/json'},
+        }),
+      ),
+    );
+    container.innerHTML = `
+      <div id="poll-owner" data-bind='{"rows":[{"city":"港区","note":"N"}]}'>
+        <div data-form-list="rows" data-each="rows"
+             data-each-arg="r" data-each-index="i">
+          <div id="poll-row-{{i}}">
+            <input name="city">
+            <input name="note">
+            <div data-poll-fetch="https://example.com/status"
+                 data-poll-interval="100"
+                 data-poll-bind="#poll-row-{{i}}"
+                 data-poll-bind-merge></div>
+          </div>
+        </div>
+      </div>`;
+    await Core.scan(container);
+    await waitForDomSettled();
+    PollObserver.syncTree(container);
+
+    const city = container.querySelector<HTMLInputElement>(
+      'input[name="city"]',
+    )!;
+    city.focus();
+    city.value = '渋谷区';
+    city.dispatchEvent(new Event('change', {bubbles: true}));
+    await waitForDomSettled();
+    city.blur();
+    await waitForDomSettled();
+
+    // 実タイマーで数回のポーリングを通す（`tests/poll.test.ts` と同じ方針）。
+    await new Promise(resolve => setTimeout(resolve, 350));
+    await waitForDomSettled();
+
+    const owner = container.querySelector<HTMLElement>('#poll-owner')!;
+    return {
+      city,
+      item: (
+        (Core.getBindingData(owner) as Record<string, unknown>)
+          .rows as Record<string, unknown>[]
+      )[0],
+    };
+  }
+
+  it('応答が現在値と同じでも編集を巻き戻さない', async () => {
+    const {city, item} = await pollOnce('港区');
+
+    expect(city.value, 'ポーリングが編集を巻き戻している').toBe('渋谷区');
+    expect(item.city).toBe('渋谷区');
+  });
+
+  it('応答が現在値と違っても編集を巻き戻さない', async () => {
+    const {city, item} = await pollOnce('新宿区');
+
+    expect(city.value, 'ポーリングが編集を巻き戻している').toBe('渋谷区');
+    expect(item.city).toBe('渋谷区');
   });
 });
