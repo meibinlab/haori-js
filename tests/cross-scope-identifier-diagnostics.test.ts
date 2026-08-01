@@ -87,6 +87,56 @@ describe('別スコープで供給されているキーの診断', () => {
     expect(crossScopeWarnings(warn)).toEqual([]);
   });
 
+  it('アロー関数の引数は警告しない（式の中で束縛される名前）', async () => {
+    // 兄弟要素が同じ名前を data-each-arg に使っている状況を作る（供給あり）。
+    Expression.evaluateDetailed('p.planName', {p: {planName: 'A'}});
+    // アロー関数の引数として `p` を使う式。値は正しく求まる。
+    const result = Expression.evaluateDetailed(
+      '(planCandidates.content ?? []).find(p => p.id * 1 === c.planId * 1)' +
+        '?.planName ?? \'\'',
+      {
+        planCandidates: {content: [{id: '2', planName: '標準'}]},
+        c: {planId: 2},
+      },
+    );
+    await Queue.waitForIdle();
+
+    expect(result.value).toBe('標準');
+    expect(
+      crossScopeWarnings(warn),
+      'アロー関数の引数が誤って警告されている',
+    ).toEqual([]);
+  });
+
+  it('括弧付き・分割代入の引数も警告しない', async () => {
+    Expression.evaluateDetailed('row.id', {row: {id: 1}});
+    Expression.evaluateDetailed('total.value', {total: {value: 1}});
+    Expression.evaluateDetailed(
+      '(list ?? []).map((row, total) => row * total)',
+      {list: [1, 2]},
+    );
+    Expression.evaluateDetailed('(list ?? []).map(({row}) => row)', {
+      list: [{row: 1}],
+    });
+    await Queue.waitForIdle();
+
+    expect(crossScopeWarnings(warn)).toEqual([]);
+  });
+
+  it('アロー関数があっても引数以外のキーは警告する', async () => {
+    Expression.evaluateDetailed('siblingPlans.content', {
+      siblingPlans: {content: [{id: 1}]},
+    });
+    const expression = '(siblingPlans.content ?? []).filter(q => q.id).length';
+    Expression.evaluateDetailed(expression, {});
+    await Queue.waitForIdle();
+
+    const messages = crossScopeWarnings(warn);
+    expect(messages.length).toBe(1);
+    expect(messages[0]).toContain('siblingPlans');
+    expect(messages[0]).not.toContain(' q,');
+  });
+
   it('本番（開発モード無効）では出力しない', async () => {
     Dev.disable();
     Expression.evaluateDetailed('productionPlan.name', {
@@ -96,5 +146,67 @@ describe('別スコープで供給されているキーの診断', () => {
     await Queue.waitForIdle();
 
     expect(crossScopeWarnings(warn)).toEqual([]);
+  });
+
+  describe('束縛識別子のキャッシュ', () => {
+    /**
+     * 束縛識別子のキャッシュを取り出します。
+     *
+     * 私有の静的メンバーですが、常駐量（本番で増えないこと）と混線の有無は
+     * 外からの挙動では確かめられないため、テストからのみ直接参照します。
+     *
+     * @returns 束縛識別子のキャッシュ
+     */
+    const boundCache = (): Map<string, ReadonlySet<string>> =>
+      (
+        Expression as unknown as {
+          BOUND_IDENTIFIER_CACHE: Map<string, ReadonlySet<string>>;
+        }
+      ).BOUND_IDENTIFIER_CACHE;
+
+    it('本番（開発モード無効）ではキャッシュを作らない', () => {
+      Dev.disable();
+      const before = boundCache().size;
+      // 開発モードでしか使わない診断のためのキャッシュなので、本番では
+      // 常駐量が増えない（式の種類だけ増え続けることを避ける）。
+      Expression.evaluateDetailed(
+        '(cacheProbeList ?? []).map(cacheProbeArg => cacheProbeArg.id)',
+        {cacheProbeList: [{id: 1}]},
+      );
+      expect(boundCache().size).toBe(before);
+    });
+
+    it('同じ式を繰り返し評価してもキャッシュは 1 件しか増えない', () => {
+      Dev.enable();
+      const expression = '(reuseList ?? []).map(reuseArg => reuseArg.id)';
+      const before = boundCache().size;
+      Expression.evaluateDetailed(expression, {reuseList: [{id: 1}]});
+      const afterFirst = boundCache().size;
+      Expression.evaluateDetailed(expression, {reuseList: [{id: 2}]});
+      Expression.evaluateDetailed(expression, {reuseList: [{id: 3}]});
+
+      expect(afterFirst).toBe(before + 1);
+      expect(boundCache().size).toBe(afterFirst);
+    });
+
+    it('同じ名前でも式ごとに束縛かどうかを判定する（キャッシュが混線しない）', async () => {
+      Dev.enable();
+      // 別スコープで供給されている名前を作る。
+      Expression.evaluateDetailed('mixedName.id', {mixedName: {id: 1}});
+      // 同じ名前をアロー関数の引数として使う式（警告しない）。
+      Expression.evaluateDetailed(
+        '(mixedList ?? []).map(mixedName => mixedName.id)',
+        {mixedList: [{id: 1}]},
+      );
+      // 同じ名前を自由識別子として使う式（警告する）。
+      const freeExpression = '(mixedName.id ?? 0) + 1';
+      Expression.evaluateDetailed(freeExpression, {});
+      await Queue.waitForIdle();
+
+      const messages = crossScopeWarnings(warn);
+      expect(messages.length, `出力: ${messages.join(' / ')}`).toBe(1);
+      expect(messages[0]).toContain('mixedName');
+      expect(messages[0]).toContain(freeExpression);
+    });
   });
 });

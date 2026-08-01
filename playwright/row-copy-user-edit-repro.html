@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>行への書き戻しがユーザー編集を巻き戻す再現</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', sans-serif;
+        margin: 16px;
+      }
+      fieldset {
+        margin-bottom: 12px;
+      }
+      pre {
+        background: #263238;
+        color: #aed581;
+        padding: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>行への書き戻し（data-change-copy で行を指す）とユーザー編集</h2>
+    <p>
+      「契約者住所と同じ」をチェックすると住所を複写し、住所欄を編集したら
+      チェックを外す構成。住所欄の編集値が巻き戻らないこと、チェックが外れることを
+      確認する。
+    </p>
+
+    <!-- 複写元（契約者住所）。行の外に置く。 -->
+    <div
+      id="customer"
+      data-bind='{"postalCode":"1000001","municipality":"千代田区","street":"1-1"}'
+    ></div>
+    <!-- チェックを外すための供給元。 -->
+    <div id="copy-off" hidden data-bind='{"sameAsCustomerAddress":false}'></div>
+
+    <form
+      id="owner"
+      data-form
+      data-bind='{"contracts":[{"sameAsCustomerAddress":false,"postalCode":"","municipality":"","street":""}]}'
+    >
+      <div
+        id="list"
+        data-form-list="contracts"
+        data-each="contracts"
+        data-each-arg="c"
+        data-each-index="i"
+      >
+        <fieldset id="row-{{i}}">
+          <legend>利用場所の住所（{{i}}）</legend>
+          <label>
+            <!-- チェックで契約者住所を行へ複写する -->
+            <input
+              type="checkbox"
+              name="sameAsCustomerAddress"
+              value="true"
+              class="same-as"
+              data-change-copy="#row-{{i}}"
+              data-change-copy-source="#customer"
+              data-change-copy-params="postalCode&municipality&street"
+            />
+            契約者住所と同じ
+          </label>
+          <label>
+            郵便番号
+            <input
+              name="postalCode"
+              class="postal"
+              data-change-copy="#row-{{i}}"
+              data-change-copy-source="#copy-off"
+              data-change-copy-params="sameAsCustomerAddress"
+            />
+          </label>
+          <label>
+            市区町村
+            <input
+              name="municipality"
+              class="municipality"
+              data-change-copy="#row-{{i}}"
+              data-change-copy-source="#copy-off"
+              data-change-copy-params="sameAsCustomerAddress"
+            />
+          </label>
+          <label>
+            番地
+            <input
+              name="street"
+              class="street"
+              data-change-copy="#row-{{i}}"
+              data-change-copy-source="#copy-off"
+              data-change-copy-params="sameAsCustomerAddress"
+            />
+          </label>
+        </fieldset>
+      </div>
+    </form>
+
+    <h2>ケース B: 収集の宣言（data-form）が無い所有者</h2>
+    <p>
+      報告のスニペットには form の宣言が無い。双方向コミットが起きない構成で
+      書き戻しがどうなるかを確かめる。
+    </p>
+    <div
+      id="ownerB"
+      data-bind='{"contracts":[{"sameAsCustomerAddress":false,"postalCode":"","municipality":"","street":""}]}'
+    >
+      <div
+        id="listB"
+        data-form-list="contracts"
+        data-each="contracts"
+        data-each-arg="c"
+        data-each-index="i"
+      >
+        <fieldset id="rowB-{{i}}">
+          <legend>利用場所の住所B（{{i}}）</legend>
+          <label>
+            <input
+              type="checkbox"
+              name="sameAsCustomerAddress"
+              value="true"
+              class="same-as-b"
+              data-change-copy="#rowB-{{i}}"
+              data-change-copy-source="#customer"
+              data-change-copy-params="postalCode&municipality&street"
+            />
+            契約者住所と同じ
+          </label>
+          <label>
+            市区町村
+            <input
+              name="municipality"
+              class="municipality-b"
+              data-change-copy="#rowB-{{i}}"
+              data-change-copy-source="#copy-off"
+              data-change-copy-params="sameAsCustomerAddress"
+            />
+          </label>
+          <label>
+            番地
+            <input name="street" class="street-b" />
+          </label>
+        </fieldset>
+      </div>
+    </div>
+
+    <h3>行データ</h3>
+    <pre id="dump">-</pre>
+    <button type="button" id="show">行データを表示</button>
+
+    <script src="../dist/haori.iife.js"></script>
+    <script>
+      document.getElementById('show').addEventListener('click', function () {
+        var owner = document.getElementById('owner');
+        var data = window.Haori.Core.getBindingData(owner, {resolved: true});
+        document.getElementById('dump').textContent = JSON.stringify(
+          data.contracts,
+          null,
+          2,
+        );
+      });
+    </script>
+  </body>
+</html>

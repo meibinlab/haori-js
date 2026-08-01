@@ -1616,6 +1616,40 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 
 `data-{event}-bind` は既定で要素データを置き換えるため、応答に無いキーの入力欄は空になります。入力済みの項目を残したいときは上の例のように `data-{event}-bind-merge` を併記してください。
 
+### 住所を編集したら「契約者住所と同じ」のチェックを外す
+
+複写した値を利用者が書き換えたら、複写のチェックを自動で外す使い方です。行の入力欄の `change` で、行データの該当キーだけを書き戻します。
+
+```html
+<!-- チェックを外すための供給元。行の外に置く -->
+<div id="copy-off" hidden data-bind='{"sameAsCustomerAddress":false}'></div>
+
+<form data-form data-bind='{"contracts":[{"sameAsCustomerAddress":false}]}'>
+  <div data-each="contracts" data-each-arg="c" data-each-index="i"
+       data-form-list="contracts">
+    <div id="addr-{{i}}">
+      <label>
+        <input type="checkbox" name="sameAsCustomerAddress" value="true"
+          data-change-copy="#addr-{{i}}"
+          data-change-copy-source="#customer"
+          data-change-copy-params="zip&city">
+        契約者住所と同じ
+      </label>
+      <input name="zip"
+        data-change-copy="#addr-{{i}}"
+        data-change-copy-source="#copy-off"
+        data-change-copy-params="sameAsCustomerAddress">
+      <input name="city"
+        data-change-copy="#addr-{{i}}"
+        data-change-copy-source="#copy-off"
+        data-change-copy-params="sameAsCustomerAddress">
+    </div>
+  </div>
+</form>
+```
+
+コピーは**明示的な値の供給**なので、利用者が操作したチェックボックスにも反映されます。同時に、コピーしないキー（`zip` / `city`）の編集値は保持されます。編集した住所が巻き戻ることはありません。
+
 ### 行の値を、行の外の共有パネルへ複写する
 
 上の 2 例は「行の外の値 → 行へ」でした。逆向き（「行の値 → 行の外へ」）は、一覧の行の操作ボタンから共有のモーダルや詳細パネルへ対象を引き渡す使い方です。よくある画面ですが、**コピー元の指定を省くと何もコピーされません**。

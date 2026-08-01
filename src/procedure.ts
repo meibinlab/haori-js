@@ -900,6 +900,16 @@ interface RowWrite {
    * @returns 書き換え後の要素データ
    */
   apply: (item: Record<string, unknown>) => Record<string, unknown>;
+
+  /**
+   * 明示的な値の供給かどうか（`data-{event}-copy` は true）。
+   *
+   * true の場合、要素データが変わらなかったときも行の入力欄へ値を反映します。
+   * 行の入力欄の状態が要素データへ確定していない構成（所有者に収集の宣言が
+   * 無い、`change` の起点がまだコミットされていないなど）では、要素データが
+   * 変わらないために差分更新が走らず、供給した値が画面へ届かないためです。
+   */
+  supplied?: boolean;
 }
 
 /**
@@ -3664,7 +3674,8 @@ ${body}
           container: resolution.container,
           row: fragment,
           attributeName,
-          apply: item => ({...item, ...copyData}),
+          supplied: true,
+          apply: item => this.applyCopyToRowItem(fragment, item, copyData),
         });
         return;
       }
@@ -3683,6 +3694,40 @@ ${body}
     });
     promises.push(this.applyRowWrites(rowWrites));
     return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * 行の要素データへコピーの値を反映します。
+   *
+   * 土台は「読み直した要素データ」に「行の入力欄が持つ編集値」を重ねたものです。
+   * 読み直した要素データだけを土台にすると、コピーしないキーの編集値が旧値へ
+   * 巻き戻ります。`change` を起点にした手続きでは、起点になった入力の編集が
+   * まだ要素データへ確定していないことがあるためです（所有者に収集の宣言が
+   * 無い構成では確定の機会そのものがありません）。巻き戻りは画面表示だけでなく
+   * 収集値・保存値にも及ぶため、入力の消失にあたります。
+   *
+   * コピーする値は最後に載せます。コピーは明示的な値の供給なので、同じキーの
+   * 編集値には優先します（利用者が操作したチェックボックスを宣言で外す、など）。
+   *
+   * @param row 行のフラグメント
+   * @param item 書き戻す直前に読み直した要素データ
+   * @param copyData コピーする値
+   * @returns 反映後の要素データ
+   */
+  private applyCopyToRowItem(
+    row: ElementFragment,
+    item: Record<string, unknown>,
+    copyData: Record<string, unknown>,
+  ): Record<string, unknown> {
+    // 基準を 0 にして行の編集値をすべて拾う。手続きの起点になった編集は手続きの
+    // 開始より前に記録されるため、送信時点を基準にすると拾えない
+    // （`reconcileRowUserEdits()` がポーリングで 0 を使うのと同じ理由）。
+    const edited = Form.getValuesEditedAfter(row, 0);
+    // 重ね方は `mergeUserEdits()` に委ねる。浅いスプレッドでは、値リスト
+    // （`data-form-list` を付けた同名入力）の未編集の位置を表す `null` の
+    // 場所取りがそのまま入り、未編集の要素を潰してしまう。
+    const base = mergeUserEdits(item, edited) as Record<string, unknown>;
+    return {...base, ...copyData};
   }
 
   /**
@@ -4348,6 +4393,14 @@ ${body}
           // 内容が変わらないなら書き戻さない。書き戻すと所有者の再評価が走り、
           // 行内の `data-fetch` が再発火して往復が止まらなくなる（同じ値を書く
           // 二度目のコピーで無用な再描画を起こさないためでもある）。
+          //
+          // ただし明示的な供給（copy）では、行の入力欄へ直接反映する。要素データが
+          // 変わらないと差分更新が走らないため、利用者が操作した入力の状態が
+          // 要素データへ確定していない構成では、供給した値が画面へ届かない
+          // （チェックを宣言で外しても外れない）。
+          if (write.supplied) {
+            promises.push(Procedure.syncSuppliedRowValues(write.row, nextItem));
+          }
           continue;
         }
         nextArray[index] = nextItem;
@@ -4384,6 +4437,26 @@ ${body}
       promises.push(write);
     });
     return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * 明示的に供給した要素データを、行の入力欄へ反映します。
+   *
+   * 要素データが変わらなかった場合（差分更新が走らない場合）の反映経路です。
+   * コピーは明示的な値の供給なので、利用者が操作した入力にも反映します。その
+   * ためユーザー編集の印を先に解除します（`Core.setBindingData()` の既定や、
+   * 差分更新が変化した行に対して行う処理と同じ扱い）。
+   *
+   * @param row 行のフラグメント
+   * @param item 供給後の要素データ
+   * @returns 反映完了の Promise
+   */
+  private static syncSuppliedRowValues(
+    row: ElementFragment,
+    item: Record<string, unknown>,
+  ): Promise<void> {
+    Core.clearUserEditMarks(row);
+    return Form.syncRowValues(row, item);
   }
 
   /**

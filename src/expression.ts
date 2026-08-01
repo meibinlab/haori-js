@@ -414,6 +414,12 @@ export default class Expression {
   /** 式 → 自由識別子一覧のキャッシュ */
   private static readonly FREE_IDENTIFIER_CACHE = new Map<string, string[]>();
 
+  /** 式ごとの「式の中で束縛された識別子」のキャッシュ */
+  private static readonly BOUND_IDENTIFIER_CACHE = new Map<
+    string,
+    ReadonlySet<string>
+  >();
+
   /** 式 → 暗黙のオプショナルチェーン変換後の式のキャッシュ */
   private static readonly OPTIONAL_CHAIN_CACHE = new Map<string, string>();
 
@@ -635,6 +641,92 @@ export default class Expression {
 
     this.FREE_IDENTIFIER_CACHE.set(expression, found);
     return found;
+  }
+
+  /**
+   * 式の中で束縛された識別子（アロー関数の引数）を返します。
+   *
+   * `items.find(p => p.id === target)` の `p` のように、値がバインドではなく式の
+   * 中で決まる名前です。バインドに無い名前として遮蔽の対象にはしますが（アロー
+   * 関数の内側では引数が遮蔽を上書きするため評価には影響しません）、
+   * 「別のスコープでは供給されているキー」の診断からは外します。外さないと、
+   * 同じ名前を `data-{event}-arg` に使う兄弟要素があるだけで、正しく動いている
+   * 式に対して誤った警告が出ます。
+   *
+   * 引数リストは `=>` の直前から読み取ります。`(a, b) => …` は対応する `(` まで、
+   * `p => …` は識別子ひとつです。分割代入（`({a, b}) => …`）は区切りの直後に
+   * 現れる識別子を束縛として扱います。既定値（`(a = x) => …`）の `x` は区切りの
+   * 直後ではないため束縛に含めません。
+   *
+   * @param expression 評価対象の式
+   * @returns 束縛された識別子の集合（無ければ空集合）
+   */
+  private static extractBoundIdentifiers(
+    expression: string,
+  ): ReadonlySet<string> {
+    const cached = this.BOUND_IDENTIFIER_CACHE.get(expression);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const bound = new Set<string>();
+    const tokens = this.tokenizeExpression(expression);
+    if (tokens !== null) {
+      /** 引数リストの区切り（この直後の識別子は束縛） */
+      const separators = new Set(['(', ',', '{', '[']);
+      for (let index = 0; index < tokens.length; index += 1) {
+        if (tokens[index].value !== '=>') {
+          continue;
+        }
+        const previous = tokens[index - 1];
+        if (previous === undefined) {
+          continue;
+        }
+        if (previous.type === 'identifier') {
+          // `p => …`（括弧なしの単一引数）
+          bound.add(previous.value);
+          continue;
+        }
+        if (previous.value !== ')') {
+          continue;
+        }
+        // `(…) => …`。対応する `(` まで戻りながら束縛位置の識別子を集める。
+        // depth は引数リストの終わりを見つけるための全種類の入れ子、parenDepth は
+        // 丸括弧だけの入れ子。分割代入（`({a}) => …` / `([a]) => …`）の中は束縛
+        // だが、既定値の中の呼び出し（`(a = f(b)) => …` の `b`）は束縛ではない。
+        // 前者は parenDepth が増えず、後者は増えることで区別できる。
+        let depth = 0;
+        let parenDepth = 0;
+        for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+          const value = tokens[cursor].value;
+          if (value === ')' || value === ']' || value === '}') {
+            depth += 1;
+            if (value === ')') {
+              parenDepth += 1;
+            }
+            continue;
+          }
+          if (value === '(' || value === '[' || value === '{') {
+            depth -= 1;
+            if (value === '(') {
+              parenDepth -= 1;
+            }
+            if (depth === 0) {
+              break;
+            }
+            continue;
+          }
+          if (
+            parenDepth === 1 &&
+            tokens[cursor].type === 'identifier' &&
+            separators.has(tokens[cursor - 1]?.value ?? '')
+          ) {
+            bound.add(tokens[cursor].value);
+          }
+        }
+      }
+    }
+    this.BOUND_IDENTIFIER_CACHE.set(expression, bound);
+    return bound;
   }
 
   /**
@@ -1186,7 +1278,18 @@ export default class Expression {
       // 「このスコープには無いが別のスコープでは供給されている」キーの診断材料。
       // `??` などで既定値を書いた式は値のある結果になるため、未解決参照の診断では
       // 検出できない（バインド先を兄弟要素にした宣言が無言で既定値のままになる）。
-      this.recordScopeMissingIdentifiers(unknownIdentifiers, expression);
+      //
+      // 式の中で束縛される名前（アロー関数の引数）は診断対象から外す。バインドで
+      // 解決されるべき名前ではないため、同じ名前を `data-each-arg` に使う兄弟要素が
+      // あるだけで誤った警告になる。遮蔽（グローバルへの解決の遮断）は名前だけでは
+      // 束縛の範囲を判断できないため、上の一覧のまま行う。
+      const bound = this.extractBoundIdentifiers(expression);
+      this.recordScopeMissingIdentifiers(
+        bound.size === 0
+          ? unknownIdentifiers
+          : unknownIdentifiers.filter(name => !bound.has(name)),
+        expression,
+      );
     }
     if (allowMissingIdentifierRecovery) {
       // `?.` / `??` / `||` / `&&` を含む式は、従来から未宣言識別子を undefined と
