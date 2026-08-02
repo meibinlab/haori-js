@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>間隔を空けない連続確定</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 報告の再現構成（申込画面の契約者情報）。`data-validity` があるとバインド更新の
+       たびに条件が評価され、その評価が収集を伴う。 -->
+  <form id="f" data-form-object="customer">
+    <input name="postalCode">
+    <input name="municipality">
+    <input name="town">
+    <input name="email">
+    <input name="emailConfirm"
+      data-validity="{{customer.email === customer.emailConfirm}}"
+      data-validity-message="不一致">
+    <button id="next" type="button" data-click-validate>次へ</button>
+    <!-- 収集値の確認用。検証を挟まずに、押した時点の収集値をそのまま送る。 -->
+    <button id="save" type="button"
+      data-click-fetch="/api/save"
+      data-click-fetch-method="POST"
+      data-click-form="#f">保存</button>
+  </form>
+</body>
+</html>

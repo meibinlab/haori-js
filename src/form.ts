@@ -90,10 +90,11 @@ export default class Form {
    * DOM の `files` から直接取得する）。`multiple` 指定時は File の配列、単一選択時は
    * File または未選択を表す null を返します。それ以外の要素は内部値を返します。
    *
-   * 値を持つ入力（テキスト系 input / `type="hidden"` / textarea / select）は、内部値を
-   * 返す前に DOM の値を取り込みます（`ElementFragment.syncValueFromDom()`）。外部
-   * ライブラリやブラウザの自動入力はイベントを伴わずに `element.value` へ代入する
-   * ため、内部値だけを見ると画面に見えている値が収集から欠落します。
+   * 値を持つ入力（テキスト系 input / `type="hidden"` / textarea / select）は DOM の値を
+   * 読んで返します（`ElementFragment.getValueForCollection()`）。外部ライブラリや
+   * ブラウザの自動入力はイベントを伴わずに `element.value` へ代入するため、内部値
+   * だけを見ると画面に見えている値が収集から欠落します。収集は読み取りに徹し、
+   * 内部値は書き換えません（理由は同メソッドのコメントを参照）。
    *
    * @param fragment 対象のElementFragment
    * @returns 収集する値
@@ -119,10 +120,9 @@ export default class Form {
       // value="false" は「チェック時に false」を表す反転指定。
       return input.value === 'false' ? !input.checked : input.checked;
     }
-    // イベントを伴わない代入（外部ライブラリ・ブラウザの自動入力）を取り込む。
-    // 取り込みを見送る条件は syncValueFromDom() 側にまとめている。
-    fragment.syncValueFromDom();
-    return fragment.getValue();
+    // イベントを伴わない代入（外部ライブラリ・ブラウザの自動入力）も収集する。
+    // DOM を読まず内部値を返す条件は getValueForCollection() 側にまとめている。
+    return fragment.getValueForCollection();
   }
 
   /**
@@ -874,6 +874,11 @@ export default class Form {
    * です。`data-form-object` / `data-form-list` に囲まれている場合はその名前だけを
    * 加えます（キー全体が収集値で置き換わります）。
    *
+   * 起点自身の `data-form-object` / `data-form-list` も同じ扱いです。フォームコンテナ
+   * へ直接宣言した場合、収集値はすべてそのキー配下に入るため、最上位の宣言キーは
+   * その 1 つだけになります。配下の `name` を挙げると収集値と対応が取れず、条件式が
+   * バインドデータ（コミット済みの 1 手前の値）で評価されてしまいます。
+   *
    * 走査は実 DOM に対して行います。`data-if` が偽の分岐はフラグメントの子を保持
    * しないことがあり、フラグメントだけを辿ると隠れた欄の宣言を取りこぼします。
    *
@@ -889,6 +894,13 @@ export default class Form {
     }
     const objectAttribute = `${Env.prefix}form-object`;
     const listAttribute = `${Env.prefix}form-list`;
+    const rootContainerName =
+      rootElement.getAttribute(objectAttribute) ??
+      rootElement.getAttribute(listAttribute);
+    if (rootContainerName) {
+      keys.add(rootContainerName);
+      return keys;
+    }
     // 収集対象になり得る要素だけを見る。`[name]` だけで拾うと `<button name>` の
     // ような収集されない要素までキーとして扱い、同名のバインドキーを未定義で
     // シャドーしてしまう。

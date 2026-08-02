@@ -764,8 +764,8 @@ export class ElementFragment extends Fragment {
    * `<select>` は該当する `<option>` が無いと値の代入が無視され、空のままになります
    * （候補を `data-each` で流し込む構成では、入力欄への書き戻しが行生成より前に走る
    * ため起こり得ます）。この状態では DOM が内部値を表現できていないため、収集時に
-   * DOM を真として取り込むと、供給された値が画面に見えている別の値へ化けます。
-   * 取り込みの可否を判断するために記録します（`syncValueFromDom()` を参照）。
+   * DOM を真として読むと、供給された値が画面に見えている別の値へ化けます。
+   * DOM を読んでよいかを判断するために記録します（`getValueForCollection()` を参照）。
    */
   private valueWriteUnapplied = false;
 
@@ -1405,7 +1405,14 @@ export class ElementFragment extends Fragment {
       element instanceof HTMLInputElement &&
       (element.type === 'checkbox' || element.type === 'radio')
     ) {
-      const result = this.getAttribute('value');
+      // チェック状態の判定に使う送信値。`value` 属性を宣言している場合はその評価値を
+      // 使い（テンプレートを含む場合も、DOM への書き込み待ちの間は評価値の方が新しい）、
+      // 宣言が無い場合は DOM の `element.value` を使う。`data-attr-value` で値を与える
+      // 構成（`data-each` の行ごとに異なる値を持たせる場合など）では属性マップに
+      // `value` が無く、null と比較して常に不一致となり、チェックが落ちてしまう。
+      const result = this.hasAttribute('value')
+        ? this.getAttribute('value')
+        : element.value;
       const isBooleanCheckbox =
         element.type === 'checkbox' && result === 'true';
       let newChecked: boolean;
@@ -1725,57 +1732,62 @@ export class ElementFragment extends Fragment {
    * changeイベント時など、DOM値が変更された後に呼び出されます。
    */
   public syncValue() {
-    const element = this.getTarget();
     // DOM の値を取り込んだ時点で、内部値は DOM が表現できる値に揃う。
     this.valueWriteUnapplied = false;
+    this.value = this.readValueFromDom();
+  }
+
+  /**
+   * DOM の状態から、内部値として保持すべき値を読み取ります。
+   *
+   * 内部状態は変更しません。`syncValue()`（DOM → 内部値の取り込み）と、値収集で
+   * DOM を真として読む経路（`getValueForCollection()`）の双方から使います。
+   *
+   * @returns DOM から読み取った値。値を持たない要素では現在の内部値
+   */
+  private readValueFromDom(): string | number | boolean | string[] | null {
+    const element = this.getTarget();
     if (element instanceof HTMLInputElement) {
       if (element.type === 'checkbox' || element.type === 'radio') {
         const isBooleanCheckbox =
           element.type === 'checkbox' && element.value === 'true';
+        const value = element.value;
         if (element.checked) {
-          const value = element.value;
           if (isBooleanCheckbox) {
-            this.value = true;
+            return true;
           } else if (value === 'false') {
-            this.value = false;
-          } else {
-            this.value = value;
+            return false;
           }
-        } else {
-          // チェックボックスがOFFの場合
-          const value = element.value;
-          if (isBooleanCheckbox) {
-            this.value = false;
-          } else if (value === 'false') {
-            this.value = true;
-          } else {
-            this.value = null;
-          }
+          return value;
         }
+        // チェックボックスがOFFの場合
+        if (isBooleanCheckbox) {
+          return false;
+        } else if (value === 'false') {
+          return true;
+        }
+        return null;
       } else if (element.type === 'file') {
         // input[type=file] の element.value は `C:\fakepath\...` の擬似パスにしかならず
         // 送信にも表示にも使えないため内部値には保持しない。実ファイルの収集は
         // Form が DOM の files から直接行う。選択有無だけを式で判定できるよう、
         // 選択済みならファイル名、未選択なら null を保持する。
         const files = element.files;
-        this.value = files && files.length > 0 ? files[0].name : null;
-      } else {
-        // type="number" は数値へ正規化し、それ以外は文字列のまま保持する
-        this.value = this.normalizeValueForElement(element, element.value);
+        return files && files.length > 0 ? files[0].name : null;
       }
+      // type="number" は数値へ正規化し、それ以外は文字列のまま保持する
+      return this.normalizeValueForElement(element, element.value);
     } else if (element instanceof HTMLTextAreaElement) {
-      this.value = element.value;
+      return element.value;
     } else if (element instanceof HTMLSelectElement) {
       // 複数選択 select は選択済み option の値を文字列配列として保持する
       // （外部ウィジェットを含む選択変更をフォーム値へ配列で反映するため）。
       if (element.multiple) {
-        this.value = Array.from(element.selectedOptions).map(
-          option => option.value,
-        );
-      } else {
-        this.value = element.value;
+        return Array.from(element.selectedOptions).map(option => option.value);
       }
+      return element.value;
     }
+    return this.value;
   }
 
   /**
@@ -1794,7 +1806,7 @@ export class ElementFragment extends Fragment {
   }
 
   /**
-   * 値収集の直前に、DOM の値を内部値へ取り込みます。
+   * 値収集で使う値を返します。
    *
    * 外部ライブラリ（住所補完・select 拡張など）やブラウザの自動入力は
    * `element.value` へ直接代入するため、`change` / `input` が発火せず内部値が
@@ -1803,23 +1815,29 @@ export class ElementFragment extends Fragment {
    * がすでに DOM を真として収集しているのと扱いを揃え、値も画面の見たままを
    * 収集できるようにします。
    *
-   * ただし次の場合は取り込みません。DOM が内部値より古い、または内部値を表現でき
-   * ない状態で取り込むと、供給された値を失うためです。
+   * ただし次の場合は DOM を読まず内部値を返します。DOM が内部値より古い、または
+   * 内部値を表現できない状態で読むと、供給された値を失うためです。
    *
    * - Haori 自身の書き込みが描画キュー待ちの間（`skipChangeValue`）
    * - 直近の書き込みを DOM が受け付けなかった場合（`valueWriteUnapplied`）
    *
-   * @returns 戻り値はありません。
+   * 内部値は**更新しません**。収集は読み取りであり、ここで内部値を書き換えると
+   * 「バインドデータには載っていないのに内部値だけが新しい」状態が生まれ、次の
+   * 逆方向同期（`Form.syncValues`）が古いバインドデータで入力欄を上書きして値を
+   * 失います（`data-validity` の条件評価のように、バインドへ反映しない収集が
+   * あるため）。DOM の値がバインドデータへ載るのは収集結果を通じてだけです。
+   *
+   * @returns 収集する値
    */
-  public syncValueFromDom(): void {
+  public getValueForCollection(): string | number | boolean | string[] | null {
     if (this.skipChangeValue || this.valueWriteUnapplied) {
-      return;
+      return this.value;
     }
     if (!ElementFragment.isValuePropertyTarget(this.getTarget())) {
       // チェック状態と input[type=file] は収集側が DOM を直接読むため対象外。
-      return;
+      return this.value;
     }
-    this.syncValue();
+    return this.readValueFromDom();
   }
 
   /**

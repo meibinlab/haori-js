@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>行の同名チェックボックス群</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 報告の再現構成（会員マイページのオプション申込）。行ごとに異なる送信値を
+       持たせるため、`value` は `data-attr-value` で与える。 -->
+  <div id="host" data-bind='{"view":{"options":[
+    {"optionId":"11","optionName":"安心サポート"},
+    {"optionId":"12","optionName":"広告非表示"}]}}'>
+    <form id="f">
+      <div data-each="view.options" data-each-key="optionId" data-each-arg="o">
+        <input type="checkbox" name="optionIds" data-attr-value="{{o.optionId}}"
+          data-attr-id="opt-{{o.optionId}}">
+        <label data-attr-for="opt-{{o.optionId}}">{{o.optionName}}</label>
+      </div>
+    </form>
+    <button id="send" type="button"
+      data-click-form="#f"
+      data-click-fetch="/api/send">送信</button>
+  </div>
+</body>
+</html>
