@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-each-done の確定（同一ホスト配下に複数の data-each）</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 報告された構成の最小形。1 つのバインドホストの配下に、
+       常時表示の data-each（絞り込みセレクト）と、
+       タブで出し分ける data-each（変更履歴 25 行の表）を置く。 -->
+  <div id="state" data-bind='{"tab":"history","fields":[],"history":[]}'>
+    <select id="filter" data-each="fields" data-each-arg="f" data-each-key="id"
+            data-each-before>
+      <option value="">すべて</option>
+    </select>
+
+    <div id="history-tab" data-if="tab === 'history'">
+      <table>
+        <tbody id="history" data-each="history" data-each-key="id"
+               data-each-arg="h">
+          <tr>
+            <td class="field">{{h.field}}</td>
+            <td class="before">{{h.before}}</td>
+            <td class="after">{{h.after}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div id="other-tab" data-if="tab === 'other'">
+      <p>別のタブ</p>
+    </div>
+  </div>
+</body>
+</html>
