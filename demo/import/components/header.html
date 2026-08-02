@@ -1,5 +1,16 @@
 <!-- data-import で読み込む断片。文書全体ではなく、差し込む要素だけを書く。 -->
+<!-- 断片の中の式は、取り込み先とその祖先のバインドスコープで評価される。 -->
 <header style="background:#eee;padding:1em 2em;">
   <h2 id="imported-title">読み込まれたヘッダー</h2>
   <p>この内容は components/header.html から読み込まれました。</p>
+  <!-- 断片の表示・非表示が取り込み側の値で決まる（スコープを継承している）。
+       同じ断片を複数箇所へ取り込むため、ここでは id を付けない。テキストへ
+       {{...}} を書かないのは、断片を単体で開いたときに本体を読み込まないため
+       未展開のまま見えてしまうからである。 -->
+  <p class="imported-step2" data-if="currentStep === 2">
+    取り込み側が currentStep === 2 のときだけ表示されます。
+  </p>
+  <p class="imported-step3" data-if="currentStep === 3">
+    取り込み側が currentStep === 3 のときだけ表示されます。
+  </p>
 </header>

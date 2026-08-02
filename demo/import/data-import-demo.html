@@ -8,7 +8,12 @@
 <body>
   <h2>data-import デモ</h2>
   <div>外部HTMLをインポートして表示します</div>
-  <div data-import="components/header.html"></div>
-  <!-- /components/header.html はデモ用ヘッダーです -->
+  <!-- 取り込んだ断片は取り込み先の子として扱われるため、祖先の data-bind を
+       そのまま参照できます（共通マークアップ＋画面ごとの差分の書き方）。 -->
+  <div data-bind='{"siteName":"Haori デモ","currentStep":2}'>
+    <p>直書き: {{siteName}} / ステップ {{currentStep}}</p>
+    <div data-import="components/header.html"></div>
+    <!-- /components/header.html はデモ用ヘッダーです -->
+  </div>
 </body>
 </html>

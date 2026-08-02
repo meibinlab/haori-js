@@ -2371,6 +2371,23 @@ data-import="url"
 <div data-import="/components/header.html"></div>
 ```
 
+**評価スコープ**:
+
+取り込んだ断片は、取り込み先要素の**通常の子要素と同じ**スコープ解決になります。断片の中の `{{式}}`・`data-if`・`data-attr-*` などは、取り込み先要素自身とその祖先の `data-bind`（`data-each` の行の中なら行スコープも）を参照できます。「共通マークアップ＋画面ごとの差分」を 1 ファイルへ集約する書き方ができます。
+
+```html
+<!-- 断片（components/step-indicator.html） -->
+<p>現在のステップ: {{currentStep}} / {{totalSteps}}</p>
+<p data-if="currentStep === 2">ステップ 2 の説明</p>
+
+<!-- 取り込み側。取り込み先要素自身の data-bind も参照できる -->
+<div data-bind='{"currentStep":2,"totalSteps":4}'
+     data-import="components/step-indicator.html"></div>
+```
+
+- 断片の中で `data-bind` や `data-fetch` を宣言した場合は、そこから下だけのスコープになります（通常の要素と同じです）。
+- 断片が参照するキーを取り込み側が持っていない場合は[未解決参照](#未解決参照の診断)になります（空表示。エラーにはなりません）。
+
 **読み込み中の属性**:
 
 読み込みが進行中の間、対象要素に `data-importing` 属性が付与されます。読み込み完了（成功・失敗いずれも）後に除去されます。これを利用して、読み込み中のレイアウト崩れを防ぐことができます。

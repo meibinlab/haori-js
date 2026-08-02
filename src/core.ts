@@ -499,19 +499,21 @@ export default class Core {
         }).then(() => {
           target.removeAttribute(`${Env.prefix}importing`);
           HaoriEvent.importEnd(target, resolvedUrl, bytes, startedAt);
-          if (!document.body.hasAttribute('data-haori-ready')) {
-            const childPromises: Promise<void>[] = [];
-            target.childNodes.forEach(node => {
-              const child = Fragment.get(node);
-              if (child instanceof ElementFragment) {
-                childPromises.push(Core.scan(child.getTarget()));
-              } else if (child instanceof TextFragment) {
-                childPromises.push(Core.evaluateText(child));
-              }
-            });
-            return Promise.all(childPromises).then(() => undefined);
-          }
-          return undefined;
+          // 差し込んだ断片を取り込み先の子としてフラグメント木へ繋いでから
+          // 走査する。初期化の前後で分けず、常にこの経路で評価する。監視へ
+          // 委ねると、同じ変更で追加された 2 つ目以降のノードが取りこぼされる
+          // （`insertBefore` が挿入のあいだ立てる抑止フラグに、同じ通知の後続の
+          // `addNode` が掛かるため）。繋いだ子は `addNode` 側で除外する。
+          Core.adoptImportedChildren(fragment);
+          const childPromises: Promise<void>[] = [];
+          fragment.getChildren().forEach(child => {
+            if (child instanceof ElementFragment) {
+              childPromises.push(Core.scan(child.getTarget()));
+            } else if (child instanceof TextFragment) {
+              childPromises.push(Core.evaluateText(child));
+            }
+          });
+          return Promise.all(childPromises).then(() => undefined);
         });
       })
       .catch(error => {
@@ -527,6 +529,39 @@ export default class Core {
         }
         return undefined;
       }) as Promise<void>;
+  }
+
+  /**
+   * 取り込んだ断片を取り込み先のフラグメントの子として繋ぎます。
+   *
+   * `data-import` は `innerHTML` で子を差し替えるため、フラグメント木は自動では
+   * 追従しません。繋がないまま評価すると、断片の要素は親を持たないフラグメントに
+   * なり、祖先をたどれないため評価スコープが空になります（`{{...}}` が空表示に
+   * なり、`data-if` が常に偽になる）。DOM 上は取り込み先の子なので、通常の子要素と
+   * 同じスコープ解決になるように繋ぎ直します。
+   *
+   * @param fragment 取り込み先のフラグメント
+   * @return 戻り値はありません。
+   */
+  private static adoptImportedChildren(fragment: ElementFragment): void {
+    const target = fragment.getTarget();
+    // 差し替えで DOM から外れた子は木から落とす。残すと以降の再評価が DOM に
+    // 無いノードをたどり、再取り込みのたびに積み上がる。DOM からの削除は
+    // `innerHTML` の差し替えで済んでいるため、切り離しだけを行う（`remove(true)`
+    // にすると、外部ライブラリが別の場所へ移した要素まで DOM から取り除いて
+    // しまう。判定はフラグメント木の親ではなく DOM の親で行うため）。
+    fragment
+      .getChildren()
+      .filter(child => child.getTarget().parentNode !== target)
+      .forEach(child => {
+        void child.remove(false);
+      });
+    target.childNodes.forEach(node => {
+      const child = Fragment.get(node);
+      if (child !== null && child.getParent() !== fragment) {
+        fragment.pushChild(child);
+      }
+    });
   }
 
   /**
@@ -1146,6 +1181,12 @@ export default class Core {
     const next = Fragment.get(node.nextSibling);
     const fragment = Fragment.get(node);
     if (fragment) {
+      if (fragment.getParent() === parent) {
+        // すでに親の子としてフラグメント木へ繋がっているノードは、Haori 自身が
+        // 差し込んで走査まで済ませたもの（`data-import` の断片）である。挿入し
+        // 直すと走査が二重になるため、ここでは何もしない。
+        return;
+      }
       parent.insertBefore(fragment, next);
       if (fragment instanceof ElementFragment) {
         // 新規追加ノードは属性評価（bind/if/each/import など含む）のフルスキャンを行う。

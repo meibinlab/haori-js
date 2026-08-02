@@ -1525,6 +1525,30 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 </html>
 ```
 
+#### 実用例: 共通マークアップ＋画面ごとの差分
+
+取り込んだ断片は、取り込み先要素の通常の子要素と同じスコープで評価されます。取り込み先や祖先の `data-bind` を参照できるため、画面ごとに値だけが違う共通表示を 1 ファイルへ集約できます。ウィザードのステップインジケータのように「マークアップは共通、現在ステップだけが違う」表示が典型です。
+
+**step-indicator.html**:
+```html
+<ol class="steps">
+  <li data-attr-class="{{currentStep === 1 ? 'current' : ''}}">お客様情報</li>
+  <li data-attr-class="{{currentStep === 2 ? 'current' : ''}}">ご契約内容</li>
+  <li data-attr-class="{{currentStep === 3 ? 'current' : ''}}">確認</li>
+</ol>
+<p>ステップ {{currentStep}} / 3</p>
+```
+
+各画面では、取り込み先要素に差分だけを宣言します。
+
+```html
+<!-- 2 ページ目 -->
+<div data-bind='{"currentStep":2}'
+     data-import="/components/step-indicator.html"></div>
+```
+
+断片が参照するキーを取り込み側が持っていない場合は未解決参照になり、空表示になります（エラーにはなりません）。
+
 ---
 
 ## 繰り返し行の中で「その行の要素」を対象にする
