@@ -90,6 +90,11 @@ export default class Form {
    * DOM の `files` から直接取得する）。`multiple` 指定時は File の配列、単一選択時は
    * File または未選択を表す null を返します。それ以外の要素は内部値を返します。
    *
+   * 値を持つ入力（テキスト系 input / `type="hidden"` / textarea / select）は、内部値を
+   * 返す前に DOM の値を取り込みます（`ElementFragment.syncValueFromDom()`）。外部
+   * ライブラリやブラウザの自動入力はイベントを伴わずに `element.value` へ代入する
+   * ため、内部値だけを見ると画面に見えている値が収集から欠落します。
+   *
    * @param fragment 対象のElementFragment
    * @returns 収集する値
    */
@@ -114,6 +119,9 @@ export default class Form {
       // value="false" は「チェック時に false」を表す反転指定。
       return input.value === 'false' ? !input.checked : input.checked;
     }
+    // イベントを伴わない代入（外部ライブラリ・ブラウザの自動入力）を取り込む。
+    // 取り込みを見送る条件は syncValueFromDom() 側にまとめている。
+    fragment.syncValueFromDom();
     return fragment.getValue();
   }
 
@@ -564,10 +572,18 @@ export default class Form {
         // change が発火せず古いまま残ることがある。その古い値をチェック済みとして
         // 収集すると同一キーに複数値が集まり配列累積を起こすため、DOM の checked を
         // 真として未チェック要素は null（未選択）扱いにする。
+        //
+        // チェック済みの値も DOM の `value` を使う。送信値は `value` 属性そのもので
+        // あり、内部値はイベントを伴わないチェック（外部ライブラリの操作など）では
+        // 更新されないため、チェック状態と同じく DOM を真とする。
         const element = fragment.getTarget();
         const checked =
           element instanceof HTMLInputElement ? element.checked : true;
-        const value = checked ? fragment.getValue() : null;
+        const domValue =
+          element instanceof HTMLInputElement
+            ? element.value
+            : fragment.getValue();
+        const value = checked ? domValue : null;
         const key = String(name);
         if (value === null) {
           if (!(key in values)) {

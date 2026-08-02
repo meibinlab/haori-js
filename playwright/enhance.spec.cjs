@@ -38,4 +38,24 @@ test.describe('外部ライブラリ連携（実ブラウザ）', () => {
       '住所補完が有効です',
     );
   });
+
+  test('外部ライブラリが代入した値が収集される', async ({page}) => {
+    test.setTimeout(60000);
+    await page.goto('/demo/enhance/data-enhance-demo.html');
+    await page.waitForSelector('body[data-haori-ready]');
+
+    // 代入は keyup で行われ、change / input は発火しない。
+    await page.locator('#address-form [name=postalCode]').pressSequentially(
+      '1000001',
+    );
+    await expect(page.locator('#address-form [name=region]')).toHaveValue(
+      '東京都',
+    );
+
+    // フォーカスを外すと収集が走り、双方向バインディングで表示へ反映される。
+    await page.locator('#address-form [name=postalCode]').blur();
+    await expect(page.locator('#address-values')).toHaveText(
+      '収集値: 郵便番号「1000001」/ 都道府県「東京都」/ 市区町村「千代田区」',
+    );
+  });
 });

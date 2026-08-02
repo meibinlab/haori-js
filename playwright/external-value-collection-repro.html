@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>外部ライブラリが代入した値の収集</title>
+  <script>
+    // 郵便番号から住所を補完する外部ライブラリ（YubinBango 等）の代役。
+    // 実物と同じく keyup で発火し、入力欄へ直接代入する。change / input は
+    // 発火しないため、Haori から見ると「イベントを伴わない値の変更」になる。
+    window.FakePostalFiller = function (root) {
+      var postal = root.querySelector('.p-postal-code');
+      postal.addEventListener('keyup', function () {
+        var filled = postal.value.replace(/[^0-9]/g, '').length === 7;
+        root.querySelector('.p-region').value = filled ? '東京都' : '';
+        root.querySelector('.p-locality').value = filled ? '千代田区' : '';
+        root.querySelector('.p-street-address').value = filled ? '千代田' : '';
+      });
+    };
+  </script>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <form id="customer-form" data-form-object="customer" data-bind='{"customer":{}}'>
+    <div class="h-adr" data-enhance-new="FakePostalFiller">
+      <input name="postalCode" class="p-postal-code" required>
+      <select name="prefecture" class="p-region" required>
+        <option value=""></option>
+        <option value="東京都">東京都</option>
+        <option value="大阪府">大阪府</option>
+      </select>
+      <input name="municipality" class="p-locality" required>
+      <input name="town" class="p-street-address" required>
+    </div>
+    <input name="memo">
+    <button id="next" type="button"
+      data-click-fetch="/api/save"
+      data-click-fetch-method="POST"
+      data-click-form="#customer-form">次へ</button>
+  </form>
+</body>
+</html>

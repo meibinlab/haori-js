@@ -1292,15 +1292,28 @@ data-if / data-each / {{variable}} などが自動更新
 
 それ以外の checkbox は従来どおり `value` 属性の文字列値を返し、未チェック時は `null` を返します。
 
-##### チェック状態の収集は DOM を真とする
+##### 収集は DOM を真とする
 
-checkbox / radio のチェック状態は、内部値（`ElementFragment` が保持する値）ではなく **DOM の `checked` を真として収集**します。boolean モードの checkbox も同様です。
+値収集は、内部値（`ElementFragment` が保持する値）ではなく **DOM を真として**行います。**画面に表示されている内容がそのまま送信・保存される**、という原則です。
 
-内部値は、バインドからの書き戻しで先に更新されて DOM 反映が描画キュー待ちになる場合や、ラジオの排他制御で未チェックになった同名要素に `change` が発火しない場合など、DOM と食い違う瞬間があります。そこで収集すると「画面はチェック済みなのに送信値は `false`」という見た目と送信値の不一致が起こるため、チェック状態は常に画面の見たままを送ります。
+- チェック状態（checkbox / radio、boolean モードの checkbox を含む）: DOM の `checked`。チェック済みの送信値は `value` 属性そのもの
+- `input[type=file]`: DOM の `files`
+- 値を持つ入力（テキスト系 `input` / `type="hidden"` / `<textarea>` / `<select>`）: 収集の直前に `element.value`（`<select multiple>` は選択済み `<option>`）を内部値へ取り込んでから収集（`ElementFragment.syncValueFromDom()`）
+
+内部値は、バインドからの書き戻しで先に更新されて DOM 反映が描画キュー待ちになる場合や、ラジオの排他制御で未チェックになった同名要素に `change` が発火しない場合など、DOM と食い違う瞬間があります。そこで収集すると「画面はチェック済みなのに送信値は `false`」という見た目と送信値の不一致が起こるため、常に画面の見たままを送ります。
+
+**イベントを伴わない値の変更にも追随します。** 外部ライブラリ（郵便番号からの住所補完、`<select>` の拡張ウィジェットなど）やブラウザの自動入力は `element.value` へ直接代入するため `change` / `input` が発火せず、内部値は更新されません。収集の直前に DOM を取り込むことで、こうした値も送信・保存の対象になります（[外部ライブラリ連携](#外部ライブラリ連携) を参照）。取り込みは収集の契機（`change` による双方向コミット、`data-{event}-form` での送信、`data-{event}-validate` の条件評価など）で行われるため、**代入した瞬間にバインドデータへ反映されるわけではありません**。
+
+ただし次の 2 つの場合は取り込みません。DOM が内部値より古い、または内部値を表現できない状態で取り込むと、供給された値を失うためです。
+
+- Haori 自身の書き戻しが描画キュー待ちの間
+- 直近の書き込みを DOM が受け付けなかった場合。`<select>` は該当する `<option>` が無いと代入が無視されます（候補を `data-each` で流し込む構成では、入力欄への書き戻しが行生成より前に走るため起こり得ます）。この状態で DOM を取り込むと、ブラウザが自動選択した先頭 `<option>` の値へ化けてしまいます
+
+外部からの代入は**ユーザー編集としては扱いません**（[ユーザー編集と宣言バインドの権威](#ユーザー編集と宣言バインドの権威)の通し番号を発番しません）。代入の時点を観測できず、発番すると「いつの編集か」を比較できないためです。したがって、送信中に外部ライブラリが書き込んだ値は、応答の書き戻しで上書きされることがあります。
 
 あわせて、宣言バインド（`checked="{{式}}"` / `data-attr-checked` / `data-attr-selected`）でチェック状態を書き換えたときは、DOM の書き込みに合わせて内部値も同期します（`data-attr-selected` は所属する `<select>` の内部値を同期します）。これにより宣言バインドで変更したチェック状態が、式評価から参照する内部値にも反映されます。ただしフォーカス中の要素は従来どおり再適用をスキップするため、内部値の同期も行いません。
 
-`type="number"` の `<input>` は値を**数値型**として収集・バインドします。HTML の `input.value` は常に文字列ですが、DTO が `Double` / `Integer` 等を期待する場合に文字列で送られるのを避けるため、内部値を数値へ正規化します（`ElementFragment.normalizeValueForElement`）。正規化は内部値へ値を取り込むすべての経路で行われます。すなわち `syncValue()`（DOM→内部値。`change` および構築時）、`applyValue()`（バインド→内部値）、および `value` 属性のテンプレート評価（`value="{{...}}"`）で正規化され、`Form.getValues()` の結果や JSON 送信ボディに数値として現れます。なお `data-attr-value` は仕様上 `input.value`（内部値）を同期しないため対象外です。フォームで収集したい数値フィールドは `name`＋フォームの `data-bind`（双方向バインド）または `value="{{...}}"` を使ってください。
+`type="number"` の `<input>` は値を**数値型**として収集・バインドします。HTML の `input.value` は常に文字列ですが、DTO が `Double` / `Integer` 等を期待する場合に文字列で送られるのを避けるため、内部値を数値へ正規化します（`ElementFragment.normalizeValueForElement`）。正規化は内部値へ値を取り込むすべての経路で行われます。すなわち `syncValue()`（DOM→内部値。`change`、構築時、および収集直前の取り込み）、`applyValue()`（バインド→内部値）、および `value` 属性の評価（`value="{{...}}"` / `data-attr-value`）で正規化され、`Form.getValues()` の結果や JSON 送信ボディに数値として現れます。
 
 - 空文字・`null`・数値化できない値は `null`
 - 小数（例 `"2.5"`）はそのまま数値（`2.5`）
@@ -2230,6 +2243,28 @@ Haori.enhancers.register('choices', {
 - `new 参照(対象要素)` を**要素ごとに一度だけ**呼びます。引数を受け取らない実装でも害はありません。
 - 再同期（`refresh`）と後始末（`destroy`）はありません。インスタンスの再同期が必要なライブラリ（Choices.js など）は `data-enhance` を使ってください。
 - 対象のグローバルは、Haori の初期スキャンより前に定義されている必要があります（解決できない場合は開発モードで一度だけ警告します）。
+
+#### 外部ライブラリが書き込んだ入力値
+
+外部ライブラリが `element.value` へ直接代入した値（郵便番号からの住所補完など）は、`change` / `input` を伴わなくても**収集・送信・保存の対象になります**。値収集は DOM を真として行うためです（[収集は DOM を真とする](#収集は-dom-を真とする)を参照）。連携の宣言（`data-enhance` / `data-enhance-new`）だけで、補完結果を含めた入力内容が保存されます。
+
+```html
+<!-- 郵便番号を入力すると YubinBango が都道府県・市区町村・町域へ代入する。
+     代入は change を伴わないが、次の収集でそのまま送信値へ載る。 -->
+<form id="customer-form" data-form-object="customer">
+  <div class="h-adr" data-enhance-new="YubinBango.MicroformatDom">
+    <span class="p-country-name" style="display:none;">Japan</span>
+    <input name="postalCode" class="p-postal-code">
+    <select name="prefecture" class="p-region">…</select>
+    <input name="municipality" class="p-locality">
+    <input name="town" class="p-street-address">
+  </div>
+  <button data-click-fetch="/api/save" data-click-fetch-method="POST"
+          data-click-form>次へ</button>
+</form>
+```
+
+反映の契機は**収集が走ったとき**です。代入した瞬間にバインドデータや `data-store` の保存値が更新されるわけではありません（送信時・他の欄の `change` 時などに揃います）。
 
 ---
 
@@ -3774,7 +3809,7 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 
 `data-validity` と `data-{event}-if` は同じスコープで評価します。バインディングデータ（継承込み）を土台に、**フォーム内で宣言されている収集キーを収集値で置き換えた**値です。
 
-- クリック時点で最新なのは**収集値**です。属性の再描画はキュー経由で、バインドデータへの双方向コミットも非同期のため、どちらもクリック時点では古いことがあります。入力欄の内部値は `change` / `input` の委譲内で同期更新されるため、収集値は常に最新です。
+- クリック時点で最新なのは**収集値**です。属性の再描画はキュー経由で、バインドデータへの双方向コミットも非同期のため、どちらもクリック時点では古いことがあります。収集は DOM を真として行う（[収集は DOM を真とする](#収集は-dom-を真とする)）ため、`change` / `input` を伴わない外部ライブラリの代入も含めて、収集値は常に最新です。
 - 収集値に現れないキーは**未定義**として扱います。`data-if` が偽の分岐配下の入力欄は収集対象外なので、バインドデータや祖先に残った古い値で条件が誤判定されるのを防ぎます。
 - 収集値の取得元は、`data-{event}-form` の指定があればそのフォーム、`data-form-list` の行の中ではその行、それ以外は祖先のフォームコンテナです。`data-form-arg` / `data-each-arg` の指定があるときは、そのキー配下へ収集値を重ねます（既存の式の書き方と揃えます）。
 - `data-form-list` を伴わない `data-each` の行では、入力欄と要素データが対応しないため行を取得元にしません（フォームコンテナへ遡ります）。

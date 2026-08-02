@@ -758,6 +758,17 @@ export class ElementFragment extends Fragment {
   /** 値変更スキップフラグ（更新イベントによる無限ループ対応） */
   private skipChangeValue = false;
 
+  /**
+   * 直近に Haori 自身が書き込んだ値を DOM が受け付けられなかったかどうか。
+   *
+   * `<select>` は該当する `<option>` が無いと値の代入が無視され、空のままになります
+   * （候補を `data-each` で流し込む構成では、入力欄への書き戻しが行生成より前に走る
+   * ため起こり得ます）。この状態では DOM が内部値を表現できていないため、収集時に
+   * DOM を真として取り込むと、供給された値が画面に見えている別の値へ化けます。
+   * 取り込みの可否を判断するために記録します（`syncValueFromDom()` を参照）。
+   */
+  private valueWriteUnapplied = false;
+
   /** ユーザー編集の通し番号の発番元（全フラグメント共通、単調増加）。 */
   private static userEditCounter = 0;
 
@@ -1444,13 +1455,21 @@ export class ElementFragment extends Fragment {
       this.skipChangeValue = true;
       return Queue.enqueue(() => {
         let changed = false;
+        const applied = new Set<string>();
         Array.from(element.options).forEach(option => {
           const shouldSelect = selectedValues.includes(option.value);
           if (option.selected !== shouldSelect) {
             option.selected = shouldSelect;
             changed = true;
           }
+          if (shouldSelect) {
+            applied.add(option.value);
+          }
         });
+        // 選択したい値に対応する option が無ければ、その値は DOM に載っていない。
+        this.recordValueWriteResult(
+          selectedValues.every(selected => applied.has(selected)),
+        );
         if (changed && dispatchEvents) {
           element.dispatchEvent(new Event('change', {bubbles: true}));
         }
@@ -1464,11 +1483,14 @@ export class ElementFragment extends Fragment {
     ) {
       // チェックボックスグループ以外に配列が渡された場合は文字列化する
       const scalarValue = Array.isArray(value) ? value.join(',') : value;
+      const domValue = scalarValue === null ? '' : String(scalarValue);
       // type="number" は内部値を数値へ正規化して保持する（送信時に数値型になる）
       this.value = this.normalizeValueForElement(element, scalarValue);
       this.skipChangeValue = true;
       return Queue.enqueue(() => {
-        element.value = scalarValue === null ? '' : String(scalarValue);
+        element.value = domValue;
+        // 書き込んだ値を DOM が受け付けたかを記録する（`valueWriteUnapplied` 参照）。
+        this.recordValueWriteResult(element.value === domValue);
         if (dispatchEvents) {
           if (
             (element instanceof HTMLInputElement &&
@@ -1704,6 +1726,8 @@ export class ElementFragment extends Fragment {
    */
   public syncValue() {
     const element = this.getTarget();
+    // DOM の値を取り込んだ時点で、内部値は DOM が表現できる値に揃う。
+    this.valueWriteUnapplied = false;
     if (element instanceof HTMLInputElement) {
       if (element.type === 'checkbox' || element.type === 'radio') {
         const isBooleanCheckbox =
@@ -1752,6 +1776,50 @@ export class ElementFragment extends Fragment {
         this.value = element.value;
       }
     }
+  }
+
+  /**
+   * 直近の値の書き込みが DOM に載ったかを記録します。
+   *
+   * 「載らなかった」と記録するのは、内部値が空でない場合だけです。DOM が受け付け
+   * なかった結果として双方が空になる場合（`type="number"` へ数値化できない値を
+   * 書いた場合など）は、DOM が内部値を表現できているため取り込みを妨げません。
+   *
+   * @param applied 書き込んだ値が DOM に載った場合 true
+   * @returns 戻り値はありません。
+   */
+  private recordValueWriteResult(applied: boolean): void {
+    this.valueWriteUnapplied =
+      !applied && this.value !== null && this.value !== '';
+  }
+
+  /**
+   * 値収集の直前に、DOM の値を内部値へ取り込みます。
+   *
+   * 外部ライブラリ（住所補完・select 拡張など）やブラウザの自動入力は
+   * `element.value` へ直接代入するため、`change` / `input` が発火せず内部値が
+   * 更新されません。収集が内部値だけを見ると、画面に表示されている値が送信・保存
+   * されないまま欠落します。チェック状態（checkbox / radio）と `input[type=file]`
+   * がすでに DOM を真として収集しているのと扱いを揃え、値も画面の見たままを
+   * 収集できるようにします。
+   *
+   * ただし次の場合は取り込みません。DOM が内部値より古い、または内部値を表現でき
+   * ない状態で取り込むと、供給された値を失うためです。
+   *
+   * - Haori 自身の書き込みが描画キュー待ちの間（`skipChangeValue`）
+   * - 直近の書き込みを DOM が受け付けなかった場合（`valueWriteUnapplied`）
+   *
+   * @returns 戻り値はありません。
+   */
+  public syncValueFromDom(): void {
+    if (this.skipChangeValue || this.valueWriteUnapplied) {
+      return;
+    }
+    if (!ElementFragment.isValuePropertyTarget(this.getTarget())) {
+      // チェック状態と input[type=file] は収集側が DOM を直接読むため対象外。
+      return;
+    }
+    this.syncValue();
   }
 
   /**
@@ -2041,6 +2109,9 @@ export class ElementFragment extends Fragment {
           element,
           desiredValueProperty,
         );
+        // ここは DOM 書き込みが不要（= 既に一致）な経路なので、内部値は DOM が
+        // 表現できている（`valueWriteUnapplied` 参照）。
+        this.valueWriteUnapplied = false;
       }
       // DOM 書き込みが不要な場合でも、内部値が DOM のチェック状態と食い違って
       // いれば揃える（下の書き込み経路と同じ理由。詳細はそちらのコメント参照）。
@@ -2077,6 +2148,8 @@ export class ElementFragment extends Fragment {
         if (requiresValuePropertyWrite) {
           element.value = desiredValueProperty;
         }
+        // 書き込んだ値を DOM が受け付けたかを記録する（`valueWriteUnapplied` 参照）。
+        this.recordValueWriteResult(element.value === desiredValueProperty);
       }
       // checked / selected の DOM プロパティを真偽属性の有無に合わせて同期する
       // （属性の付与・削除どちらの場合も反映する）。

@@ -137,12 +137,24 @@
     }
 
     // 郵便番号ライブラリの代わりに使うスタブ。対象要素の配下を初期化する。
+    // 住所欄がある場合は、実物（YubinBango など）と同じく keyup で入力欄へ直接
+    // 代入する。change / input は発火しないため、Haori から見ると「イベントを
+    // 伴わない値の変更」になる。
     class FakeAddressHelper {
       constructor(element) {
         const mark = element.querySelector('.address-status');
         if (mark) {
           mark.textContent = '住所補完が有効です';
         }
+        const postal = element.querySelector('.p-postal-code');
+        if (!postal) {
+          return;
+        }
+        postal.addEventListener('keyup', () => {
+          const filled = postal.value.replace(/[^0-9]/g, '').length === 7;
+          element.querySelector('.p-region').value = filled ? '東京都' : '';
+          element.querySelector('.p-locality').value = filled ? '千代田区' : '';
+        });
       }
     }
 
@@ -209,6 +221,26 @@
     <div class="row-block" data-enhance-new="FakeLib.AddressHelper">
       <span class="address-status">住所補完は未適用です</span>
     </div>
+
+    <h2>外部ライブラリが書き込んだ値も収集される</h2>
+    <p>
+      郵便番号（7 桁）を入力すると、外部ライブラリの代役が住所欄へ直接代入します。
+      代入では <code>change</code> が発火しませんが、値収集は画面の見たまま（DOM）を
+      読むため、そのまま収集値・保存値に載ります。フォーカスを外すと収集が走り、
+      下の行に反映されます。
+    </p>
+    <form class="row-block" id="address-form"
+          data-bind='{"postalCode":"","region":"","locality":""}'
+          data-enhance-new="FakeLib.AddressHelper">
+      <input type="text" name="postalCode" class="p-postal-code"
+             placeholder="1000001">
+      <input type="text" name="region" class="p-region" placeholder="都道府県">
+      <input type="text" name="locality" class="p-locality"
+             placeholder="市区町村">
+      <div class="log" id="address-values">
+        収集値: 郵便番号「{{postalCode}}」/ 都道府県「{{region}}」/ 市区町村「{{locality}}」
+      </div>
+    </form>
 
     <div class="log" id="values">選択肢: {{plans.length}} 件 / 行: {{rows.length}} 行</div>
   </div>
