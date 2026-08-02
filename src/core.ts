@@ -1009,6 +1009,12 @@ export default class Core {
       // 評価結果を後から入れ直す）。
       chain = chain.then(() => Form.syncAncestorArgForms(fragment));
       chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
+      // 入力欄への書き戻しは行生成より前に走るため、候補を `data-each` で流し込む
+      // `<select>` では代入した時点で該当する `<option>` がまだ無く、供給された値が
+      // 画面に載らない。候補が揃ったこの時点で載せ直す。
+      chain = chain.then(() =>
+        ElementFragment.retryUnappliedValueWrites(element),
+      );
       chain = chain.then(() =>
         Core.reevaluateReactiveSpecialAttributes(fragment, skipFragments),
       );

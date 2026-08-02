@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>候補が後から届く select</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 保存済みの値と候補が同じ応答で届く構成。入力欄への書き戻しは行生成より前に
+       走るため、代入した時点では該当する option がまだ無い。 -->
+  <form id="f" data-bind='{"pref":null,"opts":[]}'>
+    <select id="pref" name="pref" data-each="opts" data-each-arg="o">
+      <option data-attr-value="{{o.v}}">{{o.v}}</option>
+    </select>
+  </form>
+  <button id="load" type="button"
+    data-click-fetch="/api/record"
+    data-click-bind="#f">読み込む</button>
+  <button id="send" type="button"
+    data-click-form="#f"
+    data-click-fetch="/api/send">送信</button>
+</body>
+</html>

@@ -769,6 +769,23 @@ export class ElementFragment extends Fragment {
    */
   private valueWriteUnapplied = false;
 
+  /**
+   * 直近の書き込みを DOM が受け付けなかったフラグメントの集合。
+   *
+   * 候補が揃った後に載せ直せるよう、再試行の対象として控えます
+   * （`retryUnappliedValueWrites()` を参照）。載った時点、および DOM から値を
+   * 取り込んだ時点で外します。
+   */
+  private static readonly UNAPPLIED_VALUE_WRITES = new Set<ElementFragment>();
+
+  /**
+   * 描画キュー待ちの値の書き込み（無い場合は null）。
+   *
+   * 待っている間に別の値が要求されたとき、その完了を待ってから改めて反映するために
+   * 保持します。捨ててしまうと、最後に供給された値が画面にもバインドにも載りません。
+   */
+  private pendingValueWrite: Promise<void> | null = null;
+
   /** ユーザー編集の通し番号の発番元（全フラグメント共通、単調増加）。 */
   private static userEditCounter = 0;
 
@@ -949,6 +966,8 @@ export class ElementFragment extends Fragment {
     this.eachInputSignature = null;
     this.deriveSubtreeSignature = null;
     this.deriveInputSignature = null;
+    // 載せ直しの対象から外す（DOM から外れた要素は載せ直す先が無い）。
+    this.clearUnappliedValueWrite();
     promises.push(super.remove(unmount));
     return Promise.all(promises).then(() => undefined);
   }
@@ -1373,7 +1392,12 @@ export class ElementFragment extends Fragment {
     dispatchEvents: boolean,
   ): Promise<void> {
     if (this.skipChangeValue) {
-      return Promise.resolve();
+      // 反映待ちの間に来た値は捨てず、書き込みの完了を待って改めて反映する
+      // （後勝ち）。捨てると、最後に供給された値が画面にもバインドにも載らない
+      // まま失われる。
+      return (this.pendingValueWrite ?? Promise.resolve()).then(() =>
+        this.applyValue(value, dispatchEvents),
+      );
     }
     if (this.value === value) {
       return Promise.resolve();
@@ -1442,75 +1466,31 @@ export class ElementFragment extends Fragment {
       if (element.checked === newChecked) {
         return Promise.resolve();
       }
-      this.skipChangeValue = true;
-      return Queue.enqueue(() => {
+      const requested = this.userEditSequence;
+      return this.enqueueValueWrite(() => {
+        if (this.isSupersededByUserEdit(requested)) {
+          return;
+        }
         element.checked = newChecked;
         if (dispatchEvents) {
           element.dispatchEvent(new Event('change', {bubbles: true}));
         }
-      }).finally(() => {
-        this.skipChangeValue = false;
-      }) as Promise<void>;
+      });
     } else if (element instanceof HTMLSelectElement && element.multiple) {
-      // 複数選択 select は配列（または単一値・null）を option の選択状態へ反映する。
-      // option を都度走査して冪等に適用し、実際に選択が変化した場合のみ change を
-      // 発火する（バインド反映ループでの不要な再発火を防ぐ）。
       const selectedValues = (
         Array.isArray(value) ? value : value === null ? [] : [value]
       ).map(String);
-      this.value = selectedValues.slice();
-      this.skipChangeValue = true;
-      return Queue.enqueue(() => {
-        let changed = false;
-        const applied = new Set<string>();
-        Array.from(element.options).forEach(option => {
-          const shouldSelect = selectedValues.includes(option.value);
-          if (option.selected !== shouldSelect) {
-            option.selected = shouldSelect;
-            changed = true;
-          }
-          if (shouldSelect) {
-            applied.add(option.value);
-          }
-        });
-        // 選択したい値に対応する option が無ければ、その値は DOM に載っていない。
-        this.recordValueWriteResult(
-          selectedValues.every(selected => applied.has(selected)),
-        );
-        if (changed && dispatchEvents) {
-          element.dispatchEvent(new Event('change', {bubbles: true}));
-        }
-      }).finally(() => {
-        this.skipChangeValue = false;
-      }) as Promise<void>;
+      return this.writeSelectedValues(selectedValues, dispatchEvents);
     } else if (
       element instanceof HTMLInputElement ||
       element instanceof HTMLTextAreaElement ||
       element instanceof HTMLSelectElement
     ) {
       // チェックボックスグループ以外に配列が渡された場合は文字列化する
-      const scalarValue = Array.isArray(value) ? value.join(',') : value;
-      const domValue = scalarValue === null ? '' : String(scalarValue);
-      // type="number" は内部値を数値へ正規化して保持する（送信時に数値型になる）
-      this.value = this.normalizeValueForElement(element, scalarValue);
-      this.skipChangeValue = true;
-      return Queue.enqueue(() => {
-        element.value = domValue;
-        // 書き込んだ値を DOM が受け付けたかを記録する（`valueWriteUnapplied` 参照）。
-        this.recordValueWriteResult(element.value === domValue);
-        if (dispatchEvents) {
-          if (
-            (element instanceof HTMLInputElement &&
-              ElementFragment.INPUT_EVENT_TYPES.includes(element.type)) ||
-            element instanceof HTMLTextAreaElement
-          ) {
-            element.dispatchEvent(new Event('input', {bubbles: true}));
-          }
-          element.dispatchEvent(new Event('change', {bubbles: true}));
-        }
-      }).finally(() => {
-        this.skipChangeValue = false;
-      }) as Promise<void>;
+      return this.writeScalarValue(
+        Array.isArray(value) ? value.join(',') : value,
+        dispatchEvents,
+      );
     } else {
       Log.warn(
         '[Haori]',
@@ -1519,6 +1499,205 @@ export class ElementFragment extends Fragment {
       );
       return Promise.resolve();
     }
+  }
+
+  /**
+   * 値を持つ入力エレメント（テキスト系 / textarea / 単一選択 select）へ値を反映します。
+   *
+   * 内部値は同期的に確定し、DOM への書き込みは描画キューへ積みます。
+   *
+   * @param scalarValue 反映する値
+   * @param dispatchEvents input/change イベントを発火するかどうか
+   * @returns 反映完了の Promise
+   */
+  private writeScalarValue(
+    scalarValue: string | number | boolean | null,
+    dispatchEvents: boolean,
+  ): Promise<void> {
+    const element = this.getTarget() as
+      | HTMLInputElement
+      | HTMLTextAreaElement
+      | HTMLSelectElement;
+    const domValue = scalarValue === null ? '' : String(scalarValue);
+    // type="number" は内部値を数値へ正規化して保持する（送信時に数値型になる）
+    this.value = this.normalizeValueForElement(element, scalarValue);
+    const requested = this.userEditSequence;
+    return this.enqueueValueWrite(() => {
+      if (this.isSupersededByUserEdit(requested)) {
+        return;
+      }
+      element.value = domValue;
+      // 書き込んだ値を DOM が受け付けたかを記録する（`valueWriteUnapplied` 参照）。
+      this.recordValueWriteResult(element.value === domValue);
+      if (dispatchEvents) {
+        if (
+          (element instanceof HTMLInputElement &&
+            ElementFragment.INPUT_EVENT_TYPES.includes(element.type)) ||
+          element instanceof HTMLTextAreaElement
+        ) {
+          element.dispatchEvent(new Event('input', {bubbles: true}));
+        }
+        element.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+    });
+  }
+
+  /**
+   * 複数選択 `<select>` へ選択状態を反映します。
+   *
+   * `option` を都度走査して冪等に適用し、実際に選択が変化した場合のみ change を
+   * 発火します（バインド反映ループでの不要な再発火を防ぐため）。
+   *
+   * @param selectedValues 選択したい値（文字列）の配列
+   * @param dispatchEvents change イベントを発火するかどうか
+   * @returns 反映完了の Promise
+   */
+  private writeSelectedValues(
+    selectedValues: string[],
+    dispatchEvents: boolean,
+  ): Promise<void> {
+    const element = this.getTarget() as HTMLSelectElement;
+    this.value = selectedValues.slice();
+    const requested = this.userEditSequence;
+    return this.enqueueValueWrite(() => {
+      if (this.isSupersededByUserEdit(requested)) {
+        return;
+      }
+      let changed = false;
+      const applied = new Set<string>();
+      Array.from(element.options).forEach(option => {
+        const shouldSelect = selectedValues.includes(option.value);
+        if (option.selected !== shouldSelect) {
+          option.selected = shouldSelect;
+          changed = true;
+        }
+        if (shouldSelect) {
+          applied.add(option.value);
+        }
+      });
+      // 選択したい値に対応する option が無ければ、その値は DOM に載っていない。
+      this.recordValueWriteResult(
+        selectedValues.every(selected => applied.has(selected)),
+      );
+      if (changed && dispatchEvents) {
+        element.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+    });
+  }
+
+  /**
+   * 値の DOM 書き込みを描画キューへ積み、反映待ちの状態を記録します。
+   *
+   * 書き込みの間は `skipChangeValue` を立て、自分が起こした変更を利用者の操作と
+   * 取り違えないようにします。
+   *
+   * @param task DOM への書き込み
+   * @returns 反映完了の Promise
+   */
+  private enqueueValueWrite(task: () => void): Promise<void> {
+    this.skipChangeValue = true;
+    const write = (Queue.enqueue(task) as Promise<void>).finally(() => {
+      this.skipChangeValue = false;
+    }) as Promise<void>;
+    this.pendingValueWrite = write;
+    return write;
+  }
+
+  /**
+   * 反映を要求した後に利用者が編集したかを返します。
+   *
+   * 描画キュー待ちの間に確定した入力を、待っていた書き込みが上書きすると、利用者
+   * には「入力した値が勝手に消える」現象として現れます。要求時点の通し番号と比べて
+   * 判定します（要求より前の編集は、明示的な値の供給が権威なので上書きします）。
+   *
+   * @param requestedSequence 反映を要求した時点のユーザー編集の通し番号
+   * @returns 要求後に編集されていた場合 true
+   */
+  private isSupersededByUserEdit(requestedSequence: number): boolean {
+    return this.userEditSequence !== requestedSequence;
+  }
+
+  /**
+   * DOM が受け付けられなかった値の書き込みを再試行します。
+   *
+   * 候補を `data-each` で流し込む `<select>` では、入力欄への書き戻しが行生成より
+   * 前に走るため、代入した時点で該当する `<option>` がまだありません。`<select>` は
+   * 候補に無い値の代入を無視するので、供給された値が画面に載らないまま（ブラウザが
+   * 先頭の候補を自動選択したまま）になります。行生成の後に呼び出して、載せられる
+   * ようになった値を載せ直します。
+   *
+   * 対象は `<select>` だけです。テキスト系の入力は同じ値を書き直しても結果が変わり
+   * ません。候補がまだ揃っていない場合は書き込まず、次の機会に持ち越します（現在の
+   * 選択を消さないため）。
+   *
+   * @param root 再試行の対象とする部分木の起点エレメント
+   * @returns 再試行の完了 Promise
+   */
+  public static retryUnappliedValueWrites(root: HTMLElement): Promise<void> {
+    if (ElementFragment.UNAPPLIED_VALUE_WRITES.size === 0) {
+      return Promise.resolve();
+    }
+    const promises: Promise<void>[] = [];
+    for (const fragment of Array.from(
+      ElementFragment.UNAPPLIED_VALUE_WRITES,
+    )) {
+      const element = fragment.getTarget();
+      if (!element.isConnected) {
+        // DOM から外れた要素は載せ直す先が無い。集合に残すと解放されない。
+        fragment.clearUnappliedValueWrite();
+        continue;
+      }
+      if (!root.contains(element)) {
+        continue;
+      }
+      promises.push(fragment.retryValueWrite());
+    }
+    return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * この入力欄で、載らなかった値の書き込みを再試行します。
+   *
+   * @returns 再試行の完了 Promise
+   */
+  private retryValueWrite(): Promise<void> {
+    const element = this.getTarget();
+    if (this.skipChangeValue || !(element instanceof HTMLSelectElement)) {
+      // 書き込みが進行中ならその結果に任せる。select 以外は再試行しても変わらない。
+      return Promise.resolve();
+    }
+    if (element.multiple) {
+      const selectedValues = Array.isArray(this.value)
+        ? this.value.slice()
+        : [];
+      if (
+        !selectedValues.every(selected =>
+          Array.from(element.options).some(option => option.value === selected),
+        )
+      ) {
+        return Promise.resolve();
+      }
+      return this.writeSelectedValues(selectedValues, false);
+    }
+    const desired = this.value === null ? '' : String(this.value);
+    if (!Array.from(element.options).some(option => option.value === desired)) {
+      // 候補がまだ揃っていない。書き込むと現在の選択まで外れる。
+      return Promise.resolve();
+    }
+    return this.writeScalarValue(
+      this.value as string | number | boolean | null,
+      false,
+    );
+  }
+
+  /**
+   * 「載らなかった書き込み」の記録を解除します。
+   *
+   * @returns 戻り値はありません。
+   */
+  private clearUnappliedValueWrite(): void {
+    this.valueWriteUnapplied = false;
+    ElementFragment.UNAPPLIED_VALUE_WRITES.delete(this);
   }
 
   /**
@@ -1733,7 +1912,7 @@ export class ElementFragment extends Fragment {
    */
   public syncValue() {
     // DOM の値を取り込んだ時点で、内部値は DOM が表現できる値に揃う。
-    this.valueWriteUnapplied = false;
+    this.clearUnappliedValueWrite();
     this.value = this.readValueFromDom();
   }
 
@@ -1801,8 +1980,13 @@ export class ElementFragment extends Fragment {
    * @returns 戻り値はありません。
    */
   private recordValueWriteResult(applied: boolean): void {
-    this.valueWriteUnapplied =
-      !applied && this.value !== null && this.value !== '';
+    if (!applied && this.value !== null && this.value !== '') {
+      this.valueWriteUnapplied = true;
+      // 候補が揃った後に載せ直せるよう、再試行の対象として控える。
+      ElementFragment.UNAPPLIED_VALUE_WRITES.add(this);
+      return;
+    }
+    this.clearUnappliedValueWrite();
   }
 
   /**
@@ -2129,7 +2313,7 @@ export class ElementFragment extends Fragment {
         );
         // ここは DOM 書き込みが不要（= 既に一致）な経路なので、内部値は DOM が
         // 表現できている（`valueWriteUnapplied` 参照）。
-        this.valueWriteUnapplied = false;
+        this.clearUnappliedValueWrite();
       }
       // DOM 書き込みが不要な場合でも、内部値が DOM のチェック状態と食い違って
       // いれば揃える（下の書き込み経路と同じ理由。詳細はそちらのコメント参照）。
