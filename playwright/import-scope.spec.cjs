@@ -37,6 +37,29 @@ test.describe('data-import のスコープ継承', () => {
     );
   });
 
+  test('取り込み後のバインド更新が断片へ届く', async ({page}) => {
+    test.setTimeout(60000);
+    page.on('pageerror', error => console.log('[pageerror]', error.message));
+    await page.goto('/playwright/import-scope-repro.html');
+    await page.waitForFunction(() => typeof window.Haori !== 'undefined');
+    await page.waitForSelector('body[data-haori-ready]');
+    await expect(page.locator('#imported #frag-if')).not.toHaveAttribute(
+      'data-if-false',
+      '',
+    );
+
+    // 取り込みは一度きりだが、スコープは繋がったままである必要がある
+    // （ウィザードのステップ表示のように後から値が変わる構成）。
+    await page.locator('#next-step').click();
+    await expect(page.locator('#imported #frag-text')).toHaveText(
+      '現在のステップ: 3 / 名前: テスト太郎',
+    );
+    await expect(page.locator('#imported #frag-if')).toHaveAttribute(
+      'data-if-false',
+      '',
+    );
+  });
+
   test('初期化後に URL が確定した取り込みも評価される', async ({page}) => {
     test.setTimeout(60000);
     page.on('pageerror', error => console.log('[pageerror]', error.message));

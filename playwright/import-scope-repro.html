@@ -17,6 +17,14 @@
        data-bind='{"currentStep":3,"user":{"name":"取り込み先で宣言"}}'
        data-import="/playwright/import-scope-fragment.html"></div>
 
+  <!-- 2.5 取り込み後のバインド更新が断片へ届く -->
+  <button id="next-step" type="button"
+    data-click-data='{"currentStep":3}'
+    data-click-bind="#host"
+    data-click-bind-merge>
+    次のステップへ
+  </button>
+
   <!-- 3. 初期化後に URL が確定する取り込み（読み込み時点では未実行） -->
   <div id="host3" data-bind='{"currentStep":2,"user":{"name":"あとから"}}'>
     <div id="imported3" data-import="{{url}}"></div>
