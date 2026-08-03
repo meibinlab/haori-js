@@ -2,7 +2,7 @@
 /**
  * @fileoverview 実行時に付与した副作用属性が発火することのテスト。
  *
- * 仕様 2470 行「`data-fetch-bind` や `data-{event}-copy` の対象セレクタは
+ * 仕様「`data-fetch`」「`data-fetch-bind` や `data-{event}-copy` の対象セレクタは
  * `document.body` 配下のみを探索するため、これらで `<head>` 内の要素（`<title>` 等）を
  * 対象にすることはできません。**`<head>` への実行時バインドは「対象要素自身への直接
  * 付与」で行ってください**」。仕様はこの手段を案内しているため、実行時に

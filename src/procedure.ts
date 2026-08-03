@@ -579,6 +579,9 @@ function sanitizeBinaryForBinding(
       )) {
         result[key] = convert(item);
       }
+      // 除外したキーの記録もオブジェクトそのものを鍵に控えているため引き継ぐ。
+      // 引き継がないと、非表示分岐で除外したキーが土台から復活する。
+      Form.carryCollectedRowIdentity(value, result);
       return result;
     }
     return value;
@@ -587,6 +590,7 @@ function sanitizeBinaryForBinding(
   for (const [key, value] of Object.entries(payload)) {
     sanitized[key] = convert(value);
   }
+  Form.carryCollectedRowIdentity(payload, sanitized);
   return sanitized;
 }
 
@@ -2167,7 +2171,7 @@ ${body}
    * コンストラクタはイベントのハンドラ内で同期的に走るため、ここでの発番が
    * 「操作が起きた時点」になります。実際の処理（初期化など）は `await` を挟んだ後に
    * 走るので、その時点で発番すると、操作の後に届いた供給より新しい番号を得てしまい、
-   * 後勝ち（仕様 1927 行）が逆転します。
+   * 後勝ち（仕様「反映待ちの間に起きた変化」）が逆転します。
    *
    * 発番はコンストラクタの本体の先頭で行います（`domEvent` の有無で発番の方法を
    * 分けるため）。フィールドの初期化は本体より前に走るので、ここで初期値を与えると
@@ -2576,6 +2580,7 @@ ${body}
           editedPaths: Form.collectEditedPaths(
             formFragment,
             formArg ? String(formArg) : '',
+            formValues,
           ),
         });
       }
@@ -3443,7 +3448,7 @@ ${body}
                   this.reentrantBind && fragment.isExecutingBindingWork(),
                 // 応答の反映は明示的な値の供給で、通番は**リクエストを送出した操作**
                 // のもの。応答が届いた時点で発番すると、飛行中に行われた編集より
-                // 新しい番号を得て、その編集を宛先で潰してしまう（仕様 1928 行）。
+                // 新しい番号を得て、その編集を宛先で潰してしまう（仕様「ユーザー編集と宣言バインドの権威」）。
                 sequence: this.operationSequence,
                 // ユーザー編集の印は reconcileUserEditsForBind が解除済み。ポーリング
                 // と通常の再取得を区別するため、ここで重ねて解除してはいけない。
@@ -3885,7 +3890,12 @@ ${body}
     const valueSource =
       this.options.formFragment ?? this.options.selfValueFragment;
     if (valueSource) {
-      Object.assign(payload, Form.getValues(valueSource));
+      const collected = Form.getValues(valueSource);
+      Object.assign(payload, collected);
+      // 収集で除外したキーの記録はオブジェクトそのものを鍵に控えているため、
+      // 組み立てた送信データへ引き継ぐ。引き継がないと、双方向コミットの重ね合わせで
+      // 非表示分岐のキーが土台から復活する。
+      Form.carryCollectedRowIdentity(collected, payload);
     }
     if (this.options.data && typeof this.options.data === 'object') {
       Object.assign(payload, this.options.data);

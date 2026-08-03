@@ -874,7 +874,7 @@ export default class Core {
           // 共通処理（末尾の属性反映）へ進まずにここで終える。両方が走ると、外部が
           // 書いた表記と正規化した表記のどちらが内部の属性マップへ残るかが、
           // 解決順に左右される。
-          // 外部からの書き換えは明示的な値の供給（仕様 1805 行）。通番は変更を検知
+          // 外部からの書き換えは明示的な値の供給（仕様「`data-bind`」）。通番は変更を検知
           // した時点のもので、同期的に引き取った場合は引き取り側が渡す。渡されて
           // いなければこの取り込みの時点で発番する（`Observer` の非同期通知経路）。
           const bindOriginSequence =
@@ -942,7 +942,7 @@ export default class Core {
       case `${Env.prefix}fetch`:
         // 属性の反映（内部の属性マップの更新）より**後**に実行する。先に実行すると、
         // 実行時に `data-fetch` を付与した場合に「宣言がまだ無い」と判断され、
-        // シグネチャが `null` になって取得が走らない（仕様 2470 行は実行時の直接付与を
+        // シグネチャが `null` になって取得が走らない（仕様「`data-fetch`」は実行時の直接付与を
         // 案内している）。スキャン経路では属性マップがすでに埋まっているため、
         // どちらの順でも動く。
         afterAttributeWrite = () => Core.executeManagedFetch(fragment);
@@ -1047,7 +1047,7 @@ export default class Core {
    * `options.kind` に `'nonSupply'` を渡します。
    *
    * 解除の範囲は呼び出し側が選びません。**供給はその操作の通番までの編集を解除し、
-   * それより後の編集は残します**（仕様 1928 行）。飛行中の通信の応答が、送出後に
+   * それより後の編集は残します**（仕様「ユーザー編集と宣言バインドの権威」）。飛行中の通信の応答が、送出後に
    * 行われた編集を消さないのはこの規則によるものです。
    *
    * @param element 対象要素
@@ -1064,7 +1064,7 @@ export default class Core {
     const skipFragments = options.skipFragments ?? new Set<ElementFragment>();
     const reentrant = options.reentrant ?? false;
     const reflectToAttribute = options.reflectToAttribute ?? true;
-    // この更新の種別。既定は「明示的な値の供給」（仕様 1910 行）。
+    // この更新の種別。既定は「明示的な値の供給」（仕様「ユーザー編集と宣言バインドの権威」）。
     const resolvedKind: ValueChangeKind = options.kind ?? 'supply';
     // 通番を省略した呼び出しは「呼び出し時点が操作の時点」＝公開 API の直接呼び出し
     // として扱う。他のスクリプトが直前に書き換えた `data-bind` は `MutationObserver`
@@ -1082,7 +1082,7 @@ export default class Core {
         : {editedPaths: options.editedPaths}),
     };
     // この更新が「明示的な値の供給」かどうか。供給だけが宛先の権威を更新し、供給
-    // 同士は後勝ち（仕様 1927 行）で解決する。値の供給ではない内部更新（双方向
+    // 同士は後勝ち（仕様「反映待ちの間に起きた変化」）で解決する。値の供給ではない内部更新（双方向
     // コミット、`data-url-param` の再評価、エンジン管理変数）は権威を持たない。
     const isSupply = resolvedKind === 'supply';
     if (isSupply) {
@@ -1095,7 +1095,7 @@ export default class Core {
     const previous = fragment.getRawBindingData();
     if (isSupply && (options.clearUserEdits ?? true)) {
       // 供給はこの操作までの編集を上書きする。操作より後の編集の印は残るため、
-      // 飛行中の通信の応答で新しい編集が消えることはない（仕様 1928 行）。
+      // 飛行中の通信の応答で新しい編集が消えることはない（仕様「ユーザー編集と宣言バインドの権威」）。
       Core.clearUserEditMarks(fragment, originSequence);
     }
     // 変化した経路ごとに適用可否を判定し、棄却した経路は前の値のまま残す。
@@ -3314,6 +3314,12 @@ export default class Core {
    * 挿入すると以降の行は別の要素データを担当することになるため、変化した再利用行への
    * 適用は必要です（これを省くと挿入位置以降の入力値が前の行のまま残ります）。
    *
+   * 取得元（`data-each`）と収集先（`data-form-list`）が**別の配列**を指す構成では
+   * 反映しません。要素データが権威なのは「行の入力欄が集まって配列要素になる」
+   * 場合だけで、別の配列を繰り返している行では、要素データは入力欄を表しません。
+   * 反映すると、要素データに無い `name` の欄（選択のチェックボックスなど）が
+   * 空になります（`Form.isCollectedListFromEachSource()`）。
+   *
    * @param parent `data-each` コンテナのフラグメント
    * @param row 行のフラグメント
    * @param item 行の要素データ
@@ -3325,6 +3331,9 @@ export default class Core {
     item: Record<string, unknown> | string | number,
   ): Promise<void> {
     if (!parent.hasAttribute(`${Env.prefix}form-list`)) {
+      return Promise.resolve();
+    }
+    if (!Form.isCollectedListFromEachSource(parent)) {
       return Promise.resolve();
     }
     if (typeof item !== 'object' || item === null || Array.isArray(item)) {

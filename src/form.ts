@@ -80,7 +80,12 @@ export default class Form {
    */
   public static getValues(form: ElementFragment): Record<string, unknown> {
     const values: Record<string, unknown> = {};
-    return Form.getPartValues(form, values);
+    // `data-if-false` で除外したキーを階層ごとに控える（重ね合わせで土台の値を
+    // 復活させないため。`Form.mergeCollectedValues()` を参照）。
+    const excluded = new Set<string>();
+    Form.getPartValues(form, values, null, excluded);
+    Form.registerCollectedExcludedKeys(values, excluded);
+    return values;
   }
 
   /**
@@ -511,23 +516,77 @@ export default class Form {
    * 未編集の欄まで編集の権威を得てしまいます。編集された経路だけを示すために使います
    * （`ValueChangeOrigin.editedPaths`）。
    *
+   * `data-if` が偽の分岐で収集から**除外された**キーの経路も含めます。除外は
+   * 「その入力欄がフォームから外れた」ことを意味するため、以前その欄で行われた編集が
+   * その経路の権威を持ち続けてはいけません。含めないと、非供給更新は「編集が確定した
+   * 宛先へは適用しない」規則（仕様「ユーザー編集と宣言バインドの権威」）で棄却され、
+   * 除外したキーが土台の値のまま
+   * 残ります（表示条件から外れた項目が保存値・送信データに残る）。除外を引き起こした
+   * のは利用者の編集（分岐の条件を変える操作）そのものです。
+   *
    * 配列（`data-form-list` の行）は対象外です。行と配列要素の対応はリストキーで
    * 決まり、収集値からは同じ規則で経路を組み立てられません。行の編集は応答の反映側
    * （`Procedure` の `reconcileRowUserEdits()`）で保護します。
    *
    * @param form 対象のフォームフラグメント
    * @param prefix 経路の接頭辞（`data-form-arg` のキーなど。無い場合は空文字）
+   * @param collected この更新が運ぶ収集値。除外されたキーの判定に使います。
+   *     **重ね合わせへ渡すものと同じオブジェクトを渡してください**（明示的に与えた
+   *     値が収集値へ重なっている場合、そのキーは除外の対象外になります）。省略時は
+   *     ここで収集し直します
    * @returns 編集された経路の集合
    */
   public static collectEditedPaths(
     form: ElementFragment,
     prefix: string = '',
+    collected: Record<string, unknown> | null = null,
   ): ReadonlySet<string> {
     const paths = new Set<string>();
     // 基準を 0 にして「これまでに編集された欄すべて」を対象とする。編集の権威は
-    // 供給で明示的に引き取られるまで続くため（仕様 1928 行）。
+    // 供給で明示的に引き取られるまで続くため（仕様「ユーザー編集と宣言バインドの権威」）。
     Form.walkEditedPaths(Form.getValuesEditedAfter(form, 0), prefix, paths);
+    Form.walkExcludedPaths(collected ?? Form.getValues(form), prefix, paths);
     return paths;
+  }
+
+  /**
+   * 収集値をたどって、除外されたキーの経路を集めます。
+   *
+   * 除外は階層ごとに控えてあります（`COLLECTED_EXCLUDED_KEYS`）。表示中の分岐にも
+   * 同じキーがある場合は収集値に現れるため、経路には加えません。
+   *
+   * @param value たどる値
+   * @param path ここまでの経路
+   * @param paths 集める先
+   */
+  private static walkExcludedPaths(
+    value: unknown,
+    path: string,
+    paths: Set<string>,
+  ): void {
+    if (Array.isArray(value)) {
+      // 配列（行）は `walkEditedPaths()` と同じ理由で対象外。
+      return;
+    }
+    const record = Form.asPlainRecord(value);
+    if (record === null) {
+      return;
+    }
+    const excluded = Form.COLLECTED_EXCLUDED_KEYS.get(record);
+    if (excluded) {
+      for (const key of excluded) {
+        if (!(key in record)) {
+          paths.add(path === '' ? key : `${path}.${key}`);
+        }
+      }
+    }
+    for (const [key, child] of Object.entries(record)) {
+      Form.walkExcludedPaths(
+        child,
+        path === '' ? key : `${path}.${key}`,
+        paths,
+      );
+    }
   }
 
   /**
@@ -569,12 +628,15 @@ export default class Form {
    * @param values オブジェクトに追加する値のオブジェクト
    * @param minUserEditSequence 指定した場合、この通し番号より後にユーザーが編集した
    *     入力欄だけを収集する（`data-form-list` の行位置は空オブジェクトで保持する）
+   * @param excluded この階層で `data-if-false` により除外されたキーを集める先。
+   *     null の場合は集めない（編集分だけの収集では使わない）
    * @returns values と同じオブジェクト
    */
   private static getPartValues(
     fragment: ElementFragment,
     values: Record<string, unknown>,
     minUserEditSequence: number | null = null,
+    excluded: Set<string> | null = null,
   ): Record<string, unknown> {
     // data-if が false の分岐（data-if-false 属性付き）配下の入力は値収集の
     // 対象外とする。非表示分岐の要素は DOM に残るため、同名入力を出し分けると
@@ -582,6 +644,14 @@ export default class Form {
     // data-if-false は hide() が DOM へ直接付与するため、属性マップを参照する
     // fragment.hasAttribute ではなく実 DOM 属性を確認する。
     if (fragment.getTarget().hasAttribute(`${Env.prefix}if-false`)) {
+      // 除外したキーを控える。重ね合わせで土台の値が復活しないようにするためで、
+      // 控えないと「非表示分岐の値との競合は発生しません」（仕様「`data-if-false` 分岐とフォーム送信」）が
+      // 成り立たない（保存値・送信データに古い値が残る）。
+      if (excluded !== null) {
+        for (const key of Form.collectDeclaredKeysInFragment(fragment)) {
+          excluded.add(key);
+        }
+      }
       return values;
     }
     const name = Form.resolveFieldName(fragment);
@@ -665,15 +735,30 @@ export default class Form {
         );
       }
       for (const child of fragment.getChildElementFragments()) {
-        Form.getPartValues(child, values, minUserEditSequence);
+        Form.getPartValues(child, values, minUserEditSequence, excluded);
       }
     } else if (objectName) {
       const childValues: Record<string, unknown> = {};
+      // 入れ子のオブジェクトは収集値の別の階層になるため、除外キーも階層ごとに集める。
+      const childExcluded = excluded === null ? null : new Set<string>();
       for (const child of fragment.getChildElementFragments()) {
-        Form.getPartValues(child, childValues, minUserEditSequence);
+        Form.getPartValues(
+          child,
+          childValues,
+          minUserEditSequence,
+          childExcluded,
+        );
+      }
+      if (childExcluded !== null) {
+        Form.registerCollectedExcludedKeys(childValues, childExcluded);
       }
       if (Object.keys(childValues).length > 0) {
         values[String(objectName)] = childValues;
+      } else if (excluded !== null && (childExcluded?.size ?? 0) > 0) {
+        // 配下の宣言がすべて非表示分岐だった。収集値へキー自体が出ないため、
+        // 子の階層へ控えても重ね合わせには届かない。このキー全体が除外された
+        // ものとして親の階層へ控える。
+        excluded.add(String(objectName));
       }
       if (listName) {
         Log.warn(
@@ -690,7 +775,17 @@ export default class Form {
       let hasCollectedRow = false;
       for (const child of fragment.getChildElementFragments()) {
         const childValues: Record<string, unknown> = {};
-        Form.getPartValues(child, childValues, minUserEditSequence);
+        // 行も収集値の別の階層。行ごとに除外キーを集める。
+        const rowExcluded = excluded === null ? null : new Set<string>();
+        Form.getPartValues(
+          child,
+          childValues,
+          minUserEditSequence,
+          rowExcluded,
+        );
+        if (rowExcluded !== null) {
+          Form.registerCollectedExcludedKeys(childValues, rowExcluded);
+        }
         if (Object.keys(childValues).length > 0) {
           hasCollectedRow = true;
           childList.push(childValues);
@@ -710,6 +805,7 @@ export default class Form {
           childList,
           eachKey === null || eachKey === undefined ? null : String(eachKey),
           rowKeys,
+          Form.isCollectedListFromEachSource(fragment),
         );
         // 行が 0 件でもキー自体は空配列として出す。キーを落とすと、サーバ側で
         // 「0 件」と「そのフィールドが未送信」を区別できず、全件削除を表現できない。
@@ -719,7 +815,7 @@ export default class Form {
       }
     } else {
       for (const child of fragment.getChildElementFragments()) {
-        Form.getPartValues(child, values, minUserEditSequence);
+        Form.getPartValues(child, values, minUserEditSequence, excluded);
       }
     }
     return values;
@@ -978,6 +1074,21 @@ export default class Form {
    * @returns 宣言されている最上位のキー名
    */
   public static collectDeclaredFieldKeys(root: ElementFragment): Set<string> {
+    return Form.collectDeclaredKeysInFragment(root);
+  }
+
+  /**
+   * フラグメントの配下で収集対象として**宣言されている**最上位のキー名を列挙します。
+   *
+   * `collectDeclaredFieldKeys()` の実体です。収集で除外した部分木が宣言している
+   * キーを知るために、除外側（`getPartValues()`）からも呼びます。
+   *
+   * @param root 走査の起点フラグメント
+   * @returns 宣言されている最上位のキー名
+   */
+  private static collectDeclaredKeysInFragment(
+    root: ElementFragment,
+  ): Set<string> {
     const keys = new Set<string>();
     const rootElement = root.getTarget();
     const rootName = Form.resolveFieldName(root);
@@ -1193,7 +1304,24 @@ export default class Form {
    */
   private static readonly COLLECTED_ROW_IDENTITY = new WeakMap<
     object,
-    {keyArg: string | null; keys: Array<string | null>}
+    {
+      keyArg: string | null;
+      keys: Array<string | null>;
+      identifiesItems: boolean;
+    }
+  >();
+
+  /**
+   * 収集値の各階層で、`data-if-false` により収集から除外されたキー。
+   *
+   * 収集値は素のオブジェクトなので、それ単体では「収集されなかったキー」と
+   * 「そもそも宣言が無いキー」を区別できません。重ね合わせは前者を落とし後者を
+   * 土台から引き継ぐ必要があるため、収集の時点でしか分からない除外を、階層ごとの
+   * オブジェクトそのものを鍵にして控えます。
+   */
+  private static readonly COLLECTED_EXCLUDED_KEYS = new WeakMap<
+    object,
+    ReadonlySet<string>
   >();
 
   /** 出現順への退避を知らせた理由（同じ理由を繰り返さないため） */
@@ -1205,28 +1333,50 @@ export default class Form {
    * @param rows 収集した行配列
    * @param keyArg `data-each-key` の指定（無ければ null）
    * @param keys 行ごとのリストキー（`rows` と同じ並び）
+   * @param identifiesItems リストキーで収集先の配列要素を識別できるかどうか
    */
   private static registerCollectedRowIdentity(
     rows: object,
     keyArg: string | null,
     keys: Array<string | null>,
+    identifiesItems: boolean,
   ): void {
-    Form.COLLECTED_ROW_IDENTITY.set(rows, {keyArg, keys});
+    Form.COLLECTED_ROW_IDENTITY.set(rows, {keyArg, keys, identifiesItems});
   }
 
   /**
-   * 収集した行配列の識別情報を、複製した配列へ引き継ぎます。
+   * 収集値の階層に、除外されたキーの集合を結び付けます。
    *
-   * 収集値をたどって作り直す処理（`File` の正規化など）は配列を複製するため、
-   * 引き継がないと重ね合わせが出現順の対応へ退いてしまいます。
+   * @param values その階層の収集値
+   * @param keys 除外されたキー
+   */
+  private static registerCollectedExcludedKeys(
+    values: object,
+    keys: ReadonlySet<string>,
+  ): void {
+    if (keys.size > 0) {
+      Form.COLLECTED_EXCLUDED_KEYS.set(values, keys);
+    }
+  }
+
+  /**
+   * 収集値に控えた情報を、複製した値へ引き継ぎます。
    *
-   * @param from 元の配列
-   * @param to 複製した配列
+   * 収集値をたどって作り直す処理（`File` の正規化など）は配列やオブジェクトを
+   * 複製するため、引き継がないと重ね合わせが出現順の対応へ退いたり、非表示分岐で
+   * 除外したキーが土台から復活したりします。
+   *
+   * @param from 元の値
+   * @param to 複製した値
    */
   public static carryCollectedRowIdentity(from: object, to: object): void {
     const identity = Form.COLLECTED_ROW_IDENTITY.get(from);
     if (identity) {
       Form.COLLECTED_ROW_IDENTITY.set(to, identity);
+    }
+    const excluded = Form.COLLECTED_EXCLUDED_KEYS.get(from);
+    if (excluded) {
+      Form.COLLECTED_EXCLUDED_KEYS.set(to, excluded);
     }
   }
 
@@ -1265,6 +1415,14 @@ export default class Form {
    * ない場合は**出現順**の対応へ退きます。要素数はこの対応付けの結果に従うため、
    * 行の追加・削除はそのまま反映されます。
    *
+   * **`data-if` が偽の分岐で収集から除外されたキーは、土台からも落とします。**
+   * 除外は「表示中の分岐の入力値だけが直列化され、非表示分岐の値との競合は発生
+   * しません」（仕様の `data-if-false` 分岐とフォーム送信）を保証するためのもので、
+   * 土台の値が残るとこの保証が崩れ、表示条件から外れた項目が保存値・送信データに
+   * 残ります。引き継ぐのは**宣言の無いキー**だけです（`id` や表示専用のラベル
+   * など、そもそもどの入力欄も表さないキー）。この区別は条件式の評価スコープ
+   * （`buildConditionScope()`）が使うものと同じです。
+   *
    * プロトタイプ汚染につながるキー（`__proto__` など）は読み飛ばします。式評価は
    * これらをバインドキーとして受け付けないため、載せても参照できず、`__proto__` に
    * 至っては代入でオブジェクトのプロトタイプが差し替わってしまいます。
@@ -1283,6 +1441,16 @@ export default class Form {
         continue;
       }
       merged[key] = Form.overlayCollectedValue(previous?.[key], value);
+    }
+    const excluded = Form.COLLECTED_EXCLUDED_KEYS.get(collected);
+    if (excluded) {
+      for (const key of excluded) {
+        // 表示中の分岐にも同じキーがあれば収集値が載っている。落とすのは、
+        // どの表示中の入力欄も表していないキーだけ。
+        if (!(key in collected)) {
+          delete merged[key];
+        }
+      }
     }
     return merged;
   }
@@ -1316,6 +1484,82 @@ export default class Form {
       return collected;
     }
     return Form.mergeCollectedValues(previousRecord, collectedRecord);
+  }
+
+  /**
+   * 式の先頭にある素の経路を切り出す正規表現。
+   *
+   * 1 つめの捕獲が経路、2 つめが残りです。`data-each` は式なので、経路として読める
+   * ものだけを経路として扱います。
+   */
+  private static readonly LEADING_PATH_PATTERN =
+    /^\s*([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*([\s\S]*)$/;
+
+  /**
+   * 式の先頭にある素の経路を返します。
+   *
+   * `rows` や `candidates.content` のような素の経路と、既定値を添えただけの
+   * `rows || []` / `rows ?? []` を経路として扱います。それ以外（関数呼び出しや
+   * 添字など）は経路として読めないものとして null を返します。
+   *
+   * @param expression 対象の式
+   * @returns 先頭の経路。経路として読めない場合は null
+   */
+  private static resolveLeadingPath(expression: string): string | null {
+    const matched = Form.LEADING_PATH_PATTERN.exec(expression);
+    if (!matched) {
+      return null;
+    }
+    const rest = matched[2].trim();
+    if (rest !== '' && !rest.startsWith('||') && !rest.startsWith('??')) {
+      return null;
+    }
+    return matched[1].replace(/\s+/g, '');
+  }
+
+  /**
+   * `data-each` の取得元が `data-form-list` の収集先と同じ配列かを判定します。
+   *
+   * 行のリストキーは `data-each` の**取得元**の要素から作ります（`data-each-key` は
+   * 取得元の項目名です）。そのキーで収集先の配列を引けるのは、取得元と収集先が同じ
+   * 配列のときだけです。別の配列を指す構成（候補一覧を繰り返して、選択結果を別の
+   * キーへ集める）では、どの行のキーも収集先には無いため、リストキーによる対応付け
+   * は全滅します。収集では全行が「配列から消えた行」と判定されて収集値が空配列に
+   * なり、書き戻しでは全行が「対応する要素なし」になります。同じ前提は要素データを
+   * 行の入力欄へ反映する経路（`Core.applyRowFormValues()`）にもあり、取得元の要素
+   * データで行の入力欄を上書きするため、取得元に無い `name` の欄が空になります。
+   *
+   * 判定は宣言だけで行います（実行時の値に依らせると、配列が一時的に空のときに
+   * 判定が揺れます）。`data-each` の式の先頭の経路の**末尾の区間**を `data-form-list`
+   * の名前と比べます。収集先の名前は収集構造の 1 区間なので、同じ配列であれば
+   * 取得元の経路の末尾もその名前になります（`items` / `dialog.items` / `r.items`）。
+   *
+   * 経路として読めない式（関数呼び出しなど）は判定できないため true を返し、
+   * 従来どおりリストキーで対応付けます。判定できないことを理由に対応付けを緩めると、
+   * 行の挿入・削除で値がずれる問題（0.39.2 で修正）が戻ってしまいます。
+   *
+   * @param container `data-form-list` を持つコンテナのフラグメント
+   * @returns 同じ配列を指す場合、または判定できない場合は true
+   */
+  public static isCollectedListFromEachSource(
+    container: ElementFragment,
+  ): boolean {
+    const listName = container.getAttribute(`${Env.prefix}form-list`);
+    if (listName === null || listName === undefined || listName === '') {
+      // 収集先の宣言が無い（入力要素へ付けた省略形など）。対象外。
+      return true;
+    }
+    const each = container.getRawAttribute(`${Env.prefix}each`);
+    if (typeof each !== 'string' || each.trim() === '') {
+      // `data-each` で描いていない行。リストキー自体を持たない。
+      return true;
+    }
+    const path = Form.resolveLeadingPath(each);
+    if (path === null) {
+      return true;
+    }
+    const segments = path.split('.');
+    return segments[segments.length - 1] === String(listName);
   }
 
   /**
@@ -1413,6 +1657,12 @@ export default class Form {
     collected: unknown[],
   ): unknown[] | null {
     const identity = Form.COLLECTED_ROW_IDENTITY.get(collected);
+    if (identity && !identity.identifiesItems) {
+      // `data-each` の取得元と収集先が別の配列。リストキーは取得元の要素から作られる
+      // ため、収集先の要素は引けない（`isCollectedListFromEachSource()`）。出現順が
+      // この構成での正しい対応なので警告しない。
+      return null;
+    }
     if (!identity) {
       // 収集を経ていない配列（識別情報の記録が無い）。収集値をたどって作り直す
       // 処理が配列を複製したまま引き継がなかった場合もここへ来る。
@@ -1862,11 +2112,17 @@ export default class Form {
         // した直後（逆方向同期は `data-each` の行生成より前に走る）に、その位置より
         // 後の行がひとつずつずれた値を受け取る。
         const eachKey = fragment.getAttribute(`${Env.prefix}each-key`);
-        const paired = Form.pairRowsWithItems(
-          children,
-          childList,
-          eachKey === null || eachKey === undefined ? null : String(eachKey),
-        );
+        // 取得元と収集先が別の配列のときは、リストキーで収集先の要素を引けない。
+        // 引こうとすると全行が「対応する要素なし」になり、行の値が届かなくなる。
+        const paired = Form.isCollectedListFromEachSource(fragment)
+          ? Form.pairRowsWithItems(
+              children,
+              childList,
+              eachKey === null || eachKey === undefined
+                ? null
+                : String(eachKey),
+            )
+          : null;
         for (let i = 0; i < children.length; i++) {
           const child = children[i];
           // 対応する配列要素が無い行（これから取り除かれる古い行、または配列より
@@ -1912,9 +2168,9 @@ export default class Form {
    * 対象フラグメントとその子孫要素の値を初期化します。
    * 値の初期化とメッセージのクリアを行います。
    *
-   * 初期化は「初期 `data-bind` 宣言の値を供給する 1 つの操作」です（仕様 3705 行）。
+   * 初期化は「初期 `data-bind` 宣言の値を供給する 1 つの操作」です（仕様「`data-{event}-reset`」）。
    * したがって他の供給と同じ後勝ちの規則に従い、**この初期化より後に供給された値が
-   * すでに載っている宛先へは書き込みません**（仕様 1927 行）。
+   * すでに載っている宛先へは書き込みません**（仕様「反映待ちの間に起きた変化」）。
    *
    * @param fragment 対象フラグメント
    * @param operationSequence 初期化を要求した操作の通番。**操作が起きた時点**
@@ -1939,7 +2195,7 @@ export default class Form {
       bindingTargets.every(form => form.isSupplyStale(operationSequence))
     ) {
       // この初期化より後に供給された値が、対象のすべてへすでに載っている。進めると
-      // 後から供給された値を初期値で潰してしまう（仕様 1927 行）。
+      // 後から供給された値を初期値で潰してしまう（仕様「反映待ちの間に起きた変化」）。
       return;
     }
     Form.markResetSubtree(fragment, operationSequence);

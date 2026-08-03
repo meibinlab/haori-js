@@ -16,20 +16,23 @@
  *
  *    - I1 属性ミラー一致: `data-bind` 属性 == in-memory のバインドデータ（全体）
  *
- *      仕様 1803 行「`data-bind` は宣言と実行時データの両方を担う属性で、Haori
+ *      仕様「`data-bind`」「`data-bind` は宣言と実行時データの両方を担う属性で、Haori
  *      自身も**更新のたびに**最新の in-memory 値をこの属性へミラーします」。
  *      仕様が明記した非ミラー対象だけを除きます（それ以外の除外は禁止）。
- *        - 先頭が `_` の予約キー（仕様 2664 行、`_fetch` は 3608 行、`_poll` は
- *          3191 行が「`data-bind` 属性へは書き出しません」と明記）
- *        - `data-each-visible` が公開する可視範囲の変数（仕様 2093 行「可視範囲
+ *        - 先頭が `_` の予約キー。`_fetch` は仕様「`data-fetch-state` /
+ *          `data-{event}-fetch-state`」、`_poll` は仕様「`data-poll-state`」が
+ *          「内部バインディングデータにのみ設定し、`data-bind` 属性へは書き出しません」
+ *          と明記しています（仕様「`data-store`」の「`_fetch` / `_poll` などの予約キーは
+ *          常に対象外」はストレージのミラーの規定で、別の話です）
+ *        - `data-each-visible` が公開する可視範囲の変数（仕様「`data-each-visible`（スクロール追従の可視行範囲）」「可視範囲
  *          変数は実行時の一時値のため `data-bind` 属性には反映されません」）
- *      属性を取り除いた場合はミラーし直さない（仕様 1807 行）ため、`data-bind`
+ *      属性を取り除いた場合はミラーし直さない（仕様「`data-bind`」）ため、`data-bind`
  *      属性を持つ要素だけを対象にします。
  *
  *    - I2 行数一致: `data-each` が描いた行数 == 参照している配列の要素数
  *    - I3 行の識別一致: 行 i のリストキー == 配列要素 i から作るリストキー
  *
- *      仕様 1994 行「`data-each-done`: 全行の描画が安定して完了したときに Haori が
+ *      仕様「`data-each`」「`data-each-done`: 全行の描画が安定して完了したときに Haori が
  *      自動付与するマーカー。新しい描画サイクルの開始時に外され、完了時に再付与
  *      されます」。描画中は行数が配列と一致しないことが仕様上あり得るため、この
  *      マーカーが付いたコンテナだけを対象にします。
@@ -114,8 +117,9 @@ function jsonEquals(a: unknown, b: unknown): boolean {
  * 除くのは次の 2 種類だけです。ここを増やすと、ミラーの取りこぼしを不変条件で
  * 検出できなくなります。
  *
- * - 先頭が `_` の予約キー（仕様 2664 / 3608 / 3191 行）
- * - `data-each-visible` が公開する可視範囲の変数（仕様 2093 行）
+ * - 先頭が `_` の予約キー（仕様「`data-fetch-state` / `data-{event}-fetch-state`」
+ *   「`data-poll-state`」）
+ * - `data-each-visible` が公開する可視範囲の変数（仕様「`data-each-visible`（スクロール追従の可視行範囲）」）
  *
  * @param value 対象の値
  * @param names 可視範囲の変数名など、追加で除くキー
@@ -140,7 +144,7 @@ function omitNonMirrored(value: unknown, names: readonly string[]): unknown {
  *
  * 可視範囲の変数は「最近接の上位 `data-bind` スコープ」へ公開されるため、公開先が
  * どの要素になるかは実行時に決まります。テスト側で公開先を突き止めるより、宣言
- * された変数名を集めて比較から外す方が安全です（仕様 2093 行）。
+ * された変数名を集めて比較から外す方が安全です（仕様「`data-each-visible`（スクロール追従の可視行範囲）」）。
  *
  * @param root 検査の起点
  * @returns 公開される変数名の配列
@@ -257,7 +261,7 @@ export function collectFormInconsistencies(
       if (!jsonEquals(expected, actual)) {
         violations.push(
           `I1 ${describeElement(element)}: ${Env.prefix}bind 属性が in-memory と` +
-            `一致しません（仕様 1803 行）\n` +
+            `一致しません（仕様「\`data-bind\`」）\n` +
             `  属性      = ${JSON.stringify(actual)}\n` +
             `  in-memory = ${JSON.stringify(expected)}`,
         );

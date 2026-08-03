@@ -3,7 +3,7 @@
  * @fileoverview 同一要素の別の属性を書いている最中でも `data-bind` 属性へミラーする
  * ことの回帰テスト。
  *
- * 期待値は仕様 1803 行「`data-bind` は宣言と実行時データの両方を担う属性で、Haori
+ * 期待値は仕様「`data-bind`」「`data-bind` は宣言と実行時データの両方を担う属性で、Haori
  * 自身も**更新のたびに**最新の in-memory 値をこの属性へミラーします」から取っている。
  *
  * `MutationObserver` の無限ループ対策として、Haori は自身が書き込んでいる属性への
@@ -63,7 +63,7 @@ describe('別の属性の書き込み中の data-bind ミラー', () => {
     await waitForDomSettled();
 
     // `data-bind` 属性の書き込みを await せずに、同じ属性へ届く更新を重ねる。
-    // 仕様 1941 行「別の値の反映が要求されたら、後から来た値が載ります（後勝ち）。
+    // 仕様「反映待ちの間に起きた変化」「別の値の反映が要求されたら、後から来た値が載ります（後勝ち）。
     // 先の書き込みの完了を待ってから改めて反映する」。
     const first = Core.setAttribute(element, 'data-bind', '{"v":1}');
     const second = Core.setBindingData(element, {v: 2});

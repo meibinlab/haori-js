@@ -310,7 +310,7 @@ describe('Row operations', () => {
 
       expect(rowNames()).toEqual(['A', 'B']);
 
-      // 追加。仕様 3673 行「対象要素が属する行の**直後**に新しい行を追加します。
+      // 追加。仕様「`data-{event}-row-add`」「対象要素が属する行の**直後**に新しい行を追加します。
       // 追加された行の入力欄は空の状態になります」→ A の直後へ空行が入る。
       const addButtons = container.querySelectorAll(
         'button[data-click-row-add]',
@@ -319,7 +319,7 @@ describe('Row operations', () => {
       await waitForIdle();
       expect(rowNames()).toEqual(['A', '', 'B']);
 
-      // 移動。仕様 3698 行「対象要素が属する行と前の行を入れ替えます」→ 3 行目（B）を
+      // 移動。仕様「`data-{event}-row-prev`」「対象要素が属する行と前の行を入れ替えます」→ 3 行目（B）を
       // 前（空行）と入れ替える。
       const prevButtons = container.querySelectorAll(
         'button[data-click-row-prev]',
@@ -331,7 +331,7 @@ describe('Row operations', () => {
       await waitForIdle();
       expect(rowNames()).toEqual(['A', 'B', '']);
 
-      // 削除。仕様 3682 行「対象要素が属する行を削除します」→ 1 行目（A）を消す。
+      // 削除。仕様「`data-{event}-row-remove`」「対象要素が属する行を削除します」→ 1 行目（A）を消す。
       const removeButtons = container.querySelectorAll(
         'button[data-click-row-remove]',
       );
