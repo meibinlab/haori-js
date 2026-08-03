@@ -124,9 +124,15 @@ describe('data-bind 属性の外部書き換え', () => {
     );
     // 行の増減は監視のコールバック → バインド更新 → 行生成 → 行内評価と段を
     // 重ねるため、既定の待機サイクルでは足りない。
-    await waitForCondition(() => rowLabels().length === 2, {
-      description: '外部書き換えによる行の再生成',
-    });
+    //
+    // **条件は最終状態そのもので書く。** 行数だけを見ると、行の要素が生えた時点で
+    // 条件が成立し、行内の `{{r.name}}` がまだ評価されていない状態で先へ進む。
+    // この取り違えは待機サイクルが 1 つ短くなるだけで表に出る
+    // （`docs/ja/testing.md`「待ち合わせの選び方」）。
+    await waitForCondition(
+      () => rowLabels().join('|') === '新一行目|新二行目',
+      {description: '外部書き換えによる行の再生成と行内の評価'},
+    );
 
     expect(document.getElementById('text')!.textContent).toBe('ひなた');
     expect(document.getElementById('aliased')!.getAttribute('title')).toBe(

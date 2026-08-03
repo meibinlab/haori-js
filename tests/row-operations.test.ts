@@ -6,7 +6,7 @@
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
-import {waitForCondition, waitForDomSettled} from './helpers/async';
+import {waitForCondition, waitForIdle} from './helpers/async';
 
 describe('Row operations', () => {
   let container: HTMLElement;
@@ -69,14 +69,17 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await waitForDomSettled();
+      // 最終状態を検証するので `waitForIdle()` で待つ。固定サイクルの
+      // `waitForDomSettled()` では余裕がなく、1 サイクル短くなるだけで行が
+      // 描き終わらない（`docs/ja/testing.md`「待ち合わせの選び方」）。
+      await waitForIdle();
 
       let items = container.querySelectorAll('li');
       expect(items.length).toBe(2);
 
       const buttons = container.querySelectorAll('button[data-click-row-add]');
       (buttons[0] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForIdle();
 
       items = container.querySelectorAll('li');
       expect(items.length).toBe(3);
@@ -95,7 +98,7 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await waitForDomSettled();
+      await waitForIdle();
 
       let items = container.querySelectorAll('li span');
       expect(items.length).toBe(3);
@@ -104,10 +107,10 @@ describe('Row operations', () => {
       expect(items[2].textContent).toBe('C');
 
       const buttons = container.querySelectorAll(
-        'button[data-click-row-remove]'
+        'button[data-click-row-remove]',
       );
       (buttons[1] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForIdle();
 
       items = container.querySelectorAll('li span');
       expect(items.length).toBe(2);
@@ -128,11 +131,11 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await waitForDomSettled();
+      await waitForIdle();
 
       const buttons = container.querySelectorAll('button[data-click-row-prev]');
       (buttons[1] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForIdle();
 
       const items = container.querySelectorAll('li span');
       expect(items[0].textContent).toBe('B');
@@ -153,11 +156,11 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await waitForDomSettled();
+      await waitForIdle();
 
       const buttons = container.querySelectorAll('button[data-click-row-next]');
       (buttons[0] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForIdle();
 
       const items = container.querySelectorAll('li span');
       expect(items[0].textContent).toBe('B');
@@ -180,14 +183,14 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await waitForDomSettled();
+      await waitForIdle();
 
       let items = container.querySelectorAll('div[data-each] > div');
       expect(items.length).toBe(2);
 
       const buttons = container.querySelectorAll('button[data-click-row-add]');
       (buttons[0] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForIdle();
 
       items = container.querySelectorAll('div[data-each] > div');
       expect(items.length).toBe(3);
@@ -206,7 +209,7 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await waitForDomSettled();
+      await waitForIdle();
 
       let items = container.querySelectorAll('div[data-each] > div span');
       expect(items.length).toBe(3);
@@ -215,10 +218,10 @@ describe('Row operations', () => {
       expect(items[2].textContent).toBe('C');
 
       const buttons = container.querySelectorAll(
-        'button[data-click-row-remove]'
+        'button[data-click-row-remove]',
       );
       (buttons[1] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForIdle();
 
       items = container.querySelectorAll('div[data-each] > div span');
       expect(items.length).toBe(2);
@@ -239,11 +242,11 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await waitForDomSettled();
+      await waitForIdle();
 
       const buttons = container.querySelectorAll('button[data-click-row-prev]');
       (buttons[2] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForIdle();
 
       const items = container.querySelectorAll('div[data-each] > div span');
       expect(items[0].textContent).toBe('A');
@@ -264,11 +267,11 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await waitForDomSettled();
+      await waitForIdle();
 
       const buttons = container.querySelectorAll('button[data-click-row-next]');
       (buttons[1] as HTMLButtonElement).click();
-      await waitForDomSettled();
+      await waitForIdle();
 
       const items = container.querySelectorAll('div[data-each] > div span');
       expect(items[0].textContent).toBe('A');
@@ -292,7 +295,7 @@ describe('Row operations', () => {
       `;
 
       await Core.scan(container);
-      await waitForDomSettled();
+      await waitForIdle();
 
       // 行操作はバインディングデータの更新を経て差分更新で再描画されるため、
       // 描画が確定するまで待ってから件数を確認する。
@@ -300,7 +303,9 @@ describe('Row operations', () => {
         container.querySelectorAll('div[data-each] > div').length;
 
       // 追加
-      const addButtons = container.querySelectorAll('button[data-click-row-add]');
+      const addButtons = container.querySelectorAll(
+        'button[data-click-row-add]',
+      );
       (addButtons[0] as HTMLButtonElement).click();
       await waitForCondition(() => rowCount() === 3, {
         description: 'row added',
@@ -308,7 +313,7 @@ describe('Row operations', () => {
 
       // 移動
       const prevButtons = container.querySelectorAll(
-        'button[data-click-row-prev]'
+        'button[data-click-row-prev]',
       );
       (prevButtons[2] as HTMLButtonElement).click();
       await waitForCondition(() => rowCount() === 3, {
@@ -317,7 +322,7 @@ describe('Row operations', () => {
 
       // 削除
       const removeButtons = container.querySelectorAll(
-        'button[data-click-row-remove]'
+        'button[data-click-row-remove]',
       );
       (removeButtons[0] as HTMLButtonElement).click();
       await waitForCondition(() => rowCount() === 2, {
