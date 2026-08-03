@@ -239,6 +239,29 @@ describe('祖先所有レコードの data-form-arg フォームへの流し込�
     expect(raw === null || !('detail' in raw)).toBe(true);
   });
 
+  it('編集していないフォームのリセットでも祖先のレコードへ戻る', async () => {
+    // 編集済みのフォームは、双方向コミットが作ったフォーム自身のコピーを消す過程で
+    // 祖先のレコードが書き戻される。コピーが無い（一度も編集していない）フォームでも
+    // 同じ結果になること。空にはしない。
+    container.innerHTML = HTML;
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const form = container.querySelector('#f') as HTMLFormElement;
+    const name = container.querySelector('#name') as HTMLInputElement;
+    const category = container.querySelector('#category') as HTMLSelectElement;
+    expect(name.value).toBe('あかね');
+
+    await Form.reset(getFrag(form));
+    await waitForDomSettled(5);
+    await Queue.wait();
+
+    expect(name.value).toBe('あかね');
+    expect(category.value).toBe('b');
+    const raw = Core.getBindingData(form);
+    expect(raw === null || !('detail' in raw)).toBe(true);
+  });
+
   it('送信後の編集は祖先へのバインド応答で巻き戻らない', async () => {
     let release: (() => void) | null = null;
     const gate = new Promise<void>(resolve => {

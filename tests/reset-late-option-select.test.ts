@@ -179,28 +179,26 @@ describe('リセットと候補が後から届く select', () => {
     ],
   };
 
-  it('祖先のバインド更新が進行中でも select が既定値へ戻る', async () => {
-    // 祖先が所有するレコードは、値が変わると配下の `data-form-arg` フォームへ
-    // 流し込まれる（`Form.syncAncestorArgForms`）。この流し込みと、その後の
-    // 載せ直しが初期化に割り込むと、クリアが取り消される。
+  it('祖先が所有するレコードは、候補が data-each でもリセットで戻る', async () => {
+    // `data-form-arg` のフォームのリセットは「祖先が持つレコードへの復元」であり、
+    // 空にはしない。候補は複製削除の後に描き直されるため、書き戻した時点では
+    // 該当する `<option>` がまだ無い点に注意（載せ直しが要る）。
     await mount(ARG_FORM);
     const select = container.querySelector('select') as HTMLSelectElement;
-    expect(select.value).toBe('1');
-
-    const pageState = container.querySelector('#page-state') as HTMLElement;
-    const pending = Core.setBindingData(pageState, {
-      record: {parentId: '7', name: 'あ'},
-      candidates: JSON.parse(JSON.stringify(CANDIDATES)),
-    });
-    await run('#clear');
-    await pending;
-    await waitForDomSettled();
-
     const text = container.querySelector(
       'input[name="name"]',
     ) as HTMLInputElement;
-    expect(select.value).toBe('');
-    expect(text.value).toBe('');
+    expect(select.value).toBe('1');
+
+    await run('#clear');
+
+    expect(Array.from(select.options).map(option => option.value)).toEqual([
+      '',
+      '1',
+      '7',
+    ]);
+    expect(select.value).toBe('1');
+    expect(text.value).toBe('い');
   });
 
   it('リセットの後に始まった祖先の更新は入力欄へ反映される', async () => {

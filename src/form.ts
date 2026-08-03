@@ -1519,7 +1519,8 @@ export default class Form {
     // クリアしたはずの値が書き戻され、クリアが効かなくなる。通番を発番して部分木の
     // 各フラグメントへ記録し、これより前に始まったバインドデータ更新の書き戻しを
     // 無効化する（`Core.setBindingData()` を参照）。
-    Form.markResetSubtree(fragment, ElementFragment.nextResetSequence());
+    const resetSequence = ElementFragment.nextResetSequence();
+    Form.markResetSubtree(fragment, resetSequence);
 
     // 初期化は明示的な値の供給なので、ユーザー編集の印を解除する。解除しないと
     // 宣言バインドの再適用が抑止されたままになり、編集した欄だけが初期化されない。
@@ -1569,7 +1570,8 @@ export default class Form {
       const initial = Form.getInitialBindingData(formFragment);
       if (initial === null && formFragment.getRawBindingData() === null) {
         // 自身のバインドデータを持たないフォームは祖先のデータを参照している。
-        // 空のデータを作ると不要なシャドーイングを増やすため何もしない。
+        // 空のデータを作ると不要なシャドーイングを増やすため、ここでは何もしない
+        // （入力欄は再評価の後に `restoreAncestorArgValues()` で戻す）。
         continue;
       }
       await Core.setBindingData(formFragment.getTarget(), initial ?? {});
@@ -1585,6 +1587,20 @@ export default class Form {
     // バインドデータへ書いてから DOM だけが評価結果へ変わるため、画面とバインド
     // データ（および `{{キー}}` の参照結果）が食い違ったまま残る。
     await Core.evaluateAll(fragment);
+
+    // 祖先が所有するレコードを参照しているだけのフォームを、そのレコードの内容へ
+    // 戻す。再評価の後に行うのは、`data-each` で流し込む候補がここで描き直される
+    // ため（前に行うと、該当する `<option>` がまだ無く代入が無視される）。
+    for (const formFragment of targetForms) {
+      if (
+        Form.getInitialBindingData(formFragment) !== null ||
+        formFragment.getRawBindingData() !== null
+      ) {
+        // 自身のバインドデータを持つフォームは、上の復元で入力欄も戻っている。
+        continue;
+      }
+      await Form.restoreAncestorArgValues(formFragment);
+    }
 
     // 双方向バインディングのバインドデータをリセット後の値で更新する。
     // バインドデータを一度も持っていないフォームは対象外とする
@@ -1733,6 +1749,35 @@ export default class Form {
     for (const child of fragment.getChildElementFragments()) {
       Form.clearValues(child);
     }
+  }
+
+  /**
+   * `data-form-arg` のキーを祖先が所有するフォームを、そのレコードの内容へ戻します。
+   *
+   * 自身のバインドデータを持たないフォームは、リセットで戻すべき初期状態を自分では
+   * 持たず、参照している祖先のレコードが初期状態になります。編集済みのフォームは
+   * 双方向コミットが作ったコピーを消す過程で祖先の値が書き戻されますが、一度も
+   * 編集していないフォームにはそのコピーが無いため、ここで明示的に戻します。
+   *
+   * @param form 対象のフォームフラグメント
+   * @returns 反映完了の Promise
+   */
+  private static async restoreAncestorArgValues(
+    form: ElementFragment,
+  ): Promise<void> {
+    const arg = form.getAttribute(`${Env.prefix}form-arg`);
+    if (!arg) {
+      return;
+    }
+    const key = String(arg);
+    const owner = Form.resolveAncestorArgOwner(form, key);
+    if (!owner) {
+      return;
+    }
+    // 流し込み済みの記録を捨てる。祖先の値はリセットの前後で変わらないため、記録が
+    // 残ったままだと「変化なし」と判定され、クリアした入力欄が空のまま残る。
+    Form.LAST_ANCESTOR_ARG_VALUES.delete(form.getTarget());
+    await Form.pushAncestorArgValue(form, key, owner.value);
   }
 
   /**
