@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>リセットと候補が後から届く select</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 検索条件フォーム。候補はフォームの外側のバインドデータから流し込む。
+       クリアで select も既定値へ戻り、続く再取得も既定値で送信されること。 -->
+  <div id="page-state" data-bind='{"candidates":{"content":[{"id":"1","label":"A"},{"id":"7","label":"G"}]}}'>
+    <form id="search">
+      <select id="sel" name="parentId" data-each="candidates.content" data-each-key="id">
+        <option value="" data-each-before>すべて</option>
+        <option data-attr-value="{{id}}">{{label}}</option>
+      </select>
+      <input id="txt" name="name" type="text">
+      <button id="clear" type="button"
+        data-click-reset-before="#search"
+        data-click-refetch="#result">クリア</button>
+      <button id="clear-only" type="button"
+        data-click-reset-before="#search">クリアのみ</button>
+    </form>
+    <div id="result" data-fetch="/api/list" data-fetch-form="#search" data-fetch-arg="view"></div>
+  </div>
+</body>
+</html>

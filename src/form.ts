@@ -1086,12 +1086,22 @@ export default class Form {
    * 対象は「当該キーを所有するのが更新された祖先自身」であるフォームだけです。
    * 間に同名キーを持つ要素があればそちらが権威なので対象外とします。
    *
+   * 更新が始まった後に初期化されたフォームも対象外です。祖先の更新は初期化前の
+   * 状態を運んでいるため、流し込むとクリアしたはずの値が復活します。
+   *
    * @param fragment 更新された祖先のフラグメント
+   * @param resetSequence 更新が始まった時点の初期化の通番
    * @returns 反映完了の Promise
    */
-  public static syncAncestorArgForms(fragment: ElementFragment): Promise<void> {
+  public static syncAncestorArgForms(
+    fragment: ElementFragment,
+    resetSequence: number,
+  ): Promise<void> {
     const promises: Promise<void>[] = [];
     for (const {form, key} of Form.collectArgForms(fragment)) {
+      if (form.wasResetAfter(resetSequence)) {
+        continue;
+      }
       const owner = Form.resolveAncestorArgOwner(form, key);
       if (!owner || owner.owner !== fragment) {
         continue;
@@ -1503,6 +1513,14 @@ export default class Form {
    * @returns すべての初期化処理が完了するPromise
    */
   public static async reset(fragment: ElementFragment): Promise<void> {
+    // 初期化の開始を記録する。入力欄を離れた直後にクリアを押すと、その `change` に
+    // よる双方向コミット（`Core.changeValue`）がまだ走っている。コミットの後段
+    // （入力欄への書き戻しと、候補が揃った後の載せ直し）が初期化に割り込むと、
+    // クリアしたはずの値が書き戻され、クリアが効かなくなる。通番を発番して部分木の
+    // 各フラグメントへ記録し、これより前に始まったバインドデータ更新の書き戻しを
+    // 無効化する（`Core.setBindingData()` を参照）。
+    Form.markResetSubtree(fragment, ElementFragment.nextResetSequence());
+
     // 初期化は明示的な値の供給なので、ユーザー編集の印を解除する。解除しないと
     // 宣言バインドの再適用が抑止されたままになり、編集した欄だけが初期化されない。
     Core.clearUserEditMarks(fragment);
@@ -1714,6 +1732,27 @@ export default class Form {
     fragment.clearValue();
     for (const child of fragment.getChildElementFragments()) {
       Form.clearValues(child);
+    }
+  }
+
+  /**
+   * 初期化の通番を部分木のすべてのフラグメントへ記録します。
+   *
+   * 書き戻しの宛先はフォームだけとは限らず、祖先の更新から流し込まれるフォーム
+   * （`syncAncestorArgForms()`）や、載せ直しの対象になる入力欄も宛先になります。
+   * どの宛先でも「この初期化より前に始まった更新か」を判定できるよう、部分木へ
+   * 一律に記録します。
+   *
+   * @param fragment 対象フラグメント
+   * @param sequence 記録する初期化の通番
+   */
+  private static markResetSubtree(
+    fragment: ElementFragment,
+    sequence: number,
+  ): void {
+    fragment.markResetAt(sequence);
+    for (const child of fragment.getChildElementFragments()) {
+      Form.markResetSubtree(child, sequence);
     }
   }
 

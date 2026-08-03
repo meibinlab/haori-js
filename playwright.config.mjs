@@ -3,7 +3,11 @@
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
 const config = {
   webServer: {
-    command: 'npm run build && npx http-server . -p 4273',
+    // ローカルでは dist の作り忘れを防ぐためビルドしてから配信する。CI は直前の
+    // ビルドステップの成果物を使うので、二重ビルドを避けて配信だけを行う。
+    command: process.env.CI
+      ? 'npx http-server . -p 4273'
+      : 'npm run build && npx http-server . -p 4273',
     port: 4273,
     reuseExistingServer: false
   },

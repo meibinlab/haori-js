@@ -35,3 +35,12 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # jsdom では再現しない描画タイミング由来の不具合（入力欄への書き戻しと
+      # data-each の行生成の順序など）を検出するため、実ブラウザのテストも実行する。
+      # 配信するのは直前のビルド成果物（`CI` 環境変数で二重ビルドを避ける）。
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser tests
+        run: npm run test:e2e

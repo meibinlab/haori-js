@@ -939,6 +939,10 @@ export default class Core {
     userEditBaseline: number | null = ElementFragment.currentUserEditSequence(),
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
+    // 呼出時点の初期化の通番。入力欄へ書き戻す直前に宛先の通番と比較し、この呼出
+    // より後に初期化（`Form.reset()`）されていれば書き戻さない。運んでいる値は
+    // 初期化前の状態なので、書き戻すとクリアしたはずの値が復活する。
+    const resetSequence = ElementFragment.currentResetSequence();
     const previous = fragment.getRawBindingData();
     if (userEditBaseline !== null) {
       Core.clearUserEditMarks(fragment, userEditBaseline);
@@ -987,14 +991,20 @@ export default class Core {
       let chain = reflectToAttribute
         ? fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(current))
         : Promise.resolve();
+      // ここから 3 段は「入力欄への書き戻し」。いずれも初期化（`Form.reset()`）と
+      // 競合しうるため、宛先ごとに `resetSequence` と突き合わせて、この呼出より後に
+      // 初期化された宛先へは書き込まない。書き戻し系の段を足すときは同じ判定を通す。
       if (element.tagName === 'FORM') {
-        // 入力欄への書き戻しは、適用直前に読み直した最新の in-memory を基準にする
+        // (a) 自フォームの入力欄。適用直前に読み直した最新の in-memory を基準にする
         // （上記 (2)）。ワーク開始時点のスナップショットを使うと、data-bind 属性の
         // 書き込み（Queue = requestAnimationFrame バッチ）を待っている間にユーザーが
         // 別の入力を操作した場合、その編集を古い収集値で上書きして巻き戻してしまう。
         // さらに、巻き戻された内部値を後続の入力操作が再収集して確定させるため、
         // 誤った値が最終的に残る。
         chain = chain.then(() => {
+          if (fragment.wasResetAfter(resetSequence)) {
+            return undefined;
+          }
           const latest = fragment.getRawBindingData() ?? data;
           return Form.syncValues(
             fragment,
@@ -1002,18 +1012,21 @@ export default class Core {
           );
         });
       }
-      // 配下の `data-form-arg` フォームのうち、このフラグメントが当該キーを所有する
-      // ものへ値を流し込む。祖先がレコードを持ち、フォームがそのキーを編集する構成
-      // （`data-form-arg` と祖先のキーが対応する構成）を成立させるため。
+      // (b) 配下の `data-form-arg` フォームのうち、このフラグメントが当該キーを所有
+      // するものへ値を流し込む。祖先がレコードを持ち、フォームがそのキーを編集する
+      // 構成（`data-form-arg` と祖先のキーが対応する構成）を成立させるため。
       // 再評価より前に行うのは自フォームへの書き戻しと同じ理由（宣言バインドの
-      // 評価結果を後から入れ直す）。
-      chain = chain.then(() => Form.syncAncestorArgForms(fragment));
-      chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
-      // 入力欄への書き戻しは行生成より前に走るため、候補を `data-each` で流し込む
-      // `<select>` では代入した時点で該当する `<option>` がまだ無く、供給された値が
-      // 画面に載らない。候補が揃ったこの時点で載せ直す。
+      // 評価結果を後から入れ直す）。初期化の判定はフォームごとに行う。
       chain = chain.then(() =>
-        ElementFragment.retryUnappliedValueWrites(element),
+        Form.syncAncestorArgForms(fragment, resetSequence),
+      );
+      chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
+      // (c) 入力欄への書き戻しは行生成より前に走るため、候補を `data-each` で流し込む
+      // `<select>` では代入した時点で該当する `<option>` がまだ無く、供給された値が
+      // 画面に載らない。候補が揃ったこの時点で載せ直す。初期化の判定は入力欄ごとに
+      // 行う。
+      chain = chain.then(() =>
+        ElementFragment.retryUnappliedValueWrites(element, resetSequence),
       );
       chain = chain.then(() =>
         Core.reevaluateReactiveSpecialAttributes(fragment, skipFragments),

@@ -701,6 +701,22 @@ export class ElementFragment extends Fragment {
    */
   private bindingWorkActive = 0;
 
+  /**
+   * 初期化（`Form.reset()`）の通番の発番元（全フラグメント共通、単調増加）。
+   */
+  private static resetCounter = 0;
+
+  /**
+   * このフラグメントが最後に初期化された時点の通番（未初期化は 0）。
+   *
+   * バインドデータ更新（`Core.setBindingData()`）は「data-bind 属性の反映 → 入力欄
+   * への書き戻し → 再評価（行生成）→ 載らなかった書き込みの載せ直し」を非同期に
+   * 行うため、呼び出しの後もしばらく DOM を書き換え続けます。この途中で初期化が
+   * 始まると、初期化でクリアした値が後段で書き戻され、クリアが効かなくなります。
+   * 更新の開始時点の通番と比べて「その後に初期化されたか」を判定するために使います。
+   */
+  private lastResetSequence = 0;
+
   /** 生成時点の data-bind 属性の生値（リセット時の初期状態復元用） */
   private readonly initialBindAttribute: string | null = null;
 
@@ -1133,6 +1149,60 @@ export class ElementFragment extends Fragment {
     }
   }
 
+  /**
+   * 現在の初期化の通番を返します。
+   *
+   * バインドデータ更新の開始時点で控えておき、入力欄へ書き戻す直前に
+   * `wasResetAfter()` と突き合わせると、その間に対象が初期化されたかを判定できます。
+   *
+   * @returns 直近に発番した初期化の通番（未発番なら 0）
+   */
+  public static currentResetSequence(): number {
+    return ElementFragment.resetCounter;
+  }
+
+  /**
+   * 新しい初期化の通番を発番します。
+   *
+   * `Form.reset()` が初期化のたびに 1 度だけ呼び出し、得た通番を対象部分木の
+   * 各フラグメントへ `markResetAt()` で記録します。
+   *
+   * @returns 発番した通番
+   */
+  public static nextResetSequence(): number {
+    ElementFragment.resetCounter += 1;
+    return ElementFragment.resetCounter;
+  }
+
+  /**
+   * このフラグメントが初期化されたことを記録します。
+   *
+   * @param sequence `nextResetSequence()` で発番した通番
+   * @returns 戻り値はありません。
+   */
+  public markResetAt(sequence: number): void {
+    this.lastResetSequence = sequence;
+  }
+
+  /**
+   * 指定した時点より後にこのフラグメントが初期化されたかを返します。
+   *
+   * 真の場合、その時点で始まったバインドデータ更新が運ぶ値は初期化前の状態なので、
+   * 入力欄へ書き戻してはいけません（クリアしたはずの値が復活するため）。
+   *
+   * @param sequence 比較する時点の初期化の通番
+   * @returns その後に初期化されていれば true
+   */
+  public wasResetAfter(sequence: number): boolean {
+    return this.lastResetSequence > sequence;
+  }
+
+  /**
+   * バインドデータ更新のワークを FIFO で直列化して実行します。
+   *
+   * @param work 実行するワーク
+   * @returns ワークの完了 Promise（失敗した場合は reject する）
+   */
   public enqueueBindingWork(work: () => Promise<void>): Promise<void> {
     const next = this.bindingWorkChain.then(work, work);
     // 失敗してもチェーンを継続させる（個々の呼出には next で結果を返す）。
@@ -1630,16 +1700,29 @@ export class ElementFragment extends Fragment {
    * ません。候補がまだ揃っていない場合は書き込まず、次の機会に持ち越します（現在の
    * 選択を消さないため）。
    *
+   * 呼び出し元の更新が始まった後に初期化された入力欄は対象外とし、記録も破棄します。
+   * 載せ直すと、クリアしたはずの値が初期化の後に復活してしまうためです。
+   *
    * @param root 再試行の対象とする部分木の起点エレメント
+   * @param resetSequence 呼び出し元の更新が始まった時点の初期化の通番
    * @returns 再試行の完了 Promise
    */
-  public static retryUnappliedValueWrites(root: HTMLElement): Promise<void> {
+  public static retryUnappliedValueWrites(
+    root: HTMLElement,
+    resetSequence: number,
+  ): Promise<void> {
     if (ElementFragment.UNAPPLIED_VALUE_WRITES.size === 0) {
       return Promise.resolve();
     }
     const promises: Promise<void>[] = [];
     for (const fragment of Array.from(ElementFragment.UNAPPLIED_VALUE_WRITES)) {
       const element = fragment.getTarget();
+      if (fragment.wasResetAfter(resetSequence)) {
+        // 初期化でクリアされた入力欄。この更新が運ぶ値は初期化前の状態なので、
+        // 載せ直すとクリアが取り消される。
+        fragment.clearUnappliedValueWrite();
+        continue;
+      }
       if (!element.isConnected) {
         // DOM から外れた要素は載せ直す先が無い。集合に残すと解放されない。
         fragment.clearUnappliedValueWrite();
@@ -1845,9 +1928,13 @@ export class ElementFragment extends Fragment {
 
   /**
    * 内部の値をクリアします。エレメントのvalue値は変化しません。
+   *
+   * 載せ直し待ちの書き込みも破棄します。クリアした値を後から載せ直すと、初期化
+   * したはずの入力欄がクリア前の値へ戻ってしまうためです。
    */
   public clearValue() {
     this.value = null;
+    this.clearUnappliedValueWrite();
   }
 
   /**

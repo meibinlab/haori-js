@@ -1,6 +1,6 @@
 {
   "name": "haori",
-  "version": "0.39.1",
+  "version": "0.39.2",
   "description": "A lightweight HTML-first UI engine powered by declarative data bindings and expressions.",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "preview:demo": "vite preview --config demo/vite.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write src/**/*.{ts,js,json}",

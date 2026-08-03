@@ -118,6 +118,12 @@ describe('リセットと data-each の再描画', () => {
       (container.querySelector('select') as HTMLSelectElement).options,
     ).map(option => option.textContent);
     expect(texts).toEqual(['A', 'B', 'C']);
+    // リセットの後に供給された値は入力欄へ入る。リセットは進行中の更新の書き戻しを
+    // 無効化するが（`Form.reset()`）、その抑止がリセット後の供給まで止めないこと。
+    const memo = container.querySelector(
+      'input[name="memo"]',
+    ) as HTMLInputElement;
+    expect(memo.value).toBe('新規');
   });
 
   it('リセットで前回の選択状態は解除される', async () => {
