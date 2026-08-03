@@ -536,10 +536,14 @@ export default class Store {
       return Promise.resolve();
     }
     // 復元は初回スキャン時のみ走る経路で、巻き戻すべきユーザー編集は存在しない。
-    // 印の解除も不要なため userEditBaseline は null を渡す。reentrant=true は、
+    // 印の解除も不要なため、値の供給ではない更新として扱う。reentrant=true は、
     // 優先属性の直列処理から呼ばれるこの経路を即時実行するため（同一要素への
     // 並行更新は無く、待ち合わせを挟むと後続の属性処理と順序が入れ替わる）。
-    return Core.setBindingData(element, merged, new Set(), true, true, null);
+    return Core.setBindingData(element, merged, {
+      reentrant: true,
+      kind: 'nonSupply',
+      sequence: ElementFragment.nextSequence(),
+    });
   }
 
   /**

@@ -1551,18 +1551,10 @@ export default class Form {
       // （`resolveSyncValues()` が祖先へフォールバックする）。由来が分かっている
       // 場合は、その通番と種別を引き継ぐ（呼び出し時点で発番し直すと、祖先の更新を
       // 起こした操作より新しい番号を得てしまう）。
-      return origin
-        ? Core.setBindingData(
-            element,
-            rest,
-            new Set(),
-            false,
-            true,
-            ElementFragment.currentSequence(),
-            origin.sequence,
-            origin.kind,
-          )
-        : Core.setBindingData(element, rest);
+      return Core.setBindingData(element, rest, {
+        kind: origin?.kind ?? 'supply',
+        sequence: origin?.sequence ?? ElementFragment.nextSequence(),
+      });
     }
     return Form.syncValues(form, value, false, origin);
   }
@@ -2006,15 +1998,9 @@ export default class Form {
       }
       // 初期化が運ぶ値なので、初期化の操作の通番で供給する。呼出時点で発番すると、
       // クリックの後に届いた供給より新しい番号を得て、それを潰してしまう。
-      await Core.setBindingData(
-        formFragment.getTarget(),
-        initial ?? {},
-        new Set(),
-        false,
-        true,
-        ElementFragment.currentSequence(),
-        operationSequence,
-      );
+      await Core.setBindingData(formFragment.getTarget(), initial ?? {}, {
+        sequence: operationSequence,
+      });
     }
 
     // リセット後の DOM 値（HTML 属性の既定値と初期バインド値）を内部値へ再同期する。
@@ -2077,15 +2063,9 @@ export default class Form {
       } else {
         bindingData = Form.mergeCollectedValues(bindingData, values);
       }
-      await Core.setBindingData(
-        formFragment.getTarget(),
-        bindingData,
-        new Set(),
-        false,
-        true,
-        ElementFragment.currentSequence(),
-        operationSequence,
-      );
+      await Core.setBindingData(formFragment.getTarget(), bindingData, {
+        sequence: operationSequence,
+      });
     }
   }
 

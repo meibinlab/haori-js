@@ -2568,17 +2568,15 @@ ${body}
         //
         // 通番はこの `change` / `input` を起こした操作のもの。呼び出し時点で発番すると、
         // 操作の後に届いた供給より新しい番号を得て後勝ちが逆転する。
-        await Core.setBindingData(
-          formElement,
-          bindingData,
+        await Core.setBindingData(formElement, bindingData, {
           skipFragments,
-          false,
-          true,
-          null,
-          this.operationSequence,
-          'nonSupply',
-          Form.collectEditedPaths(formFragment, formArg ? String(formArg) : ''),
-        );
+          kind: 'nonSupply',
+          sequence: this.operationSequence,
+          editedPaths: Form.collectEditedPaths(
+            formFragment,
+            formArg ? String(formArg) : '',
+          ),
+        });
       }
 
       // フォームコンテナを持たない change / input で収集値が空のまま bind すると、
@@ -3435,21 +3433,21 @@ ${body}
             Core.setBindingData(
               fragment.getTarget(),
               this.reconcileUserEditsForBind(fragment, bindingData),
-              new Set(),
-              // マネージド fetch の bind かつ、bind 先が実行中のバインドワークを
-              // 持つ（= 自分自身を await している）ときだけ reentrant（即時実行）に
-              // する。これで自己デッドロックのみを解消し、idle なフラグメントへの
-              // bind は従来どおり FIFO で適用順を保証する。
-              this.reentrantBind && fragment.isExecutingBindingWork(),
-              true,
-              // ユーザー編集の印は reconcileUserEditsForBind が送信時点を基準に
-              // 解除済み。ここで既定の全解除を行うと、応答より後の編集まで巻き戻る。
-              null,
-              // 応答の反映は明示的な値の供給で、通番は**リクエストを送出した操作**の
-              // もの。応答が届いた時点で発番すると、飛行中に行われた編集より新しい
-              // 番号を得て、その編集を宛先で潰してしまう（仕様 1928 行）。
-              this.operationSequence,
-              'supply',
+              {
+                // マネージド fetch の bind かつ、bind 先が実行中のバインドワークを
+                // 持つ（= 自分自身を await している）ときだけ reentrant（即時実行）に
+                // する。これで自己デッドロックのみを解消し、idle なフラグメントへの
+                // bind は従来どおり FIFO で適用順を保証する。
+                reentrant:
+                  this.reentrantBind && fragment.isExecutingBindingWork(),
+                // 応答の反映は明示的な値の供給で、通番は**リクエストを送出した操作**
+                // のもの。応答が届いた時点で発番すると、飛行中に行われた編集より
+                // 新しい番号を得て、その編集を宛先で潰してしまう（仕様 1928 行）。
+                sequence: this.operationSequence,
+                // ユーザー編集の印は reconcileUserEditsForBind が解除済み。ポーリング
+                // と通常の再取得を区別するため、ここで重ねて解除してはいけない。
+                clearUserEdits: false,
+              },
             ),
           );
         });
@@ -3521,16 +3519,13 @@ ${body}
             Core.setBindingData(
               fragment.getTarget(),
               this.reconcileUserEditsForBind(fragment, finalData),
-              new Set(),
-              // 自己デッドロックのみを解消する限定 reentrant（上の bindArg 分岐と同様）。
-              this.reentrantBind && fragment.isExecutingBindingWork(),
-              true,
-              // ユーザー編集の印は reconcileUserEditsForBind が送信時点を基準に
-              // 解除済み（上の bindArg 分岐と同様）。
-              null,
-              // 通番と種別も上の bindArg 分岐と同様。
-              this.operationSequence,
-              'supply',
+              {
+                // いずれも上の bindArg 分岐と同じ扱い。
+                reentrant:
+                  this.reentrantBind && fragment.isExecutingBindingWork(),
+                sequence: this.operationSequence,
+                clearUserEdits: false,
+              },
             ),
           );
         });
@@ -3773,7 +3768,12 @@ ${body}
         ...(fragment.getRawBindingData() ?? {}),
         ...copyData,
       };
-      promises.push(Core.setBindingData(fragment.getTarget(), bindingData));
+      promises.push(
+        Core.setBindingData(fragment.getTarget(), bindingData, {
+          // 通番はコピーを起こした操作のもの（フェッチ応答の反映と同じ理由）。
+          sequence: this.operationSequence,
+        }),
+      );
     });
     promises.push(this.applyRowWrites(rowWrites));
     return Promise.all(promises).then(() => undefined);
@@ -4523,17 +4523,19 @@ ${body}
       const write = Core.setBindingData(
         resolved.owner.getTarget(),
         Procedure.withPathValue(resolved.ownerData, resolved.path, nextArray),
-        new Set(),
-        // マネージド `data-fetch` はバインドワークの内部から起動・await される。
-        // 所有者が実行中のバインドワークを持つときに FIFO キューへ積むと、相互に
-        // 待ち合って自己デッドロックするため、その場合だけ reentrant（即時実行）に
-        // する（`bindResult()` の各分岐と同じ扱い）。
-        this.reentrantBind && resolved.owner.isExecutingBindingWork(),
-        true,
-        // 対象は配列の一部の要素だけなので、他の行の編集の印は解除しない。要素
-        // データが入れ替わる再利用行の印は差分更新（Core.updateDiff）が個別に
-        // 解除する（`spliceRows()` と同じ扱い）。
-        null,
+        {
+          // マネージド `data-fetch` はバインドワークの内部から起動・await される。
+          // 所有者が実行中のバインドワークを持つときに FIFO キューへ積むと、相互に
+          // 待ち合って自己デッドロックするため、その場合だけ reentrant（即時実行）に
+          // する（`bindResult()` の各分岐と同じ扱い）。
+          reentrant:
+            this.reentrantBind && resolved.owner.isExecutingBindingWork(),
+          // 対象は配列の一部の要素だけなので、所有者の部分木を丸ごと供給の宛先には
+          // しない。他の行の編集の印も解除しない（要素データが入れ替わる再利用行の
+          // 印は差分更新（Core.updateDiff）が個別に解除する）。
+          kind: 'nonSupply',
+          sequence: this.operationSequence,
+        },
       );
       if (Core.isEachUpdateRunning(container)) {
         // 行の描画中に起動された処理（行の中の `data-fetch` など）からの書き戻し。
@@ -4786,12 +4788,12 @@ ${body}
     return Core.setBindingData(
       resolved.owner.getTarget(),
       Procedure.withPathValue(resolved.ownerData, resolved.path, nextArray),
-      new Set(),
-      false,
-      true,
-      // 対象は配列の 1 要素だけなので、他の行の編集の印は解除しない。要素データが
-      // 入れ替わる再利用行の印は差分更新（Core.updateDiff）が個別に解除する。
-      null,
+      {
+        // 対象は配列の 1 要素だけなので、所有者の部分木を丸ごと供給の宛先にはしない
+        // （行の書き戻し `applyRowWrites()` と同じ扱い）。
+        kind: 'nonSupply',
+        sequence: this.operationSequence,
+      },
     );
   }
 
@@ -4833,14 +4835,13 @@ ${body}
           ...(fragment.getRawBindingData() ?? {}),
           _fetch: state,
         };
-        return Core.setBindingData(
-          element,
-          data,
-          new Set(),
-          false,
-          false,
-          null,
-        );
+        return Core.setBindingData(element, data, {
+          reflectToAttribute: false,
+          // 状態変数の注入は値の供給ではない（権威を持たず、ユーザー編集の印も
+          // 解除しない）。
+          kind: 'nonSupply',
+          sequence: this.operationSequence,
+        });
       }),
     );
   }

@@ -44,6 +44,70 @@ interface EachUpdateState {
   settled: Promise<void> | null;
 }
 
+/**
+ * `Core.setBindingData()` の任意指定。
+ *
+ * 値の由来（`kind` と `sequence`）は**呼び出し側が何をしているか**だけを表します。
+ * 適用するかどうかの判定は宛先の側（`ElementFragment.canApplyValue()` と
+ * `canApplyPath()`）に集約されており、呼び出し側が順序や基準の数値を選ぶことは
+ * ありません（`docs/ja/値の供給と権威解決の設計書.md`）。
+ */
+export interface SetBindingDataOptions {
+  /** 再評価をスキップするフラグメント集合 */
+  readonly skipFragments?: ReadonlySet<ElementFragment>;
+  /**
+   * 直列化中の再帰呼出で即時実行するか。
+   *
+   * FIFO キューへ積むと現在のワークの完了を待って自己デッドロックする経路
+   * （`data-url-param` の再評価や、実行中のワークへ戻すマネージド fetch の bind）
+   * だけで `true` にします。
+   */
+  readonly reentrant?: boolean;
+  /**
+   * `data-bind` 属性へミラーするか（既定 true）。
+   *
+   * `_fetch` / `_poll` / 可視範囲のようなエンジン管理変数の高頻度更新では `false` に
+   * して全データ直列化を避けます。
+   */
+  readonly reflectToAttribute?: boolean;
+  /**
+   * この更新の種別（既定は供給）。
+   *
+   * 供給は前の編集を上書きし、後の編集に負けます。値の供給ではない内部更新
+   * （双方向コミット、`data-url-param` の再評価、エンジン管理変数）は
+   * `'nonSupply'` を渡します。
+   */
+  readonly kind?: ValueChangeKind;
+  /**
+   * この更新を起こした**操作の**通番。
+   *
+   * 操作と呼び出しが非同期に離れている経路（リセットの各段、フェッチ応答の反映、
+   * 外部属性書き換えの取り込みなど）では、操作が起きた時点で発番した番号を渡します。
+   * 呼び出し時点で発番すると、先に起きた操作が後の番号を得て権威が逆転します。
+   *
+   * **省略した場合は「呼び出し時点が操作の時点である」と解釈**し、保留中の外部
+   * 書き換えを先に番号付けしてから発番します（`ElementFragment.nextOperationSequence()`）。
+   * 公開 API の直接呼び出し専用です。Haori 内部からの呼び出しは必ず明示してください
+   * （取り込みは同期的に進むため、バインドワークの内部で省略すると再入します）。
+   */
+  readonly sequence?: number;
+  /**
+   * この更新のうち、利用者が実際に編集したバインドデータの経路。
+   *
+   * フォーム全体の収集値を運ぶ双方向コミットが、未編集の欄まで編集の権威を得ない
+   * ようにするために渡します（`Form.collectEditedPaths()`）。
+   */
+  readonly editedPaths?: ReadonlySet<string>;
+  /**
+   * 供給でユーザー編集の印を解除するか（既定は供給なら解除する）。
+   *
+   * 呼び出し側が独自の規則で編集を突き合わせ済みの経路だけ `false` にします
+   * （フェッチ応答の反映は `Procedure.reconcileUserEditsForBind()` が、ポーリングと
+   * 通常の再取得を区別して解除するため、ここで重ねて解除してはいけません）。
+   */
+  readonly clearUserEdits?: boolean;
+}
+
 type DerivedSubtreeSignatureSource = 'evaluateAll' | 'refresh';
 
 interface DerivedSubtreeProfile {
@@ -802,33 +866,27 @@ export default class Core {
           // 共通処理（末尾の属性反映）へ進まずにここで終える。両方が走ると、外部が
           // 書いた表記と正規化した表記のどちらが内部の属性マップへ残るかが、
           // 解決順に左右される。
+          // 外部からの書き換えは明示的な値の供給（仕様 1805 行）。通番は変更を検知
+          // した時点のもので、同期的に引き取った場合は引き取り側が渡す。渡されて
+          // いなければこの取り込みの時点で発番する（`Observer` の非同期通知経路）。
+          const bindOriginSequence =
+            originSequence ?? ElementFragment.nextSequence();
           if (value === null) {
             // 取り除かれた属性はミラーしない。`{}` を書き戻すと、取り除いたはずの
             // 属性が復活するうえ、続く除去 → 取り込み → ミラーが循環する
             // （`haori:bindchange` も発火しないが、この経路は従来から発火しない）。
             promises.push(
-              Core.setBindingData(
-                element,
-                data,
-                new Set(),
-                false,
-                false,
-                ElementFragment.currentSequence(),
-                originSequence,
-              ),
+              Core.setBindingData(element, data, {
+                reflectToAttribute: false,
+                sequence: bindOriginSequence,
+              }),
             );
             promises.push(fragment.removeAttribute(name));
           } else {
             promises.push(
-              Core.setBindingData(
-                element,
-                data,
-                new Set(),
-                false,
-                true,
-                ElementFragment.currentSequence(),
-                originSequence,
-              ),
+              Core.setBindingData(element, data, {
+                sequence: bindOriginSequence,
+              }),
             );
           }
           return Promise.all(promises).then(() => undefined);
@@ -916,18 +974,19 @@ export default class Core {
         }
         // data-url-param の再評価は evaluateAll（= setBindingData の work）内から
         // 同一フラグメントへ再帰し得るため reentrant=true で即時実行する。
+        // 再評価ごとに走る経路なので、値の供給ではない更新として扱う（権威を持たず、
+        // ユーザー編集の印も解除しない）。
+        const urlParamOptions: SetBindingDataOptions = {
+          reentrant: true,
+          kind: 'nonSupply',
+          sequence: ElementFragment.nextSequence(),
+        };
         if (arg === null) {
-          promises.push(
-            // 再評価ごとに走る経路なので、ユーザー編集の印は解除しない。
-            Core.setBindingData(element, params, new Set(), true, true, null),
-          );
+          promises.push(Core.setBindingData(element, params, urlParamOptions));
         } else {
           const data = fragment.getRawBindingData() || {};
           data[String(arg)] = params;
-          promises.push(
-            // 再評価ごとに走る経路なので、ユーザー編集の印は解除しない。
-            Core.setBindingData(element, data, new Set(), true, true, null),
-          );
+          promises.push(Core.setBindingData(element, data, urlParamOptions));
         }
         break;
       }
@@ -967,53 +1026,43 @@ export default class Core {
    * データの設定は既定で「明示的な値の供給」として扱い、配下の入力欄からユーザー
    * 編集の印を解除します（`clearUserEditMarks`）。これにより、利用者が編集した欄も
    * 供給された値へ更新されます。値の供給ではない内部更新（`change` の双方向コミット、
-   * `data-url-param` の再評価、`_poll` / `_fetch` などのエンジン管理変数）からは
-   * `userEditBaseline` に `null` を渡して解除を抑止します。フェッチ応答の反映では
-   * リクエスト送出時点の通し番号を渡し、それより後の編集を守ります。
+   * `data-url-param` の再評価、`_poll` / `_fetch` などのエンジン管理変数）は
+   * `options.kind` に `'nonSupply'` を渡します。
+   *
+   * 解除の範囲は呼び出し側が選びません。**供給はその操作の通番までの編集を解除し、
+   * それより後の編集は残します**（仕様 1928 行）。飛行中の通信の応答が、送出後に
+   * 行われた編集を消さないのはこの規則によるものです。
    *
    * @param element 対象要素
    * @param data 設定するバインドデータ
-   * @param skipFragments 再評価をスキップするフラグメント集合
-   * @param reentrant 直列化中の再帰呼出で即時実行するか
-   * @param reflectToAttribute `data-bind` 属性へミラーするか（既定 true）
-   * @param userEditBaseline ユーザー編集の印を解除する上限の通し番号。
-   *     既定は現在の最新（すべて解除）、`null` は解除しない
-   * @param originSequence この更新を起こした**操作の**通番。既定は呼出時点で発番する。
-   *     操作と呼び出しが非同期に離れている場合（初期化の各段、外部属性書き換えの
-   *     取り込みなど）は、操作が起きた時点で `ElementFragment.nextSequence()` を
-   *     発番して渡すこと。呼び出し時点で発番すると、先に起きた操作が後の番号を得て
-   *     権威が逆転する
-   * @param kind この更新の種別（`ValueChangeKind`）。省略した場合は
-   *     `userEditBaseline` から推定する（`null` なら非供給更新、それ以外は供給）。
-   *     `change` / `input` の双方向コミットだけは推定できないため、明示的に
-   *     `'edit'` を渡すこと
-   * @param editedPaths この更新のうち、利用者が実際に編集したバインドデータの経路。
-   *     フォーム全体の収集値を運ぶ双方向コミットが、未編集の欄まで編集の権威を
-   *     得ないようにするために渡す（`Form.collectEditedPaths()`）
+   * @param options 由来と反映方法の指定（`SetBindingDataOptions`）
    * @returns Promise (DOM操作が完了したときに解決される)
    */
   public static setBindingData(
     element: HTMLElement,
     data: Record<string, unknown>,
-    skipFragments: ReadonlySet<ElementFragment> = new Set(),
-    reentrant = false,
-    reflectToAttribute = true,
-    userEditBaseline: number | null = ElementFragment.currentSequence(),
-    originSequence: number = ElementFragment.nextSequence(),
-    kind: ValueChangeKind | null = null,
-    editedPaths: ReadonlySet<string> | null = null,
+    options: SetBindingDataOptions = {},
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
-    // この更新の種別。段 3 で `userEditBaseline` を廃するまでは、渡されていない
-    // 場合に限り従来の引数から推定する。
-    const resolvedKind: ValueChangeKind =
-      kind ?? (userEditBaseline === null ? 'nonSupply' : 'supply');
+    const skipFragments = options.skipFragments ?? new Set<ElementFragment>();
+    const reentrant = options.reentrant ?? false;
+    const reflectToAttribute = options.reflectToAttribute ?? true;
+    // この更新の種別。既定は「明示的な値の供給」（仕様 1910 行）。
+    const resolvedKind: ValueChangeKind = options.kind ?? 'supply';
+    // 通番を省略した呼び出しは「呼び出し時点が操作の時点」＝公開 API の直接呼び出し
+    // として扱う。他のスクリプトが直前に書き換えた `data-bind` は `MutationObserver`
+    // の非同期通知を待つと後の番号を得てしまうため、先に番号付けしてから発番する
+    // （`Observer.flushPendingMutations()`）。
+    const originSequence =
+      options.sequence ?? ElementFragment.nextOperationSequence();
     // 入力欄へ書き戻すときに宛先の台帳と突き合わせる由来。判定は宛先の 1 箇所
     // （`ElementFragment.canApplyValue()`）に集約する。
     const origin: ValueChangeOrigin = {
       sequence: originSequence,
       kind: resolvedKind,
-      ...(editedPaths === null ? {} : {editedPaths}),
+      ...(options.editedPaths === undefined
+        ? {}
+        : {editedPaths: options.editedPaths}),
     };
     // この更新が「明示的な値の供給」かどうか。供給だけが宛先の権威を更新し、供給
     // 同士は後勝ち（仕様 1927 行）で解決する。値の供給ではない内部更新（双方向
@@ -1032,8 +1081,10 @@ export default class Core {
     // 初期化前の状態なので、書き戻すとクリアしたはずの値が復活する。
     const resetSequence = ElementFragment.currentSequence();
     const previous = fragment.getRawBindingData();
-    if (isSupply && userEditBaseline !== null) {
-      Core.clearUserEditMarks(fragment, userEditBaseline);
+    if (isSupply && (options.clearUserEdits ?? true)) {
+      // 供給はこの操作までの編集を上書きする。操作より後の編集の印は残るため、
+      // 飛行中の通信の応答で新しい編集が消えることはない（仕様 1928 行）。
+      Core.clearUserEditMarks(fragment, originSequence);
     }
     // 変化した経路ごとに適用可否を判定し、棄却した経路は前の値のまま残す。
     // `reflectToAttribute=false` は `_fetch` / `_poll` / 可視範囲のようなエンジン
@@ -1635,15 +1686,12 @@ export default class Core {
         bindingData = Form.mergeCollectedValues(previous, values);
       }
       promises.push(
-        // 値の設定に伴うコミットなので、ユーザー編集の印は解除しない。
-        Core.setBindingData(
-          formFragment.getTarget(),
-          bindingData,
-          new Set(),
-          false,
-          true,
-          null,
-        ),
+        // 値の設定に伴うコミットなので、値の供給ではない更新として扱う（権威を
+        // 持たず、ユーザー編集の印も解除しない）。
+        Core.setBindingData(formFragment.getTarget(), bindingData, {
+          kind: 'nonSupply',
+          sequence: ElementFragment.nextSequence(),
+        }),
       );
     }
     return Promise.all(promises).then(() => undefined);

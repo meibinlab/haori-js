@@ -212,7 +212,7 @@ class Core {
   static setAttribute(element: HTMLElement, name: string, value: string | null): Promise<void>
 
   // バインディングデータ
-  static setBindingData(element: HTMLElement, data: Record<string, unknown>): Promise<void>
+  static setBindingData(element: HTMLElement, data: Record<string, unknown>, options?: SetBindingDataOptions): Promise<void>
   static getBindingData(element: HTMLElement, options?: {resolved?: boolean}): Record<string, unknown> | null
   static parseDataBind(data: string): Record<string, unknown>
 
@@ -737,6 +737,22 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 - 判定は実際に `new Function` へ通して行うため、予約語も将来の識別子規則も取りこぼしません。結果はキー単位でキャッシュします。
 
 > **`data-attr-value` と再評価について**: `<input data-attr-value="{{ haori.today(-1) }}">` のような記述は「初期値」ではなく、バインドスコープの変化のたびに**再評価**されます。`haori.now` / `haori.today` は非冪等なため、日跨ぎや再描画でユーザーが編集した値が上書きされる場合があります。一度だけ設定したい場合は、初期スコープを `data-bind` でシードする（例 `data-bind` に算出済みの日付文字列を入れる）か、再描画で再適用されてよい用途に限定してください。
+
+#### `Core.setBindingData(element, data, options?)`
+
+対象要素のバインドデータを更新し、配下を再評価するバインドデータの公式書き込み API です。`Haori.Core.setBindingData(...)` として利用できます。第 3 引数は省略できます。
+
+| 指定 | 既定 | 内容 |
+| --- | --- | --- |
+| `kind` | `'supply'` | この更新の種別。`'supply'`（明示的な値の供給）／`'edit'`（利用者の編集の確定）／`'nonSupply'`（値の供給ではない内部更新）。供給は前の編集を上書きし、後の編集に負けます |
+| `sequence` | 呼び出し時点で発番 | この更新を起こした**操作**の通し番号。操作と呼び出しが非同期に離れる経路（応答の反映など）で、操作が起きた時点の番号を渡すために使います |
+| `editedPaths` | なし | この更新のうち、利用者が実際に編集した経路。フォーム全体の収集値を運ぶ更新で、未編集の欄まで編集の権威を得ないようにします |
+| `clearUserEdits` | 供給なら解除する | 供給でユーザー編集の印を解除するか（後述の「ユーザー編集と宣言バインドの権威」） |
+| `skipFragments` | なし | 再評価をスキップするフラグメント集合 |
+| `reentrant` | `false` | 直列化中の再帰呼出で即時実行するか |
+| `reflectToAttribute` | `true` | `data-bind` 属性へミラーするか |
+
+**どの値が残るかを呼び出し側が選ぶことはありません。** 適用の可否は宛先（入力欄とバインドデータの経路）ごとに、最後に適用された通し番号と種別との比較で決まります。`sequence` を省略した呼び出しは「呼び出し時点が操作の時点である」と解釈し、他のスクリプトが直前に書き換えた `data-bind`（監視の通知は非同期にしか届きません）を先に番号付けしてから発番します。これにより、外部が書き換えた直後に `Core.setBindingData()` を呼んだ場合も**後から来たこの呼び出しの値が残ります**。
 
 #### `Core.getBindingData(element, options?)`
 
@@ -1909,11 +1925,13 @@ data-attr-{attributeName}="template string"
 | `data-each` の行の再利用で要素データが入れ替わったとき | その行の中のすべての編集 |
 | `Core.setBindingData()` の直接呼び出し | 対象配下のすべての編集 |
 
+解除の範囲は共通の規則で決まります。**供給は、その供給を起こした操作が起きた時点までの編集を解除し、それより後の編集は残します。** 表の「すべての編集」は、その操作の時点までに確定していた編集を指します。呼び出し側が範囲を数値で選ぶことはありません。
+
 次の更新は「値の供給」ではないため、印を解除しません（解除すると編集値が評価結果へ巻き戻ります）。
 
 - `change` / `input` による双方向バインディングのコミット。フェッチを伴わない `data-{event}-bind` でバインド先を明示した場合も含みます（バインドされるデータは入力欄から収集した編集値そのものなので、権威を譲る相手がいません）
 - `data-url-param` の再評価（再評価ごとに走るため）
-- `data-poll` の応答反映。利用者が要求していない自動取得なので、これまでの編集をすべて応答へ上書きし直します
+- `data-poll` の応答反映。利用者が要求していない自動取得なので、これまでの編集をすべて応答の上へ載せ直します（**編集が残ります**。数秒ごとの自動取得で、入力してしばらく置いた値が静かに消えるのを防ぐためです）
 - `_poll` / `_fetch` / 可視範囲などエンジン管理変数の更新
 
 この規則により、参照するキー（式のスコープ）と `name` が書き込むキーが別であっても、確定した編集が再評価で失われません。入力要素自身に `data-{event}-bind` を付け、`data-{event}-bind-arg` で参照キーとは別のキーへ書き込む構成も同じです。
@@ -2089,7 +2107,7 @@ data-each="arrayExpression"
 - **公開先**: 最近接の**上位** `data-bind` スコープ（一覧本体とフッタの共通祖先）。上位に無い場合のみコンテナ自身へフォールバックし、見つからなければ警告して公開しません。
 - **行インデックス**: 描画順（`content` 配列の添字、`data-each-index` と一致）。
 - **更新の合体**: 多発する交差イベントは `requestAnimationFrame` で 1 回にまとめて集計し、前回と異なるときだけ公開します。
-- **性能**: 公開は in-memory スコープのみ更新し、`data-bind` 属性への全データ直列化（`JSON.stringify`）は**抑止**します（`Core.setBindingData(..., reflectToAttribute=false)`）。これにより公開先スコープが `content` などの大配列を保持していても、スクロールのたびに大配列が再直列化されることはありません。再評価は一覧本体フラグメントを `skipFragments` で枝刈りするため、コストはフッタ側（行数非依存）のみです。監視コールバックは境界を跨いだ行のみ発火（スクロール停止中はゼロ）。各行を監視するため監視登録メモリは描画済み行数に比例し、極端な大量行では行仮想化の併用を推奨します。
+- **性能**: 公開は in-memory スコープのみ更新し、`data-bind` 属性への全データ直列化（`JSON.stringify`）は**抑止**します（`Core.setBindingData(..., {reflectToAttribute: false})`）。これにより公開先スコープが `content` などの大配列を保持していても、スクロールのたびに大配列が再直列化されることはありません。再評価は一覧本体フラグメントを `skipFragments` で枝刈りするため、コストはフッタ側（行数非依存）のみです。監視コールバックは境界を跨いだ行のみ発火（スクロール停止中はゼロ）。各行を監視するため監視登録メモリは描画済み行数に比例し、極端な大量行では行仮想化の併用を推奨します。
 - **属性ミラー・通知**: 可視範囲変数は実行時の一時値のため `data-bind` 属性には反映されません（`Haori.Core.getBindingData(...)` の in-memory 値では参照可能）。属性は次回の通常バインド更新時に最新 in-memory から反映されます。また高頻度更新による通知の氾濫を避けるため、公開時に **`haori:bindchange` イベントは発火しません**（公開先要素で `data-on` 等のバインド変更通知は受け取れません）。
 - **初期値**: 変数は初回フレームで公開されるため、最初の描画直後の一瞬は未定義になり得ます。フッタ式は `{{vr.firstLabel}}`（未定義時は空表示）か `data-if` でガードしてください。
 
@@ -4826,7 +4844,7 @@ class Core {
   static setAttribute(element: HTMLElement, name: string, value: string | null): Promise<void>
 
   // バインディング
-  static setBindingData(element: HTMLElement, data: Record<string, unknown>): Promise<void>
+  static setBindingData(element: HTMLElement, data: Record<string, unknown>, options?: SetBindingDataOptions): Promise<void>
   static getBindingData(element: HTMLElement, options?: {resolved?: boolean}): Record<string, unknown> | null
   static parseDataBind(data: string): Record<string, unknown>
 

@@ -631,14 +631,13 @@ export default class PollObserver {
           ...(target.getRawBindingData() ?? {}),
           _poll: state,
         };
-        return Core.setBindingData(
-          element,
-          data,
-          new Set(),
-          false,
-          false,
-          null,
-        );
+        return Core.setBindingData(element, data, {
+          reflectToAttribute: false,
+          // 状態変数の注入は値の供給ではない（権威を持たず、ユーザー編集の印も
+          // 解除しない）。
+          kind: 'nonSupply',
+          sequence: ElementFragment.nextSequence(),
+        });
       }),
     ).then(() => undefined);
   }

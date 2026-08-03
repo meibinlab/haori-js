@@ -496,15 +496,14 @@ export default class VisibleRangeObserver {
     // reflectToAttribute=false で data-bind 属性への全データ直列化を避ける。
     // 可視範囲は実行時の一時変数であり、属性ミラーは不要（in-memory が権威）。
     // これにより公開先スコープが大配列を持っていても直列化コストが発生しない。
-    void Core.setBindingData(
-      ownerElement,
-      base,
+    void Core.setBindingData(ownerElement, base, {
       skipFragments,
-      false,
-      false,
-      // 可視範囲の公開は値の供給ではないため、ユーザー編集の印は解除しない。
-      null,
-    ).catch((error: unknown) => {
+      reflectToAttribute: false,
+      // 可視範囲の公開は値の供給ではない（権威を持たず、ユーザー編集の印も
+      // 解除しない）。
+      kind: 'nonSupply',
+      sequence: ElementFragment.nextSequence(),
+    }).catch((error: unknown) => {
       Log.error('[Haori]', 'Failed to publish visible range:', error);
     });
   }
