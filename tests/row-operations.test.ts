@@ -6,7 +6,7 @@
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
-import {waitForCondition, waitForIdle} from './helpers/async';
+import {waitForIdle} from './helpers/async';
 
 describe('Row operations', () => {
   let container: HTMLElement;
@@ -71,7 +71,7 @@ describe('Row operations', () => {
       await Core.scan(container);
       // 最終状態を検証するので `waitForIdle()` で待つ。固定サイクルの
       // `waitForDomSettled()` では余裕がなく、1 サイクル短くなるだけで行が
-      // 描き終わらない（`docs/ja/testing.md`「待ち合わせの選び方」）。
+      // 描き終わらない（`docs/ja/testing.md`「余裕の棚卸し」）。
       await waitForIdle();
 
       let items = container.querySelectorAll('li');
@@ -307,27 +307,24 @@ describe('Row operations', () => {
         'button[data-click-row-add]',
       );
       (addButtons[0] as HTMLButtonElement).click();
-      await waitForCondition(() => rowCount() === 3, {
-        description: 'row added',
-      });
+      await waitForIdle();
 
       // 移動
       const prevButtons = container.querySelectorAll(
         'button[data-click-row-prev]',
       );
       (prevButtons[2] as HTMLButtonElement).click();
-      await waitForCondition(() => rowCount() === 3, {
-        description: 'row moved',
-      });
+      // 移動では件数が変わらないため、件数を条件にすると**操作の前から成立**して
+      // まったく待たない。最終状態を待つ（`docs/ja/testing.md`
+      // 「待ち合わせの条件は最終状態そのもので書く」）。
+      await waitForIdle();
 
       // 削除
       const removeButtons = container.querySelectorAll(
         'button[data-click-row-remove]',
       );
       (removeButtons[0] as HTMLButtonElement).click();
-      await waitForCondition(() => rowCount() === 2, {
-        description: 'row removed',
-      });
+      await waitForIdle();
 
       expect(rowCount()).toBe(2);
     });
