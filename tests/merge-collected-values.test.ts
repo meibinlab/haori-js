@@ -11,8 +11,10 @@
  * 読み飛ばし）を、画面を挟まずに固定します。画面を通した検証は
  * `tests/row-value-roundtrip.test.ts` にあります。
  */
-import {describe, expect, it} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
+import Dev from '../src/dev';
 import Form from '../src/form';
+import Log from '../src/log';
 
 describe('収集値の重ね合わせ', () => {
   describe('土台の保持', () => {
@@ -71,13 +73,14 @@ describe('収集値の重ね合わせ', () => {
       ).toEqual({rows: [{id: 1, t: 'a'}, {id: 2, t: 'b'}, {t: 'c'}]});
     });
 
-    it('行は出現順で対応する（位置が前提）', () => {
-      // 入力欄への書き戻しも同じ規則（同じ収集キーの出現順に配る）なので、
-      // 収集 → 重ね合わせ → 書き戻しで対応がずれない。
+    it('リストキーを持たない配列は出現順で対応する', () => {
+      // ここで渡す配列は収集経路を通っていないため行の識別情報を持たず、
+      // `data-each` で描いていない静的な行と同じ扱いになる。
       //
-      // 裏を返すと、バインドデータの配列を縮めないまま短い収集値を確定させると、
-      // 残った行が消えた行の非入力フィールドを引き継ぐ。行の増減は必ずバインド
-      // データの配列を先に更新してから収集を確定させること。
+      // 出現順の対応は「配列と画面の行数・並びが一致している」ことが前提で、
+      // 崩れると残った行が消えた行の非入力フィールドを引き継ぐ。画面を通した
+      // 対応付け（`data-each-key` によるリストキー照合）は
+      // `tests/row-identity.test.ts` で検証する。
       const previous = {
         rows: [
           {id: 1, label: 'A'},
@@ -142,6 +145,84 @@ describe('収集値の重ね合わせ', () => {
       expect(Object.getPrototypeOf(merged.customer as object)).toBe(
         Object.prototype,
       );
+    });
+  });
+
+  describe('出現順への退避の通知', () => {
+    /**
+     * 通知の記録が空の状態から検証します。
+     *
+     * 通知は同じ理由を繰り返さないようモジュール内に記録を持ち、jsdom は
+     * ホスト名が `localhost` のため開発モードが既定で有効です。したがって
+     * 静的な import を使うと、先行するテストが通知を消費したかどうかに結果が
+     * 左右されます。モジュールを作り直して順序依存を断ちます。
+     *
+     * @returns 作り直した Form / Log / Dev
+     */
+    const freshModules = async (): Promise<{
+      form: typeof Form;
+      log: typeof Log;
+      dev: typeof Dev;
+    }> => {
+      vi.resetModules();
+      const [form, log, dev] = await Promise.all([
+        import('../src/form'),
+        import('../src/log'),
+        import('../src/dev'),
+      ]);
+      return {form: form.default, log: log.default, dev: dev.default};
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.resetModules();
+      Dev.disable();
+    });
+
+    it('行らしい配列で識別情報が無い場合は開発モードで知らせる', async () => {
+      // 識別情報は収集した配列そのものを鍵に持つため、収集から重ね合わせまでの
+      // 途中で配列を複製する処理が増えると黙って出現順へ退く。その番犬。
+      const {form, log, dev} = await freshModules();
+      const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
+      dev.enable();
+
+      form.mergeCollectedValues({rows: [{id: 1, t: 'a'}]}, {rows: [{t: 'b'}]});
+
+      expect(warn).toHaveBeenCalled();
+      expect(String(warn.mock.calls[0][1])).toContain('出現順で対応付けます');
+    });
+
+    it('同じ理由では繰り返し知らせない', async () => {
+      const {form, log, dev} = await freshModules();
+      const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
+      dev.enable();
+
+      form.mergeCollectedValues({rows: [{id: 1, t: 'a'}]}, {rows: [{t: 'b'}]});
+      form.mergeCollectedValues({rows: [{id: 2, t: 'a'}]}, {rows: [{t: 'c'}]});
+
+      expect(warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('スカラの配列では知らせない', async () => {
+      // 入力要素へ付けた `data-form-list` が集めるスカラの配列は、出現順で
+      // 対応させるのが正しい構成。
+      const {form, log, dev} = await freshModules();
+      const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
+      dev.enable();
+
+      form.mergeCollectedValues({tags: ['x', 'y']}, {tags: ['x', 'z']});
+
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('開発モードでなければ知らせない', async () => {
+      const {form, log, dev} = await freshModules();
+      const warn = vi.spyOn(log, 'warn').mockImplementation(() => undefined);
+      dev.disable();
+
+      form.mergeCollectedValues({rows: [{id: 2, t: 'a'}]}, {rows: [{t: 'b'}]});
+
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 });

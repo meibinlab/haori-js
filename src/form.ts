@@ -626,6 +626,9 @@ export default class Form {
       }
     } else if (listName) {
       const childList: Record<string, unknown>[] = [];
+      // 行を配列要素へ対応付けるためのリストキー（`data-each` が行へ付ける）。
+      // 収集した行と同じ位置に並べて控え、重ね合わせで使う。
+      const rowKeys: Array<string | null> = [];
       let hasCollectedRow = false;
       for (const child of fragment.getChildElementFragments()) {
         const childValues: Record<string, unknown> = {};
@@ -633,12 +636,23 @@ export default class Form {
         if (Object.keys(childValues).length > 0) {
           hasCollectedRow = true;
           childList.push(childValues);
+          rowKeys.push(child.getListKey());
         } else if (minUserEditSequence !== null) {
           // 編集分だけの収集では、行の位置がずれないよう空の行も場所を確保する。
           childList.push({});
+          rowKeys.push(child.getListKey());
         }
       }
       if (minUserEditSequence === null) {
+        // 識別情報を控えるのは、収集値をバインドデータへ重ねる経路（全件収集）だけ。
+        // 編集分だけの収集（`getValuesEditedAfter()`）の結果は `mergeUserEdits()` へ
+        // 流れ、重ね合わせには届かないため控えても使われない。
+        const eachKey = fragment.getAttribute(`${Env.prefix}each-key`);
+        Form.registerCollectedRowIdentity(
+          childList,
+          eachKey === null || eachKey === undefined ? null : String(eachKey),
+          rowKeys,
+        );
         // 行が 0 件でもキー自体は空配列として出す。キーを落とすと、サーバ側で
         // 「0 件」と「そのフィールドが未送信」を区別できず、全件削除を表現できない。
         values[String(listName)] = childList;
@@ -1093,6 +1107,73 @@ export default class Form {
   ]);
 
   /**
+   * 収集した行配列に対応する行の識別情報。
+   *
+   * 収集値は素の配列なので、それ単体では「どの配列要素から来た行か」が分かりません。
+   * 収集の時点でしか分からない対応（`data-each` が行へ付けたリストキー）を、収集した
+   * 配列そのものを鍵にして控えます。参照が失われた場合は出現順の対応へ退きます。
+   */
+  private static readonly COLLECTED_ROW_IDENTITY = new WeakMap<
+    object,
+    {keyArg: string | null; keys: Array<string | null>}
+  >();
+
+  /** 出現順への退避を知らせた理由（同じ理由を繰り返さないため） */
+  private static readonly warnedPositionalRowFallbacks = new Set<string>();
+
+  /**
+   * 収集した行配列に、行の識別情報を結び付けます。
+   *
+   * @param rows 収集した行配列
+   * @param keyArg `data-each-key` の指定（無ければ null）
+   * @param keys 行ごとのリストキー（`rows` と同じ並び）
+   */
+  private static registerCollectedRowIdentity(
+    rows: object,
+    keyArg: string | null,
+    keys: Array<string | null>,
+  ): void {
+    Form.COLLECTED_ROW_IDENTITY.set(rows, {keyArg, keys});
+  }
+
+  /**
+   * 収集した行配列の識別情報を、複製した配列へ引き継ぎます。
+   *
+   * 収集値をたどって作り直す処理（`File` の正規化など）は配列を複製するため、
+   * 引き継がないと重ね合わせが出現順の対応へ退いてしまいます。
+   *
+   * @param from 元の配列
+   * @param to 複製した配列
+   */
+  public static carryCollectedRowIdentity(from: object, to: object): void {
+    const identity = Form.COLLECTED_ROW_IDENTITY.get(from);
+    if (identity) {
+      Form.COLLECTED_ROW_IDENTITY.set(to, identity);
+    }
+  }
+
+  /**
+   * 行の対応付けが出現順へ退いたことを、開発モードで一度だけ知らせます。
+   *
+   * 識別情報は収集した配列そのものを鍵に持つため、収集から重ね合わせまでの途中で
+   * 配列を複製する処理が増えると、黙って出現順の対応へ退きます。退いたこと自体は
+   * 動作を止めませんが、行の取り違えを招くため気付ける形にします。
+   *
+   * @param reason 退いた理由
+   */
+  private static warnPositionalRowFallback(reason: string): void {
+    if (!Dev.isEnabled() || Form.warnedPositionalRowFallbacks.has(reason)) {
+      return;
+    }
+    Form.warnedPositionalRowFallbacks.add(reason);
+    Log.warn(
+      '[Haori]',
+      `${Env.prefix}form-list の行を出現順で対応付けます（${reason}）。` +
+        '配列と画面の行数・並びが一致していない場合、行の値を取り違えます。',
+    );
+  }
+
+  /**
    * 収集値を、直前のバインドデータへ重ねます。
    *
    * 収集値は**入力欄が表す部分だけ**なので、そのまま置き換えるとレコードの他の
@@ -1100,10 +1181,11 @@ export default class Form {
    * 失われます。失うと、行の表示が空になったり、保存に必要なキーが送られなく
    * なったりします。土台を敷いて、収集したキーだけを上書きします。
    *
-   * `data-form-list` の行（配列）は**出現順**で対応します。入力欄への書き戻しが
-   * 同じ規則（同じ収集キーの出現順に配る）なので、収集 → 重ね合わせ → 書き戻しで
-   * 対応がずれません。要素数は収集値に従うため、行の追加・削除もそのまま反映され
-   * ます。
+   * `data-form-list` の行（配列）は、`data-each` が行へ付けたリストキーで配列要素へ
+   * 対応付けます（`overlayIdentifiedRows()`）。配列に無いキーの行は取り込みません。
+   * リストキーが無い行（`data-each` で描いていない静的な行）や、識別情報をたどれ
+   * ない場合は**出現順**の対応へ退きます。要素数はこの対応付けの結果に従うため、
+   * 行の追加・削除はそのまま反映されます。
    *
    * プロトタイプ汚染につながるキー（`__proto__` など）は読み飛ばします。式評価は
    * これらをバインドキーとして受け付けないため、載せても参照できず、`__proto__` に
@@ -1142,6 +1224,10 @@ export default class Form {
       if (!Array.isArray(previous)) {
         return collected;
       }
+      const identified = Form.overlayIdentifiedRows(previous, collected);
+      if (identified !== null) {
+        return identified;
+      }
       return collected.map((item, index) =>
         Form.overlayCollectedValue(previous[index], item),
       );
@@ -1152,6 +1238,81 @@ export default class Form {
       return collected;
     }
     return Form.mergeCollectedValues(previousRecord, collectedRecord);
+  }
+
+  /**
+   * 収集した行を、リストキーで配列要素へ対応付けて重ねます。
+   *
+   * 出現順の対応は「配列と画面の行数・並びが一致している」ことを前提にします。
+   * 行の削除は配列を先に更新して画面を描き直すため、描き直しの前に収集が走ると
+   * 前提が崩れ、残った行が消えた行の値を受け取ったり、`id` を持たない行が増えたり
+   * します。`data-each` が行へ付けたリストキーで対応付ければ、この崩れを避けられます。
+   *
+   * 配列に無いリストキーの行は、配列から消えた行が画面に残っているものとして落とし
+   * ます。行の増減は配列を先に更新するため、配列に無い行は常に古い画面です。
+   *
+   * @param previous 直前の配列（配列要素が権威）
+   * @param collected 収集した行配列
+   * @returns 重ね合わせた配列。対応付けができない場合は null（出現順へ退く）
+   */
+  private static overlayIdentifiedRows(
+    previous: unknown[],
+    collected: unknown[],
+  ): unknown[] | null {
+    const identity = Form.COLLECTED_ROW_IDENTITY.get(collected);
+    if (!identity) {
+      // 収集を経ていない配列（識別情報の記録が無い）。収集値をたどって作り直す
+      // 処理が配列を複製したまま引き継がなかった場合もここへ来る。
+      //
+      // 入力要素へ付けた `data-form-list`（`<input name="tags" data-form-list>`）が
+      // 集めるスカラの配列も識別情報を持たない。こちらは出現順で対応させるのが
+      // 正しい構成なので、行らしい配列（素のオブジェクトを含む）に限って知らせる。
+      if (collected.some(item => Form.asPlainRecord(item) !== null)) {
+        Form.warnPositionalRowFallback('識別情報が引き継がれていません');
+      }
+      return null;
+    }
+    if (identity.keys.length !== collected.length) {
+      Form.warnPositionalRowFallback('収集後に行の数が変わっています');
+      return null;
+    }
+    if (identity.keys.some(key => key === null)) {
+      // `data-each` で描いていない行が混じっている（静的に書いた行など）。
+      // これは想定した構成なので警告しない。
+      return null;
+    }
+    // 配列要素のリストキーを、`data-each` の差分更新と同じ規則で作る。すべての要素に
+    // 対してキーを作る（`Core.createListKey()` は非オブジェクトも扱える）。作らない
+    // 要素を残すと、その行が「配列に無い行」と判定されて配列から要素が消える。
+    const remaining = new Map<string, number[]>();
+    previous.forEach((item, index) => {
+      const key = Core.createListKey(
+        item as Record<string, unknown> | string | number,
+        identity.keyArg,
+        index,
+      );
+      const indexes = remaining.get(key);
+      if (indexes) {
+        indexes.push(index);
+      } else {
+        remaining.set(key, [index]);
+      }
+    });
+    const merged: unknown[] = [];
+    for (let index = 0; index < collected.length; index += 1) {
+      const key = identity.keys[index] as string;
+      const candidates = remaining.get(key);
+      if (!candidates || candidates.length === 0) {
+        // 配列から消えた行。画面に残っているだけなので取り込まない。
+        continue;
+      }
+      // 同じキーが重複する場合は出現順に消費する（重複時は出現順と同じ挙動）。
+      const previousIndex = candidates.shift() as number;
+      merged.push(
+        Form.overlayCollectedValue(previous[previousIndex], collected[index]),
+      );
+    }
+    return merged;
   }
 
   /**

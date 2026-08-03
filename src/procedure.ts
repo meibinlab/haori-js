@@ -566,7 +566,11 @@ function sanitizeBinaryForBinding(
       return '';
     }
     if (Array.isArray(value)) {
-      return value.map(convert);
+      const copied = value.map(convert);
+      // 収集した行の識別情報は配列そのものを鍵に控えているため、複製へ引き継ぐ。
+      // 引き継がないと、重ね合わせが出現順の対応へ退く。
+      Form.carryCollectedRowIdentity(value, copied);
+      return copied;
     }
     if (value !== null && typeof value === 'object') {
       const result: Record<string, unknown> = {};
