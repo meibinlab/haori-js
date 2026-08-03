@@ -861,4 +861,70 @@ describe('data-store によるブラウザストレージ連携', () => {
       expect(container.querySelector('#name')!.textContent).toBe('あかね');
     });
   });
+
+  describe('ストレージが利用できない環境', () => {
+    /** 例外へ差し替えたストレージのプロパティ定義（復元用） */
+    const savedDescriptors = new Map<string, PropertyDescriptor>();
+
+    /**
+     * 指定したストレージの参照を例外にします。
+     *
+     * `allow-same-origin` の無い sandbox iframe や、サイトデータをブロックした
+     * 状態のクロスサイト iframe では参照しただけで `SecurityError` になります。
+     *
+     * @param name 対象のグローバル名
+     */
+    const denyStorage = (name: 'localStorage' | 'sessionStorage'): void => {
+      const descriptor = Object.getOwnPropertyDescriptor(window, name);
+      if (descriptor && !savedDescriptors.has(name)) {
+        savedDescriptors.set(name, descriptor);
+      }
+      Object.defineProperty(window, name, {
+        configurable: true,
+        get() {
+          throw new DOMException('storage is blocked', 'SecurityError');
+        },
+      });
+    };
+
+    afterEach(() => {
+      for (const [name, descriptor] of savedDescriptors) {
+        Object.defineProperty(window, name, descriptor);
+      }
+      savedDescriptors.clear();
+    });
+
+    it('sessionStorage が参照できなくても既定値の画面は壊れない', async () => {
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
+      denyStorage('sessionStorage');
+
+      await render(`
+        <div data-bind='{"customer":{"name":"あかね"}}' data-store="apply"
+          data-store-params="customer">
+          <span id="name">{{customer.name}}</span>
+        </div>`);
+
+      expect(container.querySelector('#name')!.textContent).toBe('あかね');
+      expect(warn).toHaveBeenCalled();
+    });
+
+    it('localStorage が参照できなくても入力の編集は反映される', async () => {
+      vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
+      denyStorage('localStorage');
+
+      await render(`
+        <form data-bind='{"name":"あかね"}' data-store="apply"
+          data-store-type="local" data-store-params="name">
+          <input id="name" name="name" type="text">
+          <span id="out">{{name}}</span>
+        </form>`);
+      const input = container.querySelector('#name') as HTMLInputElement;
+      expect(input.value).toBe('あかね');
+
+      await edit(input, 'ひなた');
+
+      // 保存はできないが、画面のバインドは通常どおり更新される。
+      expect(container.querySelector('#out')!.textContent).toBe('ひなた');
+    });
+  });
 });

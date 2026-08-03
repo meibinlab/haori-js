@@ -183,6 +183,32 @@ export default class Expression {
   ]);
 
   /**
+   * ストレージを、参照が例外になる環境でも安全に読み出します。
+   *
+   * `localStorage` / `sessionStorage` は、`allow-same-origin` の無い sandbox
+   * iframe やサイトデータをブロックした状態のクロスサイト iframe では、参照した
+   * だけで `SecurityError` になります。呼び出し元は全式評価の共通経路なので、
+   * 例外をそのまま通すと画面上のすべての `{{}}` が評価できなくなります。読めない
+   * 値は「その環境では入手できない値」で、バインド値へ紛れ込みようもないため、
+   * `undefined` を返して照合の対象から外します。
+   *
+   * 警告は出しません。式評価のたびに呼ばれるためログが氾濫するうえ、`data-store`
+   * が同じ状況を種別ごとに一度だけ警告するので、原因は追跡できます。
+   *
+   * @param read ストレージを読み出す関数
+   * @returns 読み出せた `Storage`。参照が例外になる場合は undefined
+   */
+  private static readStorageSafely(
+    read: () => Storage | undefined,
+  ): Storage | undefined {
+    try {
+      return read();
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * 明示バインド内に持ち込まれてはならない危険値を返します。
    *
    * @returns 危険値の配列
@@ -203,8 +229,10 @@ export default class Expression {
       scope.document,
       scope.navigator,
       scope.history,
-      scope.localStorage,
-      scope.sessionStorage,
+      // 参照だけで例外になり得るのはこの 2 つのみ（他は同一オリジンの自 window
+      // 由来で常に読める）。ホットパスなので、囲むのも必要な箇所だけに絞る。
+      Expression.readStorageSafely(() => scope.localStorage),
+      Expression.readStorageSafely(() => scope.sessionStorage),
       scope.fetch,
       scope.Function,
       scope.setTimeout,
