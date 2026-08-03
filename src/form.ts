@@ -505,6 +505,63 @@ export default class Form {
   }
 
   /**
+   * 利用者が編集した入力欄に対応するバインドデータの経路を集めます。
+   *
+   * 双方向コミットはフォーム全体の収集値を運ぶため、更新全体を「編集」として扱うと
+   * 未編集の欄まで編集の権威を得てしまいます。編集された経路だけを示すために使います
+   * （`ValueChangeOrigin.editedPaths`）。
+   *
+   * 配列（`data-form-list` の行）は対象外です。行と配列要素の対応はリストキーで
+   * 決まり、収集値からは同じ規則で経路を組み立てられません。行の編集は応答の反映側
+   * （`Procedure` の `reconcileRowUserEdits()`）で保護します。
+   *
+   * @param form 対象のフォームフラグメント
+   * @param prefix 経路の接頭辞（`data-form-arg` のキーなど。無い場合は空文字）
+   * @returns 編集された経路の集合
+   */
+  public static collectEditedPaths(
+    form: ElementFragment,
+    prefix: string = '',
+  ): ReadonlySet<string> {
+    const paths = new Set<string>();
+    // 基準を 0 にして「これまでに編集された欄すべて」を対象とする。編集の権威は
+    // 供給で明示的に引き取られるまで続くため（仕様 1928 行）。
+    Form.walkEditedPaths(Form.getValuesEditedAfter(form, 0), prefix, paths);
+    return paths;
+  }
+
+  /**
+   * 収集した編集値をたどって葉の経路を集めます。
+   *
+   * @param value たどる値
+   * @param path ここまでの経路
+   * @param paths 集める先
+   */
+  private static walkEditedPaths(
+    value: unknown,
+    path: string,
+    paths: Set<string>,
+  ): void {
+    if (Array.isArray(value)) {
+      return;
+    }
+    const record = Form.asPlainRecord(value);
+    if (record !== null) {
+      for (const [key, child] of Object.entries(record)) {
+        Form.walkEditedPaths(
+          child,
+          path === '' ? key : `${path}.${key}`,
+          paths,
+        );
+      }
+      return;
+    }
+    if (path !== '') {
+      paths.add(path);
+    }
+  }
+
+  /**
    * フォーム内の各入力エレメントから値を取得し、オブジェクトとして返します。
    * 入力エレメントのname属性、data-form-object属性、data-form-list属性に基づいて値を整理します。
    *

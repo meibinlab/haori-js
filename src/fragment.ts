@@ -57,6 +57,14 @@ export interface ValueChangeOrigin {
   readonly sequence: number;
   /** 変化の種別 */
   readonly kind: ValueChangeKind;
+  /**
+   * この更新のうち、**実際に利用者が編集した**バインドデータの経路。
+   *
+   * `change` / `input` の双方向コミットはフォーム全体の収集値を運ぶため、更新全体を
+   * 「編集」として扱うと未編集の欄まで編集の権威を得てしまいます。編集された経路だけ
+   * をここで示し、残りは `kind` の種別として判定します。
+   */
+  readonly editedPaths?: ReadonlySet<string>;
 }
 
 interface EvaluationProfilePlaceholderSnapshot {
@@ -1965,19 +1973,90 @@ export class ElementFragment extends Fragment {
    * @returns 適用してよい場合は true
    */
   public canApplyValue(origin: ValueChangeOrigin): boolean {
-    if (origin.kind === 'nonSupply' && this.lastValueKind === 'edit') {
+    return ElementFragment.isApplicable(
+      {sequence: this.lastValueSequence, kind: this.lastValueKind},
+      origin,
+    );
+  }
+
+  /**
+   * 宛先の判定規則そのものです。入力欄と経路のどちらの宛先でも同じ規則を使います。
+   *
+   * @param last その宛先へ最後に適用された値の由来（未適用なら null）
+   * @param origin 適用しようとしている値の由来
+   * @returns 適用してよい場合は true
+   */
+  private static isApplicable(
+    last: ValueChangeOrigin | null,
+    origin: ValueChangeOrigin,
+  ): boolean {
+    if (last === null) {
+      return true;
+    }
+    if (origin.kind === 'nonSupply' && last.kind === 'edit') {
       // 非供給更新は、確定した編集に通番によらず負ける（要件 R7）。
       return false;
     }
-    if (origin.sequence > this.lastValueSequence) {
+    if (origin.sequence > last.sequence) {
       return true;
     }
-    if (origin.sequence === this.lastValueSequence) {
-      // 同じ通番では編集が勝つ。1 つの操作が同じ入力欄へ二度書く場合
+    if (origin.sequence === last.sequence) {
+      // 同じ通番では編集が勝つ。1 つの操作が同じ宛先へ二度書く場合
       // （`Form.syncValues()` と `retryUnappliedValueWrites()`）もここを通る。
-      return this.lastValueKind !== 'edit' || origin.kind === 'edit';
+      return last.kind !== 'edit' || origin.kind === 'edit';
     }
     return false;
+  }
+
+  /**
+   * バインドデータの経路ごとの最終適用記録。
+   *
+   * 宛先をキー単位ではなく**経路単位**（`a.b.c`、配列は `rows[#id=3].title`）に
+   * するのは、`data-form-arg` フォームが配下だけを所有する構成と、行配列の要素の
+   * 競合を同じ仕組みで扱うためです（`docs/ja/値の供給と権威解決の設計書.md` の
+   * 決定済みの論点 2）。変化した経路だけを記録し、変化しなかった経路には触りません。
+   */
+  private readonly lastPathApplied = new Map<string, ValueChangeOrigin>();
+
+  /**
+   * このフラグメントのバインドデータの、指定した経路へ値を適用してよいかを返します。
+   *
+   * @param path 対象の経路（`a.b.c`）
+   * @param origin 適用しようとしている値の由来
+   * @returns 適用してよい場合は true
+   */
+  public canApplyPath(path: string, origin: ValueChangeOrigin): boolean {
+    return ElementFragment.isApplicable(
+      this.lastPathApplied.get(path) ?? null,
+      origin,
+    );
+  }
+
+  /**
+   * このフラグメントのバインドデータの、指定した経路へ値を適用したことを記録します。
+   *
+   * 非供給更新は記録しません（入力欄の台帳と同じ理由。絶えず走る再評価が最新の
+   * 通番を記録すると、後から届く正当な供給を古いと誤判定します）。
+   *
+   * @param path 対象の経路
+   * @param origin 適用した値の由来
+   * @returns 戻り値はありません。
+   */
+  public markPathApplied(path: string, origin: ValueChangeOrigin): void {
+    if (origin.kind === 'nonSupply') {
+      return;
+    }
+    const last = this.lastPathApplied.get(path) ?? null;
+    if (
+      last === null ||
+      origin.sequence > last.sequence ||
+      (origin.sequence === last.sequence && origin.kind === 'edit')
+    ) {
+      this.lastPathApplied.set(path, {
+        sequence: origin.sequence,
+        kind: origin.kind,
+      });
+    }
   }
 
   /**

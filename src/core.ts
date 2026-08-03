@@ -987,6 +987,9 @@ export default class Core {
    *     `userEditBaseline` から推定する（`null` なら非供給更新、それ以外は供給）。
    *     `change` / `input` の双方向コミットだけは推定できないため、明示的に
    *     `'edit'` を渡すこと
+   * @param editedPaths この更新のうち、利用者が実際に編集したバインドデータの経路。
+   *     フォーム全体の収集値を運ぶ双方向コミットが、未編集の欄まで編集の権威を
+   *     得ないようにするために渡す（`Form.collectEditedPaths()`）
    * @returns Promise (DOM操作が完了したときに解決される)
    */
   public static setBindingData(
@@ -998,6 +1001,7 @@ export default class Core {
     userEditBaseline: number | null = ElementFragment.currentSequence(),
     originSequence: number = ElementFragment.nextSequence(),
     kind: ValueChangeKind | null = null,
+    editedPaths: ReadonlySet<string> | null = null,
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
     // この更新の種別。段 3 で `userEditBaseline` を廃するまでは、渡されていない
@@ -1009,6 +1013,7 @@ export default class Core {
     const origin: ValueChangeOrigin = {
       sequence: originSequence,
       kind: resolvedKind,
+      ...(editedPaths === null ? {} : {editedPaths}),
     };
     // この更新が「明示的な値の供給」かどうか。供給だけが宛先の権威を更新し、供給
     // 同士は後勝ち（仕様 1927 行）で解決する。値の供給ではない内部更新（双方向
@@ -1030,15 +1035,21 @@ export default class Core {
     if (isSupply && userEditBaseline !== null) {
       Core.clearUserEditMarks(fragment, userEditBaseline);
     }
+    // 変化した経路ごとに適用可否を判定し、棄却した経路は前の値のまま残す。
+    // `reflectToAttribute=false` は `_fetch` / `_poll` / 可視範囲のようなエンジン
+    // 管理変数の更新で、権威の競合が起きない代わりに高頻度なので判定を通さない。
+    const resolvedData = reflectToAttribute
+      ? Core.resolveByPathAuthority(fragment, previous, data, origin)
+      : data;
     // 内部バインドデータは即時確定する（後続の同期読み取りが最新値を得られるよう）。
-    fragment.setBindingData(data);
+    fragment.setBindingData(resolvedData);
 
     // bindchangeイベントを発火（従来どおり呼出時点で同期通知する）。
     // reflectToAttribute=false は属性ミラーすら行わない一時的なエンジン管理更新
     // （可視範囲など）のため、外部向け bindchange も発火しない（高頻度更新による
     // 通知の氾濫を避け、「非ミラーの一時更新は外部通知もしない」と意味を揃える）。
     if (reflectToAttribute) {
-      HaoriEvent.bindChange(element, previous, data, 'manual');
+      HaoriEvent.bindChange(element, previous, resolvedData, 'manual');
       // ブラウザストレージへのミラーは、in-memory が確定したこの時点で同期実行する。
       // Queue（requestAnimationFrame）へ遅延させると、data-{event}-redirect による
       // 遷移や背面タブで次フレームが来ず、遷移直前の保存を取りこぼす。
@@ -1068,7 +1079,7 @@ export default class Core {
       // (2) 入力欄への書き戻し: 適用直前に読み直す（後述の Form.syncValues 参照）。
       //     属性書き込みの完了を待つ間にユーザー操作が挟まるため、ワーク開始時点の
       //     値では古くなる。
-      const current = fragment.getRawBindingData() ?? data;
+      const current = fragment.getRawBindingData() ?? resolvedData;
       // reflectToAttribute=false のときは data-bind 属性への全データ直列化を抑止する
       // （一時変数の高頻度更新での直列化コストを避ける。in-memory が権威）。
       let chain = reflectToAttribute
@@ -1088,7 +1099,7 @@ export default class Core {
           if (fragment.wasResetAfter(resetSequence)) {
             return undefined;
           }
-          const latest = fragment.getRawBindingData() ?? data;
+          const latest = fragment.getRawBindingData() ?? resolvedData;
           return Form.syncValues(
             fragment,
             Form.resolveSyncValues(fragment, latest),
@@ -1126,6 +1137,250 @@ export default class Core {
     };
     // 再入は即時実行（自己デッドロック防止）、通常呼出は FIFO 直列化。
     return reentrant ? work() : fragment.enqueueBindingWork(work);
+  }
+
+  /**
+   * 経路が存在しないことを表す番兵。`undefined` を値として持つ経路と区別します。
+   */
+  private static readonly ABSENT_PATH = Symbol('absent');
+
+  /**
+   * 変化した経路ごとに適用可否を判定し、棄却した経路を前の値のまま残したデータを
+   * 返します。
+   *
+   * バインドデータの宛先は**経路単位**です（`docs/ja/値の供給と権威解決の設計書.md`）。
+   * 更新はオブジェクト全体を差し替える形で届くため、前の値と突き合わせて「実際に
+   * 変化した経路」を求め、その経路ごとに宛先の台帳と照合します。変化していない経路
+   * には触らないため、絶えず走る再評価が台帳を汚しません。
+   *
+   * @param fragment 対象のフラグメント
+   * @param previous 更新前のバインドデータ（初回は null）
+   * @param next 更新で与えられたバインドデータ
+   * @param origin この更新の由来（通番・種別・編集された経路）
+   * @returns 適用を許した経路だけが `next` の値になったバインドデータ
+   */
+  private static resolveByPathAuthority(
+    fragment: ElementFragment,
+    previous: Record<string, unknown> | null,
+    next: Record<string, unknown>,
+    origin: ValueChangeOrigin,
+  ): Record<string, unknown> {
+    const merged = Core.mergePathAuthority(
+      fragment,
+      previous ?? {},
+      next,
+      origin,
+      '',
+    );
+    return merged === Core.ABSENT_PATH
+      ? next
+      : (merged as Record<string, unknown>);
+  }
+
+  /**
+   * 経路をたどりながら、変化した葉ごとに適用可否を判定します。
+   *
+   * @param fragment 対象のフラグメント
+   * @param previous その経路の更新前の値（存在しない場合は `ABSENT_PATH`）
+   * @param next その経路の更新後の値（存在しない場合は `ABSENT_PATH`）
+   * @param origin この更新の由来
+   * @param path その経路（ルートは空文字）
+   * @returns 採用した値。その経路を持たせない場合は `ABSENT_PATH`
+   */
+  private static mergePathAuthority(
+    fragment: ElementFragment,
+    previous: unknown,
+    next: unknown,
+    origin: ValueChangeOrigin,
+    path: string,
+  ): unknown {
+    if (Core.isPlainRecord(previous) && Core.isPlainRecord(next)) {
+      const previousRecord = previous as Record<string, unknown>;
+      const nextRecord = next as Record<string, unknown>;
+      const result: Record<string, unknown> = {};
+      let substituted = Object.keys(previousRecord).some(
+        key => !Object.prototype.hasOwnProperty.call(nextRecord, key),
+      );
+      const keys = new Set([
+        ...Object.keys(previousRecord),
+        ...Object.keys(nextRecord),
+      ]);
+      for (const key of keys) {
+        const childPath = path === '' ? key : `${path}.${key}`;
+        const child = Core.mergePathAuthority(
+          fragment,
+          Object.prototype.hasOwnProperty.call(previousRecord, key)
+            ? previousRecord[key]
+            : Core.ABSENT_PATH,
+          Object.prototype.hasOwnProperty.call(nextRecord, key)
+            ? nextRecord[key]
+            : Core.ABSENT_PATH,
+          origin,
+          childPath,
+        );
+        if (child !== Core.ABSENT_PATH) {
+          result[key] = child;
+        }
+        if (
+          child !==
+          (Object.prototype.hasOwnProperty.call(nextRecord, key)
+            ? nextRecord[key]
+            : Core.ABSENT_PATH)
+        ) {
+          substituted = true;
+        }
+      }
+      // 棄却が無ければ渡されたオブジェクトをそのまま返す。差し替えると、呼び出し側が
+      // 保持している参照と内部の値が別物になり、無用な複製も生む。
+      return substituted ? result : nextRecord;
+    }
+    const pairedKeys = Core.resolveArrayPairing(fragment, previous, next, path);
+    if (pairedKeys !== null) {
+      const previousArray = previous as unknown[];
+      const nextArray = next as unknown[];
+      const merged = nextArray.map((item, index) =>
+        Core.mergePathAuthority(
+          fragment,
+          previousArray[index],
+          item,
+          origin,
+          `${path}[${pairedKeys[index]}]`,
+        ),
+      );
+      return merged.some((item, index) => item !== nextArray[index])
+        ? merged
+        : nextArray;
+    }
+    // 葉（または構造が変わった部分木）。ここが 1 つの宛先になる。
+    if (Core.isSameBindingValue(previous, next)) {
+      // 変化していない経路は判定も記録もしない。
+      return next;
+    }
+    const kind: ValueChangeKind = origin.editedPaths?.has(path)
+      ? 'edit'
+      : origin.kind;
+    const pathOrigin: ValueChangeOrigin = {sequence: origin.sequence, kind};
+    if (!fragment.canApplyPath(path, pathOrigin)) {
+      return previous;
+    }
+    fragment.markPathApplied(path, pathOrigin);
+    return next;
+  }
+
+  /**
+   * 配列を要素ごとの宛先として扱えるかを判定し、扱える場合は各要素のリストキーを
+   * 返します。
+   *
+   * 行の追加・削除・並べ替えが起きている場合は要素の対応が取れないため、配列全体を
+   * 1 つの宛先として扱います（`null` を返す）。対応が取れる場合だけ要素へ降り、
+   * 経路の要素にはリストキーを使います。添字は行の挿入・削除で意味が変わるため、
+   * `data-each-key` の宣言があればそれを優先します（`Core.createListKey()`）。
+   *
+   * @param fragment 対象のフラグメント
+   * @param previous 更新前の値
+   * @param next 更新後の値
+   * @param path その経路
+   * @returns 要素ごとのリストキー。要素へ降りない場合は null
+   */
+  private static resolveArrayPairing(
+    fragment: ElementFragment,
+    previous: unknown,
+    next: unknown,
+    path: string,
+  ): string[] | null {
+    if (!Array.isArray(previous) || !Array.isArray(next)) {
+      return null;
+    }
+    if (previous.length !== next.length || next.length === 0) {
+      return null;
+    }
+    // `Core.createListKey()` は素のオブジェクト以外で `keyArg` を見ないため、
+    // その場合は DOM の走査を省く（更新のたびに走るので費用が積み上がる）。
+    const keyArg = next.some(item => Core.isPlainRecord(item))
+      ? Core.resolveEachKeyArg(fragment, path)
+      : null;
+    const previousKeys = previous.map((item, index) =>
+      Core.createListKey(
+        item as Record<string, unknown> | string | number,
+        keyArg,
+        index,
+      ),
+    );
+    const nextKeys = next.map((item, index) =>
+      Core.createListKey(
+        item as Record<string, unknown> | string | number,
+        keyArg,
+        index,
+      ),
+    );
+    // 同じ位置に同じキーが並んでいるときだけ、要素同士が対応していると言える。
+    if (previousKeys.some((key, index) => key !== nextKeys[index])) {
+      return null;
+    }
+    return nextKeys;
+  }
+
+  /**
+   * 配列の経路に対応する `data-each-key` の指定を探します。
+   *
+   * @param fragment 対象のフラグメント
+   * @param path 配列の経路
+   * @returns リストキーに使うプロパティ名。宣言が無ければ null
+   */
+  private static resolveEachKeyArg(
+    fragment: ElementFragment,
+    path: string,
+  ): string | null {
+    const eachAttribute = `${Env.prefix}each`;
+    const elements = fragment
+      .getTarget()
+      .querySelectorAll(`[${eachAttribute}]`);
+    for (const element of Array.from(elements)) {
+      if (element.getAttribute(eachAttribute)?.trim() !== path) {
+        continue;
+      }
+      const keyArg = element.getAttribute(`${eachAttribute}-key`);
+      return keyArg === null ? null : keyArg.trim();
+    }
+    return null;
+  }
+
+  /**
+   * 素のオブジェクト（配列でも null でもないオブジェクト）かどうかを返します。
+   *
+   * @param value 判定する値
+   * @returns 素のオブジェクトなら true
+   */
+  private static isPlainRecord(value: unknown): boolean {
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value) &&
+      Object.getPrototypeOf(value) === Object.prototype
+    );
+  }
+
+  /**
+   * バインドデータの 2 つの値が同じ内容かどうかを返します。
+   *
+   * 直列化できない値（`File` など）は参照の同一性で比べます。
+   *
+   * @param a 比較する値
+   * @param b 比較する値
+   * @returns 同じ内容なら true
+   */
+  private static isSameBindingValue(a: unknown, b: unknown): boolean {
+    if (a === b) {
+      return true;
+    }
+    if (a === Core.ABSENT_PATH || b === Core.ABSENT_PATH) {
+      return false;
+    }
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return false;
+    }
   }
 
   /**
