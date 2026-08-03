@@ -231,33 +231,88 @@ describe('バインドデータの宛先の粒度', () => {
     });
   });
 
-  it('data-each-arg スコープ内の入れ子の宣言でも data-each-key を見つける', async () => {
-    // 入れ子の `data-each` は上位の行スコープの名前で書かれる（`r.items`）。宣言を
-    // 絶対経路（`rows.items`）へ直して照合しないと、リストキーが添字へ退き、並べ替えを
-    // 「同じ位置の値の変化」と誤って扱う。そうなると、位置ごとに変化した経路だけが
-    // 宛先として記録され、**誰も供給していない混ざり方**が残る（仕様 755 / 1945 行）。
-    //
-    // `v` は並べ替えの前後で同じ値にしてある。添字で対応させると `v` の経路は
-    // 「変化していない」と判定されて記録されず、後から届いた古い供給の `v` だけが
-    // 載ってしまう。
-    container.innerHTML =
-      '<div data-bind=\'{"rows":[{"id":1,"items":[{"k":"x","v":"1"},{"k":"y","v":"1"}]}]}\'>' +
-      `<ul data-each="rows" data-each-key="id" data-each-arg="r">` +
-      `<ol data-each="r.items" data-each-key="k" data-each-arg="it">` +
-      '<li>{{it.v}}</li>' +
-      '</ol>' +
-      '</ul>' +
-      '</div>';
-    const element = container.querySelector('div') as HTMLElement;
-    await Core.scan(element);
-    await waitForIdle();
+  /**
+   * 入れ子の `data-each` の宣言の書き方。
+   *
+   * 宣言は式なので、経路とそのまま文字列比較はできません（`Core.resolveEachKeyArg()`）。
+   * 上位の行スコープの名前を解いて絶対経路（`rows.items`）へ直してから照合します。
+   * 解き方が 2 通りあるため、両方を同じ列で確かめます。
+   */
+  const NESTED_EACH_DECLARATIONS: readonly [string, string][] = [
+    // `data-each-arg="r"` を宣言した場合。入れ子は `r.items` と書かれ、`r` を上位の
+    // 宣言（`rows`）へ置き換える。
+    [
+      'data-each-arg スコープ内',
+      '<ul data-each="rows" data-each-key="id" data-each-arg="r">' +
+        '<ol data-each="r.items" data-each-key="k" data-each-arg="it">' +
+        '<li>{{it.v}}</li></ol></ul>',
+    ],
+    // `data-each-arg` を省いた場合。要素データのキーがそのまま行スコープへ広がるため
+    // 入れ子は素のキー（`items`）で書かれ、上位の宣言を接頭に付ける。
+    [
+      'data-each-arg の無い',
+      '<ul data-each="rows" data-each-key="id">' +
+        '<ol data-each="items" data-each-key="k" data-each-arg="it">' +
+        '<li>{{it.v}}</li></ol></ul>',
+    ],
+  ];
 
-    // 入れ子の配列を並べ替える。`k` をリストキーとして見つけられれば並びの変化を
-    // 検出し、配列全体を 1 つの宛先として扱う。
-    const newer = ElementFragment.nextSequence();
-    await Core.setBindingData(
-      element,
-      {
+  it.each(NESTED_EACH_DECLARATIONS)(
+    '%s入れ子の宣言でも data-each-key を見つける',
+    async (_label, markup) => {
+      // 宣言を絶対経路へ直して照合しないと、リストキーが添字へ退き、並べ替えを
+      // 「同じ位置の値の変化」と誤って扱う。そうなると、位置ごとに変化した経路だけが
+      // 宛先として記録され、**誰も供給していない混ざり方**が残る（仕様 755 / 1945 行）。
+      //
+      // `v` は並べ替えの前後で同じ値にしてある。添字で対応させると `v` の経路は
+      // 「変化していない」と判定されて記録されず、後から届いた古い供給の `v` だけが
+      // 載ってしまう。
+      container.innerHTML =
+        '<div data-bind=\'{"rows":[{"id":1,"items":[{"k":"x","v":"1"},{"k":"y","v":"1"}]}]}\'>' +
+        markup +
+        '</div>';
+      const element = container.querySelector('div') as HTMLElement;
+      await Core.scan(element);
+      await waitForIdle();
+
+      // 入れ子の配列を並べ替える。`k` をリストキーとして見つけられれば並びの変化を
+      // 検出し、配列全体を 1 つの宛先として扱う。
+      const newer = ElementFragment.nextSequence();
+      await Core.setBindingData(
+        element,
+        {
+          rows: [
+            {
+              id: 1,
+              items: [
+                {k: 'y', v: '1'},
+                {k: 'x', v: '1'},
+              ],
+            },
+          ],
+        },
+        {sequence: newer},
+      );
+      await waitForIdle();
+
+      await Core.setBindingData(
+        element,
+        {
+          rows: [
+            {
+              id: 1,
+              items: [
+                {k: 'x', v: '1b'},
+                {k: 'y', v: '2b'},
+              ],
+            },
+          ],
+        },
+        {sequence: newer - 1},
+      );
+      await waitForIdle();
+
+      expect(raw(element)).toEqual({
         rows: [
           {
             id: 1,
@@ -267,103 +322,7 @@ describe('バインドデータの宛先の粒度', () => {
             ],
           },
         ],
-      },
-      {sequence: newer},
-    );
-    await waitForIdle();
-
-    await Core.setBindingData(
-      element,
-      {
-        rows: [
-          {
-            id: 1,
-            items: [
-              {k: 'x', v: '1b'},
-              {k: 'y', v: '2b'},
-            ],
-          },
-        ],
-      },
-      {sequence: newer - 1},
-    );
-    await waitForIdle();
-
-    expect(raw(element)).toEqual({
-      rows: [
-        {
-          id: 1,
-          items: [
-            {k: 'y', v: '1'},
-            {k: 'x', v: '1'},
-          ],
-        },
-      ],
-    });
-  });
-
-  it('data-each-arg の無い入れ子の宣言でも data-each-key を見つける', async () => {
-    // `data-each-arg` を省いた構成では、要素データのキーがそのまま行スコープへ広がる。
-    // したがって入れ子の宣言は素のキー（`items`）で書かれ、絶対経路は上位の宣言を
-    // 接頭に付けた `rows.items` になる。一つ上のテストと同じ理由で、リストキーを
-    // 見つけられないと誰も供給していない混ざり方が残る。
-    container.innerHTML =
-      '<div data-bind=\'{"rows":[{"id":1,"items":[{"k":"x","v":"1"},{"k":"y","v":"1"}]}]}\'>' +
-      `<ul data-each="rows" data-each-key="id">` +
-      `<ol data-each="items" data-each-key="k" data-each-arg="it">` +
-      '<li>{{it.v}}</li>' +
-      '</ol>' +
-      '</ul>' +
-      '</div>';
-    const element = container.querySelector('div') as HTMLElement;
-    await Core.scan(element);
-    await waitForIdle();
-
-    const newer = ElementFragment.nextSequence();
-    await Core.setBindingData(
-      element,
-      {
-        rows: [
-          {
-            id: 1,
-            items: [
-              {k: 'y', v: '1'},
-              {k: 'x', v: '1'},
-            ],
-          },
-        ],
-      },
-      {sequence: newer},
-    );
-    await waitForIdle();
-
-    await Core.setBindingData(
-      element,
-      {
-        rows: [
-          {
-            id: 1,
-            items: [
-              {k: 'x', v: '1b'},
-              {k: 'y', v: '2b'},
-            ],
-          },
-        ],
-      },
-      {sequence: newer - 1},
-    );
-    await waitForIdle();
-
-    expect(raw(element)).toEqual({
-      rows: [
-        {
-          id: 1,
-          items: [
-            {k: 'y', v: '1'},
-            {k: 'x', v: '1'},
-          ],
-        },
-      ],
-    });
-  });
+      });
+    },
+  );
 });
