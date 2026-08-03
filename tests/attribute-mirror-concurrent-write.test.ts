@@ -56,6 +56,28 @@ describe('別の属性の書き込み中の data-bind ミラー', () => {
     expectConsistent(container);
   });
 
+  it('同じ属性の書き込みを待っている間の更新でも後から来た値が data-bind 属性へ載る', async () => {
+    container.innerHTML = '<div data-bind=\'{"v":0}\'></div>';
+    const element = container.querySelector('div') as HTMLElement;
+    await Core.scan(element);
+    await waitForDomSettled();
+
+    // `data-bind` 属性の書き込みを await せずに、同じ属性へ届く更新を重ねる。
+    // 仕様 1941 行「別の値の反映が要求されたら、後から来た値が載ります（後勝ち）。
+    // 先の書き込みの完了を待ってから改めて反映する」。
+    const first = Core.setAttribute(element, 'data-bind', '{"v":1}');
+    const second = Core.setBindingData(element, {v: 2});
+    await Promise.all([first, second]);
+    await waitForDomSettled();
+
+    const fragment = Fragment.get(element) as ElementFragment;
+    expect(fragment.getRawBindingData()).toEqual({v: 2});
+    expect(JSON.parse(element.getAttribute('data-bind') as string)).toEqual({
+      v: 2,
+    });
+    expectConsistent(container);
+  });
+
   it('別の属性の書き込みを待っている間の更新でも data-bind 属性へミラーされる', async () => {
     container.innerHTML = '<div data-bind=\'{"v":0}\'></div>';
     const element = container.querySelector('div') as HTMLElement;

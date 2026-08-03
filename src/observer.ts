@@ -48,6 +48,13 @@ export class Observer {
     }
     Observer._initialized = true;
     Observer.disconnectMutationObservers();
+    // 操作の通番を発番する側が、発番の直前に保留中の変更を引き取れるようにする。
+    // `Observer` を直接参照すると循環参照になるためフックで渡す。登録は初期化 1 回で
+    // 足りる（`observe()` は監視対象ごとに呼ばれるため、そこで登録すると同じフックを
+    // 上書きし続けることになる）。
+    ElementFragment.setPendingMutationFlusher(() => {
+      Observer.flushPendingMutations();
+    });
     // 初期スキャンより先にイベントリスナーを登録する。初期スキャン中に
     // data-each-rendered-run 等から同期的に発火されたイベント（select の既定選択を
     // 確定する change など）は、リスナー未登録のままだと手続きが実行されずに
@@ -142,11 +149,6 @@ export class Observer {
       characterData: true,
     });
     Observer._mutationObservers.push(observer);
-    // 操作の通番を発番する側（`Procedure`）が、発番の直前に保留中の変更を引き取れる
-    // ようにする。`Observer` を直接参照すると循環参照になるためフックで渡す。
-    ElementFragment.setPendingMutationFlusher(() => {
-      Observer.flushPendingMutations();
-    });
   }
 
   /**

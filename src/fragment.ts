@@ -822,8 +822,13 @@ export class ElementFragment extends Fragment {
    * ある間はその要素の**別の属性**への書き込みまで捨ててしまいます（`data-fetch` の
    * 評価結果を属性へ書いている最中に、応答の self-bind が `data-bind` 属性へ
    * ミラーできず、属性と in-memory が食い違って残る不具合になっていました）。
+   *
+   * 値は書き込みの完了 Promise です。**同じ属性へ内部から届いた書き込みは捨てず**、
+   * この Promise を待ってから改めて反映します（後勝ち、仕様 1941 行）。捨てるのは
+   * オブザーバー由来の書き戻し（＝自分の書き込みのエコー。ここがループの断ち口）と
+   * 削除だけです。
    */
-  private readonly selfWritingAttributes = new Set<string>();
+  private readonly selfWritingAttributes = new Map<string, Promise<void>>();
 
   /** 値変更スキップフラグ（更新イベントによる無限ループ対応） */
   private skipChangeValue = false;
@@ -1211,10 +1216,28 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 全フラグメントで実行中のバインドワークの数。
+   *
+   * `nextOperationSequence()` が保留中の外部変更を同期的に取り込んでよいかの判定に
+   * 使います（`ElementFragment.isExecutingAnyBindingWork()`）。
+   */
+  private static bindingWorkActiveCount = 0;
+
+  /**
+   * どこかでバインドワークが実行中かどうかを返します。
+   *
+   * @returns 実行中なら true
+   */
+  public static isExecutingAnyBindingWork(): boolean {
+    return ElementFragment.bindingWorkActiveCount > 0;
+  }
+
+  /**
    * バインドワークの実行開始を記録します（`Core.setBindingData` の work 開始時に呼ぶ）。
    */
   public markBindingWorkStart(): void {
     this.bindingWorkActive++;
+    ElementFragment.bindingWorkActiveCount++;
   }
 
   /**
@@ -1223,6 +1246,7 @@ export class ElementFragment extends Fragment {
   public markBindingWorkEnd(): void {
     if (this.bindingWorkActive > 0) {
       this.bindingWorkActive--;
+      ElementFragment.bindingWorkActiveCount--;
     }
   }
 
@@ -1953,15 +1977,21 @@ export class ElementFragment extends Fragment {
    * 換えた直後にクリックした」場合に、先に起きた外部の書き換えが後の番号を得て
    * 権威が逆転します（`docs/ja/値の供給と権威解決の設計書.md`「段構成の訂正」）。
    *
-   * **DOM イベントを起点とする処理からだけ呼んでください。** 取り込みは
-   * `Core.setAttribute()` → `Core.setBindingData()` を同期的に呼ぶため、バインド
-   * ワークの内部から呼ぶと実行中のワークへ再入します。イベント起点でない処理は
-   * `nextSequence()` を使ってください。
+   * **バインドワークが実行中のときは取り込みを行いません。** 取り込みは
+   * `Core.setAttribute()` → `Core.setBindingData()` を同期的に呼ぶため、ワークの
+   * 内部で行うと実行中のワークへ再入します。以前はこれを「イベント起点からだけ
+   * 呼ぶ」という呼び出し側の規約で守っていましたが、規約は強制されないため
+   * 構造で防ぐようにしました（`isExecutingAnyBindingWork()`）。順序の逆転が問題に
+   * なるのは「外部が書き換えた直後に利用者が操作した」場合だけで、その時点で
+   * バインドワークが走っていることはありません。
    *
    * @returns 発番した通番
    */
   public static nextOperationSequence(): number {
-    if (ElementFragment.pendingMutationFlusher) {
+    if (
+      ElementFragment.pendingMutationFlusher &&
+      !ElementFragment.isExecutingAnyBindingWork()
+    ) {
       ElementFragment.pendingMutationFlusher();
     }
     return ElementFragment.nextSequence();
@@ -2432,23 +2462,35 @@ export class ElementFragment extends Fragment {
   }
 
   /**
-   * 指定した属性のいずれかを自身が書き込み中かどうかを返します。
+   * 指定した属性のいずれかを自身が書き込み中なら、その完了 Promise を返します。
    *
    * @param names 対象の属性名
-   * @returns 書き込み中なら true
+   * @returns 書き込み中ならその完了 Promise。書き込み中でなければ null
    */
-  private isSelfWritingAttribute(names: readonly string[]): boolean {
-    return names.some(name => this.selfWritingAttributes.has(name));
+  private getSelfWritingAttribute(
+    names: readonly string[],
+  ): Promise<void> | null {
+    for (const name of names) {
+      const pending = this.selfWritingAttributes.get(name);
+      if (pending !== undefined) {
+        return pending;
+      }
+    }
+    return null;
   }
 
   /**
    * 指定した属性を「自身が書き込み中」として記録します。
    *
    * @param names 対象の属性名
+   * @param write 書き込みの完了 Promise（解放まで含めて完了するもの）
    */
-  private holdSelfWritingAttributes(names: readonly string[]): void {
+  private holdSelfWritingAttributes(
+    names: readonly string[],
+    write: Promise<void>,
+  ): void {
     for (const name of names) {
-      this.selfWritingAttributes.add(name);
+      this.selfWritingAttributes.set(name, write);
     }
   }
 
@@ -2523,7 +2565,9 @@ export class ElementFragment extends Fragment {
     targetName: string,
   ): Promise<void> {
     const heldNames = [rawName, targetName];
-    if (this.isSelfWritingAttribute(heldNames)) {
+    // 削除は待って載せ直さない。待つあいだに他の経路が同じ属性へ書いた値を、あとから
+    // 走る削除が消してしまう（下の `requires*Removal` と同じ理由）。
+    if (this.getSelfWritingAttribute(heldNames) !== null) {
       return Promise.resolve();
     }
     this.attributeMap.delete(rawName);
@@ -2537,17 +2581,20 @@ export class ElementFragment extends Fragment {
     if (!requiresRawRemoval && !requiresTargetRemoval) {
       return Promise.resolve();
     }
-    this.holdSelfWritingAttributes(heldNames);
-    return Queue.enqueue(() => {
-      if (requiresRawRemoval) {
-        element.removeAttribute(rawName);
-      }
-      if (requiresTargetRemoval) {
-        element.removeAttribute(targetName);
-      }
-    }).finally(() => {
+    const removal = (
+      Queue.enqueue(() => {
+        if (requiresRawRemoval) {
+          element.removeAttribute(rawName);
+        }
+        if (requiresTargetRemoval) {
+          element.removeAttribute(targetName);
+        }
+      }) as Promise<void>
+    ).finally(() => {
       this.releaseSelfWritingAttributes(heldNames);
     }) as Promise<void>;
+    this.holdSelfWritingAttributes(heldNames, removal);
+    return removal;
   }
 
   /**
@@ -2570,8 +2617,27 @@ export class ElementFragment extends Fragment {
     // 書き込み中かどうかは属性名ごとに見る（`selfWritingAttributes` 参照）。別名属性は
     // 生属性と反映先の 2 つへ書くため、その両方を対象にする。
     const heldNames = [rawName, targetName];
-    if (this.isSelfWritingAttribute(heldNames)) {
-      return Promise.resolve();
+    const pendingWrite = this.getSelfWritingAttribute(heldNames);
+    if (pendingWrite !== null) {
+      if (fromObserver || value === null) {
+        // オブザーバー由来の書き戻しは自分の書き込みのエコー。ここで捨てるのが
+        // `MutationObserver` のループの断ち口である。削除も捨てる（待って載せ直すと、
+        // 待つあいだに他の経路が書いた値を消してしまう）。
+        return Promise.resolve();
+      }
+      // 内部からの書き込みは捨てない。先の書き込みの完了を待ってから改めて反映する
+      // （後勝ち、仕様 1941 行）。捨てると、最後に供給された値が属性へ載らないまま
+      // in-memory と食い違って残る。待ち合わせの登録順＝呼出順なので、複数が待っても
+      // 最後に呼ばれた値が最後に書かれる。
+      return pendingWrite.then(() =>
+        this.setAttributeInternal(
+          rawName,
+          targetName,
+          value,
+          syncValueProperty,
+          fromObserver,
+        ),
+      );
     }
     if (value === null) {
       if (rawName === targetName) {
@@ -2590,10 +2656,11 @@ export class ElementFragment extends Fragment {
         !contents.isEvaluate &&
         !contents.isForceEvaluation()
       ) {
-        this.holdSelfWritingAttributes(heldNames);
-        return Queue.enqueue(() => {}).finally(() => {
+        const idle = (Queue.enqueue(() => {}) as Promise<void>).finally(() => {
           this.releaseSelfWritingAttributes(heldNames);
         }) as Promise<void>;
+        this.holdSelfWritingAttributes(heldNames, idle);
+        return idle;
       }
     }
     this.attributeMap.set(rawName, contents);
@@ -2741,56 +2808,59 @@ export class ElementFragment extends Fragment {
       }
       return Promise.resolve();
     }
-    this.holdSelfWritingAttributes(heldNames);
-    return Queue.enqueue(() => {
-      if (requiresRawAttributeWrite) {
-        element.setAttribute(rawName, value);
-      }
-      if (stringResult === null) {
-        element.removeAttribute(targetName);
-      } else if (requiresTargetAttributeWrite) {
-        element.setAttribute(targetName, stringResult);
-        // data-bind への自己書き込みを記録し、MutationObserver による自身の
-        // エコーの再取り込み（並行更新時の巻き戻し）を防ぐ。
-        if (targetName === `${Env.prefix}bind`) {
-          this.recordSelfWrittenBind(stringResult);
+    const write = (
+      Queue.enqueue(() => {
+        if (requiresRawAttributeWrite) {
+          element.setAttribute(rawName, value);
         }
-      }
-      // element.setAttribute('value', ...) は defaultValue のみ更新するため、
-      // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
-      // 属性削除となる場合は空へ揃える（属性の有無と値の食い違いを残さない）。
-      // フォーカス中（編集中）の入力は skipValueReapply で再適用しない。
-      if (shouldSyncValueProperty && !skipValueReapply) {
-        // 内部値は type="number" のとき数値化し、DOM 表示は文字列のままにする
-        this.value = this.normalizeValueForElement(
-          element,
-          desiredValueProperty,
-        );
-        if (requiresValuePropertyWrite) {
-          element.value = desiredValueProperty;
+        if (stringResult === null) {
+          element.removeAttribute(targetName);
+        } else if (requiresTargetAttributeWrite) {
+          element.setAttribute(targetName, stringResult);
+          // data-bind への自己書き込みを記録し、MutationObserver による自身の
+          // エコーの再取り込み（並行更新時の巻き戻し）を防ぐ。
+          if (targetName === `${Env.prefix}bind`) {
+            this.recordSelfWrittenBind(stringResult);
+          }
         }
-        // 書き込んだ値を DOM が受け付けたかを記録する（`valueWriteUnapplied` 参照）。
-        this.recordValueWriteResult(element.value === desiredValueProperty);
-      }
-      // checked / selected の DOM プロパティを真偽属性の有無に合わせて同期する
-      // （属性の付与・削除どちらの場合も反映する）。
-      if (requiresCheckedPropertyWrite) {
-        (element as HTMLInputElement).checked = checkableDesiredState;
-      }
-      if (requiresSelectedPropertyWrite) {
-        (element as HTMLOptionElement).selected = checkableDesiredState;
-      }
-      // 内部値（値収集や式評価が参照する値）も DOM のチェック状態へ揃える。
-      // value 属性の同期（上記 shouldSyncValueProperty）は内部値を更新するのに、
-      // checked / selected は DOM だけ書き換えていたため、宣言バインドで
-      // チェック状態を変えると「画面と内部値が食い違ったまま残る」経路があった。
-      // option の selected は所属する select の内部値が変わるため、そちらを同期する。
-      if (requiresCheckedPropertyWrite || requiresSelectedPropertyWrite) {
-        this.syncCheckableValueFromDom(requiresSelectedPropertyWrite);
-      }
-    }).finally(() => {
+        // element.setAttribute('value', ...) は defaultValue のみ更新するため、
+        // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
+        // 属性削除となる場合は空へ揃える（属性の有無と値の食い違いを残さない）。
+        // フォーカス中（編集中）の入力は skipValueReapply で再適用しない。
+        if (shouldSyncValueProperty && !skipValueReapply) {
+          // 内部値は type="number" のとき数値化し、DOM 表示は文字列のままにする
+          this.value = this.normalizeValueForElement(
+            element,
+            desiredValueProperty,
+          );
+          if (requiresValuePropertyWrite) {
+            element.value = desiredValueProperty;
+          }
+          // 書き込んだ値を DOM が受け付けたかを記録する（`valueWriteUnapplied` 参照）。
+          this.recordValueWriteResult(element.value === desiredValueProperty);
+        }
+        // checked / selected の DOM プロパティを真偽属性の有無に合わせて同期する
+        // （属性の付与・削除どちらの場合も反映する）。
+        if (requiresCheckedPropertyWrite) {
+          (element as HTMLInputElement).checked = checkableDesiredState;
+        }
+        if (requiresSelectedPropertyWrite) {
+          (element as HTMLOptionElement).selected = checkableDesiredState;
+        }
+        // 内部値（値収集や式評価が参照する値）も DOM のチェック状態へ揃える。
+        // value 属性の同期（上記 shouldSyncValueProperty）は内部値を更新するのに、
+        // checked / selected は DOM だけ書き換えていたため、宣言バインドで
+        // チェック状態を変えると「画面と内部値が食い違ったまま残る」経路があった。
+        // option の selected は所属する select の内部値が変わるため、そちらを同期する。
+        if (requiresCheckedPropertyWrite || requiresSelectedPropertyWrite) {
+          this.syncCheckableValueFromDom(requiresSelectedPropertyWrite);
+        }
+      }) as Promise<void>
+    ).finally(() => {
       this.releaseSelfWritingAttributes(heldNames);
     }) as Promise<void>;
+    this.holdSelfWritingAttributes(heldNames, write);
+    return write;
   }
 
   /**
@@ -2804,7 +2874,8 @@ export class ElementFragment extends Fragment {
    * @returns 属性の削除のPromise
    */
   public removeAttribute(name: string): Promise<void> {
-    if (this.isSelfWritingAttribute([name])) {
+    // 削除は待って載せ直さない（下の `hasAttribute` の判定と同じ理由）。
+    if (this.getSelfWritingAttribute([name]) !== null) {
       return Promise.resolve();
     }
     this.attributeMap.delete(name);
@@ -2816,12 +2887,15 @@ export class ElementFragment extends Fragment {
     if (!element.hasAttribute(name)) {
       return Promise.resolve();
     }
-    this.holdSelfWritingAttributes([name]);
-    return Queue.enqueue(() => {
-      element.removeAttribute(name);
-    }).finally(() => {
+    const removal = (
+      Queue.enqueue(() => {
+        element.removeAttribute(name);
+      }) as Promise<void>
+    ).finally(() => {
       this.releaseSelfWritingAttributes([name]);
     }) as Promise<void>;
+    this.holdSelfWritingAttributes([name], removal);
+    return removal;
   }
 
   /**

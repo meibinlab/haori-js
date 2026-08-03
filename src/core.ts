@@ -87,8 +87,9 @@ export interface SetBindingDataOptions {
    *
    * **省略した場合は「呼び出し時点が操作の時点である」と解釈**し、保留中の外部
    * 書き換えを先に番号付けしてから発番します（`ElementFragment.nextOperationSequence()`）。
-   * 公開 API の直接呼び出し専用です。Haori 内部からの呼び出しは必ず明示してください
-   * （取り込みは同期的に進むため、バインドワークの内部で省略すると再入します）。
+   * 公開 API の直接呼び出し向けの既定です。Haori 内部からの呼び出しは、操作と呼び
+   * 出しが離れている以上いずれも明示すべきですが、省略しても安全です（取り込みは
+   * バインドワークの実行中には行われないため、ワークの内部から省略しても再入しません）。
    */
   readonly sequence?: number;
   /**
@@ -840,6 +841,13 @@ export default class Core {
     const promises: Promise<void>[] = [];
     let deriveChangedPromise: Promise<boolean> | null = null;
     let nextDeriveInputSignature: string | null = null;
+    /**
+     * 属性の反映（内部の属性マップの更新）が済んでから行う処理。
+     *
+     * 宣言そのものを読み直す副作用属性（`data-fetch` / `data-import`）はここへ回します。
+     * 反映より前に実行すると、実行時に属性を付与した場合に宣言が見えません。
+     */
+    let afterAttributeWrite: (() => Promise<void>) | null = null;
     switch (name) {
       case `${Env.prefix}bind`: {
         if (value !== null) {
@@ -932,11 +940,17 @@ export default class Core {
         promises.push(Core.evaluateEach(fragment));
         break;
       case `${Env.prefix}fetch`:
-        promises.push(Core.executeManagedFetch(fragment));
+        // 属性の反映（内部の属性マップの更新）より**後**に実行する。先に実行すると、
+        // 実行時に `data-fetch` を付与した場合に「宣言がまだ無い」と判断され、
+        // シグネチャが `null` になって取得が走らない（仕様 2470 行は実行時の直接付与を
+        // 案内している）。スキャン経路では属性マップがすでに埋まっているため、
+        // どちらの順でも動く。
+        afterAttributeWrite = () => Core.executeManagedFetch(fragment);
         break;
       case `${Env.prefix}import`:
         if (typeof value === 'string') {
-          promises.push(Core.executeManagedImport(fragment));
+          // `data-fetch` と同じ理由で属性の反映より後に実行する。
+          afterAttributeWrite = () => Core.executeManagedImport(fragment);
         }
         break;
       case `${Env.prefix}store`:
@@ -997,6 +1011,9 @@ export default class Core {
       promises.push(fragment.setAttribute(name, value, fromObserver));
     }
     return Promise.all(promises)
+      .then(() =>
+        afterAttributeWrite === null ? undefined : afterAttributeWrite(),
+      )
       .then(() => {
         if (deriveChangedPromise !== null) {
           fragment.setDeriveInputSignature(nextDeriveInputSignature);
@@ -1068,11 +1085,6 @@ export default class Core {
     // 同士は後勝ち（仕様 1927 行）で解決する。値の供給ではない内部更新（双方向
     // コミット、`data-url-param` の再評価、エンジン管理変数）は権威を持たない。
     const isSupply = resolvedKind === 'supply';
-    if (isSupply && fragment.isSupplyStale(originSequence)) {
-      // この供給より後の供給がすでにこの宛先へ載っている。古い供給を載せると
-      // 「最後に供給された値が残る」（仕様 1927 行）が崩れる。
-      return Promise.resolve();
-    }
     if (isSupply) {
       fragment.markSupplyApplied(originSequence);
     }
@@ -1374,8 +1386,14 @@ export default class Core {
   /**
    * 配列の経路に対応する `data-each-key` の指定を探します。
    *
+   * `data-each` の属性値は**式**なので、経路とそのまま文字列比較はできません。入れ子の
+   * `data-each` は上位の行スコープの名前で書かれるためです（`data-each-arg="r"` の
+   * 配下では `r.items`）。そこで宣言の側を絶対経路へ直してから比べます
+   * （`Core.resolveEachDeclarationPath()`）。経路の側は配列要素の区間（`[キー]`）を
+   * 取り除いた形にします。宣言は「どの階層の配列か」しか表さないためです。
+   *
    * @param fragment 対象のフラグメント
-   * @param path 配列の経路
+   * @param path 配列の経路（`rows[7].items` のような形）
    * @returns リストキーに使うプロパティ名。宣言が無ければ null
    */
   private static resolveEachKeyArg(
@@ -1383,17 +1401,67 @@ export default class Core {
     path: string,
   ): string | null {
     const eachAttribute = `${Env.prefix}each`;
-    const elements = fragment
-      .getTarget()
-      .querySelectorAll(`[${eachAttribute}]`);
+    const root = fragment.getTarget();
+    // `rows[7].items` → `rows.items`。宣言は階層だけを表すため、要素の区間を落とす。
+    const shapePath = path.replace(/\[[^\]]*\]/g, '');
+    const elements = root.querySelectorAll(`[${eachAttribute}]`);
     for (const element of Array.from(elements)) {
-      if (element.getAttribute(eachAttribute)?.trim() !== path) {
+      const declared = Core.resolveEachDeclarationPath(element, root);
+      if (declared === null || declared !== shapePath) {
         continue;
       }
       const keyArg = element.getAttribute(`${eachAttribute}-key`);
       return keyArg === null ? null : keyArg.trim();
     }
     return null;
+  }
+
+  /**
+   * `data-each` の宣言を、起点の要素から見た絶対経路へ直します。
+   *
+   * 上位の `data-each` を遡り、`data-each-arg` で公開された名前を上位の宣言へ
+   * 置き換えます。`data-each-arg` が無い構成では要素データのキーがそのまま行スコープ
+   * へ広がるため、上位の宣言を接頭に付けます。
+   *
+   * @param element `data-each` を持つ要素
+   * @param root 起点の要素（経路の基準）
+   * @returns 絶対経路。式が空、または経路として扱えない場合は null
+   */
+  private static resolveEachDeclarationPath(
+    element: Element,
+    root: HTMLElement,
+  ): string | null {
+    const eachAttribute = `${Env.prefix}each`;
+    let path = element.getAttribute(eachAttribute)?.trim() ?? '';
+    if (path === '') {
+      return null;
+    }
+    let current = element.parentElement;
+    while (current !== null && current !== root) {
+      const ancestorPath = current.getAttribute(eachAttribute)?.trim();
+      if (ancestorPath !== null && ancestorPath !== undefined) {
+        if (ancestorPath === '') {
+          return null;
+        }
+        const arg = current.getAttribute(`${eachAttribute}-arg`)?.trim();
+        if (arg !== null && arg !== undefined && arg !== '') {
+          // `data-each-arg="r"` の配下は `r.items` の形で書かれる。`r` を上位の宣言へ
+          // 置き換える。前置が一致しない宣言は、この配列の入れ子ではない。
+          if (path !== arg && !path.startsWith(`${arg}.`)) {
+            return null;
+          }
+          path =
+            path === arg
+              ? ancestorPath
+              : `${ancestorPath}.${path.slice(arg.length + 1)}`;
+        } else {
+          // `data-each-arg` が無い構成では、要素データのキーが行スコープへ広がる。
+          path = `${ancestorPath}.${path}`;
+        }
+      }
+      current = current.parentElement;
+    }
+    return path;
   }
 
   /**

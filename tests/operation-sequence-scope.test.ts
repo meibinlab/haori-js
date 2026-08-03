@@ -96,6 +96,39 @@ describe('操作の通番と保留中の外部 DOM 変更の引き取り', () =>
     expect(boundKeyword(form)).toBe('外部');
   });
 
+  it('バインドワークの実行中は、通番を省略した setBindingData でも同期で取り込まない（回帰）', async () => {
+    const {form} = await mount();
+    const other = document.createElement('div');
+    other.setAttribute('data-bind', '{"v":0}');
+    container.appendChild(other);
+    const target = document.createElement('div');
+    target.setAttribute('data-bind', '{"w":0}');
+    container.appendChild(target);
+    await Core.scan(container);
+    await waitForIdle();
+
+    // バインドワークを 1 つ走らせ、実行中（await をまたぐ期間）にする。
+    const inFlight = Core.setBindingData(other, {v: 1});
+    // `enqueueBindingWork()` はマイクロタスクで work を始めるため、1 つ進めれば
+    // 実行中になる。
+    await Promise.resolve();
+
+    form.setAttribute('data-bind', JSON.stringify({keyword: '外部'}));
+    expect(boundKeyword(form)).toBe('初期');
+
+    // 通番を省略した呼び出し（公開 API の直接呼び出し向けの既定）。取り込みは
+    // `Core.setAttribute()` → `Core.setBindingData()` を同期的に呼ぶため、ワークの
+    // 内部で行うと実行中のワークへ再入する。実行中は取り込まない。
+    const supplied = Core.setBindingData(target, {w: 1});
+
+    expect(boundKeyword(form)).toBe('初期');
+
+    // 取り込まないだけで、取り込み自体は従来どおり非同期に行われる。
+    await Promise.all([inFlight, supplied]);
+    await waitForIdle();
+    expect(boundKeyword(form)).toBe('外部');
+  });
+
   it('DOM イベント起点の手続きでは、保留中の書き換えを同期で取り込む', async () => {
     const {form} = await mount();
     const button = container.querySelector('#rst') as HTMLButtonElement;

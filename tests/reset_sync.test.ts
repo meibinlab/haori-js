@@ -42,22 +42,23 @@ describe('Form.reset 後の値再同期', () => {
    * `Core.setBindingData` が、指定のフォームへ指定のキーを含むデータを渡して
    * 呼ばれたことを検証します。
    *
-   * `toHaveBeenCalledWith` は引数の個数まで一致を求めるため、通番などの後方の引数を
-   * 明示する実装変更でテストが落ちます。検証したいのは「どのフォームへ、どんな値を
-   * 渡したか」だけなので、先頭 2 つに絞って見ます。
+   * **由来（options）も検証します。** リセットは「初期 `data-bind` 宣言の値を供給する
+   * 1 つの操作」なので、各段の供給は**クリックのハンドラ内で発番した同じ通番**を
+   * 持たなければなりません（仕様 3740 行付近、`docs/ja/値の供給と権威解決の設計書.md`）。
+   * データだけを見ていると、通番を呼び出し時点で発番し直す実装退行を検出できません。
    *
    * @param form 対象のフォーム要素
    * @param expected 含まれていることを期待するキーと値
-   * @returns 戻り値はありません。
+   * @returns 一致した呼び出しに渡された通番
    */
   const expectBindingDataSet = (
     form: HTMLElement,
     expected: Record<string, unknown>,
-  ): void => {
+  ): number => {
     const calls = (
       Core.setBindingData as unknown as {mock: {calls: unknown[][]}}
     ).mock.calls;
-    const matched = calls.some(call => {
+    const matched = calls.filter(call => {
       if (call[0] !== form || typeof call[1] !== 'object' || call[1] === null) {
         return false;
       }
@@ -67,10 +68,26 @@ describe('Form.reset 後の値再同期', () => {
       );
     });
     expect(
-      matched,
+      matched.length > 0,
       `setBindingData が ${JSON.stringify(expected)} を渡して呼ばれていません。` +
         `実際の呼び出し: ${JSON.stringify(calls.map(call => call[1]))}`,
     ).toBe(true);
+    // リセットは複数の段に分かれて非同期に進む。段ごとに発番し直すと、開始が先でも
+    // 完了が最後になり、途中で届いた新しい供給をリセットの値で潰す（仕様 1927 行の
+    // 後勝ちに反する）。段をまたいで**同じ**通番であることを確かめる。
+    const sequences = matched.map(
+      call => (call[2] as {sequence?: number} | undefined)?.sequence,
+    );
+    expect(
+      sequences.every(sequence => typeof sequence === 'number'),
+      'リセットの供給は操作の通番を明示して渡す必要があります（呼び出し時点で' +
+        `発番し直してはいけません）。実際の通番: ${JSON.stringify(sequences)}`,
+    ).toBe(true);
+    expect(
+      Array.from(new Set(sequences)).length,
+      `リセットの各段は同じ操作の通番を持つ必要があります: ${JSON.stringify(sequences)}`,
+    ).toBe(1);
+    return sequences[0] as number;
   };
 
   it('セレクトボックスの内部値が HTML 既定値（selected 属性）へ戻る', async () => {
@@ -96,14 +113,20 @@ describe('Form.reset 後の値再同期', () => {
     formFrag.setBindingData({status: '対応済み'});
     expect(selectFrag.getValue()).toBe('対応済み');
 
-    await expect(Form.reset(formFrag)).resolves.toBeUndefined();
+    // 操作の通番を明示して渡し、各段がそれを運ぶことを確かめる。
+    const operationSequence = ElementFragment.nextSequence();
+    await expect(
+      Form.reset(formFrag, operationSequence),
+    ).resolves.toBeUndefined();
 
     // DOM・内部値とも既定値へ戻る
     expect(select.value).toBe('未対応');
     expect(selectFrag.getValue()).toBe('未対応');
 
     // バインドデータもリセット後の値で更新される
-    expectBindingDataSet(form, {status: '未対応'});
+    expect(expectBindingDataSet(form, {status: '未対応'})).toBe(
+      operationSequence,
+    );
   });
 
   it('テキスト入力の内部値が空の既定値へ戻る', async () => {
@@ -123,11 +146,14 @@ describe('Form.reset 後の値再同期', () => {
     formFrag.setBindingData({keyword: 'zzz'});
     expect(inputFrag.getValue()).toBe('zzz');
 
-    await expect(Form.reset(formFrag)).resolves.toBeUndefined();
+    const operationSequence = ElementFragment.nextSequence();
+    await expect(
+      Form.reset(formFrag, operationSequence),
+    ).resolves.toBeUndefined();
 
     expect(input.value).toBe('');
     expect(inputFrag.getValue()).toBe('');
-    expectBindingDataSet(form, {keyword: ''});
+    expect(expectBindingDataSet(form, {keyword: ''})).toBe(operationSequence);
   });
 
   it('コンテナのリセットで配下フォームの値とバインドデータも初期化される', async () => {
@@ -149,12 +175,15 @@ describe('Form.reset 後の値再同期', () => {
     inputFrag.syncValue();
     formFrag.setBindingData({code: 'stale'});
 
-    await expect(Form.reset(wrapperFrag)).resolves.toBeUndefined();
+    const operationSequence = ElementFragment.nextSequence();
+    await expect(
+      Form.reset(wrapperFrag, operationSequence),
+    ).resolves.toBeUndefined();
 
     // 入れ子フォーム内の入力もネイティブリセットされ、内部値も同期される
     expect(input.value).toBe('');
     expect(inputFrag.getValue()).toBe('');
-    expectBindingDataSet(form, {code: ''});
+    expect(expectBindingDataSet(form, {code: ''})).toBe(operationSequence);
   });
 
   it('data-form-arg 付きフォームは arg キー配下のバインドデータを更新する', async () => {
