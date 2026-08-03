@@ -1,9 +1,17 @@
 /* @vitest-environment jsdom */
 /**
  * @fileoverview
- * 報告調査(続): 新規 each 行に nested data-fetch がある場合、行初期化後の
- * 再評価が Queue 外の setTimeout(…,100) (scheduleEvaluateAll) で行われ、
- * Haori.waitForRenders()（=Queue.waitForIdle）が早期解決しないかを検証する。
+ * 報告調査(続): 新規 each 行に nested data-fetch がある場合に、
+ * `Haori.waitForRenders()`（= `Queue.waitForIdle`）が行内の取得反映より先に
+ * 解決してしまわないかを検証する。
+ *
+ * **この構成では `Core.scheduleEvaluateAll()`（Queue 外の `setTimeout(…, 100)`）は
+ * 走りません。** カバレッジで確認済みです。同関数が走るのは、新規行の子孫がまだ
+ * マウントされておらず、かつマウントに依存する属性を持つ場合だけで
+ * （`Core.needsScheduledEvaluateAll()`）、この構成では行の初期化が終わった時点で
+ * すべてマウント済みになります。当初のファイル説明はここを取り違えていたため、
+ * 事実に合わせて書き直しました。**Queue 外の再評価そのものを対象にしたテストは
+ * まだありません。**
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
@@ -72,7 +80,7 @@ describe('nested fetch を含む each 行と waitForRenders（報告調査）', 
     );
     expect(labels).toEqual(['行1', '行2']);
 
-    // 各行の nested fetch 結果も反映されていること（ここが scheduleEvaluateAll 依存）。
+    // 各行の nested fetch 結果も反映されていること。
     expect(fetchSpy).toHaveBeenCalled();
     const details = Array.from(container.querySelectorAll('.detail')).map(
       el => el.textContent,

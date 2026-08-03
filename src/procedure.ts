@@ -1031,21 +1031,6 @@ export default class Procedure {
    *
    * @param rawAttribute 生の属性値
    * @param bindingValues バインディング値
-   * @returns パラメータ形式として扱える文字列
-   */
-  private static resolveDataParamString(
-    rawAttribute: string,
-    bindingValues: Record<string, unknown>,
-  ): string {
-    return Procedure.resolveDataParamStringDetailed(rawAttribute, bindingValues)
-      .value;
-  }
-
-  /**
-   * data 属性のテンプレート式評価結果を URLSearchParams 向けに組み立てます。
-   *
-   * @param rawAttribute 生の属性値
-   * @param bindingValues バインディング値
    * @returns パラメータ形式として扱える文字列と未解決参照の有無
    */
   private static resolveDataParamStringDetailed(
@@ -1142,21 +1127,6 @@ export default class Procedure {
         ? Procedure.stringifyJsonTemplateValue(result)
         : String(result);
     return JSON.stringify(value).slice(1, -1);
-  }
-
-  /**
-   * JSON 形式 data 属性内のテンプレート式を安全に解決します。
-   *
-   * @param rawAttribute 生の属性値
-   * @param bindingValues バインディング値
-   * @returns JSON として解釈可能な文字列
-   */
-  private static resolveDataJsonString(
-    rawAttribute: string,
-    bindingValues: Record<string, unknown>,
-  ): string {
-    return Procedure.resolveDataJsonStringDetailed(rawAttribute, bindingValues)
-      .value;
   }
 
   /**
@@ -3867,15 +3837,6 @@ ${body}
       return {...(this.options.targetFragment.getRawBindingData() ?? {})};
     }
     return {};
-  }
-
-  /**
-   * data 属性とフォーム値を統合した送信データを作成します。
-   *
-   * @returns 送信データ。
-   */
-  private buildPayload(): Record<string, unknown> {
-    return this.buildPayloadResolution().payload;
   }
 
   /**
