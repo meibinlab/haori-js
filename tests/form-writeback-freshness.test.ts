@@ -15,7 +15,7 @@
 import {describe, it, beforeEach, afterEach, expect} from 'vitest';
 import Core from '../src/core';
 import Fragment, {ElementFragment} from '../src/fragment';
-import {waitForDomSettled} from './helpers/async';
+import {waitForIdle} from './helpers/async';
 
 describe('フォーム書き戻しの鮮度', () => {
   let container: HTMLElement;
@@ -52,31 +52,26 @@ describe('フォーム書き戻しの鮮度', () => {
     form.innerHTML = html;
     container.appendChild(form);
     await Core.scan(container);
-    await waitForDomSettled();
+    await waitForIdle();
     return form;
   };
 
   /**
-   * ワーク開始後・入力欄への書き戻し前に、ユーザー編集相当の割り込みを行います。
+   * ワーク開始後・入力欄への書き戻し前に、利用者の編集を割り込ませます。
    *
-   * `Core.setBindingData` は in-memory を同期確定するため、割り込み側も
-   * `ElementFragment.setBindingData` で in-memory だけを更新して同じ状態を作る
-   * （追加のワークを積まないので、書き戻しが古い値を使えばそのまま最終値になる）。
+   * 割り込みは**利用者が実際に行える経路**（`change` イベントによる確定）で起こし
+   * ます。以前はここで `ElementFragment.setBindingData()` を直接呼んで in-memory
+   * だけを進めていましたが、それは `data-bind` 属性へのミラーを伴わない
+   * ——仕様 1803 行が定める「更新のたびに属性へミラーする」を満たさない——
+   * 状態を人工的に作るもので、実際には起こりません。検証したいのは仕様 1928 行
+   * 「反映を要求した時点より後の編集は保護する」であり、実イベントで足ります。
    *
-   * @param form 対象フォーム
    * @param input 編集する入力要素
    * @param apply DOM を編集する処理
-   * @param nextBinding 割り込み後のバインドデータ
    */
-  const interruptDuringWork = (
-    form: HTMLFormElement,
-    input: HTMLElement,
-    apply: () => void,
-    nextBinding: Record<string, unknown>,
-  ): void => {
+  const interruptDuringWork = (input: HTMLElement, apply: () => void): void => {
     apply();
-    getFrag(input).syncValue();
-    getFrag(form).setBindingData(nextBinding);
+    input.dispatchEvent(new Event('change', {bubbles: true}));
   };
 
   it('チェックボックスの ON が古い収集値で巻き戻らない', async () => {
@@ -89,17 +84,12 @@ describe('フォーム書き戻しの鮮度', () => {
     const promise = Core.setBindingData(form, {flag: false});
     // ワークはマイクロタスクで開始し、data-bind 属性の書き込み待ちに入る。
     await Promise.resolve();
-    interruptDuringWork(
-      form,
-      checkbox,
-      () => {
-        checkbox.checked = true;
-      },
-      {flag: true},
-    );
+    interruptDuringWork(checkbox, () => {
+      checkbox.checked = true;
+    });
 
     await promise;
-    await waitForDomSettled();
+    await waitForIdle();
 
     expect(checkbox.checked).toBe(true);
     expect(getFrag(checkbox).getValue()).toBe(true);
@@ -114,17 +104,12 @@ describe('フォーム書き戻しの鮮度', () => {
 
     const promise = Core.setBindingData(form, {keyword: ''});
     await Promise.resolve();
-    interruptDuringWork(
-      form,
-      input,
-      () => {
-        input.value = '山田';
-      },
-      {keyword: '山田'},
-    );
+    interruptDuringWork(input, () => {
+      input.value = '山田';
+    });
 
     await promise;
-    await waitForDomSettled();
+    await waitForIdle();
 
     expect(input.value).toBe('山田');
     expect(getFrag(input).getValue()).toBe('山田');
@@ -140,17 +125,12 @@ describe('フォーム書き戻しの鮮度', () => {
 
     const promise = Core.setBindingData(form, {cond: {flag: false}});
     await Promise.resolve();
-    interruptDuringWork(
-      form,
-      checkbox,
-      () => {
-        checkbox.checked = true;
-      },
-      {cond: {flag: true}},
-    );
+    interruptDuringWork(checkbox, () => {
+      checkbox.checked = true;
+    });
 
     await promise;
-    await waitForDomSettled();
+    await waitForIdle();
 
     expect(checkbox.checked).toBe(true);
     expect(getFrag(checkbox).getValue()).toBe(true);
@@ -166,7 +146,7 @@ describe('フォーム書き戻しの鮮度', () => {
     const input = form.querySelector('#q') as HTMLInputElement;
 
     await Core.setBindingData(form, {flag: true, keyword: '佐藤'});
-    await waitForDomSettled();
+    await waitForIdle();
 
     expect(checkbox.checked).toBe(true);
     expect(input.value).toBe('佐藤');
