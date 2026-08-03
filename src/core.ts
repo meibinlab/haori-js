@@ -792,19 +792,22 @@ export default class Core {
           // 通常のバインド更新と同じ経路へ載せて再評価まで行う。書き戻しは自己書き
           // 込みとして記録されるため、上の判定でエコーが消費されて往復しない。
           //
-          // 属性を取り除かれた場合はミラーしない。`{}` を書き戻すと、取り除いた
-          // はずの属性が復活するうえ、続く除去 → 取り込み → ミラーが循環する
-          // （`haori:bindchange` も発火しないが、この経路は従来から発火しない）。
-          promises.push(
-            Core.setBindingData(
-              element,
-              data,
-              undefined,
-              false,
-              value !== null,
-            ),
-          );
-          break;
+          // 属性の反映は `Core.setBindingData()` の側で完結するため、この case は
+          // 共通処理（末尾の属性反映）へ進まずにここで終える。両方が走ると、外部が
+          // 書いた表記と正規化した表記のどちらが内部の属性マップへ残るかが、
+          // 解決順に左右される。
+          if (value === null) {
+            // 取り除かれた属性はミラーしない。`{}` を書き戻すと、取り除いたはずの
+            // 属性が復活するうえ、続く除去 → 取り込み → ミラーが循環する
+            // （`haori:bindchange` も発火しないが、この経路は従来から発火しない）。
+            promises.push(
+              Core.setBindingData(element, data, new Set(), false, false),
+            );
+            promises.push(fragment.removeAttribute(name));
+          } else {
+            promises.push(Core.setBindingData(element, data));
+          }
+          return Promise.all(promises).then(() => undefined);
         }
         // スキャン経路。取り込んだ後に呼出側が配下を評価するため、ここでは
         // 内部データの差し替えだけを行う。
@@ -1295,7 +1298,11 @@ export default class Core {
       const previous = formFragment.getRawBindingData();
       let bindingData: Record<string, unknown>;
       if (arg) {
-        bindingData = previous ?? {};
+        // 生バインドデータを直接書き換えず、複製したうえで差し替える
+        // （`Procedure` の双方向コミットと同じ扱い）。直接書き換えると、
+        // `Core.setBindingData()` が控える「更新前の値」が更新後と同じ参照になり、
+        // 変更前後を比べる処理から差分が見えなくなる。
+        bindingData = {...(previous ?? {})};
         const key = String(arg);
         // 祖先が当該キーを所有する場合は、その値を土台に収集値を重ねる。収集値だけで
         // 置き換えると、入力欄に無いフィールド（`id` など）がフォーム自身のコピーから

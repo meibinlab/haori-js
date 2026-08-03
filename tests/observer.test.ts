@@ -416,3 +416,45 @@ describe('Observer - 想定外の MutationRecord', () => {
     );
   });
 });
+
+describe('Observer - 読み込み時の起動', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+    resetObserver();
+  });
+
+  it('解析中に読み込まれた場合は DOMContentLoaded を待つ', async () => {
+    // <head> 内の <script> で読み込まれた場合。この時点で走らせても <body> が
+    // まだ無く、初期スキャンが空振りする。
+    const descriptor = Object.getOwnPropertyDescriptor(
+      Document.prototype,
+      'readyState',
+    );
+    Object.defineProperty(document, 'readyState', {
+      configurable: true,
+      get: () => 'loading',
+    });
+    const addEventListener = vi.spyOn(document, 'addEventListener');
+    vi.resetModules();
+
+    const module = await import('../src/observer');
+
+    try {
+      const registered = addEventListener.mock.calls.filter(
+        call => call[0] === 'DOMContentLoaded',
+      );
+      expect(registered.length).toBeGreaterThan(0);
+      expect(registered.some(call => call[1] === module.Observer.init)).toBe(
+        true,
+      );
+      // 待つだけで初期化は走らせない。
+      expect(document.body.hasAttribute('data-haori-ready')).toBe(false);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(Document.prototype, 'readyState', descriptor);
+      }
+      Reflect.deleteProperty(document, 'readyState');
+    }
+  });
+});

@@ -137,6 +137,19 @@ describe('data-bind 属性の外部書き換え', () => {
     expect(host.getAttribute('data-bind')).toContain('ひなた');
   });
 
+  it('書き換えた後の属性が in-memory と一致する', async () => {
+    const host = await render('{"label":"あかね","n":1,"rows":[]}');
+
+    // 外部が書いた表記（空白入り・キー順違い）。取り込みの後は、Haori が
+    // ミラーした正規形に落ち着き、内部データと食い違わない。
+    host.setAttribute('data-bind', '{ "n" : 1 , "rows" : [] , "label" : "ひなた" }');
+    await waitForDomSettled();
+
+    const bound = Core.getBindingData(host);
+    expect(host.getAttribute('data-bind')).toBe(JSON.stringify(bound));
+    expect(bound).toMatchObject({label: 'ひなた'});
+  });
+
   it('利用者が編集した欄も書き換えた値で更新される', async () => {
     const host = await render('{"label":"あかね","n":1,"rows":[]}');
     const input = document.getElementById('input') as HTMLInputElement;

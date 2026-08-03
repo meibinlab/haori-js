@@ -1081,6 +1081,18 @@ export default class Form {
   }
 
   /**
+   * 重ね合わせで無視する、プロトタイプ汚染につながるキー。
+   *
+   * 入力欄の `name` はサーバ側の値から組み立てられることがあるため、収集値に
+   * これらのキーが現れる可能性を排除できません。
+   */
+  private static readonly UNSAFE_MERGE_KEYS: ReadonlySet<string> = new Set([
+    '__proto__',
+    'constructor',
+    'prototype',
+  ]);
+
+  /**
    * 収集値を、直前のバインドデータへ重ねます。
    *
    * 収集値は**入力欄が表す部分だけ**なので、そのまま置き換えるとレコードの他の
@@ -1093,6 +1105,10 @@ export default class Form {
    * 対応がずれません。要素数は収集値に従うため、行の追加・削除もそのまま反映され
    * ます。
    *
+   * プロトタイプ汚染につながるキー（`__proto__` など）は読み飛ばします。式評価は
+   * これらをバインドキーとして受け付けないため、載せても参照できず、`__proto__` に
+   * 至っては代入でオブジェクトのプロトタイプが差し替わってしまいます。
+   *
    * @param previous 直前のバインドデータ（無い場合は null）
    * @param collected 収集値
    * @returns 収集値を重ねたバインドデータ
@@ -1103,6 +1119,9 @@ export default class Form {
   ): Record<string, unknown> {
     const merged: Record<string, unknown> = {...(previous ?? {})};
     for (const [key, value] of Object.entries(collected)) {
+      if (Form.UNSAFE_MERGE_KEYS.has(key)) {
+        continue;
+      }
       merged[key] = Form.overlayCollectedValue(previous?.[key], value);
     }
     return merged;
