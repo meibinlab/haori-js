@@ -1806,18 +1806,37 @@ export default class Form {
    * 対象フラグメントとその子孫要素の値を初期化します。
    * 値の初期化とメッセージのクリアを行います。
    *
+   * 初期化は「初期 `data-bind` 宣言の値を供給する 1 つの操作」です（仕様 3705 行）。
+   * したがって他の供給と同じ後勝ちの規則に従い、**この初期化より後に供給された値が
+   * すでに載っている宛先へは書き込みません**（仕様 1927 行）。
+   *
    * @param fragment 対象フラグメント
+   * @param operationSequence 初期化を要求した操作の通番。**操作が起きた時点**
+   *     （クリックのハンドラなど）で発番して渡すこと。既定は呼出時点で発番する。
+   *     呼び出し時点で発番すると、クリックの後に届いた供給がこの初期化より小さい
+   *     番号を持つことになり、後勝ちが逆転する
    * @returns すべての初期化処理が完了するPromise
    */
-  public static async reset(fragment: ElementFragment): Promise<void> {
+  public static async reset(
+    fragment: ElementFragment,
+    operationSequence: number = ElementFragment.nextSequence(),
+  ): Promise<void> {
     // 初期化の開始を記録する。入力欄を離れた直後にクリアを押すと、その `change` に
     // よる双方向コミット（`Core.changeValue`）がまだ走っている。コミットの後段
     // （入力欄への書き戻しと、候補が揃った後の載せ直し）が初期化に割り込むと、
     // クリアしたはずの値が書き戻され、クリアが効かなくなる。通番を発番して部分木の
     // 各フラグメントへ記録し、これより前に始まったバインドデータ更新の書き戻しを
     // 無効化する（`Core.setBindingData()` を参照）。
-    const resetSequence = ElementFragment.nextResetSequence();
-    Form.markResetSubtree(fragment, resetSequence);
+    const bindingTargets = Form.collectBindingTargetForms(fragment);
+    if (
+      bindingTargets.length > 0 &&
+      bindingTargets.every(form => form.isSupplyStale(operationSequence))
+    ) {
+      // この初期化より後に供給された値が、対象のすべてへすでに載っている。進めると
+      // 後から供給された値を初期値で潰してしまう（仕様 1927 行）。
+      return;
+    }
+    Form.markResetSubtree(fragment, operationSequence);
 
     // 初期化は明示的な値の供給なので、ユーザー編集の印を解除する。解除しないと
     // 宣言バインドの再適用が抑止されたままになり、編集した欄だけが初期化されない。
@@ -1862,7 +1881,7 @@ export default class Form {
     // 入力欄へ反映する。戻さないと、リセット前の双方向コミットで書き込まれた値が
     // 残り、そのキーを参照する式（`{{キー}}` や平坦キー優先のフォールバック）が
     // 直後の再評価で古い入力値を復元してしまう。
-    const targetForms = Form.collectBindingTargetForms(fragment);
+    const targetForms = bindingTargets;
     for (const formFragment of targetForms) {
       const initial = Form.getInitialBindingData(formFragment);
       if (initial === null && formFragment.getRawBindingData() === null) {
@@ -1871,7 +1890,17 @@ export default class Form {
         // （入力欄は再評価の後に `restoreAncestorArgValues()` で戻す）。
         continue;
       }
-      await Core.setBindingData(formFragment.getTarget(), initial ?? {});
+      // 初期化が運ぶ値なので、初期化の操作の通番で供給する。呼出時点で発番すると、
+      // クリックの後に届いた供給より新しい番号を得て、それを潰してしまう。
+      await Core.setBindingData(
+        formFragment.getTarget(),
+        initial ?? {},
+        new Set(),
+        false,
+        true,
+        ElementFragment.currentSequence(),
+        operationSequence,
+      );
     }
 
     // リセット後の DOM 値（HTML 属性の既定値と初期バインド値）を内部値へ再同期する。
@@ -1931,7 +1960,15 @@ export default class Form {
       } else {
         bindingData = Form.mergeCollectedValues(bindingData, values);
       }
-      await Core.setBindingData(formFragment.getTarget(), bindingData);
+      await Core.setBindingData(
+        formFragment.getTarget(),
+        bindingData,
+        new Set(),
+        false,
+        true,
+        ElementFragment.currentSequence(),
+        operationSequence,
+      );
     }
   }
 
@@ -2095,6 +2132,9 @@ export default class Form {
     sequence: number,
   ): void {
     fragment.markResetAt(sequence);
+    // 初期化は 1 つの供給でもあるため、供給の記録にも載せる。載せないと、初期化の
+    // 後に届いた古い供給が「まだ何も供給されていない」と判断して上書きしてしまう。
+    fragment.markSupplyApplied(sequence);
     for (const child of fragment.getChildElementFragments()) {
       Form.markResetSubtree(child, sequence);
     }

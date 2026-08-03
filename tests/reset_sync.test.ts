@@ -38,6 +38,41 @@ describe('Form.reset 後の値再同期', () => {
     f.getChildElementFragments().forEach(child => markMounted(child));
   };
 
+  /**
+   * `Core.setBindingData` が、指定のフォームへ指定のキーを含むデータを渡して
+   * 呼ばれたことを検証します。
+   *
+   * `toHaveBeenCalledWith` は引数の個数まで一致を求めるため、通番などの後方の引数を
+   * 明示する実装変更でテストが落ちます。検証したいのは「どのフォームへ、どんな値を
+   * 渡したか」だけなので、先頭 2 つに絞って見ます。
+   *
+   * @param form 対象のフォーム要素
+   * @param expected 含まれていることを期待するキーと値
+   * @returns 戻り値はありません。
+   */
+  const expectBindingDataSet = (
+    form: HTMLElement,
+    expected: Record<string, unknown>,
+  ): void => {
+    const calls = (
+      Core.setBindingData as unknown as {mock: {calls: unknown[][]}}
+    ).mock.calls;
+    const matched = calls.some(call => {
+      if (call[0] !== form || typeof call[1] !== 'object' || call[1] === null) {
+        return false;
+      }
+      const data = call[1] as Record<string, unknown>;
+      return Object.entries(expected).every(
+        ([key, value]) => data[key] === value,
+      );
+    });
+    expect(
+      matched,
+      `setBindingData が ${JSON.stringify(expected)} を渡して呼ばれていません。` +
+        `実際の呼び出し: ${JSON.stringify(calls.map(call => call[1]))}`,
+    ).toBe(true);
+  };
+
   it('セレクトボックスの内部値が HTML 既定値（selected 属性）へ戻る', async () => {
     const form = document.createElement('form');
     const select = document.createElement('select');
@@ -68,10 +103,7 @@ describe('Form.reset 後の値再同期', () => {
     expect(selectFrag.getValue()).toBe('未対応');
 
     // バインドデータもリセット後の値で更新される
-    expect(Core.setBindingData).toHaveBeenCalledWith(
-      form,
-      expect.objectContaining({status: '未対応'}),
-    );
+    expectBindingDataSet(form, {status: '未対応'});
   });
 
   it('テキスト入力の内部値が空の既定値へ戻る', async () => {
@@ -95,10 +127,7 @@ describe('Form.reset 後の値再同期', () => {
 
     expect(input.value).toBe('');
     expect(inputFrag.getValue()).toBe('');
-    expect(Core.setBindingData).toHaveBeenCalledWith(
-      form,
-      expect.objectContaining({keyword: ''}),
-    );
+    expectBindingDataSet(form, {keyword: ''});
   });
 
   it('コンテナのリセットで配下フォームの値とバインドデータも初期化される', async () => {
@@ -125,10 +154,7 @@ describe('Form.reset 後の値再同期', () => {
     // 入れ子フォーム内の入力もネイティブリセットされ、内部値も同期される
     expect(input.value).toBe('');
     expect(inputFrag.getValue()).toBe('');
-    expect(Core.setBindingData).toHaveBeenCalledWith(
-      form,
-      expect.objectContaining({code: ''}),
-    );
+    expectBindingDataSet(form, {code: ''});
   });
 
   it('data-form-arg 付きフォームは arg キー配下のバインドデータを更新する', async () => {
@@ -150,10 +176,20 @@ describe('Form.reset 後の値再同期', () => {
 
     await expect(Form.reset(formFrag)).resolves.toBeUndefined();
 
-    expect(Core.setBindingData).toHaveBeenCalledWith(
-      form,
-      expect.objectContaining({cond: expect.objectContaining({name: ''})}),
-    );
+    const argCalls = (
+      Core.setBindingData as unknown as {mock: {calls: unknown[][]}}
+    ).mock.calls;
+    expect(
+      argCalls.some(
+        call =>
+          call[0] === form &&
+          ((call[1] as {cond?: {name?: unknown}} | undefined)?.cond?.name ??
+            null) === '',
+      ),
+      `setBindingData が cond.name='' を渡して呼ばれていません。実際: ${JSON.stringify(
+        argCalls.map(call => call[1]),
+      )}`,
+    ).toBe(true);
   });
 
   it('バインドデータを持たないフォームはリセット時にバインドデータを作らない', async () => {

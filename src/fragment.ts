@@ -702,9 +702,13 @@ export class ElementFragment extends Fragment {
   private bindingWorkActive = 0;
 
   /**
-   * 初期化（`Form.reset()`）の通番の発番元（全フラグメント共通、単調増加）。
+   * このフラグメントへ最後に適用された明示的な値の供給の通番（未適用は 0）。
+   *
+   * 供給同士は後勝ちです（仕様 1927 行）。古い供給が後から届いた供給を上書きしない
+   * よう、供給を起こした操作の通番と比べて判定します。初期化も 1 つの供給として
+   * 同じ列で数えます（`isSupplyStale()`）。
    */
-  private static resetCounter = 0;
+  private lastSupplySequence = 0;
 
   /**
    * このフラグメントが最後に初期化された時点の通番（未初期化は 0）。
@@ -802,8 +806,14 @@ export class ElementFragment extends Fragment {
    */
   private pendingValueWrite: Promise<void> | null = null;
 
-  /** ユーザー編集の通し番号の発番元（全フラグメント共通、単調増加）。 */
-  private static userEditCounter = 0;
+  /**
+   * 値に影響する事象の通番の発番元（全フラグメント共通、単調増加）。
+   *
+   * ユーザー編集と明示的な値の供給（初期化を含む）を**同じ 1 本の列**で数えます。
+   * 系統を分けると「編集と初期化のどちらが先か」を比較できず、互いを見られない
+   * まま別々に判定することになります（`docs/ja/値の供給と権威解決の設計書.md`）。
+   */
+  private static sequenceCounter = 0;
 
   /**
    * この入力欄を最後にユーザーが編集したときの通し番号（未編集は 0）。
@@ -1150,34 +1160,36 @@ export class ElementFragment extends Fragment {
   }
 
   /**
-   * 現在の初期化の通番を返します。
+   * このフラグメントへ供給が適用されたことを記録します。
    *
-   * バインドデータ更新の開始時点で控えておき、入力欄へ書き戻す直前に
-   * `wasResetAfter()` と突き合わせると、その間に対象が初期化されたかを判定できます。
+   * すでに新しい供給が記録されている場合は下げません（単調増加）。
    *
-   * @returns 直近に発番した初期化の通番（未発番なら 0）
+   * @param sequence その供給を起こした操作の通番（`nextSequence()` で発番したもの）
+   * @returns 戻り値はありません。
    */
-  public static currentResetSequence(): number {
-    return ElementFragment.resetCounter;
+  public markSupplyApplied(sequence: number): void {
+    if (sequence > this.lastSupplySequence) {
+      this.lastSupplySequence = sequence;
+    }
   }
 
   /**
-   * 新しい初期化の通番を発番します。
+   * 指定した通番の供給がすでに古くなっているかを返します。
    *
-   * `Form.reset()` が初期化のたびに 1 度だけ呼び出し、得た通番を対象部分木の
-   * 各フラグメントへ `markResetAt()` で記録します。
+   * 真の場合、その供給より後の供給がこの宛先へ適用済みです。古い供給を載せると
+   * 「最後に供給された値が残る」（仕様 1927 行）が崩れるため、適用してはいけません。
    *
-   * @returns 発番した通番
+   * @param sequence 判定したい供給の通番
+   * @returns より新しい供給が適用済みなら true
    */
-  public static nextResetSequence(): number {
-    ElementFragment.resetCounter += 1;
-    return ElementFragment.resetCounter;
+  public isSupplyStale(sequence: number): boolean {
+    return this.lastSupplySequence > sequence;
   }
 
   /**
    * このフラグメントが初期化されたことを記録します。
    *
-   * @param sequence `nextResetSequence()` で発番した通番
+   * @param sequence `nextSequence()` で発番した、初期化を要求した操作の通番
    * @returns 戻り値はありません。
    */
   public markResetAt(sequence: number): void {
@@ -1798,10 +1810,59 @@ export class ElementFragment extends Fragment {
    * `getUserEditSequence()` と比べることで「リクエスト送出後に編集されたか」を
    * 判定できます。
    *
-   * @returns 直近に発番したユーザー編集の通し番号（未発番なら 0）
+   * @returns 直近に発番した通番（未発番なら 0）
    */
-  public static currentUserEditSequence(): number {
-    return ElementFragment.userEditCounter;
+  public static currentSequence(): number {
+    return ElementFragment.sequenceCounter;
+  }
+
+  /**
+   * 新しい通番を発番します。
+   *
+   * **操作が起きた時点で呼び出してください。** 非同期の処理が宛先へ到達した時点で
+   * 発番すると、先に起きた操作が後の番号を得て、権威の判定が逆転します。
+   *
+   * 利用者の操作を起点に発番する場合は `nextOperationSequence()` を使ってください。
+   *
+   * @returns 発番した通番
+   */
+  public static nextSequence(): number {
+    ElementFragment.sequenceCounter += 1;
+    return ElementFragment.sequenceCounter;
+  }
+
+  /**
+   * 保留中の外部 DOM 変更を同期的に取り込む処理（`Observer` が登録する）。
+   *
+   * `Observer` を直接参照すると循環参照になるため、フックとして受け取ります。
+   */
+  private static pendingMutationFlusher: (() => void) | null = null;
+
+  /**
+   * 保留中の外部 DOM 変更を取り込む処理を登録します。
+   *
+   * @param flusher 取り込み処理。解除する場合は `null`
+   * @returns 戻り値はありません。
+   */
+  public static setPendingMutationFlusher(flusher: (() => void) | null): void {
+    ElementFragment.pendingMutationFlusher = flusher;
+  }
+
+  /**
+   * 利用者の操作を起点とする通番を発番します。
+   *
+   * 発番の前に、保留中の外部 DOM 変更を同期的に取り込んで**先に**番号付けします。
+   * `MutationObserver` は非同期にしか通知しないため、これを行わないと「属性を書き
+   * 換えた直後にクリックした」場合に、先に起きた外部の書き換えが後の番号を得て
+   * 権威が逆転します（`docs/ja/値の供給と権威解決の設計書.md`「段構成の訂正」）。
+   *
+   * @returns 発番した通番
+   */
+  public static nextOperationSequence(): number {
+    if (ElementFragment.pendingMutationFlusher) {
+      ElementFragment.pendingMutationFlusher();
+    }
+    return ElementFragment.nextSequence();
   }
 
   /**
@@ -1813,8 +1874,7 @@ export class ElementFragment extends Fragment {
    * @returns 戻り値はありません。
    */
   public markUserEdit(): void {
-    ElementFragment.userEditCounter += 1;
-    this.userEditSequence = ElementFragment.userEditCounter;
+    this.userEditSequence = ElementFragment.nextSequence();
   }
 
   /**
@@ -1853,7 +1913,7 @@ export class ElementFragment extends Fragment {
    * @return 戻り値はありません。
    */
   public clearUserEditMark(
-    upTo: number = ElementFragment.userEditCounter,
+    upTo: number = ElementFragment.currentSequence(),
   ): void {
     if (upTo > this.authoritativeValueSequence) {
       this.authoritativeValueSequence = upTo;

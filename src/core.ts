@@ -306,7 +306,7 @@ export default class Core {
    */
   public static clearUserEditMarks(
     fragment: ElementFragment,
-    upTo: number = ElementFragment.currentUserEditSequence(),
+    upTo: number = ElementFragment.currentSequence(),
   ): void {
     fragment.clearUserEditMark(upTo);
     fragment.getChildren().forEach(child => {
@@ -746,6 +746,10 @@ export default class Core {
    * @param element エレメント
    * @param name 属性名
    * @param value 属性値
+   * @param fromObserver 外部（他スクリプト）による書き換えの取り込みかどうか
+   * @param originSequence 外部の書き換えを検知した時点の通番。`Observer` が保留中の
+   *     変更を同期的に引き取ったときだけ渡します（`Observer.flushPendingMutations()`
+   *     を参照）。渡さない場合は取り込みの時点で発番します
    * @returns Promise (DOM操作が完了したときに解決される)
    */
   public static setAttribute(
@@ -753,6 +757,7 @@ export default class Core {
     name: string,
     value: string | null,
     fromObserver = false,
+    originSequence?: number,
   ): Promise<void> {
     const fragment = Fragment.get(element);
     const aliasedAttributeName = Core.getAliasedAttributeName(name);
@@ -801,11 +806,29 @@ export default class Core {
             // 属性が復活するうえ、続く除去 → 取り込み → ミラーが循環する
             // （`haori:bindchange` も発火しないが、この経路は従来から発火しない）。
             promises.push(
-              Core.setBindingData(element, data, new Set(), false, false),
+              Core.setBindingData(
+                element,
+                data,
+                new Set(),
+                false,
+                false,
+                ElementFragment.currentSequence(),
+                originSequence,
+              ),
             );
             promises.push(fragment.removeAttribute(name));
           } else {
-            promises.push(Core.setBindingData(element, data));
+            promises.push(
+              Core.setBindingData(
+                element,
+                data,
+                new Set(),
+                false,
+                true,
+                ElementFragment.currentSequence(),
+                originSequence,
+              ),
+            );
           }
           return Promise.all(promises).then(() => undefined);
         }
@@ -954,6 +977,11 @@ export default class Core {
    * @param reflectToAttribute `data-bind` 属性へミラーするか（既定 true）
    * @param userEditBaseline ユーザー編集の印を解除する上限の通し番号。
    *     既定は現在の最新（すべて解除）、`null` は解除しない
+   * @param originSequence この更新を起こした**操作の**通番。既定は呼出時点で発番する。
+   *     操作と呼び出しが非同期に離れている場合（初期化の各段、外部属性書き換えの
+   *     取り込みなど）は、操作が起きた時点で `ElementFragment.nextSequence()` を
+   *     発番して渡すこと。呼び出し時点で発番すると、先に起きた操作が後の番号を得て
+   *     権威が逆転する
    * @returns Promise (DOM操作が完了したときに解決される)
    */
   public static setBindingData(
@@ -962,15 +990,28 @@ export default class Core {
     skipFragments: ReadonlySet<ElementFragment> = new Set(),
     reentrant = false,
     reflectToAttribute = true,
-    userEditBaseline: number | null = ElementFragment.currentUserEditSequence(),
+    userEditBaseline: number | null = ElementFragment.currentSequence(),
+    originSequence: number = ElementFragment.nextSequence(),
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
+    // この更新が「明示的な値の供給」かどうか。供給だけが宛先の権威を更新し、供給
+    // 同士は後勝ち（仕様 1927 行）で解決する。値の供給ではない内部更新（双方向
+    // コミット、`data-url-param` の再評価、エンジン管理変数）は権威を持たない。
+    const isSupply = userEditBaseline !== null;
+    if (isSupply && fragment.isSupplyStale(originSequence)) {
+      // この供給より後の供給がすでにこの宛先へ載っている。古い供給を載せると
+      // 「最後に供給された値が残る」（仕様 1927 行）が崩れる。
+      return Promise.resolve();
+    }
+    if (isSupply) {
+      fragment.markSupplyApplied(originSequence);
+    }
     // 呼出時点の初期化の通番。入力欄へ書き戻す直前に宛先の通番と比較し、この呼出
     // より後に初期化（`Form.reset()`）されていれば書き戻さない。運んでいる値は
     // 初期化前の状態なので、書き戻すとクリアしたはずの値が復活する。
-    const resetSequence = ElementFragment.currentResetSequence();
+    const resetSequence = ElementFragment.currentSequence();
     const previous = fragment.getRawBindingData();
-    if (userEditBaseline !== null) {
+    if (isSupply) {
       Core.clearUserEditMarks(fragment, userEditBaseline);
     }
     // 内部バインドデータは即時確定する（後続の同期読み取りが最新値を得られるよう）。

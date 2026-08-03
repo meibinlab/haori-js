@@ -2162,6 +2162,20 @@ ${body}
   private requestUserEditSequence: number | null = null;
 
   /**
+   * この手続きを起こした操作の通番。
+   *
+   * コンストラクタはイベントのハンドラ内で同期的に走るため、ここでの発番が
+   * 「操作が起きた時点」になります。実際の処理（初期化など）は `await` を挟んだ後に
+   * 走るので、その時点で発番すると、操作の後に届いた供給より新しい番号を得てしまい、
+   * 後勝ち（仕様 1927 行）が逆転します。
+   *
+   * `nextOperationSequence()` は発番の前に保留中の外部 DOM 変更を引き取り、**この操作
+   * より前に DOM 上で起きていた外部の書き換え**へ先に番号を割り当てます。
+   */
+  private readonly operationSequence: number =
+    ElementFragment.nextOperationSequence();
+
+  /**
    * 双方向コミット由来のバインドかどうか。
    *
    * `change` / `input` でフェッチを伴わない場合、バインドするデータは入力欄から
@@ -2329,7 +2343,7 @@ ${body}
       ) {
         await Promise.all(
           this.options.resetBeforeFragments.map(fragment =>
-            Form.reset(fragment),
+            Form.reset(fragment, this.operationSequence),
           ),
         );
         this.captureHistorySnapshots();
@@ -2339,7 +2353,7 @@ ${body}
       // 応答をフォームへバインドするときに上書きし直す。シグネチャ比較のための
       // 事前組み立て（resolveFetchSignature）では記録せず、実際に送る経路でだけ
       // 記録する。
-      this.requestUserEditSequence = ElementFragment.currentUserEditSequence();
+      this.requestUserEditSequence = ElementFragment.currentSequence();
       const payload = preparedRequest.payload;
       let fetchUrl = preparedRequest.url;
       let fetchOptions = preparedRequest.options;
@@ -2695,7 +2709,9 @@ ${body}
 
     if (this.options.resetFragments && this.options.resetFragments.length > 0) {
       await Promise.all(
-        this.options.resetFragments.map(fragment => Form.reset(fragment)),
+        this.options.resetFragments.map(fragment =>
+          Form.reset(fragment, this.operationSequence),
+        ),
       );
     }
 

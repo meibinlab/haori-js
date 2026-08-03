@@ -8,7 +8,7 @@ import Core from './core';
 import Env from './env';
 import HaoriEvent from './event';
 import EventDispatcher from './event_dispatcher';
-import {IF_DISABLED_MARKER} from './fragment';
+import {ElementFragment, IF_DISABLED_MARKER} from './fragment';
 import IntersectObserver from './intersect';
 import Log from './log';
 import PollObserver from './poll';
@@ -131,105 +131,8 @@ export class Observer {
    * @param root 監視対象の要素
    */
   public static observe(root: HTMLElement | Document) {
-    const observer = new MutationObserver(async mutations => {
-      for (const mutation of mutations) {
-        try {
-          // 外部管理サブツリー（data-external 配下）で発生した変更は、外部の
-          // select 拡張ライブラリ等が生成・更新する DOM とみなして無視する。
-          if (Observer.isExternallyManaged(mutation.target)) {
-            continue;
-          }
-          switch (mutation.type) {
-            case 'attributes': {
-              const element = mutation.target as HTMLElement;
-              if (
-                mutation.attributeName &&
-                element.hasAttribute('data-haori-click-lock') &&
-                (mutation.attributeName === 'disabled' ||
-                  mutation.attributeName === 'data-haori-click-lock')
-              ) {
-                break;
-              }
-              // 非表示分岐（data-if が偽）で検証対象から外すために付けた disabled は
-              // エンジン管理なので属性処理へ載せない。載せると内部の属性マップに
-              // disabled が焼き付き、表示へ戻した後の再評価で付け直される。
-              // 復帰時は印を先に外すため、この判定に掛からず解除が反映される。
-              if (
-                mutation.attributeName &&
-                element.hasAttribute(IF_DISABLED_MARKER) &&
-                (mutation.attributeName === 'disabled' ||
-                  mutation.attributeName === IF_DISABLED_MARKER)
-              ) {
-                break;
-              }
-              if (
-                mutation.attributeName &&
-                Core.isAliasedAttributeReflection(
-                  element,
-                  mutation.attributeName,
-                )
-              ) {
-                break;
-              }
-              Core.setAttribute(
-                element,
-                mutation.attributeName!,
-                element.getAttribute(mutation.attributeName!),
-                true,
-              );
-              IntersectObserver.syncElement(element);
-              PollObserver.syncElement(element);
-              VisibleRangeObserver.syncElement(element);
-              break;
-            }
-            case 'childList': {
-              Array.from(mutation.removedNodes).forEach(node => {
-                IntersectObserver.cleanupTree(node);
-                PollObserver.cleanupTree(node);
-                VisibleRangeObserver.cleanupTree(node);
-                Core.removeNode(node);
-              });
-              Array.from(mutation.addedNodes).forEach(node => {
-                if (!(node.parentElement instanceof Element)) {
-                  return;
-                }
-                Core.addNode(node.parentElement, node);
-                IntersectObserver.syncTree(node);
-                PollObserver.syncTree(node);
-                VisibleRangeObserver.syncTree(node);
-              });
-              // 行の増減があったコンテナ自身の監視対象を取り直す
-              // （data-each-visible は親コンテナに付与され、行はその子のため）。
-              if (mutation.target instanceof Element) {
-                VisibleRangeObserver.syncElement(
-                  mutation.target as HTMLElement,
-                );
-              }
-              break;
-            }
-            case 'characterData': {
-              if (
-                mutation.target instanceof Text ||
-                mutation.target instanceof Comment
-              ) {
-                Core.changeText(mutation.target, mutation.target.textContent!);
-              } else {
-                Log.warn(
-                  '[Haori]',
-                  'Unsupported character data type:',
-                  mutation.target,
-                );
-              }
-              break;
-            }
-            default:
-              Log.warn('[Haori]', 'Unknown mutation type:', mutation.type);
-              continue;
-          }
-        } catch (error) {
-          Log.error('[Haori]', 'Error processing mutation:', error);
-        }
-      }
+    const observer = new MutationObserver(mutations => {
+      Observer.processMutations(mutations);
     });
 
     observer.observe(root, {
@@ -239,6 +142,174 @@ export class Observer {
       characterData: true,
     });
     Observer._mutationObservers.push(observer);
+    // 操作の通番を発番する側（`Procedure`）が、発番の直前に保留中の変更を引き取れる
+    // ようにする。`Observer` を直接参照すると循環参照になるためフックで渡す。
+    ElementFragment.setPendingMutationFlusher(() => {
+      Observer.flushPendingMutations();
+    });
+  }
+
+  /**
+   * 保留中の DOM 変更を同期的に引き取って処理へ載せます。
+   *
+   * `MutationObserver` は非同期にしか通知しないため、他スクリプトが `data-bind` を
+   * 書き換えた直後に利用者が操作すると、**実際には先に起きた外部の書き換えの方が
+   * 後の通番を得る**という逆転が起きます（`docs/ja/値の供給と権威解決の設計書.md`
+   * 「段構成の訂正」）。操作の通番を発番する側が、その直前にこれを呼び出して
+   * 「自分より前に DOM 上で起きていた変更」を先に番号付けします。
+   *
+   * 同期で処理するのは `data-bind` 属性の書き換えだけです。**それ以外の変更は
+   * 従来どおり非同期に処理します。** 同期で処理すると、他ライブラリが同一クリック中に
+   * 行ったノード削除などがこの操作より前に適用され、手続きの前提が変わります
+   * （`tests/init-deferred-events.test.ts` の「対象要素が DOM から外れても手続きを
+   * 実行する」を参照）。番号付けが必要なのは値の権威に関わる `data-bind` だけです。
+   *
+   * @returns 戻り値はありません。
+   */
+  public static flushPendingMutations(): void {
+    for (const observer of Observer._mutationObservers) {
+      const records = observer.takeRecords();
+      if (records.length === 0) {
+        continue;
+      }
+      const bindRecords = records.filter(Observer.isBindAttributeRecord);
+      const others = records.filter(
+        record => !Observer.isBindAttributeRecord(record),
+      );
+      if (bindRecords.length > 0) {
+        // 引き取った書き換えは、この時点で「Haori が知った」ものとして 1 つの通番を
+        // 割り当てる。番号の割り当てだけが同期で、適用は従来どおり非同期に進む。
+        Observer.processMutations(bindRecords, ElementFragment.nextSequence());
+      }
+      if (others.length > 0) {
+        // 引き取ってしまった分は失わせない。監視コールバックと同じ非同期の位置で
+        // 処理し、この操作より前に適用されないようにする。
+        void Promise.resolve().then(() => {
+          Observer.processMutations(others);
+        });
+      }
+    }
+  }
+
+  /**
+   * `data-bind` 属性の書き換えを表すレコードかどうかを返します。
+   *
+   * @param record 判定する変更レコード
+   * @returns `data-bind` 属性の変更なら true
+   */
+  private static isBindAttributeRecord(record: MutationRecord): boolean {
+    return (
+      record.type === 'attributes' &&
+      record.attributeName === `${Env.prefix}bind`
+    );
+  }
+
+  /**
+   * DOM 変更のレコードを処理します。
+   *
+   * @param mutations 処理する変更レコード
+   * @param originSequence 変更を検知した時点の通番。`flushPendingMutations()` から
+   *     同期的に引き取った場合だけ渡す。渡さない場合は取り込みの時点で発番される
+   * @returns 戻り値はありません。
+   */
+  private static processMutations(
+    mutations: MutationRecord[],
+    originSequence?: number,
+  ): void {
+    for (const mutation of mutations) {
+      try {
+        // 外部管理サブツリー（data-external 配下）で発生した変更は、外部の
+        // select 拡張ライブラリ等が生成・更新する DOM とみなして無視する。
+        if (Observer.isExternallyManaged(mutation.target)) {
+          continue;
+        }
+        switch (mutation.type) {
+          case 'attributes': {
+            const element = mutation.target as HTMLElement;
+            if (
+              mutation.attributeName &&
+              element.hasAttribute('data-haori-click-lock') &&
+              (mutation.attributeName === 'disabled' ||
+                mutation.attributeName === 'data-haori-click-lock')
+            ) {
+              break;
+            }
+            // 非表示分岐（data-if が偽）で検証対象から外すために付けた disabled は
+            // エンジン管理なので属性処理へ載せない。載せると内部の属性マップに
+            // disabled が焼き付き、表示へ戻した後の再評価で付け直される。
+            // 復帰時は印を先に外すため、この判定に掛からず解除が反映される。
+            if (
+              mutation.attributeName &&
+              element.hasAttribute(IF_DISABLED_MARKER) &&
+              (mutation.attributeName === 'disabled' ||
+                mutation.attributeName === IF_DISABLED_MARKER)
+            ) {
+              break;
+            }
+            if (
+              mutation.attributeName &&
+              Core.isAliasedAttributeReflection(element, mutation.attributeName)
+            ) {
+              break;
+            }
+            Core.setAttribute(
+              element,
+              mutation.attributeName!,
+              element.getAttribute(mutation.attributeName!),
+              true,
+              originSequence,
+            );
+            IntersectObserver.syncElement(element);
+            PollObserver.syncElement(element);
+            VisibleRangeObserver.syncElement(element);
+            break;
+          }
+          case 'childList': {
+            Array.from(mutation.removedNodes).forEach(node => {
+              IntersectObserver.cleanupTree(node);
+              PollObserver.cleanupTree(node);
+              VisibleRangeObserver.cleanupTree(node);
+              Core.removeNode(node);
+            });
+            Array.from(mutation.addedNodes).forEach(node => {
+              if (!(node.parentElement instanceof Element)) {
+                return;
+              }
+              Core.addNode(node.parentElement, node);
+              IntersectObserver.syncTree(node);
+              PollObserver.syncTree(node);
+              VisibleRangeObserver.syncTree(node);
+            });
+            // 行の増減があったコンテナ自身の監視対象を取り直す
+            // （data-each-visible は親コンテナに付与され、行はその子のため）。
+            if (mutation.target instanceof Element) {
+              VisibleRangeObserver.syncElement(mutation.target as HTMLElement);
+            }
+            break;
+          }
+          case 'characterData': {
+            if (
+              mutation.target instanceof Text ||
+              mutation.target instanceof Comment
+            ) {
+              Core.changeText(mutation.target, mutation.target.textContent!);
+            } else {
+              Log.warn(
+                '[Haori]',
+                'Unsupported character data type:',
+                mutation.target,
+              );
+            }
+            break;
+          }
+          default:
+            Log.warn('[Haori]', 'Unknown mutation type:', mutation.type);
+            continue;
+        }
+      } catch (error) {
+        Log.error('[Haori]', 'Error processing mutation:', error);
+      }
+    }
   }
 }
 
