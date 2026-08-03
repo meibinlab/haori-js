@@ -298,18 +298,29 @@ describe('Row operations', () => {
       await waitForIdle();
 
       // 行操作はバインディングデータの更新を経て差分更新で再描画されるため、
-      // 描画が確定するまで待ってから件数を確認する。
-      const rowCount = (): number =>
-        container.querySelectorAll('div[data-each] > div').length;
+      // 描画が確定するまで待ってから確認する。
+      //
+      // **件数ではなく並びを見る。** この列は 2 件 → 3 件 → 3 件 → 2 件と動くため、
+      // 最終件数（2）は初期状態と同じであり、3 つの操作がすべて失敗しても件数の検証は
+      // 通ってしまう。
+      const rowNames = (): string[] =>
+        Array.from(container.querySelectorAll('div[data-each] > div span')).map(
+          span => span.textContent ?? '',
+        );
 
-      // 追加
+      expect(rowNames()).toEqual(['A', 'B']);
+
+      // 追加。仕様 3673 行「対象要素が属する行の**直後**に新しい行を追加します。
+      // 追加された行の入力欄は空の状態になります」→ A の直後へ空行が入る。
       const addButtons = container.querySelectorAll(
         'button[data-click-row-add]',
       );
       (addButtons[0] as HTMLButtonElement).click();
       await waitForIdle();
+      expect(rowNames()).toEqual(['A', '', 'B']);
 
-      // 移動
+      // 移動。仕様 3698 行「対象要素が属する行と前の行を入れ替えます」→ 3 行目（B）を
+      // 前（空行）と入れ替える。
       const prevButtons = container.querySelectorAll(
         'button[data-click-row-prev]',
       );
@@ -318,15 +329,16 @@ describe('Row operations', () => {
       // まったく待たない。最終状態を待つ（`docs/ja/testing.md`
       // 「待ち合わせの条件は最終状態そのもので書く」）。
       await waitForIdle();
+      expect(rowNames()).toEqual(['A', 'B', '']);
 
-      // 削除
+      // 削除。仕様 3682 行「対象要素が属する行を削除します」→ 1 行目（A）を消す。
       const removeButtons = container.querySelectorAll(
         'button[data-click-row-remove]',
       );
       (removeButtons[0] as HTMLButtonElement).click();
       await waitForIdle();
 
-      expect(rowCount()).toBe(2);
+      expect(rowNames()).toEqual(['B', '']);
     });
   });
 });
