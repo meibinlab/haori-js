@@ -1081,6 +1081,61 @@ export default class Form {
   }
 
   /**
+   * 収集値を、直前のバインドデータへ重ねます。
+   *
+   * 収集値は**入力欄が表す部分だけ**なので、そのまま置き換えるとレコードの他の
+   * フィールド（`id` や表示専用のラベル、`data-attr-value` へ渡す送信値など）が
+   * 失われます。失うと、行の表示が空になったり、保存に必要なキーが送られなく
+   * なったりします。土台を敷いて、収集したキーだけを上書きします。
+   *
+   * `data-form-list` の行（配列）は**出現順**で対応します。入力欄への書き戻しが
+   * 同じ規則（同じ収集キーの出現順に配る）なので、収集 → 重ね合わせ → 書き戻しで
+   * 対応がずれません。要素数は収集値に従うため、行の追加・削除もそのまま反映され
+   * ます。
+   *
+   * @param previous 直前のバインドデータ（無い場合は null）
+   * @param collected 収集値
+   * @returns 収集値を重ねたバインドデータ
+   */
+  public static mergeCollectedValues(
+    previous: Record<string, unknown> | null,
+    collected: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const merged: Record<string, unknown> = {...(previous ?? {})};
+    for (const [key, value] of Object.entries(collected)) {
+      merged[key] = Form.overlayCollectedValue(previous?.[key], value);
+    }
+    return merged;
+  }
+
+  /**
+   * 収集値の 1 項目を、直前の値へ重ねます。
+   *
+   * @param previous 直前の値
+   * @param collected 収集値
+   * @returns 重ね合わせた値
+   */
+  private static overlayCollectedValue(
+    previous: unknown,
+    collected: unknown,
+  ): unknown {
+    if (Array.isArray(collected)) {
+      if (!Array.isArray(previous)) {
+        return collected;
+      }
+      return collected.map((item, index) =>
+        Form.overlayCollectedValue(previous[index], item),
+      );
+    }
+    const collectedRecord = Form.asPlainRecord(collected);
+    const previousRecord = Form.asPlainRecord(previous);
+    if (collectedRecord === null || previousRecord === null) {
+      return collected;
+    }
+    return Form.mergeCollectedValues(previousRecord, collectedRecord);
+  }
+
+  /**
    * 祖先のバインドデータ更新を、配下の `data-form-arg` フォームの入力欄へ反映します。
    *
    * 対象は「当該キーを所有するのが更新された祖先自身」であるフォームだけです。
@@ -1612,11 +1667,10 @@ export default class Form {
       }
       const values = Form.getValues(formFragment);
       const arg = formFragment.getAttribute(`${Env.prefix}form-arg`);
-      // 初期 data-bind 宣言を土台にリセット後のフォーム値を重ねる。
-      // change 時の Core.changeValue はフォーム値のみで置き換える（初期宣言の
-      // 非フォームキーは破棄する）が、リセットは「初期状態への復元」が目的のため
-      // 意図的に初期宣言キーを保持したうえでフォーム値を上書きする。
-      const bindingData = {...(initial || {})};
+      // 初期 data-bind 宣言を土台にリセット後のフォーム値を重ねる。リセットは
+      // 「初期状態への復元」が目的のため、初期宣言のキー（入力欄に対応しない
+      // フィールドを含む）を保持したうえでフォーム値を上書きする。
+      let bindingData = {...(initial || {})};
       if (arg) {
         const key = String(arg);
         // 祖先が所有するキー（初期宣言に無いキー）は、リセット後もフォーム自身に
@@ -1627,10 +1681,13 @@ export default class Form {
           !Object.prototype.hasOwnProperty.call(initial ?? {}, key) &&
           Form.resolveAncestorArgOwner(formFragment, key) !== null;
         if (!ancestorOwned) {
-          bindingData[key] = values;
+          bindingData[key] = Form.mergeCollectedValues(
+            (bindingData[key] as Record<string, unknown> | undefined) ?? null,
+            values,
+          );
         }
       } else {
-        Object.assign(bindingData, values);
+        bindingData = Form.mergeCollectedValues(bindingData, values);
       }
       await Core.setBindingData(formFragment.getTarget(), bindingData);
     }

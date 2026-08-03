@@ -1269,12 +1269,10 @@ export default class Core {
     if (formFragment) {
       const values = Form.getValues(formFragment);
       const arg = formFragment.getAttribute(`${Env.prefix}form-arg`);
-      let bindingData;
+      const previous = formFragment.getRawBindingData();
+      let bindingData: Record<string, unknown>;
       if (arg) {
-        bindingData = formFragment.getRawBindingData();
-        if (!bindingData) {
-          bindingData = {};
-        }
+        bindingData = previous ?? {};
         const key = String(arg);
         // 祖先が当該キーを所有する場合は、その値を土台に収集値を重ねる。収集値だけで
         // 置き換えると、入力欄に無いフィールド（`id` など）がフォーム自身のコピーから
@@ -1282,9 +1280,15 @@ export default class Core {
         // なる。祖先が当該キーを更新したときはこのコピーを解除して入れ直すため
         // （`Form.syncAncestorArgForms()`）、古い値が残り続けることはない。
         const ancestor = Form.resolveAncestorArgOwner(formFragment, key);
-        bindingData[key] = ancestor ? {...ancestor.value, ...values} : values;
+        bindingData[key] = Form.mergeCollectedValues(
+          (ancestor
+            ? ancestor.value
+            : (bindingData[key] as Record<string, unknown> | undefined)) ??
+            null,
+          values,
+        );
       } else {
-        bindingData = values;
+        bindingData = Form.mergeCollectedValues(previous, values);
       }
       promises.push(
         // 値の設定に伴うコミットなので、ユーザー編集の印は解除しない。

@@ -3,6 +3,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import Fragment, {ElementFragment} from '../src/fragment';
 import IntersectObserver from '../src/intersect';
+import Log from '../src/log';
 import {waitForCondition} from './helpers/async';
 
 type ObserverCallback = IntersectionObserverCallback;
@@ -241,5 +242,121 @@ describe('data-intersect-*', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(instance.observed.has(sentinel)).toBe(true);
+  });
+
+  describe('登録の判定と解除', () => {
+    /**
+     * 属性を指定した監視対象を作り、監視を同期します。
+     *
+     * @param attributes 属性を並べた HTML 断片
+     * @returns 生成した要素
+     */
+    const setup = async (attributes: string): Promise<HTMLElement> => {
+      const host = document.createElement('div');
+      host.innerHTML = `<div id="sentinel" ${attributes}></div>`;
+      document.body.appendChild(host);
+      await Core.scan(host);
+      IntersectObserver.syncTree(host);
+      return document.getElementById('sentinel') as HTMLElement;
+    };
+
+    it('設定属性しか無い要素は監視しない', async () => {
+      // `data-intersect-root` などの設定だけでは、実行する手続きが無い。
+      await setup(
+        'data-intersect-root=".panel" data-intersect-threshold="0.5"',
+      );
+
+      expect(MockIntersectionObserver.instances).toHaveLength(0);
+    });
+
+    it('root セレクタが見つからない場合はビューポートを使い、記録する', async () => {
+      const error = vi.spyOn(Log, 'error').mockImplementation(() => undefined);
+
+      await setup(
+        'data-intersect-fetch="/api/posts" data-intersect-root="#none"',
+      );
+
+      expect(MockIntersectionObserver.instances).toHaveLength(1);
+      expect(MockIntersectionObserver.instances[0].root).toBeNull();
+      expect(error).toHaveBeenCalled();
+    });
+
+    it('threshold は 0〜1 に丸め、数値でない指定は 0 にする', async () => {
+      await setup(
+        'data-intersect-fetch="/api/a" data-intersect-threshold="5"',
+      );
+      expect(MockIntersectionObserver.instances[0].thresholds).toEqual([1]);
+
+      document.body.innerHTML = '';
+      await setup(
+        'data-intersect-fetch="/api/b" data-intersect-threshold="-1"',
+      );
+      expect(MockIntersectionObserver.instances[1].thresholds).toEqual([0]);
+
+      document.body.innerHTML = '';
+      await setup(
+        'data-intersect-fetch="/api/c" data-intersect-threshold="abc"',
+      );
+      expect(MockIntersectionObserver.instances[2].thresholds).toEqual([0]);
+    });
+
+    it('設定が変わらない再同期では監視を作り直さない', async () => {
+      const sentinel = await setup('data-intersect-fetch="/api/posts"');
+      const instance = MockIntersectionObserver.instances[0];
+
+      IntersectObserver.syncElement(sentinel);
+
+      expect(MockIntersectionObserver.instances).toHaveLength(1);
+      expect(instance.observed.has(sentinel)).toBe(true);
+    });
+
+    it('設定が変わると監視を作り直す', async () => {
+      const sentinel = await setup('data-intersect-fetch="/api/posts"');
+      const first = MockIntersectionObserver.instances[0];
+
+      await (Fragment.get(sentinel) as ElementFragment).setAttribute(
+        'data-intersect-threshold',
+        '0.75',
+      );
+      IntersectObserver.syncElement(sentinel);
+
+      expect(MockIntersectionObserver.instances).toHaveLength(2);
+      expect(first.observed.size).toBe(0);
+      expect(MockIntersectionObserver.instances[1].thresholds).toEqual([0.75]);
+    });
+
+    it('手続きの属性を外すと監視を解除する', async () => {
+      const sentinel = await setup('data-intersect-fetch="/api/posts"');
+      const instance = MockIntersectionObserver.instances[0];
+
+      await (Fragment.get(sentinel) as ElementFragment).removeAttribute(
+        'data-intersect-fetch',
+      );
+      IntersectObserver.syncElement(sentinel);
+
+      expect(instance.observed.size).toBe(0);
+      IntersectObserver.syncElement(sentinel);
+      expect(MockIntersectionObserver.instances).toHaveLength(1);
+    });
+
+    it('cleanupTree で配下の監視を解除する', async () => {
+      await setup('data-intersect-fetch="/api/posts"');
+      const instance = MockIntersectionObserver.instances[0];
+
+      IntersectObserver.cleanupTree(document.body);
+
+      expect(instance.observed.size).toBe(0);
+      IntersectObserver.syncTree(document.body);
+      expect(MockIntersectionObserver.instances).toHaveLength(2);
+    });
+
+    it('IntersectionObserver が無い環境では登録しない', async () => {
+      vi.stubGlobal('IntersectionObserver', undefined);
+
+      await expect(
+        setup('data-intersect-fetch="/api/posts"'),
+      ).resolves.toBeTruthy();
+      expect(MockIntersectionObserver.instances).toHaveLength(0);
+    });
   });
 });

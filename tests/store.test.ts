@@ -837,4 +837,28 @@ describe('data-store によるブラウザストレージ連携', () => {
       expect(warn).toHaveBeenCalled();
     });
   });
+
+  describe('ストレージ操作の失敗', () => {
+    it('破棄に失敗しても画面は壊れない', async () => {
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
+      writeRecord('apply', {customer: {name: 'あかね'}});
+      vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+        throw new Error('removeItem failed');
+      });
+
+      await render(`
+        <div data-bind='{"customer":{}}' data-store="apply"
+          data-store-params="customer">
+          <span id="name">{{customer.name}}</span>
+        </div>
+        <button id="clear" type="button" data-click-store-clear="apply"></button>`);
+      const button = container.querySelector('#clear') as HTMLElement;
+      button.click();
+      await waitForDomSettled(3);
+      await Queue.wait();
+
+      expect(warn).toHaveBeenCalled();
+      expect(container.querySelector('#name')!.textContent).toBe('あかね');
+    });
+  });
 });

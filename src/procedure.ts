@@ -2497,9 +2497,7 @@ ${body}
         // マージ結果（かつキャッシュそのもの）なので、それを書き込むと祖先のキーが
         // フォームへ焼き付き、以降その祖先の更新がフォーム自身の古いコピーに
         // シャドーされて届かなくなる。
-        const bindingData: Record<string, unknown> = {
-          ...(formFragment.getRawBindingData() ?? {}),
-        };
+        const previous = formFragment.getRawBindingData();
         // File / Blob はバインドデータへ入れると JSON 化で `{}` に潰れ
         // `data-bind` 属性を壊すため、ファイル名へ正規化して反映する。
         const formValues = sanitizeBinaryForBinding(payload);
@@ -2507,7 +2505,9 @@ ${body}
         // と Form.reset の書き込み先に合わせる）。平坦に書くと参照キーと書込キーが
         // 食い違い、宣言バインドの参照元が更新されない。
         const formArg = formFragment.getAttribute(`${Env.prefix}form-arg`);
+        let bindingData: Record<string, unknown>;
         if (formArg) {
+          bindingData = {...(previous ?? {})};
           const key = String(formArg);
           // 祖先が当該キーを所有する場合はその値を土台に収集値を重ねる。収集値だけで
           // 置き換えると入力欄に無いフィールド（`id` など）が抜け落ち、このコピーが
@@ -2515,11 +2515,15 @@ ${body}
           // 更新したときはコピーを解除して入れ直すため（`Form.syncAncestorArgForms()`）、
           // 古い値が残り続けることはない。
           const ancestor = Form.resolveAncestorArgOwner(formFragment, key);
-          bindingData[key] = ancestor
-            ? {...ancestor.value, ...formValues}
-            : formValues;
+          bindingData[key] = Form.mergeCollectedValues(
+            (ancestor
+              ? ancestor.value
+              : (bindingData[key] as Record<string, unknown> | undefined)) ??
+              null,
+            formValues,
+          );
         } else {
-          Object.assign(bindingData, formValues);
+          bindingData = Form.mergeCollectedValues(previous, formValues);
         }
         // 双方向コミットは値の供給ではないため、ユーザー編集の印は解除しない。
         // 解除すると、この再評価で宣言バインドが編集値を評価結果へ巻き戻す。

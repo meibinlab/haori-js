@@ -86,3 +86,76 @@ describe('Observer - data-haori-ready', () => {
     container.remove();
   });
 });
+
+describe('Observer - DOM 変更の取り込み', () => {
+  beforeEach(async () => {
+    resetObserver();
+    document.body.innerHTML = '';
+    await Observer.init();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+    resetObserver();
+  });
+
+  it('後から追加した要素の Haori 属性が評価される', async () => {
+    // 外部のスクリプトやテンプレートエンジンが差し込んだ DOM も対象になる。
+    const added = document.createElement('div');
+    added.setAttribute('data-bind', '{"name":"あかね"}');
+    added.innerHTML = '<span id="added">{{name}}</span>';
+    document.body.appendChild(added);
+
+    await waitForDomSettled();
+
+    expect(document.getElementById('added')?.textContent).toBe('あかね');
+  });
+
+  it('後から付けた Haori 属性が評価に反映される', async () => {
+    const host = document.createElement('div');
+    host.setAttribute('data-bind', '{"hide":true}');
+    host.innerHTML = '<span id="shown">見える</span>';
+    document.body.appendChild(host);
+    await waitForDomSettled();
+    const shown = document.getElementById('shown') as HTMLElement;
+    expect(shown.style.display).not.toBe('none');
+
+    // 外部のスクリプトが属性を足した場合（属性の MutationObserver 経路）。
+    shown.setAttribute('data-if', 'hide === false');
+    await waitForDomSettled();
+
+    expect(shown.style.display).toBe('none');
+  });
+
+  it('取り除いた要素は内部状態からも解放される', async () => {
+    const host = document.createElement('div');
+    host.setAttribute('data-bind', '{"name":"あかね"}');
+    host.innerHTML = '<span id="removed">{{name}}</span>';
+    document.body.appendChild(host);
+    await waitForDomSettled();
+
+    const removed = document.getElementById('removed') as HTMLElement;
+    removed.remove();
+    await waitForDomSettled();
+
+    // 解放後に祖先を更新しても、外した要素は更新されない（参照が残っていない）。
+    host.setAttribute('data-bind', '{"name":"きい"}');
+    await waitForDomSettled();
+    expect(removed.textContent).toBe('あかね');
+  });
+
+  it('テキストノードの書き換えがテンプレートとして取り込まれる', async () => {
+    const host = document.createElement('div');
+    host.setAttribute('data-bind', '{"name":"あかね"}');
+    host.innerHTML = '<span id="text">-</span>';
+    document.body.appendChild(host);
+    await waitForDomSettled();
+
+    const span = document.getElementById('text') as HTMLElement;
+    (span.firstChild as Text).data = '{{name}}';
+    await waitForDomSettled();
+
+    expect(span.textContent).toBe('あかね');
+  });
+});

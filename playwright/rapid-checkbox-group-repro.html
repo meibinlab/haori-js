@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>連続クリックしたチェックボックス群</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 行ごとに送信値が異なる同名チェックボックス。人手より速い間隔で連続クリック
+       しても、画面のチェック状態と送信値が食い違わないこと。 -->
+  <div id="page" data-bind='{"options":[{"id":"11"},{"id":"12"},{"id":"13"},{"id":"14"}]}'>
+    <form id="f">
+      <div data-each="options" data-each-key="id" data-each-arg="o">
+        <label>
+          <input type="checkbox" name="optionIds" data-attr-value="{{o.id}}">
+          {{o.id}}
+        </label>
+      </div>
+    </form>
+    <button id="send" type="button"
+      data-click-form="#f"
+      data-click-fetch="/api/save">送信</button>
+  </div>
+</body>
+</html>

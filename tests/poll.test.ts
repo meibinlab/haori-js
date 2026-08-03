@@ -3,6 +3,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import Dev from '../src/dev';
 import Fragment, {ElementFragment} from '../src/fragment';
+import Log from '../src/log';
 import PollObserver from '../src/poll';
 import {waitForCondition, waitForDomSettled} from './helpers/async';
 
@@ -499,6 +500,150 @@ describe('data-poll-*', () => {
       });
       // 4回目の時点で連続失敗は 2 回（3・4回目）なので、まだ停止していない。
       expect(getPollState(target)?.stopped).toBe(false);
+    });
+  });
+
+  describe('設定値の解釈', () => {
+    /**
+     * ポーリングを 1 回だけ動かし、間隔タイマーが張られる前に停止させます。
+     *
+     * @param html マウントする HTML
+     * @returns 監視対象要素
+     */
+    const mountOnce = async (html: string): Promise<HTMLElement> => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(jsonResponse({})),
+      );
+      return mount(html);
+    };
+
+    it('数値でない間隔は既定値（5000ms）へ落として警告する', async () => {
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
+
+      const target = await mountOnce(
+        `<div data-poll-fetch="https://example.com/status"
+              data-poll-interval="abc" data-poll-state></div>`,
+      );
+      await waitForCondition(() => getPollState(target) !== undefined, {
+        description: 'poll state injected',
+        maxAttempts: 20,
+        delayMs: 20,
+      });
+
+      expect(warn).toHaveBeenCalled();
+      // 既定値まで次の取得は来ない（間隔が 0 に落ちて暴走しない）。
+      expect(getPollState(target)?.stopped).toBe(false);
+    });
+
+    it('正でない打ち切り時間は無制限として扱い、警告する', async () => {
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
+
+      const target = await mountOnce(
+        `<div data-poll-fetch="https://example.com/status"
+              data-poll-interval="100" data-poll-timeout="0"
+              data-poll-state></div>`,
+      );
+      await waitForCondition(() => getPollState(target) !== undefined, {
+        description: 'poll state injected',
+        maxAttempts: 20,
+        delayMs: 20,
+      });
+      await sleep(150);
+
+      expect(warn).toHaveBeenCalled();
+      // 打ち切られていない（無制限扱い）。
+      expect(getPollState(target)?.stopped).toBe(false);
+    });
+
+    it('1 未満の連続失敗上限は無制限として扱い、警告する', async () => {
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(jsonResponse({message: 'error'}, 500)),
+      );
+
+      const target = await mount(
+        `<div data-poll-fetch="https://example.com/status"
+              data-poll-interval="100" data-poll-error-limit="0"
+              data-poll-state></div>`,
+      );
+      await waitForCondition(
+        () => (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+          .length >= 3,
+        {
+          description: 'poll errors accumulated',
+          maxAttempts: 25,
+          delayMs: 40,
+        },
+      );
+
+      expect(warn).toHaveBeenCalled();
+      // 上限が無効なので、失敗が続いても止まらない。
+      expect(getPollState(target)?.stopped).toBe(false);
+    });
+
+    it('data-poll-until の文字列 "false" / "0" は成立扱いにしない', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation(() => Promise.resolve(jsonResponse({})));
+
+      await mount(
+        `<div data-poll-fetch="https://example.com/status"
+              data-poll-interval="100" data-poll-until="false"></div>`,
+      );
+
+      await waitForCondition(() => fetchSpy.mock.calls.length >= 2, {
+        description: 'poll keeps running with string false',
+        maxAttempts: 20,
+        delayMs: 40,
+      });
+      expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('監視の解除', () => {
+    it('cleanupTree で配下のポーリングを止める', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation(() => Promise.resolve(jsonResponse({})));
+
+      await mount(
+        `<div data-poll-fetch="https://example.com/status"
+              data-poll-interval="100"></div>`,
+      );
+      await waitForCondition(() => fetchSpy.mock.calls.length >= 1, {
+        description: 'first poll fetch',
+        maxAttempts: 20,
+        delayMs: 20,
+      });
+
+      PollObserver.cleanupTree(container);
+      const countAtCleanup = fetchSpy.mock.calls.length;
+      await sleep(300);
+
+      expect(fetchSpy.mock.calls.length).toBe(countAtCleanup);
+    });
+
+    it('同じ設定での再同期ではポーリングを作り直さない', async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation(() => Promise.resolve(jsonResponse({})));
+
+      const target = await mount(
+        `<div data-poll-fetch="https://example.com/status"
+              data-poll-interval="200"></div>`,
+      );
+      await waitForCondition(() => fetchSpy.mock.calls.length >= 1, {
+        description: 'first poll fetch',
+        maxAttempts: 20,
+        delayMs: 20,
+      });
+
+      // 再同期しても初回取得が走り直さない（設定が同じなら登録を維持する）。
+      const before = fetchSpy.mock.calls.length;
+      PollObserver.syncElement(target);
+      await sleep(50);
+
+      expect(fetchSpy.mock.calls.length).toBe(before);
     });
   });
 });

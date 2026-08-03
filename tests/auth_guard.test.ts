@@ -87,6 +87,62 @@ describe('認証ガード checkAuthRedirect', () => {
 
     document.body.removeAttribute('data-bind');
   });
+
+  it('属性値が空文字なら遷移しない', () => {
+    document.body.setAttribute('data-unauthorized-redirect', '');
+    expect(checkAuthRedirect(401)).toBe(false);
+    expect(assignedHref).toBeNull();
+  });
+
+  it('{{式}} が未解決なら遷移しない（空の URL へ飛ばさない）', async () => {
+    // `document.body` のフラグメントはテスト間で残るため、スコープを明示して確定する。
+    await Core.setBindingData(document.body, {other: 1});
+    document.body.setAttribute('data-unauthorized-redirect', '{{loginUrl}}');
+    await waitForDomSettled();
+
+    expect(checkAuthRedirect(401)).toBe(false);
+    expect(assignedHref).toBeNull();
+
+    document.body.removeAttribute('data-bind');
+  });
+
+  it('{{式}} が例外になっても遷移せず、呼び出し側を止めない', async () => {
+    // プロパティ参照で例外になる式。
+    await Core.setBindingData(document.body, {a: null});
+    document.body.setAttribute('data-unauthorized-redirect', '{{a.b.c}}');
+    await waitForDomSettled();
+
+    expect(() => checkAuthRedirect(401)).not.toThrow();
+    expect(assignedHref).toBeNull();
+
+    document.body.removeAttribute('data-bind');
+  });
+
+  it('部分的に {{式}} を含む URL も置換して遷移する', async () => {
+    await Core.setBindingData(document.body, {tenant: 'acme'});
+    document.body.setAttribute(
+      'data-unauthorized-redirect',
+      '/{{tenant}}/login.html',
+    );
+    await waitForDomSettled();
+
+    expect(checkAuthRedirect(401)).toBe(true);
+    expect(assignedHref).toBe('/acme/login.html');
+
+    document.body.removeAttribute('data-bind');
+  });
+
+  it('body に宣言が無ければ html の宣言を使う', () => {
+    document.documentElement.setAttribute(
+      'data-unauthorized-redirect',
+      '/root-login.html',
+    );
+
+    expect(checkAuthRedirect(401)).toBe(true);
+    expect(assignedHref).toBe('/root-login.html');
+
+    document.documentElement.removeAttribute('data-unauthorized-redirect');
+  });
 });
 
 describe('認証ガード: 戻り先クエリ自動付与 (return-param)', () => {

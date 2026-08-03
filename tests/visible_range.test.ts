@@ -9,6 +9,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import Fragment, {ElementFragment} from '../src/fragment';
+import Log from '../src/log';
 import VisibleRangeObserver from '../src/visible_range';
 import {waitForCondition} from './helpers/async';
 
@@ -288,5 +289,115 @@ describe('data-each-visible', () => {
     instance.trigger(rows[1], true);
     await Promise.resolve();
     expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  describe('登録の同期と解除', () => {
+    /**
+     * 属性を指定して一覧を構築し、監視を同期します。
+     *
+     * @param attributes `data-each-visible` 系の属性文字列
+     * @returns 生成した一覧要素
+     */
+    const setupWith = async (attributes: string): Promise<HTMLElement> => {
+      const scope = document.createElement('div');
+      scope.id = 'scope';
+      scope.setAttribute(
+        'data-bind',
+        JSON.stringify({content: [{name: 'A'}, {name: 'B'}]}),
+      );
+      scope.innerHTML = `
+        <ul id="list" data-each="content" ${attributes}>
+          <li>{{name}}</li>
+        </ul>`;
+      document.body.appendChild(scope);
+      await Core.scan(scope);
+      VisibleRangeObserver.syncTree(scope);
+      return document.getElementById('list') as HTMLElement;
+    };
+
+    it('変数名の無い data-each-visible は監視せず警告する', async () => {
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
+
+      await setupWith('data-each-visible=""');
+
+      expect(MockIntersectionObserver.instances).toHaveLength(0);
+      expect(warn).toHaveBeenCalled();
+    });
+
+    it('root セレクタが見つからない場合はビューポートを使い、記録する', async () => {
+      const error = vi.spyOn(Log, 'error').mockImplementation(() => undefined);
+
+      await setupWith('data-each-visible="vr" data-each-visible-root="#none"');
+
+      expect(MockIntersectionObserver.instances).toHaveLength(1);
+      expect(MockIntersectionObserver.instances[0].root).toBeNull();
+      expect(error).toHaveBeenCalled();
+    });
+
+    it('data-each-visible-margin を rootMargin へ渡す', async () => {
+      await setupWith(
+        'data-each-visible="vr" data-each-visible-margin="120px 0px"',
+      );
+
+      expect(MockIntersectionObserver.instances[0].rootMargin).toBe(
+        '120px 0px',
+      );
+    });
+
+    it('data-each-visible を外すと監視を解除する', async () => {
+      const list = await setupWith('data-each-visible="vr"');
+      const instance = MockIntersectionObserver.instances[0];
+      expect(instance.observed.size).toBe(2);
+
+      // 監視対象の判定はフラグメントの属性で行うため、フラグメント経由で外す。
+      await (Fragment.get(list) as ElementFragment).removeAttribute(
+        'data-each-visible',
+      );
+      VisibleRangeObserver.syncElement(list);
+
+      expect(instance.observed.size).toBe(0);
+      // 監視対象でなくなったので、同期し直しても新しい登録は作らない。
+      VisibleRangeObserver.syncElement(list);
+      expect(MockIntersectionObserver.instances).toHaveLength(1);
+    });
+
+    it('行が増減すると監視対象が追従する', async () => {
+      const list = await setupWith('data-each-visible="vr"');
+      const instance = MockIntersectionObserver.instances[0];
+      expect(instance.observed.size).toBe(2);
+
+      const scope = document.getElementById('scope') as HTMLElement;
+      await Core.setBindingData(scope, {
+        content: [{name: 'A'}, {name: 'B'}, {name: 'C'}],
+      });
+      await waitForCondition(() => list.querySelectorAll('li').length === 3, {
+        description: 'rows rendered',
+      });
+      VisibleRangeObserver.syncElement(list);
+
+      // 設定は不変なので登録は作り直さず、監視対象だけが増える。
+      expect(MockIntersectionObserver.instances).toHaveLength(1);
+      expect(instance.observed.size).toBe(3);
+    });
+
+    it('cleanupTree で配下の監視を解除する', async () => {
+      await setupWith('data-each-visible="vr"');
+      const instance = MockIntersectionObserver.instances[0];
+      const scope = document.getElementById('scope') as HTMLElement;
+
+      VisibleRangeObserver.cleanupTree(scope);
+
+      expect(instance.observed.size).toBe(0);
+      // 解除済みなので、再同期すると新しい登録が作られる。
+      VisibleRangeObserver.syncTree(scope);
+      expect(MockIntersectionObserver.instances).toHaveLength(2);
+    });
+
+    it('IntersectionObserver が無い環境では登録しない', async () => {
+      vi.stubGlobal('IntersectionObserver', undefined);
+
+      await expect(setupWith('data-each-visible="vr"')).resolves.toBeTruthy();
+      expect(MockIntersectionObserver.instances).toHaveLength(0);
+    });
   });
 });
