@@ -772,10 +772,7 @@ export default class Core {
     let nextDeriveInputSignature: string | null = null;
     switch (name) {
       case `${Env.prefix}bind`: {
-        if (value === null) {
-          fragment.clearBindingDataCache();
-          fragment.setBindingData({});
-        } else {
+        if (value !== null) {
           // MutationObserver 経由（fromObserver）の data-bind 変更が Haori 自身の
           // 書き込みのエコーなら再取り込みしない。並行 setBindingData 時に古いエコーを
           // 取り込んで最新の in-memory を巻き戻す競合を防ぐ（in-memory が権威）。
@@ -787,8 +784,34 @@ export default class Core {
           ) {
             break;
           }
-          fragment.setBindingData(Core.parseDataBind(value));
         }
+        const data = value === null ? {} : Core.parseDataBind(value);
+        if (fromObserver) {
+          // 外部（他のスクリプトやライブラリ）からの属性変更。内部データを差し替える
+          // だけでは配下が古いままになり、画面・収集値・バインドデータが食い違う。
+          // 通常のバインド更新と同じ経路へ載せて再評価まで行う。書き戻しは自己書き
+          // 込みとして記録されるため、上の判定でエコーが消費されて往復しない。
+          //
+          // 属性を取り除かれた場合はミラーしない。`{}` を書き戻すと、取り除いた
+          // はずの属性が復活するうえ、続く除去 → 取り込み → ミラーが循環する
+          // （`haori:bindchange` も発火しないが、この経路は従来から発火しない）。
+          promises.push(
+            Core.setBindingData(
+              element,
+              data,
+              undefined,
+              false,
+              value !== null,
+            ),
+          );
+          break;
+        }
+        // スキャン経路。取り込んだ後に呼出側が配下を評価するため、ここでは
+        // 内部データの差し替えだけを行う。
+        if (value === null) {
+          fragment.clearBindingDataCache();
+        }
+        fragment.setBindingData(data);
         break;
       }
       case `${Env.prefix}derive`:
