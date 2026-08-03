@@ -1638,9 +1638,7 @@ export class ElementFragment extends Fragment {
       return Promise.resolve();
     }
     const promises: Promise<void>[] = [];
-    for (const fragment of Array.from(
-      ElementFragment.UNAPPLIED_VALUE_WRITES,
-    )) {
+    for (const fragment of Array.from(ElementFragment.UNAPPLIED_VALUE_WRITES)) {
       const element = fragment.getTarget();
       if (!element.isConnected) {
         // DOM から外れた要素は載せ直す先が無い。集合に残すと解放されない。
