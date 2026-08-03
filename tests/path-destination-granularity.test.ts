@@ -301,4 +301,69 @@ describe('バインドデータの宛先の粒度', () => {
       ],
     });
   });
+
+  it('data-each-arg の無い入れ子の宣言でも data-each-key を見つける', async () => {
+    // `data-each-arg` を省いた構成では、要素データのキーがそのまま行スコープへ広がる。
+    // したがって入れ子の宣言は素のキー（`items`）で書かれ、絶対経路は上位の宣言を
+    // 接頭に付けた `rows.items` になる。一つ上のテストと同じ理由で、リストキーを
+    // 見つけられないと誰も供給していない混ざり方が残る。
+    container.innerHTML =
+      '<div data-bind=\'{"rows":[{"id":1,"items":[{"k":"x","v":"1"},{"k":"y","v":"1"}]}]}\'>' +
+      `<ul data-each="rows" data-each-key="id">` +
+      `<ol data-each="items" data-each-key="k" data-each-arg="it">` +
+      '<li>{{it.v}}</li>' +
+      '</ol>' +
+      '</ul>' +
+      '</div>';
+    const element = container.querySelector('div') as HTMLElement;
+    await Core.scan(element);
+    await waitForIdle();
+
+    const newer = ElementFragment.nextSequence();
+    await Core.setBindingData(
+      element,
+      {
+        rows: [
+          {
+            id: 1,
+            items: [
+              {k: 'y', v: '1'},
+              {k: 'x', v: '1'},
+            ],
+          },
+        ],
+      },
+      {sequence: newer},
+    );
+    await waitForIdle();
+
+    await Core.setBindingData(
+      element,
+      {
+        rows: [
+          {
+            id: 1,
+            items: [
+              {k: 'x', v: '1b'},
+              {k: 'y', v: '2b'},
+            ],
+          },
+        ],
+      },
+      {sequence: newer - 1},
+    );
+    await waitForIdle();
+
+    expect(raw(element)).toEqual({
+      rows: [
+        {
+          id: 1,
+          items: [
+            {k: 'y', v: '1'},
+            {k: 'x', v: '1'},
+          ],
+        },
+      ],
+    });
+  });
 });
