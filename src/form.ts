@@ -1241,6 +1241,81 @@ export default class Form {
   }
 
   /**
+   * 配列要素のリストキーと、その要素の位置の対応表を作ります。
+   *
+   * キーは `data-each` の差分更新と同じ規則（`Core.createListKey()`）で作ります。
+   * 呼び出し側で作り直すと行の対応付けが差分更新とずれるためです。すべての要素に
+   * 対してキーを作ります（`Core.createListKey()` は非オブジェクトも扱えます）。
+   * 作らない要素を残すと、対応する行が「配列に無い行」と誤判定されます。
+   *
+   * 同じキーが重複する場合は位置を出現順に並べ、呼び出し側が順に消費します
+   * （重複時は出現順の対応と同じ挙動になります）。
+   *
+   * @param items 対象の配列
+   * @param keyArg `data-each-key` の指定（無ければ null）
+   * @returns リストキーごとの位置の配列
+   */
+  private static createRowKeyIndexes(
+    items: unknown[],
+    keyArg: string | null,
+  ): Map<string, number[]> {
+    const indexes = new Map<string, number[]>();
+    items.forEach((item, index) => {
+      const key = Core.createListKey(
+        item as Record<string, unknown> | string | number,
+        keyArg,
+        index,
+      );
+      const positions = indexes.get(key);
+      if (positions) {
+        positions.push(index);
+      } else {
+        indexes.set(key, [index]);
+      }
+    });
+    return indexes;
+  }
+
+  /**
+   * 入力欄へ書き戻す行と配列要素を対応付けます。
+   *
+   * 逆方向同期（`syncValues()`）は `Core.setBindingData()` の中で `data-each` の行生成
+   * より**前**に走るため、行を挿入・削除した直後は「配列の要素数と画面の行数が
+   * 食い違う」状態で書き戻しが走ります。位置で組み合わせると、挿入・削除位置より
+   * 後の行がひとつずつずれた値を受け取ります（挿入なら後続の行が手前の行の値に
+   * なります）。`data-each` が行へ付けたリストキーで対応付けて防ぎます。
+   *
+   * 配列に無いキーの行は、これから取り除かれる古い行なので `null` を返します
+   * （呼び出し側が「値を触らない」扱いにします）。逆に、行がまだ無い配列要素は
+   * 行の生成時に `syncRowValues()` が拾います。
+   *
+   * @param rows 画面にある行のフラグメント
+   * @param items 対象の配列
+   * @param keyArg `data-each-key` の指定（無ければ null）
+   * @returns 行ごとに対応する配列要素（対応が無い行は null）。
+   *     対応付けができない場合は null（位置での組み合わせへ退く）
+   */
+  private static pairRowsWithItems(
+    rows: ElementFragment[],
+    items: unknown[],
+    keyArg: string | null,
+  ): Array<unknown | null> | null {
+    const keys = rows.map(row => row.getListKey());
+    if (keys.some(key => key === null)) {
+      // `data-each` で描いていない行（静的に書いた行など）は位置で組み合わせる。
+      return null;
+    }
+    const remaining = Form.createRowKeyIndexes(items, keyArg);
+    return keys.map(key => {
+      const positions = remaining.get(key as string);
+      if (!positions || positions.length === 0) {
+        return null;
+      }
+      return items[positions.shift() as number];
+    });
+  }
+
+  /**
    * 収集した行を、リストキーで配列要素へ対応付けて重ねます。
    *
    * 出現順の対応は「配列と画面の行数・並びが一致している」ことを前提にします。
@@ -1281,23 +1356,7 @@ export default class Form {
       // これは想定した構成なので警告しない。
       return null;
     }
-    // 配列要素のリストキーを、`data-each` の差分更新と同じ規則で作る。すべての要素に
-    // 対してキーを作る（`Core.createListKey()` は非オブジェクトも扱える）。作らない
-    // 要素を残すと、その行が「配列に無い行」と判定されて配列から要素が消える。
-    const remaining = new Map<string, number[]>();
-    previous.forEach((item, index) => {
-      const key = Core.createListKey(
-        item as Record<string, unknown> | string | number,
-        identity.keyArg,
-        index,
-      );
-      const indexes = remaining.get(key);
-      if (indexes) {
-        indexes.push(index);
-      } else {
-        remaining.set(key, [index]);
-      }
-    });
+    const remaining = Form.createRowKeyIndexes(previous, identity.keyArg);
     const merged: unknown[] = [];
     for (let index = 0; index < collected.length; index += 1) {
       const key = identity.keys[index] as string;
@@ -1695,32 +1754,35 @@ export default class Form {
       const childList = values[String(listName)];
       if (Array.isArray(childList)) {
         const children = fragment.getChildElementFragments();
+        // 行と配列要素はリストキーで対応付ける。位置で組み合わせると、行を挿入・削除
+        // した直後（逆方向同期は `data-each` の行生成より前に走る）に、その位置より
+        // 後の行がひとつずつずれた値を受け取る。
+        const eachKey = fragment.getAttribute(`${Env.prefix}each-key`);
+        const paired = Form.pairRowsWithItems(
+          children,
+          childList,
+          eachKey === null || eachKey === undefined ? null : String(eachKey),
+        );
         for (let i = 0; i < children.length; i++) {
           const child = children[i];
-          // 行ごとに values が切り替わるので出現位置も行単位で数える。
-          if (childList.length > i) {
-            promises.push(
-              Form.setPartValues(
-                child,
-                childList[i] as Record<string, unknown>,
-                force,
-                emitEvents,
-                clearMissing,
-                new Map(),
-              ),
-            );
-          } else {
-            promises.push(
-              Form.setPartValues(
-                child,
-                {},
-                force,
-                emitEvents,
-                clearMissing,
-                new Map(),
-              ),
-            );
-          }
+          // 対応する配列要素が無い行（これから取り除かれる古い行、または配列より
+          // 多い行）は空の値を渡して触らない。
+          const item = paired
+            ? paired[i]
+            : childList.length > i
+              ? childList[i]
+              : null;
+          promises.push(
+            // 行ごとに values が切り替わるので出現位置も行単位で数える。
+            Form.setPartValues(
+              child,
+              (Form.asPlainRecord(item) ?? {}) as Record<string, unknown>,
+              force,
+              emitEvents,
+              clearMissing,
+              new Map(),
+            ),
+          );
         }
       }
     } else {

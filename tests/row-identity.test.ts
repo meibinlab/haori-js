@@ -198,38 +198,50 @@ describe('行識別による収集値の対応付け', () => {
       // 追加行は 1 行目の直後に入り、既存行の識別（`id` と表示専用ラベル）は
       // 行の位置が変わっても取り違えられない。
       const rows = boundRows(form);
-      expect(rows.length).toBe(4);
-      expect(rows.map(row => row.id)).toEqual([1, undefined, 2, 3]);
-      expect(rows.map(row => row.label)).toEqual(['A', undefined, 'B', 'C']);
-      expect(rows[1]).toMatchObject({title: '新しい行'});
+      expect(rows).toEqual([
+        {id: 1, label: 'A', title: 'a'},
+        {title: '新しい行'},
+        {id: 2, label: 'B', title: 'b'},
+        {id: 3, label: 'C', title: 'c'},
+      ]);
     });
 
-    it.fails(
-      '［既存不具合］行を挿入すると末尾の行の入力欄が 1 つ前の値になる',
-      async () => {
-        // 行識別とは別の不具合。配列・表示専用ラベル・リストキーはいずれも正しく、
-        // 入力欄への書き戻しだけが崩れる。収集は DOM を真とするため、この後に編集を
-        // 確定すると誤った値が配列へ載る。
-        //
-        // これは `it.fails` なので、**不具合が直るとこのテストは失敗に変わる**。
-        // 書き戻しを修正したら、この `it.fails` を通常の `it` へ書き換えること
-        // （テストが壊れたのではなく、記録の役目が終わった合図）。
-        await mount(true);
+    it('行を挿入しても後続の行の入力欄がずれない', async () => {
+      // 逆方向同期は `data-each` の行生成より前に走るため、挿入直後は「配列の
+      // 要素数と画面の行数が食い違う」状態で書き戻しが走る。位置で組み合わせると、
+      // 挿入位置より後の行が手前の行の値を受け取る。
+      await mount(true);
 
-        (
-          container.querySelectorAll('.row')[0].querySelector('.add') as
-            | HTMLElement
-            | null
-        )?.click();
-        await waitForDomSettled(8);
+      (
+        container.querySelectorAll('.row')[0].querySelector('.add') as
+          | HTMLElement
+          | null
+      )?.click();
+      await waitForDomSettled(8);
 
-        expect(
-          Array.from(
-            container.querySelectorAll<HTMLInputElement>('[name="title"]'),
-          ).map(input => input.value),
-        ).toEqual(['a', '', 'b', 'c']);
-      },
-    );
+      expect(
+        Array.from(
+          container.querySelectorAll<HTMLInputElement>('[name="title"]'),
+        ).map(input => input.value),
+      ).toEqual(['a', '', 'b', 'c']);
+    });
+
+    it('行を削除しても残った行の入力欄がずれない', async () => {
+      await mount(true);
+
+      (
+        container.querySelectorAll('.row')[1].querySelector('.remove') as
+          | HTMLElement
+          | null
+      )?.click();
+      await waitForDomSettled(8);
+
+      expect(
+        Array.from(
+          container.querySelectorAll<HTMLInputElement>('[name="title"]'),
+        ).map(input => input.value),
+      ).toEqual(['a', 'c']);
+    });
 
     it('id が未設定の行が混ざっても取り違えない', async () => {
       // 新規行は `id` を持たないため、リストキーがインデックス由来になる。
