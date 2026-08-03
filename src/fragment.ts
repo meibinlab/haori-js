@@ -28,6 +28,37 @@ export const IF_DISABLED_MARKER = 'data-haori-if-disabled';
 /** `disabled` を持てるフォームコントロールのセレクタ。 */
 const FORM_CONTROL_SELECTOR = 'input, select, textarea, button, fieldset';
 
+/**
+ * 値の変化の種別。
+ *
+ * - `supply`（供給）: 明示的な値の供給。外部からの `data-bind` 書き換え、
+ *   `Core.setBindingData()` の直接呼び出し、リセット、`data-{event}-fetch` の応答反映、
+ *   コピー、行の要素データ入れ替え。前の編集を上書きし、後の編集に負ける
+ * - `edit`（編集）: `change` / `input` による確定。同じ通番では勝つ
+ * - `nonSupply`（非供給更新）: 宣言バインドの再評価、`data-url-param` の再評価、
+ *   `data-poll` の応答反映、`_poll` / `_fetch` などのエンジン管理変数の更新。
+ *   編集には通番によらず負ける
+ *
+ * 詳細は `docs/ja/値の供給と権威解決の設計書.md` の要件 R1〜R3 / R7 を参照してください。
+ */
+export type ValueChangeKind = 'supply' | 'edit' | 'nonSupply';
+
+/**
+ * 値の変化の由来（発生順の通番と種別）。
+ *
+ * 各宛先には「最後に適用された通番より新しい書き込みだけ」を適用します。宛先は
+ * 入力欄フラグメントと、要素のバインドデータの経路の 2 種類です。
+ */
+export interface ValueChangeOrigin {
+  /**
+   * その変化を起こした**操作が起きた時点**の通番。
+   * 非同期の処理が宛先へ到達した時点で発番すると権威の判定が逆転します。
+   */
+  readonly sequence: number;
+  /** 変化の種別 */
+  readonly kind: ValueChangeKind;
+}
+
 interface EvaluationProfilePlaceholderSnapshot {
   expression: string;
   calls: number;
@@ -829,6 +860,21 @@ export class ElementFragment extends Fragment {
   private authoritativeValueSequence = 0;
 
   /**
+   * この入力欄へ最後に適用した権威ある値の通番（未適用は 0）。
+   *
+   * 「権威ある値」は供給と編集だけです（`ValueChangeKind`）。非供給更新は台帳を
+   * 更新しません。更新させると、絶えず走る宣言バインドの再評価が最新の通番を
+   * 記録してしまい、後から届く正当な供給を古いと誤判定します。
+   */
+  private lastValueSequence = 0;
+
+  /**
+   * この入力欄へ最後に適用した権威ある値の種別。
+   * `edit` のあいだは「まだ供給で上書きされていない編集を抱えている」状態です。
+   */
+  private lastValueKind: ValueChangeKind = 'nonSupply';
+
+  /**
    * エレメントフラグメントのコンストラクタ。
    * アトリビュートや子フラグメントの作成も行います。
    *
@@ -1423,6 +1469,8 @@ export class ElementFragment extends Fragment {
    * チェックボックとラジオボタンの場合は値に一致するかどうかでチェック状態を変更します。
    *
    * @param value 値
+   * @param origin 値の由来（通番と種別）。渡すと宛先の台帳で適用可否を判定します。
+   *     省略した場合は判定せず、従来どおり「要求後の編集だけ」を守ります
    * @returns エレメントの更新のPromise
    */
   public setValue(
@@ -1432,8 +1480,9 @@ export class ElementFragment extends Fragment {
       | boolean
       | null
       | Array<string | number | boolean | null>,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
-    return this.applyValue(value, true);
+    return this.applyValue(value, true, origin);
   }
 
   /**
@@ -1441,6 +1490,7 @@ export class ElementFragment extends Fragment {
    * フォームの bindingData 反映時に内部同期として利用します。
    *
    * @param value 値
+   * @param origin 値の由来（通番と種別）。渡すと宛先の台帳で適用可否を判定します
    * @returns エレメントの更新のPromise
    */
   public syncBindingValue(
@@ -1450,8 +1500,9 @@ export class ElementFragment extends Fragment {
       | boolean
       | null
       | Array<string | number | boolean | null>,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
-    return this.applyValue(value, false);
+    return this.applyValue(value, false, origin);
   }
 
   /**
@@ -1462,6 +1513,7 @@ export class ElementFragment extends Fragment {
    *
    * @param value 値
    * @param dispatchEvents input/change イベントを発火するかどうか
+   * @param origin 値の由来（通番と種別）。渡すと宛先の台帳で適用可否を判定します
    * @returns エレメントの更新のPromise
    */
   private applyValue(
@@ -1472,14 +1524,24 @@ export class ElementFragment extends Fragment {
       | null
       | Array<string | number | boolean | null>,
     dispatchEvents: boolean,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
     if (this.skipChangeValue) {
       // 反映待ちの間に来た値は捨てず、書き込みの完了を待って改めて反映する
       // （後勝ち）。捨てると、最後に供給された値が画面にもバインドにも載らない
       // まま失われる。
       return (this.pendingValueWrite ?? Promise.resolve()).then(() =>
-        this.applyValue(value, dispatchEvents),
+        this.applyValue(value, dispatchEvents, origin),
       );
+    }
+    if (origin && !this.canApplyValue(origin)) {
+      // この宛先には、より新しい値が既に適用されている（または確定した編集が
+      // ある）。内部値を書き換える前に返す。書き換えると、後続の値収集が古い値を
+      // 拾って確定させてしまう。
+      return Promise.resolve();
+    }
+    if (origin) {
+      this.markValueApplied(origin);
     }
     if (this.value === value) {
       return Promise.resolve();
@@ -1553,6 +1615,9 @@ export class ElementFragment extends Fragment {
         if (this.isSupersededByUserEdit(requested)) {
           return;
         }
+        if (origin && !this.canApplyValue(origin)) {
+          return;
+        }
         element.checked = newChecked;
         if (dispatchEvents) {
           element.dispatchEvent(new Event('change', {bubbles: true}));
@@ -1562,7 +1627,7 @@ export class ElementFragment extends Fragment {
       const selectedValues = (
         Array.isArray(value) ? value : value === null ? [] : [value]
       ).map(String);
-      return this.writeSelectedValues(selectedValues, dispatchEvents);
+      return this.writeSelectedValues(selectedValues, dispatchEvents, origin);
     } else if (
       element instanceof HTMLInputElement ||
       element instanceof HTMLTextAreaElement ||
@@ -1572,6 +1637,7 @@ export class ElementFragment extends Fragment {
       return this.writeScalarValue(
         Array.isArray(value) ? value.join(',') : value,
         dispatchEvents,
+        origin,
       );
     } else {
       Log.warn(
@@ -1590,11 +1656,13 @@ export class ElementFragment extends Fragment {
    *
    * @param scalarValue 反映する値
    * @param dispatchEvents input/change イベントを発火するかどうか
+   * @param origin 値の由来（通番と種別）。書き込み直前にも適用可否を判定します
    * @returns 反映完了の Promise
    */
   private writeScalarValue(
     scalarValue: string | number | boolean | null,
     dispatchEvents: boolean,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
     const element = this.getTarget() as
       | HTMLInputElement
@@ -1606,6 +1674,9 @@ export class ElementFragment extends Fragment {
     const requested = this.userEditSequence;
     return this.enqueueValueWrite(() => {
       if (this.isSupersededByUserEdit(requested)) {
+        return;
+      }
+      if (origin && !this.canApplyValue(origin)) {
         return;
       }
       element.value = domValue;
@@ -1632,17 +1703,22 @@ export class ElementFragment extends Fragment {
    *
    * @param selectedValues 選択したい値（文字列）の配列
    * @param dispatchEvents change イベントを発火するかどうか
+   * @param origin 値の由来（通番と種別）。書き込み直前にも適用可否を判定します
    * @returns 反映完了の Promise
    */
   private writeSelectedValues(
     selectedValues: string[],
     dispatchEvents: boolean,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
     const element = this.getTarget() as HTMLSelectElement;
     this.value = selectedValues.slice();
     const requested = this.userEditSequence;
     return this.enqueueValueWrite(() => {
       if (this.isSupersededByUserEdit(requested)) {
+        return;
+      }
+      if (origin && !this.canApplyValue(origin)) {
         return;
       }
       let changed = false;
@@ -1871,15 +1947,74 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * この入力欄へ値を適用してよいかを返します。
+   *
+   * 入力欄フラグメントは値の宛先の 1 つで、適用可否の判定はここに集約します
+   * （`docs/ja/値の供給と権威解決の設計書.md`）。判定の規則は 1 文です。
+   *
+   * > 各宛先には、最後に適用された通番より新しい書き込みだけを適用する。ただし
+   * > 非供給更新は、その宛先に編集が確定していれば通番によらず適用しない。
+   * > 同じ通番では編集が勝つ。
+   *
+   * 同じ通番の供給を再度受け付けるのは、1 つの供給が同じ入力欄へ二度書くことが
+   * あるためです（`Form.syncValues()` の後に `retryUnappliedValueWrites()` が
+   * `<select>` の候補が揃ってから載せ直す）。二度目を弾くと供給された値が画面に
+   * 載りません。
+   *
+   * @param origin 適用しようとしている値の由来
+   * @returns 適用してよい場合は true
+   */
+  public canApplyValue(origin: ValueChangeOrigin): boolean {
+    if (origin.kind === 'nonSupply' && this.lastValueKind === 'edit') {
+      // 非供給更新は、確定した編集に通番によらず負ける（要件 R7）。
+      return false;
+    }
+    if (origin.sequence > this.lastValueSequence) {
+      return true;
+    }
+    if (origin.sequence === this.lastValueSequence) {
+      // 同じ通番では編集が勝つ。1 つの操作が同じ入力欄へ二度書く場合
+      // （`Form.syncValues()` と `retryUnappliedValueWrites()`）もここを通る。
+      return this.lastValueKind !== 'edit' || origin.kind === 'edit';
+    }
+    return false;
+  }
+
+  /**
+   * この入力欄へ値を適用したことを記録します。
+   *
+   * 非供給更新は記録しません（`lastValueSequence` の説明を参照）。
+   *
+   * @param origin 適用した値の由来
+   * @returns 戻り値はありません。
+   */
+  public markValueApplied(origin: ValueChangeOrigin): void {
+    if (origin.kind === 'nonSupply') {
+      return;
+    }
+    if (
+      origin.sequence > this.lastValueSequence ||
+      (origin.sequence === this.lastValueSequence && origin.kind === 'edit')
+    ) {
+      this.lastValueSequence = origin.sequence;
+      this.lastValueKind = origin.kind;
+    }
+  }
+
+  /**
    * この入力欄がユーザーに編集されたことを記録します。
    *
    * `change` / `input` の委譲で内部値を DOM から同期した直後に呼び出します。
    * プログラムからの値反映（バインド由来の書き戻しなど）では呼び出しません。
    *
-   * @returns 戻り値はありません。
+   * @returns 発番した編集の通番
    */
-  public markUserEdit(): void {
+  public markUserEdit(): number {
     this.userEditSequence = ElementFragment.nextSequence();
+    // 宛先の台帳へも記録する。以降、この編集より古い供給と、すべての非供給更新は
+    // この入力欄へ適用されない。
+    this.markValueApplied({sequence: this.userEditSequence, kind: 'edit'});
+    return this.userEditSequence;
   }
 
   /**
@@ -1922,6 +2057,12 @@ export class ElementFragment extends Fragment {
   ): void {
     if (upTo > this.authoritativeValueSequence) {
       this.authoritativeValueSequence = upTo;
+    }
+    if (this.lastValueKind === 'edit' && this.lastValueSequence <= upTo) {
+      // 供給が編集の権威を引き取った。この宛先はもう「供給で上書きされていない
+      // 編集」を抱えていないため、宣言バインドの再評価（非供給更新）も適用できる。
+      // 通番は下げない（引き取った時点より前の供給を復活させないため）。
+      this.lastValueKind = 'supply';
     }
   }
 

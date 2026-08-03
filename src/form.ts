@@ -9,6 +9,7 @@ import Dev from './dev';
 import Env from './env';
 import Expression from './expression';
 import Fragment, {ElementFragment} from './fragment';
+import type {ValueChangeOrigin} from './fragment';
 import Haori from './haori';
 import Log from './log';
 import Queue from './queue';
@@ -691,14 +692,24 @@ export default class Form {
    * @param form フォームのElementFragment
    * @param values フォームに設定する値のオブジェクト
    * @param force data-form-detach属性があるエレメントにも値を反映するかどうか
+   * @param origin 値の由来（通番と種別）。渡すと入力欄ごとに適用可否を判定します
    * @returns Promise（DOMの更新が完了したら解決される）
    */
   public static syncValues(
     form: ElementFragment,
     values: Record<string, unknown>,
     force: boolean = false,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
-    return Form.setPartValues(form, values, force, false);
+    return Form.setPartValues(
+      form,
+      values,
+      force,
+      false,
+      false,
+      new Map(),
+      origin,
+    );
   }
 
   /**
@@ -710,13 +721,23 @@ export default class Form {
    *
    * @param row 行のElementFragment
    * @param values 行に設定する値のオブジェクト
+   * @param origin 値の由来（通番と種別）。渡すと入力欄ごとに適用可否を判定します
    * @returns 反映完了の Promise
    */
   public static syncRowValues(
     row: ElementFragment,
     values: Record<string, unknown>,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
-    return Form.setPartValues(row, values, false, false, true);
+    return Form.setPartValues(
+      row,
+      values,
+      false,
+      false,
+      true,
+      new Map(),
+      origin,
+    );
   }
 
   /**
@@ -1385,11 +1406,13 @@ export default class Form {
    *
    * @param fragment 更新された祖先のフラグメント
    * @param resetSequence 更新が始まった時点の初期化の通番
+   * @param origin 値の由来（通番と種別）。渡すと入力欄ごとに適用可否を判定します
    * @returns 反映完了の Promise
    */
   public static syncAncestorArgForms(
     fragment: ElementFragment,
     resetSequence: number,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
     const promises: Promise<void>[] = [];
     for (const {form, key} of Form.collectArgForms(fragment)) {
@@ -1400,7 +1423,7 @@ export default class Form {
       if (!owner || owner.owner !== fragment) {
         continue;
       }
-      promises.push(Form.pushAncestorArgValue(form, key, owner.value));
+      promises.push(Form.pushAncestorArgValue(form, key, owner.value, origin));
     }
     return Promise.all(promises).then(() => undefined);
   }
@@ -1444,12 +1467,14 @@ export default class Form {
    * @param form フォームのElementFragment
    * @param key `data-form-arg` で指定されたキー名
    * @param value 祖先が所有する値
+   * @param origin 値の由来（通番と種別）。渡すと入力欄ごとに適用可否を判定します
    * @returns 反映完了の Promise
    */
   private static pushAncestorArgValue(
     form: ElementFragment,
     key: string,
     value: Record<string, unknown>,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
     const element = form.getTarget();
     const signature = Form.createArgValueSignature(value);
@@ -1466,10 +1491,23 @@ export default class Form {
       const rest = {...raw};
       delete rest[key];
       // フォーム自身のバインドデータ更新に伴う逆方向同期で入力欄へ反映される
-      // （`resolveSyncValues()` が祖先へフォールバックする）。
-      return Core.setBindingData(element, rest);
+      // （`resolveSyncValues()` が祖先へフォールバックする）。由来が分かっている
+      // 場合は、その通番と種別を引き継ぐ（呼び出し時点で発番し直すと、祖先の更新を
+      // 起こした操作より新しい番号を得てしまう）。
+      return origin
+        ? Core.setBindingData(
+            element,
+            rest,
+            new Set(),
+            false,
+            true,
+            ElementFragment.currentSequence(),
+            origin.sequence,
+            origin.kind,
+          )
+        : Core.setBindingData(element, rest);
     }
-    return Form.syncValues(form, value);
+    return Form.syncValues(form, value, false, origin);
   }
 
   /**
@@ -1591,6 +1629,7 @@ export default class Form {
    * @param fragment 対象フラグメント
    * @param value 設定する値
    * @param emitEvents input/change イベントを発火するかどうか
+   * @param origin 値の由来（通番と種別）。渡すと宛先の台帳で適用可否を判定します
    * @returns Promise（DOMの更新が完了したら解決される）
    */
   private static applyFragmentValue(
@@ -1602,10 +1641,11 @@ export default class Form {
       | null
       | Array<string | number | boolean | null>,
     emitEvents: boolean,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
     return emitEvents
-      ? fragment.setValue(value)
-      : fragment.syncBindingValue(value);
+      ? fragment.setValue(value, origin)
+      : fragment.syncBindingValue(value, origin);
   }
 
   /**
@@ -1618,6 +1658,7 @@ export default class Form {
    * @param clearMissing values に無いキーの入力欄を空にするかどうか
    * @param listCursors 同名リストの出現位置。同じ `values` を共有する範囲で
    *     収集キーごとに何件目かを数え、配列の対応する要素を配るために使う
+   * @param origin 値の由来（通番と種別）。渡すと入力欄ごとに適用可否を判定します
    * @returns Promise（DOMの更新が完了したら解決される）
    */
   private static setPartValues(
@@ -1627,6 +1668,7 @@ export default class Form {
     emitEvents: boolean = true,
     clearMissing: boolean = false,
     listCursors: Map<string, number> = new Map(),
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
     const promises: Promise<void>[] = [];
     const name = Form.resolveFieldName(fragment);
@@ -1672,7 +1714,9 @@ export default class Form {
         // 双方向バインディングでファイル名が書き戻される正常系で警告が出るのを防ぐ。
         if (Form.isFileInput(fragment)) {
           if (value === null || value === '') {
-            promises.push(Form.applyFragmentValue(fragment, null, emitEvents));
+            promises.push(
+              Form.applyFragmentValue(fragment, null, emitEvents, origin),
+            );
           }
           return Promise.all(promises).then(() => undefined);
         }
@@ -1697,6 +1741,7 @@ export default class Form {
               fragment,
               value[cursor] ?? null,
               emitEvents,
+              origin,
             ),
           );
         } else if (typeof value === 'undefined') {
@@ -1708,6 +1753,7 @@ export default class Form {
               fragment,
               value as Array<string | number | boolean | null>,
               emitEvents,
+              origin,
             ),
           );
         } else if (Array.isArray(value) && Form.isMultipleSelect(fragment)) {
@@ -1717,6 +1763,7 @@ export default class Form {
               fragment,
               value as Array<string | number | boolean | null>,
               emitEvents,
+              origin,
             ),
           );
         } else if (
@@ -1725,10 +1772,17 @@ export default class Form {
           typeof value === 'boolean' ||
           value === null
         ) {
-          promises.push(Form.applyFragmentValue(fragment, value, emitEvents));
+          promises.push(
+            Form.applyFragmentValue(fragment, value, emitEvents, origin),
+          );
         } else {
           promises.push(
-            Form.applyFragmentValue(fragment, String(value), emitEvents),
+            Form.applyFragmentValue(
+              fragment,
+              String(value),
+              emitEvents,
+              origin,
+            ),
           );
         }
       }
@@ -1746,6 +1800,7 @@ export default class Form {
               emitEvents,
               clearMissing,
               childCursors,
+              origin,
             ),
           );
         }
@@ -1781,6 +1836,7 @@ export default class Form {
               emitEvents,
               clearMissing,
               new Map(),
+              origin,
             ),
           );
         }
@@ -1795,6 +1851,7 @@ export default class Form {
             emitEvents,
             clearMissing,
             listCursors,
+            origin,
           ),
         );
       }
@@ -1925,7 +1982,10 @@ export default class Form {
         // 自身のバインドデータを持つフォームは、上の復元で入力欄も戻っている。
         continue;
       }
-      await Form.restoreAncestorArgValues(formFragment);
+      await Form.restoreAncestorArgValues(formFragment, {
+        sequence: operationSequence,
+        kind: 'supply',
+      });
     }
 
     // 双方向バインディングのバインドデータをリセット後の値で更新する。
@@ -2096,10 +2156,12 @@ export default class Form {
    * 編集していないフォームにはそのコピーが無いため、ここで明示的に戻します。
    *
    * @param form 対象のフォームフラグメント
+   * @param origin 値の由来（通番と種別）。渡すと入力欄ごとに適用可否を判定します
    * @returns 反映完了の Promise
    */
   private static async restoreAncestorArgValues(
     form: ElementFragment,
+    origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
     const arg = form.getAttribute(`${Env.prefix}form-arg`);
     if (!arg) {
@@ -2113,7 +2175,7 @@ export default class Form {
     // 流し込み済みの記録を捨てる。祖先の値はリセットの前後で変わらないため、記録が
     // 残ったままだと「変化なし」と判定され、クリアした入力欄が空のまま残る。
     Form.LAST_ANCESTOR_ARG_VALUES.delete(form.getTarget());
-    await Form.pushAncestorArgValue(form, key, owner.value);
+    await Form.pushAncestorArgValue(form, key, owner.value, origin);
   }
 
   /**

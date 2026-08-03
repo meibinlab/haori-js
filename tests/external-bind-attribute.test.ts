@@ -18,7 +18,11 @@ import Core from '../src/core';
 import Form from '../src/form';
 import Fragment, {ElementFragment} from '../src/fragment';
 import {Observer} from '../src/observer';
-import {waitForCondition, waitForDomSettled} from './helpers/async';
+import {
+  waitForCondition,
+  waitForDomSettled,
+  waitForIdle,
+} from './helpers/async';
 
 /** テストから初期化状態を戻すための内部プロパティ */
 type ObserverPrivate = {_initialized: boolean};
@@ -161,7 +165,9 @@ describe('data-bind 属性の外部書き換え', () => {
 
     // 外部からの書き換えは「明示的な値の供給」として扱う。
     host.setAttribute('data-bind', '{"label":"ひなた","n":1,"rows":[]}');
-    await waitForDomSettled();
+    // `waitForDomSettled()` は供給のワークが入力欄へ書き戻す前に戻ることがある。
+    // 落ち着くまで回す `waitForIdle()` で待つ。
+    await waitForIdle();
 
     expect(input.value).toBe('ひなた');
     expect(document.getElementById('text')!.textContent).toBe('ひなた');

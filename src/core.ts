@@ -10,6 +10,7 @@ import Enhance from './enhance';
 import Expression from './expression';
 import Form from './form';
 import Fragment, {ElementFragment, TextFragment} from './fragment';
+import type {ValueChangeKind, ValueChangeOrigin} from './fragment';
 import Log from './log';
 import Procedure from './procedure';
 import Store from './store';
@@ -982,6 +983,10 @@ export default class Core {
    *     取り込みなど）は、操作が起きた時点で `ElementFragment.nextSequence()` を
    *     発番して渡すこと。呼び出し時点で発番すると、先に起きた操作が後の番号を得て
    *     権威が逆転する
+   * @param kind この更新の種別（`ValueChangeKind`）。省略した場合は
+   *     `userEditBaseline` から推定する（`null` なら非供給更新、それ以外は供給）。
+   *     `change` / `input` の双方向コミットだけは推定できないため、明示的に
+   *     `'edit'` を渡すこと
    * @returns Promise (DOM操作が完了したときに解決される)
    */
   public static setBindingData(
@@ -992,12 +997,23 @@ export default class Core {
     reflectToAttribute = true,
     userEditBaseline: number | null = ElementFragment.currentSequence(),
     originSequence: number = ElementFragment.nextSequence(),
+    kind: ValueChangeKind | null = null,
   ): Promise<void> {
     const fragment = Fragment.get(element) as ElementFragment;
+    // この更新の種別。段 3 で `userEditBaseline` を廃するまでは、渡されていない
+    // 場合に限り従来の引数から推定する。
+    const resolvedKind: ValueChangeKind =
+      kind ?? (userEditBaseline === null ? 'nonSupply' : 'supply');
+    // 入力欄へ書き戻すときに宛先の台帳と突き合わせる由来。判定は宛先の 1 箇所
+    // （`ElementFragment.canApplyValue()`）に集約する。
+    const origin: ValueChangeOrigin = {
+      sequence: originSequence,
+      kind: resolvedKind,
+    };
     // この更新が「明示的な値の供給」かどうか。供給だけが宛先の権威を更新し、供給
     // 同士は後勝ち（仕様 1927 行）で解決する。値の供給ではない内部更新（双方向
     // コミット、`data-url-param` の再評価、エンジン管理変数）は権威を持たない。
-    const isSupply = userEditBaseline !== null;
+    const isSupply = resolvedKind === 'supply';
     if (isSupply && fragment.isSupplyStale(originSequence)) {
       // この供給より後の供給がすでにこの宛先へ載っている。古い供給を載せると
       // 「最後に供給された値が残る」（仕様 1927 行）が崩れる。
@@ -1011,7 +1027,7 @@ export default class Core {
     // 初期化前の状態なので、書き戻すとクリアしたはずの値が復活する。
     const resetSequence = ElementFragment.currentSequence();
     const previous = fragment.getRawBindingData();
-    if (isSupply) {
+    if (isSupply && userEditBaseline !== null) {
       Core.clearUserEditMarks(fragment, userEditBaseline);
     }
     // 内部バインドデータは即時確定する（後続の同期読み取りが最新値を得られるよう）。
@@ -1076,6 +1092,8 @@ export default class Core {
           return Form.syncValues(
             fragment,
             Form.resolveSyncValues(fragment, latest),
+            false,
+            origin,
           );
         });
       }
@@ -1085,7 +1103,7 @@ export default class Core {
       // 再評価より前に行うのは自フォームへの書き戻しと同じ理由（宣言バインドの
       // 評価結果を後から入れ直す）。初期化の判定はフォームごとに行う。
       chain = chain.then(() =>
-        Form.syncAncestorArgForms(fragment, resetSequence),
+        Form.syncAncestorArgForms(fragment, resetSequence, origin),
       );
       chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
       // (c) 入力欄への書き戻しは行生成より前に走るため、候補を `data-each` で流し込む

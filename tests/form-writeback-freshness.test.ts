@@ -8,24 +8,33 @@
  * 実装ではその編集を古い収集値で上書きし、値が巻き戻る。さらに巻き戻された内部値を
  * 後続の入力操作が再収集して確定させるため、誤った値が最終的に残る。
  *
- * 本テストは、書き戻しが「適用直前に読み直した最新の in-memory」を基準にすることを
- * 検証する。実ブラウザでのタイミング競合そのものは
- * `playwright/concurrent-edit-rollback.spec.cjs` が担保する。
+ * 本テストは、書き戻しが「適用直前に読み直した最新の in-memory」を基準にし、かつ
+ * **宛先である入力欄が、自分へ最後に適用された値より古い供給を受け付けない**ことを
+ * 検証する（`ElementFragment.canApplyValue()`）。実ブラウザでのタイミング競合その
+ * ものは `playwright/concurrent-edit-rollback.spec.cjs` が担保する。
  */
 import {describe, it, beforeEach, afterEach, expect} from 'vitest';
 import Core from '../src/core';
+import EventDispatcher from '../src/event_dispatcher';
 import Fragment, {ElementFragment} from '../src/fragment';
 import {waitForIdle} from './helpers/async';
 
 describe('フォーム書き戻しの鮮度', () => {
   let container: HTMLElement;
+  let dispatcher: EventDispatcher;
 
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
+    // `change` を受け取るのは `EventDispatcher` だけ。起動しないと、割り込みで
+    // 発火したイベントを誰も受け取らず、内部値の同期もユーザー編集の記録も起き
+    // ないため、この観点を何も検証していないことになる。
+    dispatcher = new EventDispatcher(document);
+    dispatcher.start();
   });
 
   afterEach(() => {
+    dispatcher.stop();
     container.remove();
   });
 
