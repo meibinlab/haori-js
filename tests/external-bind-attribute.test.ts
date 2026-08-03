@@ -45,10 +45,17 @@ describe('data-bind 属性の外部書き換え', () => {
   /**
    * 検証用のフォームを組み立てて初期描画を待ちます。
    *
+   * **待機は `waitForIdle()` で行います。** 固定サイクルの `waitForDomSettled()` は
+   * 呼び出し時点のタスクだけを待つため、「1 段の完了を待ってから次の段を積む」直列
+   * チェーン（入れ子の `data-each` など）では途中で解決します。この関数が返す状態は
+   * 各テストの**前提**なので、途中で解決すると本題と無関係な理由で落ちます
+   * （`tests/helpers/async.ts` の `waitForIdle()` の説明を参照）。
+   *
    * @param bind 初期の `data-bind` 属性値
+   * @param extra 追加で差し込むマークアップ
    * @returns 組み立てたフォーム要素
    */
-  const render = async (bind: string): Promise<HTMLFormElement> => {
+  const render = async (bind: string, extra = ''): Promise<HTMLFormElement> => {
     const host = document.createElement('form');
     host.setAttribute('data-bind', bind);
     host.innerHTML = [
@@ -57,11 +64,22 @@ describe('data-bind 属性の外部書き換え', () => {
       '<i id="conditional" data-if="n === 2">two</i>',
       '<input id="input" name="label" type="text">',
       '<ul data-each="rows" data-each-arg="r"><li class="row">{{r.name}}</li></ul>',
+      extra,
     ].join('');
     document.body.appendChild(host);
-    await waitForDomSettled();
+    await waitForIdle();
     return host;
   };
+
+  /**
+   * 入れ子の `data-each` が描画した内側のラベルを取り出します。
+   *
+   * @returns 内側のラベルの配列
+   */
+  const innerLabels = (): string[] =>
+    Array.from(document.querySelectorAll('.inner')).map(
+      item => item.textContent ?? '',
+    );
 
   /**
    * 描画済みの行のラベルを取り出します。
@@ -72,6 +90,25 @@ describe('data-bind 属性の外部書き換え', () => {
     Array.from(document.querySelectorAll('.row')).map(
       row => row.textContent ?? '',
     );
+
+  it('入れ子の data-each を含む初期描画も、外部書き換えの前に完了している（回帰）', async () => {
+    // 各テストは「初期描画が終わっている」ことを前提に外部書き換えを行う。前提の
+    // 待ち合わせを固定サイクル（`waitForDomSettled()` の既定 3 サイクル）で行うと、
+    // 段を重ねる描画では途中で解決する。入れ子の `data-each` は 12 サイクル進めても
+    // 完了せず（`Queue.wait()` は呼び出し時点のタスクだけを待つため）、2 行目の内側が
+    // `{{it.v}}` のまま観測される。この状態で外部書き換えへ進むと、本題と無関係な
+    // 理由でテストが落ちる。
+    await render(
+      '{"label":"あかね","n":1,"rows":[],' +
+        '"groups":[{"id":1,"items":[{"k":"x","v":"1"},{"k":"y","v":"2"}]},' +
+        '{"id":2,"items":[{"k":"z","v":"3"}]}]}',
+      '<ul data-each="groups" data-each-key="id" data-each-arg="g">' +
+        '<li><ol data-each="g.items" data-each-key="k" data-each-arg="it">' +
+        '<li class="inner">{{it.v}}</li></ol></li></ul>',
+    );
+
+    expect(innerLabels()).toEqual(['1', '2', '3']);
+  });
 
   it('書き換えた内容で配下が再評価される', async () => {
     const host = await render(
@@ -146,7 +183,10 @@ describe('data-bind 属性の外部書き換え', () => {
 
     // 外部が書いた表記（空白入り・キー順違い）。取り込みの後は、Haori が
     // ミラーした正規形に落ち着き、内部データと食い違わない。
-    host.setAttribute('data-bind', '{ "n" : 1 , "rows" : [] , "label" : "ひなた" }');
+    host.setAttribute(
+      'data-bind',
+      '{ "n" : 1 , "rows" : [] , "label" : "ひなた" }',
+    );
     await waitForDomSettled();
 
     const bound = Core.getBindingData(host);
