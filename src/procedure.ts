@@ -2169,11 +2169,11 @@ ${body}
    * 走るので、その時点で発番すると、操作の後に届いた供給より新しい番号を得てしまい、
    * 後勝ち（仕様 1927 行）が逆転します。
    *
-   * `nextOperationSequence()` は発番の前に保留中の外部 DOM 変更を引き取り、**この操作
-   * より前に DOM 上で起きていた外部の書き換え**へ先に番号を割り当てます。
+   * 発番はコンストラクタの本体の先頭で行います（`domEvent` の有無で発番の方法を
+   * 分けるため）。フィールドの初期化は本体より前に走るので、ここで初期値を与えると
+   * `domEvent` を見られません。
    */
-  private readonly operationSequence: number =
-    ElementFragment.nextOperationSequence();
+  private readonly operationSequence: number;
 
   /**
    * 双方向コミット由来のバインドかどうか。
@@ -2221,6 +2221,21 @@ ${body}
     arg2: string | null = null,
     domEvent: Event | null = null,
   ) {
+    // 操作の通番を最初に発番する。`buildOptions()` は初期化対象などを DOM から
+    // 集めるため、外部の書き換えを引き取るならその前に済ませておく必要がある。
+    //
+    // 保留中の外部 DOM 変更の同期引き取りは、**DOM イベントを起点とする手続きだけ**
+    // で行う。引き取りは `Core.setAttribute()` → `Core.setBindingData()` を同期的に
+    // 呼ぶため、バインドワークの内部から生成される手続き
+    // （`Core.executeManagedFetch()` のマネージド `data-fetch`）で行うと、実行中の
+    // バインドワークへ再入する。順序の逆転が問題になるのは「外部が書き換えた直後に
+    // 利用者が操作した」場合だけなので、対象をそこへ絞る。
+    // 起点が DOM イベントでない手続き（`data-load-*`、`data-poll-*`、
+    // `data-intersect-*`、シグネチャ算出）は発番だけを行う。
+    this.operationSequence =
+      domEvent != null
+        ? ElementFragment.nextOperationSequence()
+        : ElementFragment.nextSequence();
     if (Procedure.isElementFragment(arg1)) {
       this.options = Procedure.buildOptions(arg1, arg2);
       this.eventType = arg2;

@@ -1856,6 +1856,11 @@ export class ElementFragment extends Fragment {
    * 換えた直後にクリックした」場合に、先に起きた外部の書き換えが後の番号を得て
    * 権威が逆転します（`docs/ja/値の供給と権威解決の設計書.md`「段構成の訂正」）。
    *
+   * **DOM イベントを起点とする処理からだけ呼んでください。** 取り込みは
+   * `Core.setAttribute()` → `Core.setBindingData()` を同期的に呼ぶため、バインド
+   * ワークの内部から呼ぶと実行中のワークへ再入します。イベント起点でない処理は
+   * `nextSequence()` を使ってください。
+   *
    * @returns 発番した通番
    */
   public static nextOperationSequence(): number {
