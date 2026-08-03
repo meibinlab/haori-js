@@ -811,8 +811,19 @@ export class ElementFragment extends Fragment {
   /** valueプロパティの値（複数選択 select は文字列配列を保持する） */
   private value: string | number | boolean | string[] | null = null;
 
-  /** 属性更新スキップフラグ（オブザーバーによる無限ループ対応） */
-  private skipMutationAttributes = false;
+  /**
+   * 自身が書き込み中の属性名（オブザーバーによる無限ループ対応）。
+   *
+   * Haori が属性へ書き込むと `MutationObserver` がその変化を観測し、同じ属性へ
+   * 書き戻そうとします。書き込みが完了するまで**その属性名**を記録しておき、記録に
+   * ある属性への書き込みは行いません。
+   *
+   * **属性名ごとに持ちます。** 要素ごとの真偽値 1 つにすると、キュー待ちの書き込みが
+   * ある間はその要素の**別の属性**への書き込みまで捨ててしまいます（`data-fetch` の
+   * 評価結果を属性へ書いている最中に、応答の self-bind が `data-bind` 属性へ
+   * ミラーできず、属性と in-memory が食い違って残る不具合になっていました）。
+   */
+  private readonly selfWritingAttributes = new Set<string>();
 
   /** 値変更スキップフラグ（更新イベントによる無限ループ対応） */
   private skipChangeValue = false;
@@ -1177,11 +1188,13 @@ export class ElementFragment extends Fragment {
    *
    * 純粋な FIFO（並行呼出を決して即時インライン実行しない）です。以前は実行中
    * フラグでの「再入即時実行」を行っていましたが、await をまたいで届く**独立した
-   * 並行呼出**まで再入扱いしてインライン実行し、`skipMutationAttributes` 中の
-   * `data-bind` 書き込みが破棄されて古い値が後勝ちする競合の原因になっていました。
-   * 真の再入（`data-url-param` の再評価、マネージド `data-fetch` の同一フラグメント
-   * への bind-back）は呼出側が `reentrant=true` でキューを介さず実行するため、
-   * ここでは一律にチェーンへ積みます。
+   * 並行呼出**まで再入扱いしてインライン実行し、書き込み中の属性として記録されて
+   * いる間の `data-bind` 書き込みが破棄されて古い値が後勝ちする競合の原因に
+   * なっていました（記録は `selfWritingAttributes` で属性名ごとに持つようになり、
+   * 別の属性の書き込みに巻き込まれることは無くなっています）。真の再入
+   * （`data-url-param` の再評価、マネージド `data-fetch` の同一フラグメントへの
+   * bind-back）は呼出側が `reentrant=true` でキューを介さず実行するため、ここでは
+   * 一律にチェーンへ積みます。
    *
    * @param work 直列化したいバインドデータ更新処理
    * @returns work の完了 Promise
@@ -2419,6 +2432,38 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 指定した属性のいずれかを自身が書き込み中かどうかを返します。
+   *
+   * @param names 対象の属性名
+   * @returns 書き込み中なら true
+   */
+  private isSelfWritingAttribute(names: readonly string[]): boolean {
+    return names.some(name => this.selfWritingAttributes.has(name));
+  }
+
+  /**
+   * 指定した属性を「自身が書き込み中」として記録します。
+   *
+   * @param names 対象の属性名
+   */
+  private holdSelfWritingAttributes(names: readonly string[]): void {
+    for (const name of names) {
+      this.selfWritingAttributes.add(name);
+    }
+  }
+
+  /**
+   * 「自身が書き込み中」の記録を外します。
+   *
+   * @param names 対象の属性名
+   */
+  private releaseSelfWritingAttributes(names: readonly string[]): void {
+    for (const name of names) {
+      this.selfWritingAttributes.delete(name);
+    }
+  }
+
+  /**
    * 属性の値を評価して設定します。
    * 評価値がfalseの場合は属性を削除します。
    * 矯正評価属性の場合は元の値を設定します。
@@ -2477,7 +2522,8 @@ export class ElementFragment extends Fragment {
     rawName: string,
     targetName: string,
   ): Promise<void> {
-    if (this.skipMutationAttributes) {
+    const heldNames = [rawName, targetName];
+    if (this.isSelfWritingAttribute(heldNames)) {
       return Promise.resolve();
     }
     this.attributeMap.delete(rawName);
@@ -2491,7 +2537,7 @@ export class ElementFragment extends Fragment {
     if (!requiresRawRemoval && !requiresTargetRemoval) {
       return Promise.resolve();
     }
-    this.skipMutationAttributes = true;
+    this.holdSelfWritingAttributes(heldNames);
     return Queue.enqueue(() => {
       if (requiresRawRemoval) {
         element.removeAttribute(rawName);
@@ -2500,7 +2546,7 @@ export class ElementFragment extends Fragment {
         element.removeAttribute(targetName);
       }
     }).finally(() => {
-      this.skipMutationAttributes = false;
+      this.releaseSelfWritingAttributes(heldNames);
     }) as Promise<void>;
   }
 
@@ -2521,7 +2567,10 @@ export class ElementFragment extends Fragment {
     syncValueProperty: boolean,
     fromObserver = false,
   ): Promise<void> {
-    if (this.skipMutationAttributes) {
+    // 書き込み中かどうかは属性名ごとに見る（`selfWritingAttributes` 参照）。別名属性は
+    // 生属性と反映先の 2 つへ書くため、その両方を対象にする。
+    const heldNames = [rawName, targetName];
+    if (this.isSelfWritingAttribute(heldNames)) {
       return Promise.resolve();
     }
     if (value === null) {
@@ -2541,9 +2590,9 @@ export class ElementFragment extends Fragment {
         !contents.isEvaluate &&
         !contents.isForceEvaluation()
       ) {
-        this.skipMutationAttributes = true;
+        this.holdSelfWritingAttributes(heldNames);
         return Queue.enqueue(() => {}).finally(() => {
-          this.skipMutationAttributes = false;
+          this.releaseSelfWritingAttributes(heldNames);
         }) as Promise<void>;
       }
     }
@@ -2692,7 +2741,7 @@ export class ElementFragment extends Fragment {
       }
       return Promise.resolve();
     }
-    this.skipMutationAttributes = true;
+    this.holdSelfWritingAttributes(heldNames);
     return Queue.enqueue(() => {
       if (requiresRawAttributeWrite) {
         element.setAttribute(rawName, value);
@@ -2740,7 +2789,7 @@ export class ElementFragment extends Fragment {
         this.syncCheckableValueFromDom(requiresSelectedPropertyWrite);
       }
     }).finally(() => {
-      this.skipMutationAttributes = false;
+      this.releaseSelfWritingAttributes(heldNames);
     }) as Promise<void>;
   }
 
@@ -2755,7 +2804,7 @@ export class ElementFragment extends Fragment {
    * @returns 属性の削除のPromise
    */
   public removeAttribute(name: string): Promise<void> {
-    if (this.skipMutationAttributes) {
+    if (this.isSelfWritingAttribute([name])) {
       return Promise.resolve();
     }
     this.attributeMap.delete(name);
@@ -2767,11 +2816,11 @@ export class ElementFragment extends Fragment {
     if (!element.hasAttribute(name)) {
       return Promise.resolve();
     }
-    this.skipMutationAttributes = true;
+    this.holdSelfWritingAttributes([name]);
     return Queue.enqueue(() => {
       element.removeAttribute(name);
     }).finally(() => {
-      this.skipMutationAttributes = false;
+      this.releaseSelfWritingAttributes([name]);
     }) as Promise<void>;
   }
 
