@@ -237,6 +237,12 @@ export default class Core {
     new WeakSet<HTMLElement>();
 
   /**
+   * `data-each-key` の重複を警告済みの項目名。
+   * 描画のたびに同じ警告を出し続けないために使用します。
+   */
+  private static readonly WARNED_DUPLICATE_EACH_KEYS = new Set<string>();
+
+  /**
    * 遅延属性かどうか（完全名で判定）を判定します。
    *
    * @param name 属性名
@@ -3113,21 +3119,20 @@ export default class Core {
     }
     const keyArg = parent.getAttribute(`${Env.prefix}each-key`);
     const itemArg = parent.getAttribute(`${Env.prefix}each-arg`);
-    const keyDataMap: Map<
-      string,
-      {item: (typeof newList)[0]; itemIndex: number}
-    > = new Map();
-    const newKeys: string[] = [];
-    newList.forEach((item, itemIndex) => {
-      const listKey = Core.createListKey(
-        item,
-        keyArg ? String(keyArg) : null,
-        itemIndex,
-      );
-      newKeys.push(listKey);
-      keyDataMap.set(listKey, {item, itemIndex});
-    });
+    const newKeys: string[] = newList.map((item, itemIndex) =>
+      Core.createListKey(item, keyArg ? String(keyArg) : null, itemIndex),
+    );
     const newKeySet = new Set(newKeys);
+    // キーごとに残せる行の数（＝そのキーの出現回数）。キーは一意である前提だが
+    // （仕様「`data-each`」）、重複しても行の数と要素データがずれないよう、行の
+    // 対応付けはキーではなく**出現順**で行う。下の絞り込みで 1 行ずつ消費する。
+    const keepableCounts = new Map<string, number>();
+    newKeys.forEach(key => {
+      keepableCounts.set(key, (keepableCounts.get(key) ?? 0) + 1);
+    });
+    if (keyArg && newKeySet.size !== newKeys.length) {
+      Core.warnDuplicateEachKey(String(keyArg));
+    }
     const removalPromises: Promise<void>[] = [];
     let childElements = parent
       .getChildren()
@@ -3139,8 +3144,12 @@ export default class Core {
       );
     const previousKeys = childElements.map(child => child.getListKey());
     const removedChildren = new Set<ElementFragment>();
+    // 残せる行はキーごとの出現回数まで。超えた分は「配列から消えた行」として取り
+    // 除く（キーが重複していた行が減ったときに、古い行が画面に残らないようにする）。
     childElements = childElements.filter((child, previousIndex) => {
-      if (!newKeySet.has(String(child.getListKey()))) {
+      const listKey = String(child.getListKey());
+      const keepable = keepableCounts.get(listKey) ?? 0;
+      if (keepable === 0) {
         removedChildren.add(child);
         const removedKey = child.getListKey();
         if (removedKey !== null) {
@@ -3151,14 +3160,22 @@ export default class Core {
         removalPromises.push(child.remove());
         return false;
       }
+      keepableCounts.set(listKey, keepable - 1);
       return true;
     });
     const srcKeys = childElements.map(child => child.getListKey());
-    const childElementsByKey = new Map<string, ElementFragment>();
+    // 同じキーの行が複数ある場合は、出現順に 1 行ずつ割り当てる。
+    const childElementsByKey = new Map<string, ElementFragment[]>();
     childElements.forEach(child => {
       const listKey = child.getListKey();
-      if (listKey !== null && !childElementsByKey.has(listKey)) {
-        childElementsByKey.set(listKey, child);
+      if (listKey === null) {
+        return;
+      }
+      const queued = childElementsByKey.get(listKey);
+      if (queued) {
+        queued.push(child);
+      } else {
+        childElementsByKey.set(listKey, [child]);
       }
     });
     // 挿入位置の基準となる現在の子並び。削除対象は除外する（除外しないと、削除中の
@@ -3171,9 +3188,12 @@ export default class Core {
     ).length;
     let chain = Promise.resolve();
     newKeys.forEach((newKey, loopIndex) => {
-      const {item, itemIndex} = keyDataMap.get(newKey)!;
+      // 行と配列要素は出現順で対応する（`newKeys` は `newList` と同じ並び）。キーで
+      // 引くと、キーが重複したときに同じ要素データを複数の行へ渡してしまう。
+      const item = newList[loopIndex];
+      const itemIndex = loopIndex;
       let child: ElementFragment;
-      const reusedChild = childElementsByKey.get(newKey);
+      const reusedChild = childElementsByKey.get(newKey)?.shift();
       if (reusedChild) {
         // 既存の要素を再利用
         child = reusedChild;
@@ -3283,6 +3303,29 @@ export default class Core {
         );
         return undefined;
       });
+  }
+
+  /**
+   * `data-each-key` の値が重複していることを開発モードで警告します。
+   *
+   * 仕様「`data-each`」は `data-each-key` を一意なキーの項目名と定めています。
+   * 重複しても行は出現順で対応付けるため描画は崩れませんが、キーによる行の識別
+   * （差分更新での再利用、`data-form-list` の行の対応付け、行イベントのキー）は
+   * 意図した働きをしません。指定漏れに気づけるよう、項目名ごとに一度だけ知らせます。
+   *
+   * @param keyArg `data-each-key` に指定された項目名
+   * @returns 戻り値はありません。
+   */
+  private static warnDuplicateEachKey(keyArg: string): void {
+    if (!Dev.isEnabled() || Core.WARNED_DUPLICATE_EACH_KEYS.has(keyArg)) {
+      return;
+    }
+    Core.WARNED_DUPLICATE_EACH_KEYS.add(keyArg);
+    Log.warn(
+      '[Haori]',
+      `${Env.prefix}each-key="${keyArg}" の値が配列の中で重複しています。` +
+        '行は出現順で対応付けますが、キーによる行の識別はできません。',
+    );
   }
 
   /**

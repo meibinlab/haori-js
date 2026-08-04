@@ -4581,6 +4581,10 @@ ${body}
    * `data-each-key` 指定時はキーで対応付けます。位置で決めると、応答を待つ間に
    * 並べ替えや行の増減があったとき別のレコードへ書いてしまいます。
    *
+   * キーは一意である前提ですが（仕様「`data-each`」）、重複していた場合は同じキーの
+   * 中で**出現順**に対応させます。先に一致した要素へ寄せると、2 行目以降の書き込みが
+   * すべて 1 行目のレコードへ入ります。
+   *
    * @param write 行への書き込み要求
    * @param array 現在の配列
    * @returns 配列のインデックス。解決できない場合は null
@@ -4589,9 +4593,8 @@ ${body}
     write: RowWrite,
     array: unknown[],
   ): number | null {
-    const position = Procedure.getRowFragments(write.container).indexOf(
-      write.row,
-    );
+    const rows = Procedure.getRowFragments(write.container);
+    const position = rows.indexOf(write.row);
     if (position === -1) {
       // 応答を待つ間に行が削除された場合。無関係な行へ書かないよう捨てる。
       Log.warn(
@@ -4605,19 +4608,31 @@ ${body}
     const keyArg = write.container.getAttribute(`${Env.prefix}each-key`);
     const listKey = write.row.getListKey();
     if (keyArg && listKey !== null) {
-      const found = array.findIndex(
-        (item, index) =>
+      const matched: number[] = [];
+      array.forEach((item, index) => {
+        if (
           Core.createListKey(
             item as Record<string, unknown> | string | number,
             String(keyArg),
             index,
-          ) === listKey,
-      );
+          ) === listKey
+        ) {
+          matched.push(index);
+        }
+      });
+      // 同じキーを持つ行の中で自分が何番目かを数え、その番目の要素へ対応させる。
+      const occurrence = rows
+        .slice(0, position)
+        .filter(row => row.getListKey() === listKey).length;
+      const found = matched[occurrence] ?? -1;
       if (found === -1) {
+        // キーに一致する要素が無い場合と、キーが重複していて自分の出現順に対応する
+        // 要素が無い場合（行の数が要素の数より多い）の両方がここへ来る。どちらも
+        // 「対応する要素が無い」ので、先に一致した要素へ寄せずに捨てる。
         Log.warn(
           'Haori',
-          'No array element matches the target row key' +
-            ` "${listKey}"; the write was skipped` +
+          'No array element corresponds to the target row' +
+            ` (key "${listKey}"); the write was skipped` +
             ` (${write.attributeName}).`,
         );
         return null;
