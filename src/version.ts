@@ -12,4 +12,4 @@
  * リリース時に `package.json` と揃えて更新します（`tests/version.test.ts` が
  * 一致を検査します）。
  */
-export const VERSION = '0.40.0';
+export const VERSION = '0.41.0';
