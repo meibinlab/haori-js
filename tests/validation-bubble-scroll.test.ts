@@ -41,6 +41,45 @@ const OFF_SCREEN = rect(-2000);
 /** ビューポートに収まる位置 */
 const IN_VIEW = rect(10);
 
+/**
+ * 実装がスクロールの静止を判定できるだけの実時間を確保した待ち合わせの設定。
+ *
+ * `waitForDomSettled()` は `setTimeout(0)` とキューだけを進め、
+ * `requestAnimationFrame` のフレームを待ちません。静止判定はフレームごとに位置を
+ * 測るため、待ち合わせに実時間を入れないと、負荷の高い環境（CI）でフレームが
+ * 来る前に試行を使い切ります。
+ */
+const FRAME_WAIT = {maxAttempts: 60, delayMs: 25};
+
+/** 静止を待たずに表示する上限（`Procedure.VALIDATION_SCROLL_TIMEOUT_MS`） */
+const SCROLL_TIMEOUT_MS = 1000;
+
+/**
+ * スムーズスクロールで画面内へ入ってくる矩形の供給を作ります。
+ *
+ * 位置を**読まれた回数**で切り替えます。実装は 1 フレームに 1 回読むため、実時間
+ * ではなく実装の進み方に同期し、環境によらず同じ順序で進みます。
+ *
+ * @param readsBeforeArrival 到着前の位置を返す回数（1 回目は表示判定で読まれる）
+ * @param departure 到着前の位置
+ * @returns 現在の位置と、`getBoundingClientRect` として渡す関数
+ */
+function scrollingRect(
+  readsBeforeArrival: number,
+  departure: DOMRect = OFF_SCREEN,
+): {current: DOMRect; reads: number; rectOf: () => DOMRect} {
+  const state = {
+    current: departure,
+    reads: 0,
+    rectOf: (): DOMRect => {
+      state.reads += 1;
+      state.current = state.reads > readsBeforeArrival ? IN_VIEW : departure;
+      return state.current;
+    },
+  };
+  return state;
+}
+
 describe('画面外の入力欄の検証 UI とスクロールの順序', () => {
   let scrollIntoViewSpy: ReturnType<typeof vi.spyOn>;
   let reportValiditySpy: ReturnType<typeof vi.spyOn>;
@@ -104,28 +143,28 @@ describe('画面外の入力欄の検証 UI とスクロールの順序', () => 
   }
 
   it('画面外のときは、スクロールしてから検証 UI を出す（回帰）', async () => {
-    // スムーズスクロールを模して、scrollIntoView の数フレーム後に画面内へ入れる
-    let current = OFF_SCREEN;
-    scrollIntoViewSpy.mockImplementation(() => {
-      order.push('scroll');
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          current = IN_VIEW;
-        }),
-      );
-    });
+    // スムーズスクロールを模して、数フレームかけて画面内へ入れる
+    const scroll = scrollingRect(3);
     /** reportValidity を呼ばれた時点で入力欄が画面外だったか */
     let reportedWhileOffScreen: boolean | null = null;
+    /**
+     * 表示までに位置を読んだ回数（＝経過フレーム数）。静止の検出なら数フレームで
+     * 表示し、検出できていなければ上限（1 秒）まで読み続ける。実時間で判定すると
+     * 負荷の高い環境で誤判定するため、フレーム数で区別する。
+     */
+    let readsAtReport: number | null = null;
     reportValiditySpy.mockImplementation(() => {
       order.push('report');
-      reportedWhileOffScreen = current === OFF_SCREEN;
+      reportedWhileOffScreen = scroll.current === OFF_SCREEN;
+      readsAtReport = scroll.reads;
       return false;
     });
 
-    const {button} = build({rectOf: () => current, scrollOnError: true});
+    const {button} = build({rectOf: scroll.rectOf, scrollOnError: true});
     await waitForDomSettled();
     button.click();
     await waitForCondition(() => order.includes('report'), {
+      ...FRAME_WAIT,
       description: 'validation bubble shown after scroll settled',
     });
 
@@ -133,6 +172,9 @@ describe('画面外の入力欄の検証 UI とスクロールの順序', () => 
     expect(order).toEqual(['scroll', 'report']);
     // 修正前はここが true（画面外の位置でバブルを要求していた）
     expect(reportedWhileOffScreen).toBe(false);
+    // 静止を検出して表示している（上限まで待っていない）。到着まで 3 回 + 静止判定に
+    // 3 回の読み取りで足りる。
+    expect(readsAtReport).toBeLessThanOrEqual(12);
   });
 
   it('画面外のときは focus がスクロールを伴わない（回帰）', async () => {
@@ -144,20 +186,13 @@ describe('画面外の入力欄の検証 UI とスクロールの順序', () => 
     ) {
       focusCalls.push({target: this, options});
     });
-    let current = OFF_SCREEN;
-    scrollIntoViewSpy.mockImplementation(() => {
-      order.push('scroll');
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          current = IN_VIEW;
-        }),
-      );
-    });
+    const scroll = scrollingRect(3);
 
-    const {input, button} = build({rectOf: () => current});
+    const {input, button} = build({rectOf: scroll.rectOf});
     await waitForDomSettled();
     button.click();
     await waitForCondition(() => order.includes('report'), {
+      ...FRAME_WAIT,
       description: 'validation bubble shown',
     });
 
@@ -168,20 +203,13 @@ describe('画面外の入力欄の検証 UI とスクロールの順序', () => 
   it('画面外のときは `data-{event}-scroll-error` が無くてもスクロールする（回帰）', async () => {
     // 仕様「`data-{event}-validate`」の「このスクロールは `data-{event}-scroll-error`
     // の指定に関わらず行います」
-    let current = OFF_SCREEN;
-    scrollIntoViewSpy.mockImplementation(() => {
-      order.push('scroll');
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          current = IN_VIEW;
-        }),
-      );
-    });
+    const scroll = scrollingRect(3);
 
-    const {input, button} = build({rectOf: () => current});
+    const {input, button} = build({rectOf: scroll.rectOf});
     await waitForDomSettled();
     button.click();
     await waitForCondition(() => order.includes('report'), {
+      ...FRAME_WAIT,
       description: 'validation bubble shown',
     });
 
@@ -210,20 +238,14 @@ describe('画面外の入力欄の検証 UI とスクロールの順序', () => 
     // 仕様「`data-{event}-validate`」の「一部でも画面の外に出ている場合は、先に画面内へ
     // スクロールし、スクロールが止まってから」。判定を「一部でも見えていれば画面内」と
     // 緩めると、残ったスクロールでバブルが消える症状が戻る。
-    let current = rect(window.innerHeight - 29); // 下端から 1 ピクセル出る
-    scrollIntoViewSpy.mockImplementation(() => {
-      order.push('scroll');
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          current = IN_VIEW;
-        }),
-      );
-    });
+    // 下端から 1 ピクセル出た位置から画面内へ入る
+    const scroll = scrollingRect(3, rect(window.innerHeight - 29));
 
-    const {button} = build({rectOf: () => current});
+    const {button} = build({rectOf: scroll.rectOf});
     await waitForDomSettled();
     button.click();
     await waitForCondition(() => order.includes('report'), {
+      ...FRAME_WAIT,
       description: 'validation bubble shown after scroll',
     });
 
@@ -263,23 +285,13 @@ describe('画面外の入力欄の検証 UI とスクロールの順序', () => 
   it('待機中に別の検証が失敗したら、後の欄だけ検証 UI を出す（回帰）', async () => {
     // 仕様「`data-{event}-validate`」の「待機中に別の検証が失敗した場合は、**後から
     // 始まった検証の欄だけ**を表示します」
-    let secondRect = OFF_SCREEN;
     // 先の欄は画面内へ入らない（上限まで待つ）。後の欄はスクロール後に画面内へ入る。
     const first = build({rectOf: () => OFF_SCREEN, id: 'first'});
+    const secondScroll = scrollingRect(3);
     const second = build({
-      rectOf: () => secondRect,
+      rectOf: secondScroll.rectOf,
       id: 'second',
       scrollOnError: true,
-    });
-    scrollIntoViewSpy.mockImplementation(function (this: Element) {
-      order.push('scroll');
-      if (this === second.input) {
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            secondRect = IN_VIEW;
-          }),
-        );
-      }
     });
 
     await waitForDomSettled();
@@ -287,10 +299,11 @@ describe('画面外の入力欄の検証 UI とスクロールの順序', () => 
     first.button.click();
     second.button.click();
     await waitForCondition(() => order.includes('report'), {
+      ...FRAME_WAIT,
       description: 'validation bubble shown for the later field',
     });
     // 上限（1 秒）を過ぎても先の欄が表示しないことまで確認する
-    await new Promise(resolve => setTimeout(resolve, 1300));
+    await new Promise(resolve => setTimeout(resolve, SCROLL_TIMEOUT_MS + 300));
 
     expect(reportValiditySpy).toHaveBeenCalledTimes(1);
     expect(reportValiditySpy.mock.instances[0]).toBe(second.input);
