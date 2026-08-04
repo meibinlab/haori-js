@@ -958,6 +958,18 @@ export default class Procedure {
   /** click 手続きの再入を防ぐ対象要素の集合 */
   private static readonly RUNNING_CLICK_TARGETS = new WeakSet<HTMLElement>();
 
+  /**
+   * 検証 UI の表示待ちを最後の 1 件に絞るための世代番号。
+   * 待機中に別の検証が始まったら、古い待機は表示せずに終わります。
+   */
+  private static validationReportGeneration = 0;
+
+  /** 検証 UI を出す前にスクロールの静止を待つ上限（ミリ秒） */
+  private static readonly VALIDATION_SCROLL_TIMEOUT_MS = 1000;
+
+  /** スクロールが静止したと判定するのに必要な、位置が変わらないフレーム数 */
+  private static readonly VALIDATION_SCROLL_STABLE_FRAMES = 2;
+
   /** この Procedure が扱うイベント種別 */
   private readonly eventType: string | null;
 
@@ -3138,14 +3150,124 @@ ${body}
     }
     // 検出フェーズ（findFirstInvalid）は checkValidity で副作用なく走査済み。
     // reportValidity と focus は確定した 1 要素にだけ呼び出す。
-    (
-      firstInvalid as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-    ).reportValidity();
-    firstInvalid.focus();
-    if (this.options.scrollOnError) {
-      firstInvalid.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    const invalidInput = firstInvalid as
+      | HTMLInputElement
+      | HTMLSelectElement
+      | HTMLTextAreaElement;
+    if (Procedure.isRectFullyVisible(firstInvalid.getBoundingClientRect())) {
+      // 画面内にある場合はスクロールが起きないため、その場で検証 UI を出す。
+      invalidInput.reportValidity();
+      firstInvalid.focus();
+      if (this.options.scrollOnError) {
+        firstInvalid.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+      }
+      return false;
     }
+    // 画面外にある場合は、先にスクロールしてから検証 UI を出す。逆順にすると、
+    // バブルが画面外の位置に固定された状態で要求され、ブラウザが「アンカーが
+    // 画面外」と判断して表示を取り消すため、スムーズスクロールではメッセージが
+    // 見えない。`data-{event}-scroll-error` の指定が無くてもスクロールするのは、
+    // reportValidity 自身が同じスクロールを行うためで、移動そのものは増えない。
+    firstInvalid.focus({preventScroll: true});
+    firstInvalid.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    Procedure.reportValidityAfterScroll(invalidInput);
     return false;
+  }
+
+  /**
+   * スクロールが止まってから、対象の入力要素の検証 UI（バブル）を表示します。
+   *
+   * `requestAnimationFrame` ごとに対象要素の位置を測り、位置が変わらないフレームが
+   * 続き、かつ画面内に入ったら表示します。スムーズスクロールの所要時間はブラウザに
+   * よって変わるため、上限（`VALIDATION_SCROLL_TIMEOUT_MS`）を過ぎたら静止を待たずに
+   * 表示します。待機中に別の検証が始まった場合と、対象が DOM から外れた場合は
+   * 表示しません。
+   *
+   * @param target 検証エラーの入力要素
+   */
+  private static reportValidityAfterScroll(
+    target: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+  ): void {
+    const generation = ++Procedure.validationReportGeneration;
+    const startedAt = performance.now();
+    let previousPosition: string | null = null;
+    let stableFrames = 0;
+    const step = (): void => {
+      // 新しい検証が始まっていたら、そちらの表示に譲る。
+      if (generation !== Procedure.validationReportGeneration) {
+        return;
+      }
+      if (!target.isConnected) {
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      const position = `${Math.round(rect.top)}:${Math.round(rect.left)}`;
+      stableFrames = position === previousPosition ? stableFrames + 1 : 0;
+      previousPosition = position;
+      const settled =
+        stableFrames >= Procedure.VALIDATION_SCROLL_STABLE_FRAMES &&
+        Procedure.isRectPartlyVisible(rect);
+      if (
+        settled ||
+        performance.now() - startedAt >= Procedure.VALIDATION_SCROLL_TIMEOUT_MS
+      ) {
+        target.reportValidity();
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  /**
+   * ビューポートの大きさを返します。
+   *
+   * @returns ビューポートの幅と高さ
+   */
+  private static getViewportSize(): {width: number; height: number} {
+    return {
+      width: window.innerWidth || document.documentElement.clientWidth,
+      height: window.innerHeight || document.documentElement.clientHeight,
+    };
+  }
+
+  /**
+   * 矩形がビューポートに収まっているかを判定します。
+   *
+   * 検証 UI を今すぐ出してよいかの判定に使います。一部でも外に出ていれば、
+   * `reportValidity()` がバブルを見せるためにスクロールする余地が残っているため、
+   * 「収まっている」とは扱いません。
+   *
+   * @param rect 判定する矩形
+   * @returns 全体が画面内にあれば true
+   */
+  private static isRectFullyVisible(rect: DOMRect): boolean {
+    const {width, height} = Procedure.getViewportSize();
+    return (
+      rect.top >= 0 &&
+      rect.left >= 0 &&
+      rect.bottom <= height &&
+      rect.right <= width
+    );
+  }
+
+  /**
+   * 矩形がビューポートと重なっているかを判定します。
+   *
+   * スクロールの静止判定に使います。位置が変わらないだけでは、スクロールが始まる
+   * 前の 1 フレームを「静止」と誤認するため、画面内に入ったことも条件にします。
+   *
+   * @param rect 判定する矩形
+   * @returns 一部でも画面内にあれば true
+   */
+  private static isRectPartlyVisible(rect: DOMRect): boolean {
+    const {width, height} = Procedure.getViewportSize();
+    return (
+      rect.top < height &&
+      rect.bottom > 0 &&
+      rect.left < width &&
+      rect.right > 0
+    );
   }
 
   /**

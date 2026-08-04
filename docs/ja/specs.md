@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.41.0
+バージョン: 0.41.1
 最終更新: 2026-08-04
 
 ## 目次
@@ -3288,6 +3288,15 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 <button data-click-validate data-click-form="#myForm">送信</button>
 ```
 
+検証に失敗した場合は、DOM 順で最初の不正な欄にフォーカスを移し、ネイティブの検証 UI（バブル）を表示します。表示のタイミングは対象の欄が画面内にあるかどうかで変わります。
+
+- 対象の欄が**全体とも**画面内に収まっている場合は、その場で検証 UI を表示します。
+- 対象の欄が**一部でも画面の外に出ている場合は、先に画面内へスクロールし、スクロールが止まってから**検証 UI を表示します。1 ピクセルでも外に出ていれば、`reportValidity()` 自身がバブルを見せるためにスクロールする余地が残るためです。表示してからスクロールすると、バブルが画面外の位置に固定されたまま要求され、ブラウザがアンカーを見失って表示を取り消すため、`scroll-behavior: smooth` を指定したページではメッセージが見えません。
+- このスクロールは `data-{event}-scroll-error` の指定に関わらず行います。指定が無い場合もブラウザ自身が検証 UI の表示に伴って画面内へスクロールするため、移動の回数は増えません。整列は `behavior: smooth` / `block: nearest` です（ブラウザ任せの場合と着地点が数十ピクセル異なることがあります）。
+- スクロールの静止は対象の欄の表示位置が変化しなくなったことで判定します。スムーズスクロールの所要時間はブラウザによって変わるため、1 秒を過ぎた場合は静止を待たずに表示します。
+- 待機中に別の検証が失敗した場合は、**後から始まった検証の欄だけ**を表示します。
+- 検証 UI はブラウザが描くものです。`<form>` のネイティブ送信による検証（`data-{event}-validate` を経由しない検証）には介入しません。
+
 ##### `data-{event}-if`
 
 手続きの**実行条件**です。条件が偽のときは、その手続きの以降のアクション（`data-{event}-run` / `-confirm` / `-reset-before` / `-before-run` / `-fetch` / `-bind` / `-store-clear` / `-history` / `-redirect` など）をすべて実行しません。非イベントの場合は `data-fetch-if` です。
@@ -4483,7 +4492,7 @@ document.addEventListener('haori:ready', (event) => {
 
 **detail**:
 ```typescript
-{ version: string }  // ライブラリのバージョン（例: '0.41.0'）
+{ version: string }  // ライブラリのバージョン（例: '0.41.1'）
 ```
 
 > **補足**: `data-each` の描画完了を検知したい場合は、専用の完了マーカー
@@ -4865,7 +4874,7 @@ Haori.enhancers.register('choices', {init, refresh, destroy})
 
 ```javascript
 Haori.Core.dumpScope(element)
-Haori.version // '0.41.0'
+Haori.version // '0.41.1'
 ```
 
 `Haori.Haori` と `Haori.default` はグローバル自身への自己参照です
