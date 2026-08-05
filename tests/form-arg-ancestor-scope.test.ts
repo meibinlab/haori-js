@@ -6,6 +6,8 @@
  * キーを入力欄へ反映する。参照キー（式が読むキー）と書込キー（`name` が書き込む
  * キー）が構造的に一致するため、`data-attr-value` を編集可能な入力へ使わずに
  * レコードを表示・編集できる。
+ *
+ * 期待値の根拠は仕様「祖先が所有するレコードの反映（`data-form-arg`）」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

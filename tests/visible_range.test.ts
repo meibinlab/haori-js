@@ -5,6 +5,8 @@
  * jsdom には IntersectionObserver / requestAnimationFrame が無いため、いずれも
  * モックして交差イベントを手動発火し、可視範囲が最近接の上位 data-bind スコープへ
  * 公開されることを検証します。
+ *
+ * 期待値の根拠は仕様「`data-each-visible`（スクロール追従の可視行範囲）」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

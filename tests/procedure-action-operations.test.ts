@@ -1,6 +1,8 @@
 /* @vitest-environment jsdom */
 /**
  * Procedure のリセット、refetch、click、open/close、redirect、data-message に関するテスト
+ *
+ * 期待値の根拠は仕様「その他のアクション」。
  */
 import {describe, it, expect, beforeEach, vi} from 'vitest';
 import Form from '../src/form';

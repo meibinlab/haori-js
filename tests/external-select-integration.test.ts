@@ -7,6 +7,8 @@
  * - `<select multiple>` の選択値を配列としてフォーム値に収集・反映できること
  * - `data-external` 配下の DOM 変更が Haori の自動監視から除外されること
  * - `data-each-rendered-run` が描画確定ごとに一度実行されること
+ *
+ * 期待値の根拠は仕様「`data-external`」と仕様「`data-form-list`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

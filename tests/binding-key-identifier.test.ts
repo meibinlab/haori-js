@@ -11,6 +11,8 @@
  * ここでは「使えないキーはスコープへ載せない（他の式は正常に評価される）」
  * 「載せなかったキーは `haori.data` から読める」「開発モードで一度だけ警告する」
  * を固定する。
+ *
+ * 期待値の根拠は仕様「バインドキーと識別子（`name` の命名）」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

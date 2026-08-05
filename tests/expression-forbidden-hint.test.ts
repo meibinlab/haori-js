@@ -3,6 +3,8 @@
  * @fileoverview
  * 式評価で使用できない（ブロックされた）グローバル識別子（Object 等）を参照したとき、
  * 原因を特定しやすい明示的な警告を出すことを検証する（改修依頼2 の DX 改善）。
+ *
+ * 期待値の根拠は仕様「禁止識別子リスト」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Expression from '../src/expression';

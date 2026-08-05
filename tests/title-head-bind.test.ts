@@ -7,6 +7,8 @@
  * `data-bind` / `data-fetch` を付与すればテキストの {{}} 補間が機能することを
  * 保証する。あわせて、兄弟要素のスコープが継承されないこと、`data-fetch-bind`
  * の対象セレクタが `<body>` 配下限定で `<head>` 内要素を狙えないことも固定する。
+ *
+ * 期待値の根拠は仕様「監視対象」と仕様「`data-fetch`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

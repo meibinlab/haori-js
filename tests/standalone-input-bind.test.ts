@@ -7,6 +7,8 @@
  * - `<form>` / `data-form` の外にある入力の change で、その要素の
  *   `name` と値が送信データへ含まれること（ON=true / OFF=false）
  * - 送信データが空の場合に、バインド先を空オブジェクトで全置換しないこと
+ *
+ * 期待値の根拠は仕様「フォームコンテナを持たない入力の値収集」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

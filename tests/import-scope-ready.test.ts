@@ -12,6 +12,8 @@
  *
  * `src/observer` は読み込みだけで初期化（`document.body` の走査と監視開始）が
  * 走るため、他のテストへ影響しないようファイルを分けている。
+ *
+ * 期待値の根拠は仕様「`data-import`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Queue from '../src/queue';

@@ -6,6 +6,8 @@
  * フォーム入力に反映する際、element.value が正しく更新されることを検証します。
  * 修正前は element.setAttribute('value', ...) が defaultValue のみ更新し、
  * element.value が変化しない問題がありました。
+ *
+ * 期待値の根拠は仕様「`data-fetch`」と仕様「`data-attr-*`」。
  */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';

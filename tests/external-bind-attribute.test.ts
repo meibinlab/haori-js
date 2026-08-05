@@ -12,6 +12,8 @@
  *
  * あわせて、Haori 自身の書き戻し（自己書き込みのエコー）で取り込みが往復しない
  * ことも確認します。
+ *
+ * 期待値の根拠は仕様「`data-bind`」と仕様「監視対象」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -1,4 +1,9 @@
 /* @vitest-environment jsdom */
+/**
+ * @fileoverview 定期取得トリガー（`data-poll-*`）のテスト。
+ *
+ * 期待値の根拠は仕様「定期取得トリガー (`data-poll-*`)」。
+ */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import Dev from '../src/dev';

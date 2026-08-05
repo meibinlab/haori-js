@@ -1,3 +1,8 @@
+/**
+ * @fileoverview 環境検出（接頭辞・開発モード）のテスト。
+ *
+ * 期待値の根拠は仕様「環境検出」。
+ */
 import Dev from '../src/dev';
 import Env from '../src/env';
 import Haori from '../src/haori';

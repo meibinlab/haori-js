@@ -5,6 +5,8 @@
  * `data-each` と `data-form-list` を併用したコンテナの行では、入力欄の値は配列の
  * 要素データが権威です。行を指した `data-{event}-copy` / `data-{event}-bind` が
  * 行フラグメントではなく配列要素へ書き戻され、入力欄まで届くことを確認します。
+ *
+ * 期待値の根拠は仕様「編集可能な行への書き込み」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -2,6 +2,8 @@
 /**
  * @fileoverview Core.getBindingData（バインドデータ読み取り公式 API）の回帰テスト。
  * 改修依頼第2回 #1 に対応する。
+ *
+ * 期待値の根拠は仕様「`Core.getBindingData(element, options?)`」。
  */
 import {describe, it, beforeEach, afterEach, expect} from 'vitest';
 import Core from '../src/core';

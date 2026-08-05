@@ -6,6 +6,8 @@
  * - Q1: 明示的オブジェクトリテラル {key: val} が式評価を通過するか。
  * - Q2: Haori.waitForRenders() が data-derive → data-each の連鎖全体を待機するか。
  * - Q3: 0 件時の data-each-done の付与（0 件完了と n 件完了の区別可否）。
+ *
+ * 期待値の根拠は仕様「`data-derive` / `data-derive-name`」と仕様「`data-each`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

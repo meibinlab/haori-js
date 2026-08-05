@@ -10,6 +10,8 @@
  * - `Observer.init()` が初期スキャン前に保留購読を開始し、
  *   `data-haori-ready` 付与後に解除すること
  * - `data-each-rendered-change` が描画確定後に change を発火すること
+ *
+ * 期待値の根拠は仕様「初期スキャン中に発火したイベントの扱い」。
  */
 import {
   afterEach,

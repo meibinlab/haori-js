@@ -10,6 +10,8 @@
  *
  * ここでは、ストレージが参照できない環境でも式評価と描画が通常どおり動くことを
  * 固定します。
+ *
+ * 期待値の根拠は仕様「4. バインドキーのフィルタリング」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -1,3 +1,8 @@
+/**
+ * @fileoverview `data-{event}-bind-append`（配列への追記バインド）のテスト。
+ *
+ * 期待値の根拠は仕様「`data-fetch-bind-append` / `data-{event}-bind-append` / `data-intersect-bind-append`」。
+ */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import Fragment, {ElementFragment} from '../src/fragment';

@@ -12,6 +12,8 @@
  *
  * ここでは「双方向コミットのバインドでは印を解除しない」ことと、フェッチ応答や
  * リセットのような明示的な供給では従来どおり解除されることの両側を固定する。
+ *
+ * 期待値の根拠は仕様「ユーザー編集と宣言バインドの権威」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

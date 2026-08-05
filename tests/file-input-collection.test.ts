@@ -8,6 +8,8 @@
  * - `multipart/form-data` 指定時に File が実体のまま FormData へ載ること
  * - multipart 以外で File を送ろうとした場合に警告すること
  * - file input へ値を書き戻そうとしても例外にならないこと
+ *
+ * 期待値の根拠は仕様「`input[type=file]` の値収集」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

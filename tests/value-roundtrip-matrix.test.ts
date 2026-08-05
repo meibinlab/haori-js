@@ -14,6 +14,8 @@
  * 2. `Core.setBindingData()` による後からの供給
  * 3. 利用者の操作（`change` による双方向コミット）
  * 4. リセット（初期 `data-bind` の内容へ戻る）
+ *
+ * 期待値の根拠は仕様「収集は DOM を真とする」と仕様「ユーザー編集と宣言バインドの権威」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

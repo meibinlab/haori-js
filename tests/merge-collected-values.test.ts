@@ -10,6 +10,8 @@
  * ここでは重ね合わせの規則そのもの（土台の保持、配列の出現順対応、危険キーの
  * 読み飛ばし）を、画面を挟まずに固定します。画面を通した検証は
  * `tests/row-value-roundtrip.test.ts` にあります。
+ *
+ * 期待値の根拠は仕様「双方向バインディングの自動更新」と仕様「行の対応付けと `data-each-key`」。
  */
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import Dev from '../src/dev';

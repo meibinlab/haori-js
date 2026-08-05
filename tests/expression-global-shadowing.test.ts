@@ -10,6 +10,8 @@
  *
  * あわせて、標準組み込み（`Math` など）は従来どおり参照できること、
  * 短絡評価で参照されない識別子の扱いが変わらないことを確認します。
+ *
+ * 期待値の根拠は仕様「バインドに無い識別子の扱い」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

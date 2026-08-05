@@ -6,6 +6,8 @@
  * 1 つの文字列になるため、オブジェクトは JSON 文字列にする。配列の要素だけ
  * `String()` に任せていたため、`data-form-list` の行データが `[object Object]` に
  * なってサーバ側で復元できなかった。
+ *
+ * 期待値の根拠は仕様「テキストで送る経路での入れ子データ」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -5,6 +5,8 @@
  *
  * 操作中（select / radio / checkbox がフォーカス中）の要素には、再評価で
  * checked / selected を再適用しない。フォーカスが外れた要素には宣言状態を反映する。
+ *
+ * 期待値の根拠は仕様「ユーザー編集と宣言バインドの権威」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

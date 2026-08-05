@@ -3,6 +3,8 @@
  * @fileoverview
  * data-form 属性により非 form 要素（<tr> など）をフォームコンテナ化し、
  * data-click-form で値収集できることを検証する。
+ *
+ * 期待値の根拠は仕様「`data-{event}-form`」と仕様「フォームコンテナを持たない入力の値収集」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

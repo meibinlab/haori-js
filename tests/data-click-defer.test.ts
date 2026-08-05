@@ -5,6 +5,8 @@
  * 指定時は Haori の click 処理（Procedure）をクリックイベントの同期実行中ではなく
  * 次フレーム/次マクロタスクへ遅延し、Bootstrap など他ライブラリの同期 click ハンドラを
  * 先に完了させる。
+ *
+ * 期待値の根拠は仕様「`data-click-defer`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

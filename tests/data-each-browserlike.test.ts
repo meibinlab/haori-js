@@ -1,4 +1,9 @@
 /* @vitest-environment jsdom */
+/**
+ * @fileoverview `data-each` の実ブラウザ相当の挙動のテスト。
+ *
+ * 期待値の根拠は仕様「`data-each`」。
+ */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';
 import Queue from '../src/queue';

@@ -11,6 +11,8 @@
  * - 行スコープ・`-bind-arg`・`-if` との併用でも期待どおりに動く
  *
  * ことを固定する。
+ *
+ * 期待値の根拠は仕様「バインド後に実行するアクションの評価タイミング」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -4,6 +4,8 @@
  * data-{event}-bind-merge による浅いマージバインドの統合テストです。
  * bind-merge 指定時はバインド先の既存 binding data を保持したまま、
  * 解決済みデータで上書きすることを確認します。
+ *
+ * 期待値の根拠は仕様「`data-{event}-bind`」と仕様「フォームコンテナを持たない入力の値収集」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

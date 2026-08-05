@@ -10,6 +10,8 @@
  * 2. 反映された値はそのまま収集値（送信値・ストア）へ載る
  * 3. 評価が未解決のときは従来どおり行データを反映する（保存済みレコードの復元）
  * 4. 宣言バインドの無い入力は従来どおり行データで上書きされる
+ *
+ * 期待値の根拠は仕様「`data-each` で生成された行への値反映」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

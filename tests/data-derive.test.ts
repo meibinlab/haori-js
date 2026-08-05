@@ -1,4 +1,9 @@
 /* @vitest-environment jsdom */
+/**
+ * @fileoverview `data-derive` / `data-derive-name`（派生値の供給）のテスト。
+ *
+ * 期待値の根拠は仕様「`data-derive` / `data-derive-name`」。
+ */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import Dev from '../src/dev';

@@ -2,6 +2,8 @@
  * @fileoverview iife グローバル公開エントリー（`src/global.ts`）のテスト
  *
  * `<script src="haori.iife.js">` で読み込んだときの `window.Haori` の形を検証します。
+ *
+ * 期待値の根拠は仕様「ブラウザのグローバル (`window.Haori`)」。
  */
 
 import {describe, expect, it} from 'vitest';

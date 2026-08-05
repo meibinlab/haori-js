@@ -1,6 +1,8 @@
 /* @vitest-environment jsdom */
 /**
  * @fileoverview 行移動機能のテスト
+ *
+ * 期待値の根拠は仕様「行操作の共通仕様（`data-{event}-row-*`）」。
  */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';

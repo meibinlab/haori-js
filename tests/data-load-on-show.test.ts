@@ -4,6 +4,8 @@
  * data-if による表示（haori:show）を契機に data-load-* が発火することを検証する
  * 統合テストです。ボタンなどネイティブの load イベントが発生しない要素でも、
  * 非表示→表示への遷移時に data-load-* 手続きが1回だけ実行されることを確認します。
+ *
+ * 起動契機の根拠は仕様「イベント属性」の `load`（ロード時）。`data-if` による表示（`haori:show`）を契機に発火することは仕様書に記述が無く、ここでは実装契約として固定している（仕様へ足すかは要判断）。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

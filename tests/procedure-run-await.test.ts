@@ -5,6 +5,8 @@
  * 戻り値が thenable のときは完了まで await し、その間 click 手続きの実行ロック
  * （disabled / RUNNING_CLICK_TARGETS）を保持することで、async ハンドラでも
  * 2 度押しによる多重実行（重複送信）を防げることを確認する。
+ *
+ * 期待値の根拠は仕様「`data-{event}-run`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -1,4 +1,9 @@
 /* @vitest-environment jsdom */
+/**
+ * @fileoverview 式評価の計測（`evaluation profile`）のテスト。
+ *
+ * 期待値の根拠は仕様「パフォーマンス測定」。
+ */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';
 import Dev from '../src/dev';

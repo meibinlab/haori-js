@@ -7,6 +7,8 @@
  *
  * ロックが手続きの完了まで保たれること（フェッチの応答待ちを含む）は
  * [tests/click-lock-fetch.test.ts](./click-lock-fetch.test.ts) で検証する。
+ *
+ * 期待値の根拠は仕様「`data-click-no-disabled`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

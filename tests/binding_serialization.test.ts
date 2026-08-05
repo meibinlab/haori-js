@@ -6,6 +6,8 @@
  * 直列に適用され、data-bind 属性・内部バインドデータが最後の呼出値で確定する
  * ことを検証する。直列化されないと、先に呼んだ古いデータが後から適用され、
  * data-bind 属性が古い JSON で確定する不具合が発生する。
+ *
+ * 期待値の根拠は仕様「`Core.setBindingData(element, data, options?)`」。
  */
 import {describe, it, beforeEach, afterEach, expect} from 'vitest';
 import Core from '../src/core';

@@ -9,6 +9,8 @@
  * 2. すべてのデモページが `demo/index.html` の一覧から辿れること
  * 3. デモ内の相対リンク・スクリプト・部分テンプレートの参照先が存在すること
  * 4. ライブラリ本体の読み込みが公開ビルドで書き換え可能な形に揃っていること
+ *
+ * 根拠は仕様書（`docs/ja/specs.md`）そのもの。デモが使う属性が仕様書に載っていることを検査するため、個別の節ではなく仕様書全体を参照する。
  */
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import path from 'node:path';

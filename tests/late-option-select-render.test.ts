@@ -10,6 +10,8 @@
  *
  * 行生成の後に、DOM が受け付けられなかった書き込みを再試行することで、供給された
  * 値が画面にも載ることを確かめます。
+ *
+ * 期待値の根拠は仕様「収集は DOM を真とする」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

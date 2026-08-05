@@ -4,6 +4,8 @@
  * クリック系属性に関する統合テストです。
  * ドキュメントに記載されている `data-click-confirm` と
  * `data-click-validate` の動作を検証します。
+ *
+ * 期待値の根拠は仕様「`data-{event}-confirm`」と仕様「`data-{event}-validate`」。
  */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';

@@ -4,6 +4,8 @@
  * 依頼3: 外部テストから data-each の描画完了を確実に待機する手段を検証する。
  * - data-each-done 属性が「全行の描画完了後」に付与され、更新開始時に外れること。
  * - Haori.waitForRenders() / Queue.waitForIdle() が描画完了まで待てること。
+ *
+ * 期待値の根拠は仕様「`data-each`」と仕様「Queue クラス」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

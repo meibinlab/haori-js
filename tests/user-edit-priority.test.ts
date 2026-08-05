@@ -10,6 +10,8 @@
  *
  * ここでは「確定した編集は明示的な値の供給まで守る」「明示的な供給では従来どおり
  * 反映する」の両側を固定する。
+ *
+ * 期待値の根拠は仕様「ユーザー編集と宣言バインドの権威」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

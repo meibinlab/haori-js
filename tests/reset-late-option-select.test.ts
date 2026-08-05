@@ -6,6 +6,8 @@
  * 候補が後から届く `<select>` では、DOM が受け付けられなかった書き込みを候補が
  * 揃った時点で載せ直す。この載せ直しがリセットの後にも働くと、クリアしたはずの
  * `<select>` だけがクリア前の値へ戻り、検索条件のクリアが効かなくなる。
+ *
+ * 期待値の根拠は仕様「`data-{event}-reset`」と仕様「反映待ちの間に起きた変化」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

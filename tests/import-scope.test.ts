@@ -16,6 +16,8 @@
  *
  * ready 後（監視稼働中）の取り込みは `tests/import-scope-ready.test.ts` で扱う。
  * `src/observer` は読み込みだけで初期化が走り、他のテストへ影響するためである。
+ *
+ * 期待値の根拠は仕様「`data-import`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

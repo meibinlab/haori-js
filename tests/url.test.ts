@@ -1,6 +1,8 @@
 /* @vitest-environment jsdom */
 /**
  * @fileoverview URL（URLパラメータ取得）のテスト
+ *
+ * 期待値の根拠は仕様「`data-url-param`」。
  */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Url from '../src/url';

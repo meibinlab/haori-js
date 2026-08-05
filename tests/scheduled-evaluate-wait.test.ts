@@ -12,6 +12,8 @@
  * すべてマウント済みになります。当初のファイル説明はここを取り違えていたため、
  * 事実に合わせて書き直しました。**Queue 外の再評価そのものを対象にしたテストは
  * まだありません。**
+ *
+ * 期待値の根拠は仕様「Queue クラス」と仕様「`data-fetch`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

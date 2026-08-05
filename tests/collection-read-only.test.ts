@@ -10,6 +10,8 @@
  * バインドへ反映しない収集の代表が `data-validity` の条件評価で、これはバインド
  * 更新のたびに走る（`Core.reevaluateReactiveSpecialAttributes`）。そのため
  * `data-validity` を宣言したフォームでは、確定が続くと無関係の欄の値が消えていた。
+ *
+ * 期待値の根拠は仕様「収集は DOM を真とする」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

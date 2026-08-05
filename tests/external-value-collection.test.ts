@@ -11,6 +11,8 @@
  * あわせて、DOM を取り込んではいけない 2 つの状態（Haori 自身の書き戻しが描画
  * キュー待ちの間、および `<option>` が未描画で `<select>` が値を受け付けられなかった
  * 場合）で、供給された値を失わないことを確かめる。
+ *
+ * 期待値の根拠は仕様「外部ライブラリが書き込んだ入力値」。
  */
 import {describe, it, beforeEach, afterEach, expect} from 'vitest';
 import Core from '../src/core';

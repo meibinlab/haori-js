@@ -5,6 +5,8 @@
  * `<input name="tags" data-form-list>` は「この `name` を配列として集める」印で、
  * キーは `name` が決めるため属性値を省略できる。収集は属性の有無で判定し、書き戻しは
  * 同じ収集キーの出現順に配列の要素を配る。
+ *
+ * 期待値の根拠は仕様「`data-form-list`」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

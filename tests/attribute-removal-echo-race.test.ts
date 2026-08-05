@@ -9,6 +9,8 @@
  * 直接書き込みはキューの先頭へ積まれるため、削除タスクが残っている間に
  * メッセージを付与すると、付与のあとに削除が走って値が消える。
  * 削除は「DOM に属性が無ければ書き込み不要」として短絡させることで防ぐ。
+ *
+ * 期待値の根拠は仕様「DOM 書き込みの判定時点と優先実行の関係」。
  */
 import {describe, it, beforeEach, afterEach, expect} from 'vitest';
 import Core from '../src/core';

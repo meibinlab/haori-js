@@ -14,6 +14,8 @@
  *     併せて syncValue し、内部値を根治する（案B）。
  *   - form.getPartValues: グループ収集で DOM の checked を真とし、未チェック
  *     要素の古い内部値を無視する（案A・最終防衛線）。
+ *
+ * 期待値の根拠は仕様「同名チェックボックス・ラジオの収集値の形」と仕様「収集は DOM を真とする」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

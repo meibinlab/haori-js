@@ -3,6 +3,8 @@
  * @fileoverview
  * data-if の非表示判定が JavaScript の falsy 準拠であることを検証するテストです。
  * `0` や空文字列 `''` は非表示、空配列 `[]` などのオブジェクトは表示されることを確認します。
+ *
+ * 期待値の根拠は仕様「`data-if`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

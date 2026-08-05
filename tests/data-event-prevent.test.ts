@@ -4,6 +4,8 @@
  * クリックの同期区間でネイティブのデフォルト動作（type="submit" の送信や
  * <a href> 遷移）を抑止できること、オプトインであること、data-click-defer と
  * 併用してもデフォルト動作を止められることを検証します。
+ *
+ * 期待値の根拠は仕様「`data-{event}-prevent`」。
  */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import EventDispatcher from '../src/event_dispatcher';

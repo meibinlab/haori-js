@@ -6,6 +6,8 @@
  * 1. `data-attr-value` で設定した値がフォーム収集に載らない
  * 2. `type="hidden"` へ `value="{{式}}"` を書くとテンプレート文字列が収集される
  * 3. 上記の値が `data-{event}-form` の送信ペイロードまで届かない
+ *
+ * 期待値の根拠は仕様「`data-attr-*`」と仕様「値の取得構造」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

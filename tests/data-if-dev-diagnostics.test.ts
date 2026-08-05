@@ -3,6 +3,8 @@
  * @fileoverview
  * 開発モードで data-if が falsy（非表示）になったとき、式と参照スコープの由来を
  * コンソールに出力することを検証する（改修依頼3.3 のデバッグ補助）。
+ *
+ * 期待値の根拠は仕様「スコープ診断（開発モード）」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

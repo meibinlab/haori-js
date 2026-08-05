@@ -1,3 +1,8 @@
+/**
+ * @fileoverview `Form.reset` と `data-each` 複製の境界ケースのテスト。
+ *
+ * 期待値の根拠は仕様「`data-{event}-reset`」。
+ */
 import {describe, it, beforeEach, afterEach, expect, vi} from 'vitest';
 import Fragment, {ElementFragment} from '../src/fragment';
 import Form from '../src/form';

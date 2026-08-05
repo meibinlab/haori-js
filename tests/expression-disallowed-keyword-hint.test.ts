@@ -5,6 +5,8 @@
  * 具体的なヒント（アロー関数への置き換え）付き警告を出すことを検証する。
  * 背景: data-derive で `function(m){return {...}}` を使うと式が null になり
  * 行が描画されない事象の原因特定を容易にするための DX 改善。
+ *
+ * 期待値の根拠は仕様「禁止事項」と仕様「使用可能な式」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Expression from '../src/expression';

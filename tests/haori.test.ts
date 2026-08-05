@@ -1,3 +1,8 @@
+/**
+ * @fileoverview `Haori` クラスの公開 API（ダイアログ・トースト・メッセージ）のテスト。
+ *
+ * 期待値の根拠は仕様「Haori クラス」。
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Haori from '../src/haori';
 

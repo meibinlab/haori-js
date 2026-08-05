@@ -1,6 +1,8 @@
 /* @vitest-environment jsdom */
 /**
  * @fileoverview Form機能（getValues, setValues, addErrorMessage）のテスト
+ *
+ * 期待値の根拠は仕様「値の取得構造」と仕様「双方向バインディングの自動更新」。
  */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';

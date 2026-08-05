@@ -7,6 +7,8 @@
  * checked="{{}}" radio を含む構成で、フォーカス中の select 操作が
  * （change 起因の再評価や setBindingData 連打でも）巻き戻らず、data-change-run が
  * 発火することを検証する。
+ *
+ * 期待値の根拠は仕様「ユーザー編集と宣言バインドの権威」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

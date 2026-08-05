@@ -1,3 +1,8 @@
+/**
+ * @fileoverview プレースホルダ解決規則のテスト。
+ *
+ * 期待値の根拠は仕様「プレースホルダ解決規則」。
+ */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import {waitForDomSettled} from './helpers/async';

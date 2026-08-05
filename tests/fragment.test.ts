@@ -1,4 +1,9 @@
 /* @vitest-environment jsdom */
+/**
+ * @fileoverview フラグメント（`Fragment` / `ElementFragment`）のテスト。
+ *
+ * 期待値の根拠は仕様「Fragment クラス」。
+ */
 import {describe, it, expect, vi} from 'vitest';
 import Fragment, {
   ElementFragment,

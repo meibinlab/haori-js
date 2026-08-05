@@ -6,6 +6,8 @@
  * 同じ `name` を使うと行をまたいで排他になり、1 行しか選択を保持できません。
  * `data-form-name` で収集キーを宣言すると、DOM の `name` は行ごとに自動生成され、
  * グループが行単位に分かれます。
+ *
+ * 期待値の根拠は仕様「`data-form-name`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -1,6 +1,8 @@
 /* @vitest-environment jsdom */
 /**
  * @fileoverview Expression（式評価エンジン）のセキュリティテスト
+ *
+ * 期待値の根拠は仕様「評価メカニズム」と仕様「禁止識別子リスト」。
  */
 import {describe, it, expect, vi} from 'vitest';
 import Expression from '../src/expression';

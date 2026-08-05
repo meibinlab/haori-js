@@ -6,6 +6,8 @@
  * 「プレースホルダが無くても評価する属性」として名前で判定しています。この判定が
  * 既定の接頭辞で固定されていると、接頭辞を変えたページで式が文字列として扱われ、
  * `data-each` が「Invalid each attribute」で失敗し、`data-if` は常に真になります。
+ *
+ * 期待値の根拠は仕様「環境検出」と仕様「使用可能な式」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

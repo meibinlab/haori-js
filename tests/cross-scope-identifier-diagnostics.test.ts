@@ -10,6 +10,8 @@
  * 3. どこにも供給されていないキーは従来の集約警告に任せる
  * 4. 同じ式が後で解決した場合は警告しない（行ごと取得の一時的なスコープ外）
  * 5. 本番（開発モード無効）では出力しない
+ *
+ * 期待値の根拠は仕様「スコープ診断（開発モード）」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Dev from '../src/dev';

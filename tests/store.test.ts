@@ -8,6 +8,8 @@
  * 入力欄の初期値として機能する（初期 `data-bind` と同じ扱い）。
  *
  * ここでは復元・保存・破棄・無効条件・異常系・`data-url-param` との優先順を固定する。
+ *
+ * 期待値の根拠は仕様「`data-store`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

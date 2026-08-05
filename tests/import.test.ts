@@ -1,6 +1,8 @@
 /* @vitest-environment jsdom */
 /**
  * @fileoverview Import（HTMLインポート機能）のテスト
+ *
+ * 期待値の根拠は仕様「`data-import`」。
  */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import {Import} from '../src/import';

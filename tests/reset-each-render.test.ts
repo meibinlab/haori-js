@@ -6,6 +6,8 @@
  * 現在のデータから描き直されなければならない。行を削除したあとに描画済み判定の
  * 記録が残っていると、続く再評価が差分更新を省略して行が復元されず、フォーム内に
  * API 取得の選択肢を持つ画面で `data-{event}-reset-before` が使えなくなる。
+ *
+ * 期待値の根拠は仕様「`data-{event}-reset`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

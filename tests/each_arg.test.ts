@@ -1,3 +1,8 @@
+/**
+ * @fileoverview `data-each-arg` の適用（プリミティブ配列のバインディング）のテスト。
+ *
+ * 期待値の根拠は仕様「`data-each`」。
+ */
 import {describe, it, expect} from 'vitest';
 import Core from '../src/core';
 import Queue from '../src/queue';

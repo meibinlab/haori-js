@@ -9,6 +9,8 @@
  *
  * あわせて、CSS セレクタとして不正な値は例外にせずログしてスキップすること
  * （後続のアクションが止まらないこと）を固定する。
+ *
+ * 期待値の根拠は仕様「セレクタを値に取る属性の解決」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -1,3 +1,8 @@
+/**
+ * @fileoverview イベント属性 `before-run` / `after-run` のテスト。
+ *
+ * 期待値の根拠は仕様「`data-{event}-before-run`」と仕様「`data-{event}-after-run`」。
+ */
 import {describe, it, beforeEach, expect, vi, afterEach} from 'vitest';
 import Core from '../src/core';
 import Procedure from '../src/procedure';

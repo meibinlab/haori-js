@@ -8,6 +8,8 @@
  * - false 以外の戻り値では既定動作を抑止しないこと。
  * - 評価エラーは Log.error で報告し、例外を投げないこと。
  * - change など click 以外のイベントでも data-{event}-run が機能すること。
+ *
+ * 期待値の根拠は仕様「`data-{event}-run`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

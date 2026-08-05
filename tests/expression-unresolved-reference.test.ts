@@ -9,6 +9,8 @@
  * 3. 判定する式は「無い＝偽」として結論を出す
  * 4. 診断は開発モード限定で、描画完了後に一度も供給されなかったキーだけを集約警告
  * 5. `data-strict-bind` を付けた場合だけ即時 error
+ *
+ * 期待値の根拠は仕様「バインドに無い識別子の扱い」と仕様「未解決参照の診断」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Dev from '../src/dev';

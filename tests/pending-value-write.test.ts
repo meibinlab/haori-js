@@ -10,6 +10,8 @@
  *
  * の 2 つが起こり得ます。どちらも値が黙って失われるため、後勝ち（最後に要求された
  * 値が載る）と、待機中に入った利用者編集の保護を確かめます。
+ *
+ * 期待値の根拠は仕様「反映待ちの間に起きた変化」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

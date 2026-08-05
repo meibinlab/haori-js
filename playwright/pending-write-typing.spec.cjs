@@ -15,17 +15,53 @@ test.describe('反映待ちの書き込みと打鍵中の編集', () => {
     await page.waitForSelector('body[data-haori-ready]');
   });
 
-  test('実際のキーボード入力が編集として記録される', async ({page}) => {
-    // `data-input-*` を宣言していない入力欄でも、打鍵の時点で編集の通番が発番される。
-    // 修正前はここが 0 のままで、反映待ちの書き込みを見送る判定が働かなかった。
-    await page.locator('#addr').click();
-    await page.keyboard.type('千');
-
-    const sequence = await page.evaluate(() => {
-      const api = window.Haori && window.Haori.default ? window.Haori : null;
-      return api.Fragment.get(document.getElementById('addr')).getUserEditSequence();
+  test('実キーボードで打った文字が、飛行中の取得の応答で消えない', async ({
+    page,
+  }) => {
+    // `data-input-*` を宣言していない入力欄でも、打鍵の時点で編集として記録される。
+    // 修正前は記録されず、反映待ちの書き込みを見送る判定が働かなかった。
+    //
+    // 観測は画面と収集値だけで行う（内部の通番は読まない）。応答は保留したまま実キーで
+    // 打ち、打ち終わってから初めて返すため、「要求より後の打鍵」であることが順序として
+    // 保証される。応答が着弾しても打った文字が残ることが、記録されている証拠になる。
+    let release = null;
+    let requested = null;
+    const requestArrived = new Promise(resolve => {
+      requested = resolve;
     });
-    expect(sequence).toBeGreaterThan(0);
+    await page.route('**/api/record', async route => {
+      requested();
+      await new Promise(resolve => {
+        release = resolve;
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({record: {zip: '1000001', addr: '千代田'}}),
+      });
+    });
+
+    await page.locator('#load').click();
+    await requestArrived;
+
+    // 応答待ちの間に実キーで打つ。`change` はまだ発火していない。
+    await page.locator('#addr').click();
+    await page.keyboard.type('手入力');
+
+    release();
+
+    // 編集していない郵便番号欄は応答の値を受ける（= 応答が着弾した合図）。
+    await expect(page.locator('#zip')).toHaveValue('1000001');
+
+    await page.locator('#collect').click();
+    await page.waitForFunction(
+      () => document.getElementById('log').textContent !== '-',
+    );
+    const result = JSON.parse(await page.locator('#log').textContent());
+
+    // 画面と収集値の双方に打った文字が残る。
+    expect(result.dom).toBe('手入力');
+    expect(result.collected.addr).toBe('手入力');
   });
 
   test('書き戻しの要求後に打った文字が、着弾した書き込みで消えない', async ({

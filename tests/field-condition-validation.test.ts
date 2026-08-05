@@ -11,6 +11,8 @@
  * - `data-if` で非表示になった欄の古い値で誤判定しない
  *
  * ことを固定する。
+ *
+ * 期待値の根拠は仕様「`data-validity` / `data-validity-message`」と仕様「`data-{event}-if`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

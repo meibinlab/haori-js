@@ -6,6 +6,8 @@
  * 1. 行内の `<select>` / チェックボックスが初期 `data-bind` から復元されない
  * 2. `row-add` / `row-remove` がバインディングデータに追従しない
  * 3. `data-each-arg` と併用した `data-each-index` が解決できない
+ *
+ * 期待値の根拠は仕様「`data-form-list`」と仕様「初期 `data-bind` からの入力欄復元」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

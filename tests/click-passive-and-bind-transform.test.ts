@@ -3,6 +3,8 @@
  * @fileoverview
  * - `data-click-passive`: 内側のクリックを外側の data-click-* へ伝播させない境界の検証。
  * - `data-click-bind-transform`: レスポンスをバインド前に式変換する機能の検証。
+ *
+ * 期待値の根拠は仕様「`data-click-passive`」と仕様「`data-{event}-bind-transform`（非イベント: `data-fetch-bind-transform`）」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

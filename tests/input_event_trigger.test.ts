@@ -5,6 +5,8 @@
  * data-input-* を持つ入力は input イベント（1文字ごと）で手続きを起動でき、
  * 自動フォーム検出により双方向バインディングへ即時反映される。
  * data-input-* を持たない入力は input イベントで何も起動しない（オプトイン）。
+ *
+ * 期待値の根拠は仕様「イベント属性」と仕様「双方向バインディングの自動更新」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

@@ -1,3 +1,8 @@
+/**
+ * @fileoverview `Procedure` クラスの実行フローのテスト。
+ *
+ * 期待値の根拠は仕様「実行フロー」。
+ */
 import {describe, it, beforeEach, expect, vi} from 'vitest';
 import Procedure from '../src/procedure';
 import Core from '../src/core';

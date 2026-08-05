@@ -2,6 +2,8 @@
 /**
  * @fileoverview 組み込みヘルパー（haori.date / number / range / pages）の単体テストと、
  * 式評価エンジンへの予約名前空間 `haori` 注入の統合テストです。
+ *
+ * 期待値の根拠は仕様「組み込みヘルパー（予約名前空間 `haori`）」。
  */
 import {describe, it, expect, vi, afterEach} from 'vitest';
 import Builtins, {

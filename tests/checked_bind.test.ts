@@ -5,6 +5,8 @@
  *
  * checked="{{式}}" / data-attr-checked / data-attr-selected で、属性だけでなく
  * DOM プロパティ（element.checked / option.selected）まで同期されることを検証する。
+ *
+ * 期待値の根拠は仕様「`data-attr-*`」。
  */
 import {describe, it, beforeEach, afterEach, expect} from 'vitest';
 import Core from '../src/core';

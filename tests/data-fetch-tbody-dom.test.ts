@@ -1,4 +1,9 @@
 /* @vitest-environment jsdom */
+/**
+ * @fileoverview `data-fetch` と `data-each`（`tbody` / `tr`）の結合テスト。
+ *
+ * 期待値の根拠は仕様「`data-fetch`」と仕様「`data-each`」。
+ */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';
 import {waitForCondition} from './helpers/async';

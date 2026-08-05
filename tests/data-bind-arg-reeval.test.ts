@@ -4,6 +4,8 @@
  * data-click-bind-arg でネストキーへバインドした後、そのキーを参照する
  * 子孫要素の data-if / data-each が再評価・描画されることを検証する統合テストです。
  * あわせて、同一 data-each への並行評価が描画を破壊しないこと（再入制御）を確認します。
+ *
+ * 期待値の根拠は仕様「`data-{event}-bind-arg`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

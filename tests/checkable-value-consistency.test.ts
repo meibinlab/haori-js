@@ -11,6 +11,8 @@
  * 2. 内部値の追従: 宣言バインド（`checked="{{式}}"` / `data-attr-checked` /
  *    `data-attr-selected`）でチェック状態を書き換えたとき、内部値（値収集や式
  *    評価が参照する値）も DOM へ追従する。従来は DOM だけ書き換えていた。
+ *
+ * 期待値の根拠は仕様「収集は DOM を真とする」と仕様「同名チェックボックス・ラジオの収集値の形」。
  */
 import {describe, it, beforeEach, afterEach, expect} from 'vitest';
 import Core from '../src/core';

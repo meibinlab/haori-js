@@ -9,6 +9,8 @@
  * `data-each-key` を宣言すると、`data-each` が行へ付けたリストキーで対応付けるため、
  * この崩れを避けられます。ここでは、割り込みが起きても残った行の値と非入力フィールド
  * （`id` / 表示専用ラベル）が正しく保たれることを固定します。
+ *
+ * 期待値の根拠は仕様「行の対応付けと `data-each-key`」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

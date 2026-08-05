@@ -1,4 +1,9 @@
 /* @vitest-environment jsdom */
+/**
+ * @fileoverview `data-each` の差分更新の内部挙動のテスト。
+ *
+ * 期待値の根拠は仕様「data-each の差分更新アルゴリズム」。
+ */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';
 import Queue from '../src/queue';

@@ -5,6 +5,8 @@
  * フラグメント木と DOM の子が同期しない状況（タブ表示＋ネスト data-if＋bind-arg の
  * 特定フローで発生）でも、DOM の要素子からテンプレートを復旧して全行を描画することを
  * 検証する。
+ *
+ * 期待値の根拠は仕様「data-each の差分更新アルゴリズム」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

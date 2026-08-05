@@ -8,6 +8,8 @@
  * 与えるチェックボックス群のチェックが落ちる」「行を増やすと前の行の値が混ざる」
  * という形で現れました。行の追加・削除・並べ替えを挟んでも、画面・収集値・
  * バインドデータの三者が一致し続けることを固定します。
+ *
+ * 期待値の根拠は仕様「`data-each` で生成された行への値反映」と仕様「収集は DOM を真とする」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

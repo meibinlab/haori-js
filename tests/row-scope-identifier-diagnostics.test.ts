@@ -14,6 +14,8 @@
  * 2. 行の中の `data-fetch` は行が描画されれば正しく評価される（誤警告の対象が正常系）
  * 3. 接頭辞を変えたページ・引数名を式で書いた構成でも除外できる
  * 4. 応答のバインド先を取り違えた宣言は従来どおり警告する（診断が効いたままである）
+ *
+ * 期待値の根拠は仕様「スコープ診断（開発モード）」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

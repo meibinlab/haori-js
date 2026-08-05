@@ -8,6 +8,8 @@
  * 配下の `name`、収集値は入れ子という食い違いが起き、条件がバインドデータ（コミット
  * 済みの 1 手前の値）で評価される。最後の欄を直してすぐ押した操作を誤判定するため、
  * 宣言の位置を変えても同じスコープになることを確かめる。
+ *
+ * 期待値の根拠は仕様「条件の評価スコープ」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

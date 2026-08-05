@@ -6,6 +6,8 @@
  * - `afterCallback` によるレスポンス上書きと bind の動作
  * - dialog / toast の呼び出し
  * - POST の場合に JSON ボディが作成されること
+ *
+ * 期待値の根拠は仕様「実行フロー」と仕様「`data-{event}-bind-params`」。
  */
 import {describe, it, beforeEach, afterEach, expect, vi} from 'vitest';
 import Core from '../src/core';

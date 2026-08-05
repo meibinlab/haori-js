@@ -7,6 +7,8 @@
  *
  * いずれも行要素で発火し、`bubbles: true` によって `data-each` コンテナで購読できます。
  * `rowremove` は行が DOM から外れる前に発火します（外れた後では祖先へ伝播しません）。
+ *
+ * 期待値の根拠は仕様「行イベントの共通仕様」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -10,6 +10,8 @@
  *    ため存在せず、到達しうる形はこの混在である）
  * 2. 宣言バインドが値を決める入力（`data-attr-value`）を利用者が編集した後に
  *    コピーが走ったとき、画面と要素データが食い違ったまま残らないこと。
+ *
+ * 期待値の根拠は仕様「編集可能な行への書き込み」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

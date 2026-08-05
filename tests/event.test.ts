@@ -1,6 +1,8 @@
 /* @vitest-environment jsdom */
 /**
  * @fileoverview HaoriEvent（イベント発火ユーティリティ）のテスト
+ *
+ * 期待値の根拠は仕様「イベントシステム」。
  */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import HaoriEvent from '../src/event';

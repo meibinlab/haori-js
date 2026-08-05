@@ -1,3 +1,8 @@
+/**
+ * @fileoverview 開発モードフラグ（`Dev`）のテスト。
+ *
+ * 期待値の根拠は仕様「環境検出」。
+ */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Dev from '../src/dev';
 

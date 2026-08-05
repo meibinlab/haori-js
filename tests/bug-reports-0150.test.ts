@@ -3,6 +3,8 @@
  * @fileoverview バグ報告（0.15.0）の再現テスト。
  * - バグ1: data-click-confirm が fetch なしのボタンでスキップされる。
  * - バグ2: data-click-click が bind による再描画完了前に発火し、古い URL でフェッチする。
+ *
+ * 期待値の根拠は仕様「`data-{event}-confirm`」と仕様「`data-{event}-click`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -3,6 +3,8 @@
  * @fileoverview
  * 依頼1: haori:bindcomplete が data-if / data-each の DOM 反映完了後に発火することを検証する。
  * 依頼2: Core.dumpScope による識別子解決スコープのダンプ（由来情報）を検証する。
+ *
+ * `haori:bindcomplete` の発火時点は仕様書に記述が無く、ここでは実装契約として固定している（仕様へ足すかは要判断）。`Core.dumpScope` の根拠は仕様「スコープ診断（開発モード）」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

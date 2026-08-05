@@ -6,6 +6,8 @@
  * 公開文書（README・ガイド・技術仕様書）へ同じ値を書きます。リリース時にどれかを
  * 更新し忘れると、`haori:ready` の `detail.version` や文書の表記が実際の版と
  * ずれるため、ここで一致を固定します。
+ *
+ * 根拠は仕様書ではなくリリース手順（`package.json` を正として、ソースと公開文書のバージョン表記を一致させる）。
  */
 import {readFileSync} from 'node:fs';
 import path from 'node:path';

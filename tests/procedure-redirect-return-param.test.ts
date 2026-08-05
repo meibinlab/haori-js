@@ -4,6 +4,8 @@
  * 受け手側テスト。手続き成功後に URL クエリから安全なローカルパスのみへ遷移し、
  * 安全でない／値が無い場合は data-{event}-redirect へフォールバックすることを
  * 検証する。送り手（認証ガードの *-return-param）との往復も確認する。
+ *
+ * 期待値の根拠は仕様「`data-{event}-redirect-return-param`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Haori from '../src/haori';

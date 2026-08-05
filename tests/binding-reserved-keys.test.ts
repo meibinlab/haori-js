@@ -5,6 +5,8 @@
  *
  * - 名前空間衝突名（history 等）は明示バインドキーとして利用でき、data-each で描画される。
  * - 実行系・プロトタイプ脱出名（Object 等）は該当キーのみ無視され、他キーは描画される。
+ *
+ * 期待値の根拠は仕様「バインドのトップレベルキーと予約名」。
  */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';

@@ -6,6 +6,8 @@
  * 画面個別 JavaScript を書かずに data-if/式から参照できるよう、対象要素へ
  * `_fetch`（status/loading/success/error/statusCode/message）を注入する。`_fetch` は
  * data-bind 属性には反映せず（reflectToAttribute=false）、再評価のみ行う。
+ *
+ * 期待値の根拠は仕様「`data-fetch-state` / `data-{event}-fetch-state`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

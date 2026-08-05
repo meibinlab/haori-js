@@ -10,6 +10,8 @@
  *
  * 非表示のあいだ配下の入力へ `disabled` を付けて検証対象から外し、表示へ戻すとき
  * に印が付いた要素だけを復帰させる。利用者が指定した `disabled` は維持する。
+ *
+ * 期待値の根拠は仕様「`data-if-false` 分岐とフォーム送信」と仕様「`data-{event}-validate`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

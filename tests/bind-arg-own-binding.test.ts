@@ -5,6 +5,8 @@
  * 更新することを検証する（改修依頼: 並行/リアクティブ bind-arg の原子性）。
  * - 継承キーを own の data-bind に混入させない。
  * - 連続した bind-arg バインドで各キーが保持され、互いに上書きしない。
+ *
+ * 期待値の根拠は仕様「`data-{event}-bind-arg`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

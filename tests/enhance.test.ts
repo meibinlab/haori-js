@@ -10,6 +10,8 @@
  * 4. DOM から外れたら破棄する
  * 5. 登録がスクリプトの読み込み順に依存しない
  * 6. `data-enhance-new` はドット区切りのグローバル参照だけを `new` する
+ *
+ * 期待値の根拠は仕様「`data-enhance`」と仕様「`data-enhance-new`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

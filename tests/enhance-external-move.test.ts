@@ -8,6 +8,8 @@
  *
  * ライブ監視（`Observer.init()`）を使うため、明示 `Core.scan()` と競合しないよう
  * 独立したファイルに置いています。
+ *
+ * 期待値の根拠は仕様「`data-enhance`」と仕様「`data-external`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Haori from '../src/haori';

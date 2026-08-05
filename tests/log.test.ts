@@ -1,3 +1,8 @@
+/**
+ * @fileoverview ログ機能（`Log`）のテスト。
+ *
+ * 期待値の根拠は仕様「Log クラス」。
+ */
 import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
 
 // devモジュールをモック

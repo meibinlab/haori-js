@@ -6,6 +6,8 @@
  * 参照する式（別の一覧を描画する `data-each` など）がある場合、省略すると行外の
  * 更新が行内へ届かない。報告された「行内の外部キー選択が空のままで、空のまま
  * 送信される」構成を最小化した回帰ガード。
+ *
+ * 期待値の根拠は仕様「data-each の差分更新アルゴリズム」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

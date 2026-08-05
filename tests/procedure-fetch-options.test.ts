@@ -1,6 +1,8 @@
 /* @vitest-environment jsdom */
 /**
  * Procedure の fetch オプションと前後フックに関するテスト
+ *
+ * 期待値の根拠は仕様「`data-{event}-before-run`」と仕様「Content-Type別の処理」。
  */
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest';
 import Core from '../src/core';

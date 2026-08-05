@@ -4,6 +4,8 @@
  *
  * フォーカス中（ユーザー編集中）の入力には、別要素起因の再評価で式の評価結果を
  * 強制再適用しない。フォーカスが外れている入力には従来どおり再適用する。
+ *
+ * 期待値の根拠は仕様「ユーザー編集と宣言バインドの権威」。
  */
 import {describe, it, beforeEach, afterEach, expect} from 'vitest';
 import Core from '../src/core';

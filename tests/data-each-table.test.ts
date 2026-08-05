@@ -1,4 +1,9 @@
 /* @vitest-environment jsdom */
+/**
+ * @fileoverview `data-each` を `tbody` へ適用したときのテスト。
+ *
+ * 期待値の根拠は仕様「`data-each`」。
+ */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import Core from '../src/core';
 import {waitForCondition, waitForDomSettled} from './helpers/async';

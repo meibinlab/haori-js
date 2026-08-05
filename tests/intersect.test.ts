@@ -1,4 +1,9 @@
 /* @vitest-environment jsdom */
+/**
+ * @fileoverview 交差監視トリガー（`data-intersect-*`）のテスト。
+ *
+ * 期待値の根拠は仕様「交差監視トリガー (`data-intersect-*`)」。
+ */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import Fragment, {ElementFragment} from '../src/fragment';

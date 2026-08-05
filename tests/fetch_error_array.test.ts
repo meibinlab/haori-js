@@ -9,6 +9,8 @@
  * - key を持たない要素はフォーム全体エラーとする
  * - ステータスコードに依存しない（400 だけでなく 409 等でも振り分く）
  * - プレーンテキストのエラーボディはフォーム全体エラーとして表示する
+ *
+ * 期待値の根拠は仕様「エラーハンドリング」。
  */
 import {describe, it, beforeEach, afterEach, expect, vi} from 'vitest';
 import Core from '../src/core';

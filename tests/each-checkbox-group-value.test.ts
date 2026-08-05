@@ -8,6 +8,8 @@
  * 常に不一致になる。その結果、2 つ目をチェックした直後の書き戻しでグループ全体の
  * チェックが落ちていた（1 つだけのときは収集値がスカラで内部値と一致し、書き戻し
  * 自体が起きないため表面化しない）。
+ *
+ * 期待値の根拠は仕様「同名チェックボックス・ラジオの収集値の形」と仕様「`data-attr-*`」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';

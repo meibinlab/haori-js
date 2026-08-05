@@ -2,6 +2,8 @@
 /**
  * @fileoverview 認証ガード（data-unauthorized-redirect / data-forbidden-redirect）の
  * 回帰テスト。改修依頼第2回 #3 に対応する。
+ *
+ * 期待値の根拠は仕様「認証ガード（`data-unauthorized-redirect` / `data-forbidden-redirect`）」と仕様「戻り先クエリの自動付与（`*-return-param`）」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

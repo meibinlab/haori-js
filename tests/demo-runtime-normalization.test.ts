@@ -6,6 +6,8 @@
  * `data-runtime="demo"` は非 GET をクエリ付き GET へ正規化するが、
  * `data-{event}-before-run` が返す `fetchOptions` の上書きが正規化より後に
  * 適用されるため、実 POST が送信されて静的ファイルサーバから 405 になる。
+ *
+ * 期待値の根拠は仕様「demo ランタイムでの通信の正規化」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -1,6 +1,8 @@
 /* @vitest-environment jsdom */
 /**
  * @fileoverview Observer の data-haori-ready 属性付与のテスト
+ *
+ * 期待値の根拠は仕様「監視対象」と仕様「data-haori-ready 属性」。
  */
 import {describe, it, beforeEach, afterEach, expect, vi} from 'vitest';
 import Core from '../src/core';

@@ -2,6 +2,8 @@
 /**
  * @fileoverview カスタムイベント起動（data-on / data-on-*）の回帰テスト。
  * 改修依頼第2回 #2 に対応する。
+ *
+ * 期待値の根拠は仕様「カスタムイベント `data-on`」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

@@ -18,6 +18,10 @@
       - 実際のキーボード入力（信頼済みの `input`）が編集として記録されること
       - 描画キューが requestAnimationFrame で流れる環境でも、着弾した書き込みが
         打鍵後の値を上書きしないこと
+
+      1 点目は「取得（`#load`）の応答を保留したまま実キーで打ち、応答が着弾しても
+      打った文字が残る」ことで確かめる。内部の通番を直接読むと、実装の内部構造に
+      依存したテストになるため使わない。
     -->
     <div id="state" data-bind='{"record":{"zip":"","addr":""}}'>
       <form id="f" data-form-arg="record">
@@ -27,6 +31,15 @@
     </div>
 
     <p>
+      <!-- 応答が `#state` のバインドデータへ載り、フォームの入力欄へ書き戻される。 -->
+      <button
+        id="load"
+        type="button"
+        data-click-fetch="/api/record"
+        data-click-bind="#state"
+      >
+        読み込む
+      </button>
       <button id="collect" type="button">収集</button>
     </p>
     <pre id="log">-</pre>

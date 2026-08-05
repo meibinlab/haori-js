@@ -7,6 +7,8 @@
  * 残るため、同一 name の入力を設定型ごとに data-if で出し分けると、非表示分岐の
  * 入力値もフォーム直列化に混入し送信値が競合する懸念があった。表示中の分岐の値
  * だけを収集することを保証する。
+ *
+ * 期待値の根拠は仕様「`data-if-false` 分岐とフォーム送信」。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';
