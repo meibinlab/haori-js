@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>反映待ちの書き込みが打鍵中の文字を消す問題の回帰確認</title>
+  </head>
+  <body>
+    <!--
+      外部ライブラリ（郵便番号からの住所補完）がスクリプトから住所欄へ代入し、
+      郵便番号欄から外れた時点の収集・コミットが祖先のバインドデータを更新して、
+      その結果が `data-form-arg` フォームの入力欄へ書き戻される構成。
+
+      修正前は、打鍵を「利用者の編集」として記録するのが `change`（フォーカスを
+      外した時点）と `data-input-*` を宣言した要素の `input` に限られていたため、
+      書き戻しの要求から着弾までの間に打った文字が上書きされて消えていた。
+
+      実ブラウザでしか確認できないのは次の 2 点なので、ここで確かめる。
+      - 実際のキーボード入力（信頼済みの `input`）が編集として記録されること
+      - 描画キューが requestAnimationFrame で流れる環境でも、着弾した書き込みが
+        打鍵後の値を上書きしないこと
+    -->
+    <div id="state" data-bind='{"record":{"zip":"","addr":""}}'>
+      <form id="f" data-form-arg="record">
+        <label>郵便番号 <input id="zip" name="zip" /></label>
+        <label>町域・番地 <input id="addr" name="addr" /></label>
+      </form>
+    </div>
+
+    <p>
+      <button id="collect" type="button">収集</button>
+    </p>
+    <pre id="log">-</pre>
+
+    <script src="/dist/haori.iife.js"></script>
+    <script>
+      /* global Haori */
+      const $ = id => document.getElementById(id);
+      const ns = () => (Haori && Haori.default ? Haori : {default: Haori});
+
+      /**
+       * 画面の値と収集値を記録します。
+       */
+      const dump = () => {
+        const api = ns();
+        $('log').textContent = JSON.stringify({
+          dom: $('addr').value,
+          collected: api.Form.getValues(api.Fragment.get($('f'))),
+        });
+      };
+
+      $('collect').addEventListener('click', async () => {
+        await ns().Queue.waitForIdle();
+        dump();
+      });
+    </script>
+  </body>
+</html>

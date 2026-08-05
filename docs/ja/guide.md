@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.41.1
+バージョン: 0.41.2
 
 ## 目次
 
@@ -247,7 +247,7 @@ Haori.js の初期化（スキャンと初期フェッチ）がすべて完了�
 <input type="number" data-attr-value="{{count}}" readonly>
 ```
 
-`data-attr-*` は対応する属性を更新します。加えて、入力欄の状態と DOM の食い違いを防ぐため、`value`（テキスト系入力）・`checked`（radio / checkbox）・`selected`（option）は DOM property（`input.value` / `element.checked` / `option.selected`）も同期します。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` でチェック・選択状態を宣言バインドできます。ただし**フォーカス中（編集中）の入力**と、**`change` / `input` で確定した編集を抱えている入力**には再適用しません（別要素起因の再評価で利用者の入力が失われるのを防ぐため）。確定した編集の印は明示的な値の供給（フェッチ応答の反映、`data-{event}-reset`、`data-{event}-copy`、`Core.setBindingData()`）で解除されます。
+`data-attr-*` は対応する属性を更新します。加えて、入力欄の状態と DOM の食い違いを防ぐため、`value`（テキスト系入力）・`checked`（radio / checkbox）・`selected`（option）は DOM property（`input.value` / `element.checked` / `option.selected`）も同期します。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` でチェック・選択状態を宣言バインドできます。ただし**フォーカス中（編集中）の入力**と、**`change` / `input` で確定した編集を抱えている入力**には再適用しません（別要素起因の再評価で利用者の入力が失われるのを防ぐため）。確定した編集の印は明示的な値の供給（フェッチ応答の反映、`data-{event}-reset`、`data-{event}-copy`、`Core.setBindingData()`）で解除されます。印は**打鍵ごと**（`input`）に付くため、`change` が発火する前に打った文字も保護されます（`data-input-*` の宣言は要りません）。
 
 ### グローバル関数を使った値の整形
 

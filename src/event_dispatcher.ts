@@ -361,13 +361,19 @@ export default class EventDispatcher {
     }
 
     // input は逐次（1文字ごと）に発火するため、data-input-* を明示した要素だけを
-    // 対象にする（オプトイン）。これにより既存の input 既定動作を変えない。
+    // 手続きの対象にする（オプトイン）。これにより既存の input 既定動作を変えない。
+    //
+    // ただしユーザー編集の記録（内部値の同期と通番の発番）は宣言の有無に関わらず
+    // 行う。オプトインの対象は手続きの起動だけである。記録しないと、打鍵中
+    // （`change` 発火前）に反映待ちの書き込みが着弾して打った文字を消してしまう
+    // （仕様「反映待ちの間に起きた変化」）。
     if (type === 'input') {
       const inputPrefix = `${Env.prefix}input-`;
       const hasInputTrigger = element
         .getAttributeNames()
         .some(name => name.startsWith(inputPrefix));
       if (!hasInputTrigger) {
+        this.recordUserEdit(element);
         return;
       }
     }
@@ -419,42 +425,8 @@ export default class EventDispatcher {
     }
 
     // change / input イベントの場合、DOM値と内部値を同期する
-    if (
-      (type === 'change' || type === 'input') &&
-      fragment instanceof ElementFragment
-    ) {
-      fragment.syncValue();
-      // ユーザー編集として記録する。飛行中の通信の応答がこの編集より古い内容を
-      // 持っていても、その応答でこの入力欄を巻き戻さないための基準になる。
-      fragment.markUserEdit();
-      // ラジオボタンは排他制御で他要素が未チェックになるが、その要素では
-      // change が発火しないため内部値が古いまま残る。同一フォームスコープの
-      // 同名ラジオを併せて同期し、値収集時の不整合（配列累積）を防ぐ。
-      if (
-        element instanceof HTMLInputElement &&
-        element.type === 'radio' &&
-        element.name
-      ) {
-        const group = document.getElementsByName(element.name);
-        for (const member of Array.from(group)) {
-          if (
-            member === element ||
-            !(member instanceof HTMLInputElement) ||
-            member.type !== 'radio' ||
-            member.form !== element.form
-          ) {
-            continue;
-          }
-          const memberFragment = Fragment.get(member);
-          if (memberFragment instanceof ElementFragment) {
-            memberFragment.syncValue();
-            // 排他で未チェックになった同名ラジオもユーザー編集として扱う。
-            // 起点要素だけを記録すると、応答の書き戻しでグループの一部だけが
-            // 巻き戻り、チェック状態が食い違う。
-            memberFragment.markUserEdit();
-          }
-        }
-      }
+    if (type === 'change' || type === 'input') {
+      this.syncUserEdit(element);
     }
 
     const runProcedure = () => {
@@ -477,6 +449,85 @@ export default class EventDispatcher {
     }
 
     runProcedure();
+  }
+
+  /**
+   * 手続きを起動しない `input` について、ユーザー編集だけを記録します。
+   *
+   * `data-input-*` を宣言していない入力欄でも、打鍵は編集として記録しなければ
+   * なりません（記録しないと、反映待ちの書き込みが打鍵の後に着弾して打った文字を
+   * 消します）。初期化中は手続きと同じく保留し、フラグメントが確定した後に記録
+   * します。
+   *
+   * 対象は値を持つ入力要素だけです。`contenteditable` など値収集の対象でない要素で
+   * `input` が発火しても、記録すべき編集はありません。
+   *
+   * @param element 編集された要素
+   * @returns 戻り値はない。
+   */
+  private recordUserEdit(element: HTMLElement): void {
+    if (
+      !(element instanceof HTMLInputElement) &&
+      !(element instanceof HTMLSelectElement) &&
+      !(element instanceof HTMLTextAreaElement)
+    ) {
+      return;
+    }
+    if (this.deferred) {
+      this.deferredProcedures.push(() => {
+        if (!element.isConnected) {
+          return;
+        }
+        this.syncUserEdit(element);
+      });
+      return;
+    }
+    this.syncUserEdit(element);
+  }
+
+  /**
+   * `change` / `input` の対象要素について、内部値の同期とユーザー編集の記録を行います。
+   *
+   * @param element 編集された要素
+   * @returns 戻り値はない。
+   */
+  private syncUserEdit(element: HTMLElement): void {
+    const fragment = Fragment.get(element);
+    if (!(fragment instanceof ElementFragment)) {
+      return;
+    }
+    fragment.syncValue();
+    // ユーザー編集として記録する。飛行中の通信の応答がこの編集より古い内容を
+    // 持っていても、その応答でこの入力欄を巻き戻さないための基準になる。
+    fragment.markUserEdit();
+    // ラジオボタンは排他制御で他要素が未チェックになるが、その要素では
+    // change が発火しないため内部値が古いまま残る。同一フォームスコープの
+    // 同名ラジオを併せて同期し、値収集時の不整合（配列累積）を防ぐ。
+    if (
+      element instanceof HTMLInputElement &&
+      element.type === 'radio' &&
+      element.name
+    ) {
+      const group = document.getElementsByName(element.name);
+      for (const member of Array.from(group)) {
+        if (
+          member === element ||
+          !(member instanceof HTMLInputElement) ||
+          member.type !== 'radio' ||
+          member.form !== element.form
+        ) {
+          continue;
+        }
+        const memberFragment = Fragment.get(member);
+        if (memberFragment instanceof ElementFragment) {
+          memberFragment.syncValue();
+          // 排他で未チェックになった同名ラジオもユーザー編集として扱う。
+          // 起点要素だけを記録すると、応答の書き戻しでグループの一部だけが
+          // 巻き戻り、チェック状態が食い違う。
+          memberFragment.markUserEdit();
+        }
+      }
+    }
   }
 
   /**
