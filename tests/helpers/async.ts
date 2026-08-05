@@ -83,6 +83,13 @@ async function checkInvariants(): Promise<void> {
     retry < SETTLE_RETRIES && violations.length > 0;
     retry++
   ) {
+    if (retry === SETTLE_RETRIES - 1) {
+      // 最後の再検査は完全に空になるまで待つ。I5（内部値の非先行）は「バインド
+      // データへ載る機会が済んだ時点」で成り立つ条件で、`change` の同期的な内部値
+      // 同期からコミット完了までの間は**正しく**ずれる。固定サイクルの待機では
+      // その途中を捕まえるため、残っているかどうかは空になるまで待って判定する。
+      await Queue.waitForIdle();
+    }
     await settleOnce();
     violations = collectFormInconsistencies(document);
   }

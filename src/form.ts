@@ -25,6 +25,24 @@ const FORM_HAORI_METHOD_NAMES = ['addErrorMessage', 'clearMessages'] as const;
 const GENERATED_GROUP_NAME_MARKER = 'data-haori-group-name';
 
 /**
+ * リセットの要求より後に編集された入力欄の DOM の状態。
+ *
+ * ネイティブの `form.reset()` を挟んでも編集を残すために控えます
+ * （`Form.collectEditsAfter()` を参照）。値・チェック状態・複数選択のいずれか 1 つを
+ * 持ちます。
+ */
+interface EditedValueSnapshot {
+  /** 対象の入力エレメント */
+  readonly element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+  /** テキスト系・単一選択の値 */
+  readonly value?: string;
+  /** checkbox / radio のチェック状態 */
+  readonly checked?: boolean;
+  /** `<select multiple>` の選択済みの値 */
+  readonly selected?: readonly string[];
+}
+
+/**
  * Form から利用する Haori API を解決します。
  * window.Haori が差し替えられている場合はそちらを優先します。
  *
@@ -2220,6 +2238,16 @@ export default class Form {
 
     // フォーム要素をリセット
     await Queue.enqueue(() => {
+      // `form.reset()` は DOM を直接書き戻すため、入力欄ごとの保護（要求より後の編集は
+      // 上書きしない）を経由しない。初期化を要求した後に編集された欄の値を控え、
+      // ネイティブのリセットの後に戻す。控えないと、クリアを押した直後に打った文字が
+      // 画面からも収集値からも消える（仕様「反映待ちの間に起きた変化」の「反映を要求
+      // した時点より後の編集は…保護します」。`change` を待たないのは同節の「保護の
+      // 対象は打鍵 1 文字ごとです」）。
+      const protectedEdits = Form.collectEditsAfter(
+        fragment,
+        operationSequence,
+      );
       const element = fragment.getTarget();
       if (element instanceof HTMLFormElement) {
         element.reset();
@@ -2242,6 +2270,11 @@ export default class Form {
       // 状態が決まる入力は DOM 側も空へ揃え、この後の再評価で現在の評価結果を
       // 入れ直す。
       Form.clearDeclarativeStateFromDom(fragment);
+      // 保護対象の欄を戻す。内部値は戻さない（内部値はバインドデータへ載っている値を
+      // 表すため、まだコミットされていない編集で先へ進めてはいけない。仕様「収集は
+      // DOM を真とする」）。戻した値は、この後の「リセット後の値でバインドデータを
+      // 更新する」段が収集して載せる。
+      Form.restoreEdits(protectedEdits);
     });
 
     // フォーム自身のバインドデータを初期宣言（宣言が無ければ空）へ戻し、宣言キーを
@@ -2442,6 +2475,86 @@ export default class Form {
     fragment.clearValue();
     for (const child of fragment.getChildElementFragments()) {
       Form.clearValues(child);
+    }
+  }
+
+  /**
+   * 指定した通番より後に編集された入力欄の DOM の状態を控えます。
+   *
+   * ネイティブの `form.reset()` は DOM を直接書き戻すため、入力欄ごとの保護判定
+   * （`ElementFragment` の編集の通番）を経由しません。リセットを要求した後に行われた
+   * 編集を残すために、リセットの直前に控えて直後に戻します
+   * （仕様「反映待ちの間に起きた変化」）。
+   *
+   * @param fragment 対象フラグメント（配下も辿る）
+   * @param operationSequence この通番より後の編集を控える
+   * @param collected 控えの蓄積先（再帰用）
+   * @returns 控えた状態の配列
+   */
+  private static collectEditsAfter(
+    fragment: ElementFragment,
+    operationSequence: number,
+    collected: EditedValueSnapshot[] = [],
+  ): EditedValueSnapshot[] {
+    const element = fragment.getTarget();
+    if (
+      (element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement ||
+        element instanceof HTMLSelectElement) &&
+      fragment.getUserEditSequence() > operationSequence
+    ) {
+      if (
+        element instanceof HTMLInputElement &&
+        (element.type === 'checkbox' || element.type === 'radio')
+      ) {
+        collected.push({element, checked: element.checked});
+      } else if (element instanceof HTMLSelectElement && element.multiple) {
+        collected.push({
+          element,
+          selected: Array.from(element.selectedOptions).map(
+            option => option.value,
+          ),
+        });
+      } else {
+        collected.push({element, value: element.value});
+      }
+    }
+    for (const child of fragment.getChildElementFragments()) {
+      Form.collectEditsAfter(child, operationSequence, collected);
+    }
+    return collected;
+  }
+
+  /**
+   * 控えた入力欄の状態を DOM へ戻します。
+   *
+   * 内部値は戻しません（`Form.reset()` の呼び出し箇所のコメントを参照）。
+   *
+   * @param snapshots `collectEditsAfter()` で控えた状態
+   * @returns 戻り値はありません。
+   */
+  private static restoreEdits(snapshots: readonly EditedValueSnapshot[]): void {
+    for (const snapshot of snapshots) {
+      const {element} = snapshot;
+      if (
+        snapshot.checked !== undefined &&
+        element instanceof HTMLInputElement
+      ) {
+        element.checked = snapshot.checked;
+        continue;
+      }
+      if (
+        snapshot.selected !== undefined &&
+        element instanceof HTMLSelectElement
+      ) {
+        for (const option of Array.from(element.options)) {
+          option.selected = snapshot.selected.includes(option.value);
+        }
+        continue;
+      }
+      if (snapshot.value !== undefined) {
+        element.value = snapshot.value;
+      }
     }
   }
 

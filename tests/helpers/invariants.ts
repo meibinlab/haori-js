@@ -37,6 +37,18 @@
  *      されます」。描画中は行数が配列と一致しないことが仕様上あり得るため、この
  *      マーカーが付いたコンテナだけを対象にします。
  *
+ *    - I5 内部値の非先行: 入力欄の内部値 == バインドデータの同じ経路の値
+ *
+ *      仕様「収集は DOM を真とする」「**収集は読み取りに徹し、内部値は書き換えません。**
+ *      … ここで内部値を書き換えると、**バインドデータには載っていないのに内部値だけが
+ *      新しい**状態が生まれ、続く逆方向同期（フォーム配下の入力欄への書き戻し）が古い
+ *      バインドデータと不一致とみなして入力欄を上書きします。その結果、利用者が入力した
+ *      値が表示からも収集値からも消えます。DOM の値が内部値・バインドデータへ入るのは、
+ *      収集結果がバインドへコミットされ、そこから書き戻される経路だけです」。
+ *      **DOM が先に進むのは許され、内部値が先に進むことだけを違反とします**（未確定の
+ *      編集は DOM にだけ載っている状態が正しい）。対象と除外は
+ *      `collectInternalValueLeads()` を参照。
+ *
  * 2. 確定後の一致（`collectUncommittedMismatches()`）
  *    すべての編集が確定した時点でだけ成り立つもの。入力欄へ値を入れて `change`
  *    を発火していない状態では**正しく**ずれるため、常時検査には使えません。
@@ -58,6 +70,8 @@ export interface InvariantOptions {
   attribute?: boolean;
   /** I2 / I3（`data-each` の行）を検査するか。既定 true */
   rows?: boolean;
+  /** I5（内部値の非先行）を検査するか。既定 true */
+  internalValues?: boolean;
   /**
    * 属性ミラーの比較から除くキー。
    *
@@ -219,7 +233,361 @@ function describeElement(element: HTMLElement): string {
 }
 
 /**
- * 要素とその配下について、内部整合の不変条件（I1〜I3）の違反を集めます。
+ * I5 の対象にするテキスト系入力の `type`。
+ *
+ * チェック状態（checkbox / radio）と `input[type=file]` は内部値の規則が別なので
+ * 含めません（仕様「収集は DOM を真とする」の箇条書き）。`<select>` も外します。
+ * 候補の `<option>` が揃うまで書き込みが載らず、その間は内部値が DOM より先に
+ * 進むことが仕様で認められているためです（同節「直近の書き込みを DOM が受け付け
+ * なかった場合」）。
+ */
+const I5_INPUT_TYPES: readonly string[] = [
+  'text',
+  'hidden',
+  'search',
+  'tel',
+  'url',
+  'email',
+  'password',
+  'number',
+  'date',
+  'time',
+  'datetime-local',
+  'month',
+  'week',
+];
+
+/**
+ * 入力欄の収集キーを返します。
+ *
+ * 仕様「`data-form-name`」「収集・逆方向同期・サーバのエラー応答の振り分けのすべてで、
+ * `data-form-name` があればそちらを収集キーとし、無ければ `name` を使います」。
+ *
+ * @param element 対象の入力欄
+ * @returns 収集キー。無ければ null
+ */
+function collectionKey(element: HTMLElement): string | null {
+  const declared = element.getAttribute(`${Env.prefix}form-name`);
+  if (declared !== null && declared !== '') {
+    return declared;
+  }
+  const name = element.getAttribute('name');
+  return name !== null && name !== '' ? name : null;
+}
+
+/**
+ * 値の権威が宣言バインド側にある入力欄かどうかを返します。
+ *
+ * 宣言バインド（`value="{{式}}"` / `data-attr-value`）を持つ欄は、評価結果が内部値
+ * へ同期されるため、バインドデータの同じ経路とは独立に動きます（仕様「ユーザー編集と
+ * 宣言バインドの権威」）。I5 の対象外です。
+ *
+ * @param element 対象の入力欄
+ * @returns 宣言バインドを持つなら true
+ */
+function hasDeclaredValueBinding(element: HTMLElement): boolean {
+  if (element.hasAttribute(`${Env.prefix}attr-value`)) {
+    return true;
+  }
+  const value = element.getAttribute('value');
+  return value !== null && value.includes('{{');
+}
+
+/**
+ * その入力欄の編集がフェッチを起こす構成かどうかを返します。
+ *
+ * フェッチを伴う手続きでは所有者への暗黙のコミットが走らないため、送信した値が
+ * バインドデータへ載るのは応答の反映の時点です（仕様「編集可能な行への書き込み」の
+ * 「`data-fetch` を伴う手続きでは所有者への暗黙のコミットが走らず」）。飛行中は
+ * 内部値がバインドデータより先に進んだ状態が正しく、その間の編集は編集の印で
+ * 守られます（仕様「送信後に行われた編集の保護」）。
+ *
+ * @param element 対象の入力欄
+ * @returns フェッチを起こす宣言があれば true
+ */
+function triggersFetch(element: HTMLElement): boolean {
+  return element
+    .getAttributeNames()
+    .some(
+      name =>
+        name === `${Env.prefix}fetch` ||
+        (name.startsWith(Env.prefix) && name.endsWith('-fetch')),
+    );
+}
+
+/**
+ * 入力欄からフォーム根までの経路を組み立てます。
+ *
+ * 収集の構造（仕様「`data-form-object`」「`data-form-list`」）を下から辿って、
+ * バインドデータの経路へ写します。**一意に決まらない構成では null を返して検査を
+ * 見送ります**（緩い判定で誤検出を出すと、不変条件そのものが信用されなくなるため）。
+ *
+ * 見送るのは次の構成です。
+ *
+ * - 行コンテナに `data-each` が無い `data-form-list`（静的な複製の位置が決められない）
+ * - `data-each` の取得元と `data-form-list` の収集先が別（仕様「行の対応付けと
+ *   `data-each-key`」。行の要素データは入力欄を表さないため、比較の相手が無い）
+ * - 入力欄自身の `data-form-list`（値リスト。同名の出現順で配るため位置が要る）
+ *
+ * 返す経路はフォーム根から見た相対経路です（`data-form-arg` のキーは供給元を
+ * 決める側で足します。`resolveSyncSource()` を参照）。
+ *
+ * @param element 対象の入力欄
+ * @param root フォーム根（`<form>` または `data-form` を持つ要素）
+ * @returns バインドデータの経路。決められない場合は null
+ */
+function resolveBindingPath(
+  element: HTMLElement,
+  root: HTMLElement,
+): (string | number)[] | null {
+  const key = collectionKey(element);
+  if (key === null) {
+    return null;
+  }
+  const path: (string | number)[] = [key];
+  let node: HTMLElement | null = element.parentElement;
+  while (node !== null && node !== root) {
+    if (node.hasAttribute(`${Env.prefix}form-list`)) {
+      // `data-form-list` を持つ要素自身が行の集合を表す。行はその子で、ここへ来る
+      // のは「行を経由せずに `data-form-list` の内側にいる」構成なので見送る。
+      return null;
+    }
+    const parent: HTMLElement | null = node.parentElement;
+    const listName =
+      parent !== null ? parent.getAttribute(`${Env.prefix}form-list`) : null;
+    if (parent !== null && listName !== null) {
+      const each = parent.getAttribute(`${Env.prefix}each`);
+      if (each === null || each.trim() !== listName.trim()) {
+        // `data-each` が無い（位置が決められない）、または取得元≠収集先。
+        return null;
+      }
+      const fragment = Fragment.get(parent);
+      if (!(fragment instanceof ElementFragment)) {
+        return null;
+      }
+      const rows = eachRows(fragment).map(row => row.getTarget());
+      const index = rows.indexOf(node);
+      if (index < 0) {
+        return null;
+      }
+      path.unshift(index);
+      path.unshift(listName);
+      node = parent.parentElement;
+      continue;
+    }
+    const objectName = node.getAttribute(`${Env.prefix}form-object`);
+    if (objectName !== null && objectName !== '') {
+      path.unshift(objectName);
+    }
+    node = parent;
+  }
+  if (node === null) {
+    return null;
+  }
+  return path;
+}
+
+/**
+ * バインドデータから経路の値を取り出します。
+ *
+ * @param source 解決済みのバインドデータ
+ * @param path 経路
+ * @returns 値。経路が存在しなければ undefined
+ */
+function readPath(
+  source: unknown,
+  path: readonly (string | number)[],
+): unknown {
+  let current: unknown = source;
+  for (const segment of path) {
+    if (current === null || typeof current !== 'object') {
+      return undefined;
+    }
+    if (typeof segment === 'number') {
+      if (!Array.isArray(current)) {
+        return undefined;
+      }
+      current = current[segment];
+      continue;
+    }
+    if (!(segment in (current as Record<string, unknown>))) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+/**
+ * フォームへ逆方向同期を供給する側のバインドデータを返します。
+ *
+ * 比較の相手は「実際に入力欄へ流し込まれる値」でなければなりません。解決済み
+ * スコープ（祖先とのマージ結果）を使うと、フォームが所有していない同名の外側の
+ * キーまで拾って誤検出します。仕様が定める供給元は次の 2 つで、**フォーム自身の
+ * バインドデータが優先**します。
+ *
+ * - フォーム自身の `data-bind`（仕様「双方向バインディングの自動更新」の
+ *   「フォーム要素自身に対して … 実行された場合は、フォーム配下の入力要素へ
+ *   無イベントで逆方向同期します」）。`data-form-arg` フォームでも、仕様
+ *   「祖先が所有するレコードの反映（`data-form-arg`）」の「双方向コミット（`change` /
+ *   `input`）の書き込み先は従来どおり**フォーム自身**のバインドデータです」により、
+ *   コピーを持つ間はそちらが供給元です。祖先のレコードとの差は、同節の「**値が
+ *   変わっていない更新では入力欄に触りません**」により入力欄へ届きません。
+ * - 祖先が所有するキーを `data-form-arg` で参照する場合（同節）。**対象は祖先の
+ *   `data-bind` が持つキーだけ**で、`data-each` の行データと `data-derive` の派生
+ *   データは対象外です（同節）。そのため行データ由来のキーは供給元になりません。
+ *
+ * @param formRoot フォーム根（`<form>` または `data-form` を持つ要素）
+ * @returns 供給元のバインドデータと、経路へ足す接頭辞。無ければ null
+ */
+function resolveSyncSource(
+  formRoot: HTMLElement,
+): {source: Record<string, unknown>; prefix: string[]} | null {
+  const ownFragment = Fragment.get(formRoot);
+  if (
+    formRoot.hasAttribute(`${Env.prefix}bind`) &&
+    ownFragment instanceof ElementFragment
+  ) {
+    const own = ownFragment.getRawBindingData();
+    if (own !== null) {
+      return {source: own, prefix: []};
+    }
+  }
+  const arg = formRoot.getAttribute(`${Env.prefix}form-arg`);
+  if (arg === null || arg === '') {
+    return null;
+  }
+  // 祖先の `data-bind` がそのキーを所有している場合だけが供給元になる。
+  for (
+    let node: HTMLElement | null = formRoot.parentElement;
+    node !== null;
+    node = node.parentElement
+  ) {
+    if (!node.hasAttribute(`${Env.prefix}bind`)) {
+      continue;
+    }
+    const fragment = Fragment.get(node);
+    if (!(fragment instanceof ElementFragment)) {
+      continue;
+    }
+    const raw = fragment.getRawBindingData();
+    if (raw !== null && Object.prototype.hasOwnProperty.call(raw, arg)) {
+      return {source: raw, prefix: [arg]};
+    }
+  }
+  return null;
+}
+
+/**
+ * 入力欄の内部値がバインドデータより先に進んでいる箇所（I5）を集めます。
+ *
+ * 内部値は「バインドデータへ載っている値」を表します。DOM が先に進むのは正しい
+ * 状態（未確定の編集、外部ライブラリの代入）ですが、内部値が先に進むと、続く
+ * 逆方向同期が古いバインドデータを不一致とみなして入力欄を上書きし、入力した値が
+ * 表示からも収集値からも消えます（仕様「収集は DOM を真とする」）。
+ *
+ * 対象はテキスト系入力と `textarea` で、次は対象外です。
+ *
+ * - 宣言バインドを持つ欄（値の権威が宣言側）
+ * - `data-form-detach`（収集・書き戻しの対象外）
+ * - `data-if-false` 配下（収集から除外される）
+ * - `data-external` 配下（外部ライブラリの管理下）
+ * - フォーム根（`<form>` / `data-form`）を持たない入力
+ * - 逆方向同期を受けないフォームの入力（`resolveSyncSource()` を参照）
+ * - 経路が一意に決まらない構成（`resolveBindingPath()` を参照）
+ * - バインドデータに対応する経路が無い欄（比較の相手が無い）
+ *
+ * @param root 検査の起点となる要素または文書
+ * @returns 違反の説明（無ければ空配列）
+ */
+export function collectInternalValueLeads(root: ParentNode): string[] {
+  const violations: string[] = [];
+  const elements = Array.from(
+    root.querySelectorAll<HTMLElement>('input, textarea'),
+  );
+  for (const element of elements) {
+    if (element instanceof HTMLInputElement) {
+      if (!I5_INPUT_TYPES.includes(element.type)) {
+        continue;
+      }
+    } else if (!(element instanceof HTMLTextAreaElement)) {
+      continue;
+    }
+    if (
+      element.hasAttribute(`${Env.prefix}form-detach`) ||
+      element.hasAttribute(`${Env.prefix}form-list`) ||
+      hasDeclaredValueBinding(element) ||
+      triggersFetch(element)
+    ) {
+      continue;
+    }
+    // 祖先まで見て外す対象を判定する（検査の除外指定、非表示分岐、外部ライブラリ）。
+    let exempted = false;
+    for (
+      let node: HTMLElement | null = element;
+      node !== null;
+      node = node.parentElement
+    ) {
+      if (
+        EXEMPT.has(node) ||
+        node.hasAttribute(`${Env.prefix}if-false`) ||
+        node.hasAttribute(`${Env.prefix}external`)
+      ) {
+        exempted = true;
+        break;
+      }
+    }
+    if (exempted) {
+      continue;
+    }
+    const formRoot = element.closest<HTMLElement>(`form, [${Env.prefix}form]`);
+    if (formRoot === null) {
+      continue;
+    }
+    const supply = resolveSyncSource(formRoot);
+    if (supply === null) {
+      continue;
+    }
+    const path = resolveBindingPath(element, formRoot);
+    if (path === null) {
+      continue;
+    }
+    const fragment = Fragment.get(element);
+    if (!(fragment instanceof ElementFragment)) {
+      continue;
+    }
+    const bound = readPath(supply.source, [...supply.prefix, ...path]);
+    if (bound === undefined) {
+      continue;
+    }
+    const internal = fragment.getValue();
+    const left =
+      internal === null || internal === undefined ? '' : String(internal);
+    const right = bound === null ? '' : String(bound);
+    if (left === right) {
+      continue;
+    }
+    // DOM が内部値と一致していない場合は、内部値が「これから DOM へ載る供給の値」
+    // である可能性がある（書き込みが描画キュー待ち）。先行と断定できるのは、内部値が
+    // DOM と一致し、かつバインドデータだけが古い場合である。
+    const domValue = (element as HTMLInputElement | HTMLTextAreaElement).value;
+    if (domValue !== left) {
+      continue;
+    }
+    violations.push(
+      `I5 ${describeElement(element)}: 内部値がバインドデータより先に進んで` +
+        `います（仕様「収集は DOM を真とする」）\n` +
+        `  経路       = ${path.join('.')}\n` +
+        `  内部値     = ${JSON.stringify(left)}\n` +
+        `  バインド   = ${JSON.stringify(right)}\n` +
+        `  DOM        = ${JSON.stringify(domValue)}`,
+    );
+  }
+  return violations;
+}
+
+/**
+ * 要素とその配下について、内部整合の不変条件（I1〜I3・I5）の違反を集めます。
  *
  * 未確定の編集があっても影響を受けないため、`await` のたびに呼べます。
  *
@@ -231,8 +599,17 @@ export function collectFormInconsistencies(
   root: ParentNode,
   options: InvariantOptions = {},
 ): string[] {
-  const {attribute = true, rows = true, ignoreKeys = []} = options;
+  const {
+    attribute = true,
+    rows = true,
+    internalValues = true,
+    ignoreKeys = [],
+  } = options;
   const violations: string[] = [];
+
+  if (internalValues) {
+    violations.push(...collectInternalValueLeads(root));
+  }
 
   if (attribute) {
     for (const element of Array.from(
