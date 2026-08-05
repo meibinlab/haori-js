@@ -2126,10 +2126,13 @@ export class ElementFragment extends Fragment {
   /**
    * この入力欄がユーザーに編集されたことを記録します。
    *
-   * DOM で `change` / `input` が発火した時点（内部値を DOM から同期した直後）に
-   * 呼び出します。イベントを伴って値を反映した場合（`Form.setValues()` など）も、
-   * その発火を通じて呼ばれます。イベントを伴わない反映（`syncBindingValue()` や
-   * `Core.setBindingData()` 由来の書き戻し）では呼び出しません。
+   * DOM で `change` / `input` が発火した時点に呼び出します。イベントを伴って値を
+   * 反映した場合（`Form.setValues()` など）も、その発火を通じて呼ばれます。
+   * イベントを伴わない反映（`syncBindingValue()` や `Core.setBindingData()` 由来の
+   * 書き戻し）では呼び出しません。
+   *
+   * 内部値の同期（`syncValue()`）とは独立です。手続きを起動しない `input` では
+   * 発番だけを行い、内部値は同期しません（`EventDispatcher.recordUserEdit()`）。
    *
    * @returns 発番した編集の通番
    */

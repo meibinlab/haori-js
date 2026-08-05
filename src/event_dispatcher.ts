@@ -363,10 +363,10 @@ export default class EventDispatcher {
     // input は逐次（1文字ごと）に発火するため、data-input-* を明示した要素だけを
     // 手続きの対象にする（オプトイン）。これにより既存の input 既定動作を変えない。
     //
-    // ただしユーザー編集の記録（内部値の同期と通番の発番）は宣言の有無に関わらず
-    // 行う。オプトインの対象は手続きの起動だけである。記録しないと、打鍵中
-    // （`change` 発火前）に反映待ちの書き込みが着弾して打った文字を消してしまう
-    // （仕様「反映待ちの間に起きた変化」）。
+    // ただしユーザー編集の通番の発番は宣言の有無に関わらず行う。オプトインの対象は
+    // 手続きの起動だけである。発番しないと、打鍵中（`change` 発火前）に反映待ちの
+    // 書き込みが着弾して打った文字を消してしまう（仕様「反映待ちの間に起きた変化」）。
+    // 発番だけで、内部値は同期しない（`recordUserEdit()` を参照）。
     if (type === 'input') {
       const inputPrefix = `${Env.prefix}input-`;
       const hasInputTrigger = element
@@ -452,12 +452,22 @@ export default class EventDispatcher {
   }
 
   /**
-   * 手続きを起動しない `input` について、ユーザー編集だけを記録します。
+   * 手続きを起動しない `input` について、ユーザー編集の通番だけを発番します。
    *
    * `data-input-*` を宣言していない入力欄でも、打鍵は編集として記録しなければ
    * なりません（記録しないと、反映待ちの書き込みが打鍵の後に着弾して打った文字を
    * 消します）。初期化中は手続きと同じく保留し、フラグメントが確定した後に記録
    * します。
+   *
+   * **内部値は同期しません**（`syncUserEdit()` との違い）。内部値は「バインドデータへ
+   * 載っている値」を表し、DOM が先に進むことは許されています（値収集は DOM を真として
+   * 読みます。`ElementFragment.getValueForCollection()`）。ここで同期すると、まだ
+   * バインドデータへ載っていない値が内部値だけに載った状態になり、次の逆方向同期
+   * （`Form.syncValues()`）が古いバインドデータで入力欄を上書きして値を消します。
+   * 反映待ちの書き込みからの保護は通番の発番だけで成立します。
+   *
+   * 内部値を DOM から取り込むのは、値がバインドデータへ載る機会（`change` の双方向
+   * コミット、または `data-input-*` を宣言した要素の手続き）と同じ時点だけです。
    *
    * 対象は値を持つ入力要素だけです。`contenteditable` など値収集の対象でない要素で
    * `input` が発火しても、記録すべき編集はありません。
@@ -478,15 +488,33 @@ export default class EventDispatcher {
         if (!element.isConnected) {
           return;
         }
-        this.syncUserEdit(element);
+        this.markUserEditOnly(element);
       });
       return;
     }
-    this.syncUserEdit(element);
+    this.markUserEditOnly(element);
+  }
+
+  /**
+   * 内部値を同期せず、ユーザー編集の通番だけを発番します。
+   *
+   * @param element 編集された要素
+   * @returns 戻り値はない。
+   */
+  private markUserEditOnly(element: HTMLElement): void {
+    const fragment = Fragment.get(element);
+    if (!(fragment instanceof ElementFragment)) {
+      return;
+    }
+    fragment.markUserEdit();
   }
 
   /**
    * `change` / `input` の対象要素について、内部値の同期とユーザー編集の記録を行います。
+   *
+   * 呼び出すのは、値がバインドデータへ載る機会と同じ時点に限ります（`change` の
+   * 双方向コミット、または `data-input-*` を宣言した要素の手続き）。手続きを
+   * 起動しない `input` では内部値を同期してはいけません（`recordUserEdit()`）。
    *
    * @param element 編集された要素
    * @returns 戻り値はない。

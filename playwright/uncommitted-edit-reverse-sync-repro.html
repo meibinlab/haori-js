@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>コミット前の編集が逆方向同期で消える問題の回帰確認</title>
+  </head>
+  <body>
+    <!--
+      契約行（取得元＝収集先）の中にオプション行（取得元≠収集先）を持つ構成。
+      内側の行を編集すると収集値が契約行の要素データへ載るため、以降の更新では
+      契約行へ逆方向同期が走る。
+
+      修正前は、`input` のたびに内部値を DOM から同期していたため、まだバインド
+      データへ載っていない値が内部値だけに載った。そこへ古い要素データが流し込ま
+      れると「不一致」と判定されて入力欄が上書きされ、貼り付け・IME 確定で入れた
+      値が消えていた（仕様「収集は DOM を真とする」の「収集は読み取りに徹し、
+      内部値は書き換えません」と同じ理由）。
+
+      実ブラウザでしか確認できないのは次の点なので、ここで確かめる。
+      - キーイベントを伴わない文字入力（貼り付け・IME 確定と同じ経路）が、
+        1 回の `input` だけで値を確定させても消えないこと
+      - 描画キューが requestAnimationFrame で流れる環境でも消えないこと
+    -->
+    <form
+      id="f"
+      data-bind='{"contracts":[{"name":""}],"candidates":{"content":[{"id":11},{"id":12}]}}'
+    >
+      <div data-form-list="contracts" data-each="contracts" data-each-arg="c">
+        <div class="row">
+          <label>利用場所名称 <input id="place" name="name" /></label>
+          <div
+            data-form-list="options"
+            data-each="candidates.content ?? []"
+            data-each-arg="o"
+          >
+            <div class="opt">
+              <input
+                type="checkbox"
+                name="selected"
+                value="true"
+                data-attr-id="chk-{{o.id}}"
+              />
+              <input
+                type="text"
+                name="staffName"
+                data-attr-id="staff-{{o.id}}"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <p>
+      <button id="narrow" type="button">候補を絞り込む</button>
+    </p>
+    <pre id="log">-</pre>
+
+    <script src="/dist/haori.iife.js"></script>
+    <script>
+      /* global Haori */
+      const $ = id => document.getElementById(id);
+      const ns = () => (Haori && Haori.default ? Haori : {default: Haori});
+
+      /**
+       * 画面の値と収集値を記録します。
+       */
+      const dump = () => {
+        const api = ns();
+        $('log').textContent = JSON.stringify({
+          dom: $('place').value,
+          collected: api.Form.getValues(api.Fragment.get($('f'))),
+        });
+      };
+
+      // エリア選択で候補が絞られる操作。契約行の要素データは供給の前の内容
+      // （`name` が空）のままなので、行へ流し込むと入力した値を潰す余地がある。
+      $('narrow').addEventListener('click', async () => {
+        const api = ns();
+        const form = $('f');
+        const current = api.Core.getBindingData(form) || {};
+        await api.Core.setBindingData(
+          form,
+          Object.assign({}, current, {candidates: {content: [{id: 11}]}}),
+        );
+        await api.Queue.waitForIdle();
+        dump();
+      });
+    </script>
+  </body>
+</html>
