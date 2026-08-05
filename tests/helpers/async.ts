@@ -155,6 +155,19 @@ export async function waitForIdle(cycles = 3): Promise<void> {
 }
 
 /**
+ * タスク境界をひとつだけ越えます。
+ *
+ * 「同期フレームは抜けたが、フェッチの応答はまだ返っていない」時点を作るために
+ * 使います。`waitForIdle()` / `waitForDomSettled()` は応答待ちの状態でも先へ進めて
+ * しまうため、飛行中の通信に割り込む操作を書くテストではこちらを使ってください。
+ *
+ * @returns 次のタスクで解決されるPromise
+ */
+export function nextTask(): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+/**
  * 条件が満たされるまでキュー処理を進めながら待機します。
  *
  * @param condition 判定関数

@@ -656,6 +656,22 @@ export default class Form {
     minUserEditSequence: number | null = null,
     excluded: Set<string> | null = null,
   ): Record<string, unknown> {
+    // 仕様「`data-form-detach`」の「バインディングから除外します」「`getValues()` で
+    // 取得されない」。入力欄でもコンテナでも宣言でき、コンテナへ付けた場合は
+    // 「その配下すべてが収集と書き戻しの対象から外れます」ので、子への再帰も
+    // 行わない。判定は `hasAttribute` で行う（属性値を省略する印なので、値の有無で
+    // 判定すると省略形を見落とす）。
+    //
+    // 除外したキーは `excluded` へ控えない。控えると重ね合わせで土台の値まで落ち、
+    // 「収集されない」ではなく「バインドデータから消す」意味になってしまう。
+    //
+    // 非表示分岐（下の `data-if-false`）より先に判定する。detach した部分木は
+    // そもそもバインディングの一部ではないため、非表示になったからといって同名の
+    // キーをバインドデータから落としてはならない（そのキーの値は別の出どころが
+    // 持っている）。
+    if (fragment.hasAttribute(`${Env.prefix}form-detach`)) {
+      return values;
+    }
     // data-if が false の分岐（data-if-false 属性付き）配下の入力は値収集の
     // 対象外とする。非表示分岐の要素は DOM に残るため、同名入力を出し分けると
     // フォーム直列化で値が競合する。サブツリーごとスキップして除外を保証する。
@@ -686,11 +702,23 @@ export default class Form {
       minUserEditSequence !== null &&
       fragment.getUserEditSequence() <= minUserEditSequence;
     if (name) {
-      if (fragment.hasAttribute(`${Env.prefix}form-detach`)) {
-        // 仕様「`data-form-detach`」の「バインディングから除外します」「`getValues()`
-        // で取得されない」。キーを出さないことで、バインドデータにも送信ボディにも
-        // 載らない。判定は `hasAttribute` で行う（`data-form-detach` は属性値を
-        // 省略する印なので、値の有無で判定すると省略形を見落とす）。
+      if (minUserEditSequence !== null && Form.isGroupedCheckable(fragment)) {
+        // 仕様「反映待ちの間に起きた変化」の「**同名チェックボックス・ラジオの群は、
+        // 欄ごとではなく群単位で保護します**」。欄ごとに出すと「3 つ選択済みのうち
+        // 1 つを操作した瞬間に、その 1 つだけが残った集合」になってしまう。群の
+        // いずれかが基準より後に操作されていれば現在の選択集合をそのまま出し、
+        // 操作が無ければキーを出さない（上書き対象から外す）。
+        //
+        // 群の全員を見るため結果は欄の訪問順に依存しない。同じ群の各欄で同じ値を
+        // 書くので、何度通っても結果は変わらない。
+        const group = Form.collectGroupSelection(
+          fragment,
+          isValueList,
+          minUserEditSequence,
+        );
+        if (group.edited) {
+          values[String(name)] = group.value;
+        }
       } else if (isValueList && Form.isGroupedCheckable(fragment)) {
         // 仕様「同名チェックボックス・ラジオの収集値の形」: `data-form-list` を併記
         // した群は常に配列で、チェック済みの送信値だけを詰める。未チェックの欄で
@@ -1160,8 +1188,12 @@ export default class Form {
       }
       // 最も外側の入れ子コンテナがあれば、そのキー全体が収集値で置き換わる。
       let outermost: HTMLElement | null = null;
+      let detached = false;
       let cursor: HTMLElement | null = element;
       while (cursor && cursor !== rootElement) {
+        if (cursor.hasAttribute(`${Env.prefix}form-detach`)) {
+          detached = true;
+        }
         if (
           cursor.hasAttribute(objectAttribute) ||
           cursor.hasAttribute(listAttribute)
@@ -1169,6 +1201,13 @@ export default class Form {
           outermost = cursor;
         }
         cursor = cursor.parentElement;
+      }
+      if (detached) {
+        // 仕様「`data-form-detach`」の「バインディングから除外します」。収集されない
+        // 欄の宣言は「そのキーは収集値が権威」の根拠にならない。挙げてしまうと、
+        // 非表示分岐の除外でバインドデータからキーが落ち（本来の値の出どころは別）、
+        // 条件式のスコープでも収集値の undefined がバインドデータの値を隠す。
+        return;
       }
       const owner = outermost ?? element;
       const name =
@@ -1354,6 +1393,15 @@ export default class Form {
       identifiesItems: boolean;
     }
   >();
+
+  /**
+   * 「集合として完結した値」の印。
+   *
+   * 同名チェックボックス・ラジオの群の選択集合は、1 つのキーに対する完全な値です。
+   * 応答データへ重ねるときに位置合わせで混ぜると壊れるため、丸ごと置き換える対象で
+   * あることを配列そのものを鍵にして控えます（`markCompleteSet()`）。
+   */
+  private static readonly COMPLETE_SET_VALUES = new WeakSet<object>();
 
   /**
    * 収集値の各階層で、`data-if-false` により収集から除外されたキー。
@@ -1939,6 +1987,216 @@ export default class Form {
   }
 
   /**
+   * 同名チェックボックス・ラジオの群を、群単位で収集します。
+   *
+   * 仕様「反映待ちの間に起きた変化」の「**同名チェックボックス・ラジオの群は、欄ごと
+   * ではなく群単位で保護します**」「群のいずれかの欄が要求より後に操作されていれば、
+   * その群の現在の選択集合をそのまま保護します」に対応します。群の値は 1 つのキーに
+   * 対する選択の集合なので、操作された欄だけを取り出すと集合が壊れます。
+   *
+   * 群の範囲は仕様「反映待ちの間に起きた変化」の「群の範囲は、収集値の同じ階層です」
+   * に従い、`resolveCollectionScope()` が返す階層の中だけを数えます。収集の対象外の
+   * 部分木（`data-form-detach`・非表示分岐）と、別の階層（入れ子の `data-form-object` /
+   * `data-form-list` の行）は数えません。同じ群かどうかは「群の同一性は**収集キー**で
+   * 判断します」のとおり `resolveFieldName()` の結果で判定します（DOM の `name` で
+   * 判定すると、`data-form-name` だけを宣言した別のキーの群と混ざる）。
+   *
+   * 走査は DOM 検索ではなくフラグメントの木で行います。収集（`getPartValues()`）と
+   * 同じ木をたどることで階層と除外の判定を一致させ、Haori が管理していない要素
+   * （外部ウィジェットの内部の入力欄など）へフラグメントを生やさないためです。
+   * チェック状態と送信値は仕様「収集は DOM を真とする」のとおり DOM から読みます。
+   *
+   * @param fragment 群のいずれかの入力欄のフラグメント
+   * @param isValueList `data-form-list` を併記しているかどうか
+   * @param minUserEditSequence 編集の基準となる通し番号
+   * @returns 基準より後の操作があったかどうかと、現在の選択集合
+   */
+  private static collectGroupSelection(
+    fragment: ElementFragment,
+    isValueList: boolean,
+    minUserEditSequence: number,
+  ): {edited: boolean; value: unknown} {
+    const members: ElementFragment[] = [];
+    Form.collectGroupMembers(
+      Form.resolveCollectionScope(fragment),
+      String(Form.resolveFieldName(fragment)),
+      members,
+    );
+    let edited = false;
+    const selected: string[] = [];
+    for (const member of members) {
+      if (member.getUserEditSequence() > minUserEditSequence) {
+        edited = true;
+      }
+      const element = member.getTarget();
+      if (element instanceof HTMLInputElement && element.checked) {
+        selected.push(element.value);
+      }
+    }
+    if (isValueList) {
+      // 仕様「同名チェックボックス・ラジオの収集値の形」: 併記時は常に配列。
+      return {edited, value: Form.markCompleteSet(selected)};
+    }
+    if (selected.length === 0) {
+      return {edited, value: null};
+    }
+    return {
+      edited,
+      value:
+        selected.length === 1 ? selected[0] : Form.markCompleteSet(selected),
+    };
+  }
+
+  /**
+   * 収集値の新しい階層を始める要素かどうかを判定します。
+   *
+   * `getPartValues()` の分岐と同じ規則です。収集キー（`name` / `data-form-name`）を
+   * 持つ要素は値そのものを表すため階層を作らず、`data-form-object` /
+   * `data-form-list` に**属性値がある**ときだけ階層が変わります（属性値の無い
+   * `data-form-list` は入力要素の値を配列として集める印で、階層は作りません）。
+   *
+   * @param fragment 判定するフラグメント
+   * @returns 新しい階層を始める場合は true
+   */
+  private static startsCollectionLevel(fragment: ElementFragment): boolean {
+    if (Form.resolveFieldName(fragment)) {
+      return false;
+    }
+    return Boolean(
+      fragment.getAttribute(`${Env.prefix}form-object`) ||
+        fragment.getAttribute(`${Env.prefix}form-list`),
+    );
+  }
+
+  /**
+   * 収集値の階層（同じキーの集まる範囲）となるフラグメントを解決します。
+   *
+   * 仕様「反映待ちの間に起きた変化」の「群の範囲は、収集値の同じ階層です」
+   * 「`data-form-list` の**行**、`data-form-object`、最近傍のフォーム（`<form>` または
+   * `data-form`）のうち最も内側の範囲です」に対応します。`data-form-object` は自身が
+   * 階層、`data-form-list` はその直下の要素（= 行）が階層です。フォームの外（どの
+   * 階層にも囲まれていない構成）では、たどり着いた最上位の要素を範囲とします。
+   *
+   * ラジオの排他制御の範囲（`resolveGroupScope()`）とは別の概念です。あちらは HTML の
+   * グループの範囲で `data-form-object` を境界としませんが、こちらは収集値のキーの
+   * 範囲なので `data-form-object` も境界になります。
+   *
+   * @param fragment 起点のフラグメント
+   * @returns 階層となるフラグメント
+   */
+  private static resolveCollectionScope(
+    fragment: ElementFragment,
+  ): ElementFragment {
+    let current = fragment;
+    let parent = current.getParent();
+    while (parent !== null) {
+      if (Form.startsCollectionLevel(parent)) {
+        // `data-form-object` は自身が階層。`data-form-list` は行が階層になるため、
+        // その直下の要素（たどってきた側）を返す。両方ある場合の優先順は
+        // `getPartValues()` と同じく `data-form-object` が先。
+        return parent.getAttribute(`${Env.prefix}form-object`)
+          ? parent
+          : current;
+      }
+      if (Form.isFormScopeRoot(parent)) {
+        return parent;
+      }
+      current = parent;
+      parent = parent.getParent();
+    }
+    return current;
+  }
+
+  /**
+   * フォームの範囲の根（`<form>` または `data-form`）かどうかを判定します。
+   *
+   * @param fragment 判定するフラグメント
+   * @returns フォームの範囲の根であれば true
+   */
+  private static isFormScopeRoot(fragment: ElementFragment): boolean {
+    return (
+      fragment.getTarget() instanceof HTMLFormElement ||
+      fragment.hasAttribute(`${Env.prefix}form`)
+    );
+  }
+
+  /**
+   * 階層の中から、同じ収集キーを持つ群の欄を集めます。
+   *
+   * 収集（`getPartValues()`）と同じ判定で部分木を刈ります。別の階層（入れ子の
+   * `data-form-object` / `data-form-list`）と、収集の対象外の部分木
+   * （`data-form-detach`・非表示分岐の `data-if-false`）へは入りません。仕様
+   * 「反映待ちの間に起きた変化」の「収集の対象外である部分木の欄も群に含めません」
+   * に対応します。
+   *
+   * 入れ子のフォームはここでは刈りません。範囲の解決（`resolveCollectionScope()`）が
+   * 最近傍のフォームで止まるため、内側の欄は内側のフォームを範囲として数え直され、
+   * 同じキーへの書き込みはそちらが後に来ます（刈っても結果は変わらない）。
+   *
+   * @param fragment 走査するフラグメント（最初の呼び出しでは階層の根）
+   * @param key 群の収集キー
+   * @param members 集める先
+   */
+  private static collectGroupMembers(
+    fragment: ElementFragment,
+    key: string,
+    members: ElementFragment[],
+  ): void {
+    if (
+      Form.isGroupedCheckable(fragment) &&
+      String(Form.resolveFieldName(fragment)) === key
+    ) {
+      members.push(fragment);
+    }
+    for (const child of fragment.getChildElementFragments()) {
+      if (
+        Form.startsCollectionLevel(child) ||
+        child.hasAttribute(`${Env.prefix}form-detach`) ||
+        // `data-if-false` は hide() が DOM へ直接付与するため実 DOM 属性を見る
+        // （`getPartValues()` と同じ理由）。
+        child.getTarget().hasAttribute(`${Env.prefix}if-false`)
+      ) {
+        continue;
+      }
+      Form.collectGroupMembers(child, key, members);
+    }
+  }
+
+  /**
+   * 「集合として完結した値」として印を付けます。
+   *
+   * 群の選択集合は 1 つのキーに対する完全な値なので、応答データへ重ねるときに
+   * 位置合わせで要素ごとに混ぜてはいけません（`data-form-list` の行の配列とは
+   * 意味が違います）。印は `Procedure` の `mergeUserEdits()` が見て、丸ごと
+   * 置き換えます。
+   *
+   * @param value 印を付ける配列
+   * @returns 同じ配列
+   */
+  private static markCompleteSet(value: unknown[]): unknown[] {
+    Form.COMPLETE_SET_VALUES.add(value);
+    return value;
+  }
+
+  /**
+   * 「集合として完結した値」の印が付いているかを返します。
+   *
+   * `Procedure` の `mergeUserEdits()` から参照するためだけに公開しています。仕様書に
+   * 載る API ではないため、利用者向けの機能として扱わないでください。
+   *
+   * @internal
+   * @param value 判定する値
+   * @returns 印が付いていれば true
+   */
+  public static isCompleteSetValue(value: unknown): boolean {
+    return (
+      value !== null &&
+      typeof value === 'object' &&
+      Form.COMPLETE_SET_VALUES.has(value)
+    );
+  }
+
+  /**
    * 値による上書きをグループ単位で扱うべき入力要素（boolean 型でない
    * チェックボックス、またはラジオボタン）かどうかを判定します。
    *
@@ -2019,125 +2277,123 @@ export default class Form {
     origin: ValueChangeOrigin | null = null,
   ): Promise<void> {
     const promises: Promise<void>[] = [];
+    // 仕様「`data-form-detach`」の「バインディングから除外します」は書き戻しにも
+    // 及ぶ（値の供給を受けない）。コンテナへ付けた場合は「その配下すべてが収集と
+    // 書き戻しの対象から外れます」ので、子への再帰も行わない。判定は
+    // `hasAttribute` で行う（属性値を省略する印なので、値の有無で判定すると
+    // `<input name="password" data-form-detach>` を見落とす）。
+    //
+    // `force`（`Form.setValues(form, values, true)`）は除外を越えて書き込む既存の
+    // 抜け道なので、そのときだけ従来どおり続行する。
+    if (fragment.hasAttribute(`${Env.prefix}form-detach`) && !force) {
+      return Promise.resolve();
+    }
     const name = Form.resolveFieldName(fragment);
     const objectName = fragment.getAttribute(`${Env.prefix}form-object`);
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);
     // 入力要素に付けた `data-form-list` は属性値を省略できる（収集側と同じ規則）。
     const isValueList = fragment.hasAttribute(`${Env.prefix}form-list`);
-    // `data-form-detach` は属性値を省略する印なので、`hasAttribute` で判定する。
-    // `getAttribute` は省略形に対して空文字を返すため、値の有無で判定すると
-    // `<input name="password" data-form-detach>` を「detach していない」と誤判定し、
-    // 仕様「`data-form-detach`」の「バインディングから除外します」に反して値を
-    // 書き込んでしまう（収集キーの `data-form-list` と同じ種類の誤り）。
-    const detach = fragment.hasAttribute(`${Env.prefix}form-detach`);
     if (name) {
-      if (!detach || force) {
-        const rawValue = values[String(name)];
-        // clearMissing（data-each 行への反映）では、要素データに無いキーは「空」を
-        // 意味する。要素データが行全体を規定するため、キーが無いことを「維持」と
-        // 解釈すると、行の途中への挿入や並べ替えで担当要素が変わったときに前の行の
-        // 入力値が残ってしまう。
-        //
-        // ただし宣言バインド（テンプレート式・`data-attr-*`）で値や状態が決まる入力は
-        // 対象外とする。行データにキーが無くても、その値・状態はバインドの評価結果が
-        // 権威であり、ここで空にすると宣言した値を消してしまう（URL パラメータ由来の
-        // 値を hidden へ載せる構成など）。
-        //
-        // 宣言バインドの評価が解決している場合は、行データにキーが「ある」場合も
-        // 上書きしない。行の反映は再評価（`Core.evaluateAll`）の直後に走るため、
-        // 上書きすると評価したばかりの値を収集値（多くは空文字）で潰し、その空値が
-        // 次の収集で行データへ焼き付いて以後ずっと空になる（行の中で候補から選択中の
-        // 1 件を引いて hidden へ載せる構成）。評価が未解決のときは従来どおり行データを
-        // 反映する（保存済みレコードからの復元で、候補が届くまでの間に値を失わない）。
-        const declarativeAuthority =
-          clearMissing && Form.hasResolvedDeclarativeState(fragment);
-        const clearAsMissing =
-          clearMissing &&
-          typeof rawValue === 'undefined' &&
-          !Form.isDeclarativeStateBound(fragment);
-        // undefined は「既存の入力値を維持する」の意味（後続の分岐を参照）。
-        let value: unknown = rawValue;
-        if (declarativeAuthority) {
-          value = undefined;
-        } else if (clearAsMissing) {
-          value = null;
-        }
-        // input[type=file] へはブラウザの制約により任意の値を設定できない。
-        // クリア（null / 空文字）のみ反映し、それ以外は静かにスキップする。
-        // 双方向バインディングでファイル名が書き戻される正常系で警告が出るのを防ぐ。
-        if (Form.isFileInput(fragment)) {
-          if (value === null || value === '') {
-            promises.push(
-              Form.applyFragmentValue(fragment, null, emitEvents, origin),
-            );
-          }
-          return Promise.all(promises).then(() => undefined);
-        }
-        if (
-          isValueList &&
-          Array.isArray(value) &&
-          // チェックボックスグループと複数選択 select は配列そのものを状態として
-          // 解釈する（後続の分岐）。位置で配ると選択状態を決められないため、
-          // `data-form-list` を併記していても従来どおりそちらへ渡す。
-          !Form.isGroupedCheckable(fragment) &&
-          !Form.isMultipleSelect(fragment)
-        ) {
-          // 同名リストは、同じ `values` を共有する範囲での出現順に配列の要素を
-          // 配る。まとめて 1 つの入力へ渡すとカンマ連結された文字列になり、同名の
-          // 入力すべてに同じ連結文字列が入ってしまう。出現順は収集側の並びと同じ
-          // なので、収集 → 書き戻しで値の対応が保たれる。
-          const key = String(name);
-          const cursor = listCursors.get(key) ?? 0;
-          listCursors.set(key, cursor + 1);
+      const rawValue = values[String(name)];
+      // clearMissing（data-each 行への反映）では、要素データに無いキーは「空」を
+      // 意味する。要素データが行全体を規定するため、キーが無いことを「維持」と
+      // 解釈すると、行の途中への挿入や並べ替えで担当要素が変わったときに前の行の
+      // 入力値が残ってしまう。
+      //
+      // ただし宣言バインド（テンプレート式・`data-attr-*`）で値や状態が決まる入力は
+      // 対象外とする。行データにキーが無くても、その値・状態はバインドの評価結果が
+      // 権威であり、ここで空にすると宣言した値を消してしまう（URL パラメータ由来の
+      // 値を hidden へ載せる構成など）。
+      //
+      // 宣言バインドの評価が解決している場合は、行データにキーが「ある」場合も
+      // 上書きしない。行の反映は再評価（`Core.evaluateAll`）の直後に走るため、
+      // 上書きすると評価したばかりの値を収集値（多くは空文字）で潰し、その空値が
+      // 次の収集で行データへ焼き付いて以後ずっと空になる（行の中で候補から選択中の
+      // 1 件を引いて hidden へ載せる構成）。評価が未解決のときは従来どおり行データを
+      // 反映する（保存済みレコードからの復元で、候補が届くまでの間に値を失わない）。
+      const declarativeAuthority =
+        clearMissing && Form.hasResolvedDeclarativeState(fragment);
+      const clearAsMissing =
+        clearMissing &&
+        typeof rawValue === 'undefined' &&
+        !Form.isDeclarativeStateBound(fragment);
+      // undefined は「既存の入力値を維持する」の意味（後続の分岐を参照）。
+      let value: unknown = rawValue;
+      if (declarativeAuthority) {
+        value = undefined;
+      } else if (clearAsMissing) {
+        value = null;
+      }
+      // input[type=file] へはブラウザの制約により任意の値を設定できない。
+      // クリア（null / 空文字）のみ反映し、それ以外は静かにスキップする。
+      // 双方向バインディングでファイル名が書き戻される正常系で警告が出るのを防ぐ。
+      if (Form.isFileInput(fragment)) {
+        if (value === null || value === '') {
           promises.push(
-            Form.applyFragmentValue(
-              fragment,
-              value[cursor] ?? null,
-              emitEvents,
-              origin,
-            ),
-          );
-        } else if (typeof value === 'undefined') {
-          // 未指定のキーは既存の入力値を維持する。
-        } else if (Array.isArray(value) && Form.isGroupedCheckable(fragment)) {
-          // チェックボックスグループ: 配列に自身の値が含まれるかでチェック状態を決める
-          promises.push(
-            Form.applyFragmentValue(
-              fragment,
-              value as Array<string | number | boolean | null>,
-              emitEvents,
-              origin,
-            ),
-          );
-        } else if (Array.isArray(value) && Form.isMultipleSelect(fragment)) {
-          // 複数選択 select: 配列をそのまま選択状態へ反映する
-          promises.push(
-            Form.applyFragmentValue(
-              fragment,
-              value as Array<string | number | boolean | null>,
-              emitEvents,
-              origin,
-            ),
-          );
-        } else if (
-          typeof value === 'string' ||
-          typeof value === 'number' ||
-          typeof value === 'boolean' ||
-          value === null
-        ) {
-          promises.push(
-            Form.applyFragmentValue(fragment, value, emitEvents, origin),
-          );
-        } else {
-          promises.push(
-            Form.applyFragmentValue(
-              fragment,
-              String(value),
-              emitEvents,
-              origin,
-            ),
+            Form.applyFragmentValue(fragment, null, emitEvents, origin),
           );
         }
+        return Promise.all(promises).then(() => undefined);
+      }
+      if (
+        isValueList &&
+        Array.isArray(value) &&
+        // チェックボックスグループと複数選択 select は配列そのものを状態として
+        // 解釈する（後続の分岐）。位置で配ると選択状態を決められないため、
+        // `data-form-list` を併記していても従来どおりそちらへ渡す。
+        !Form.isGroupedCheckable(fragment) &&
+        !Form.isMultipleSelect(fragment)
+      ) {
+        // 同名リストは、同じ `values` を共有する範囲での出現順に配列の要素を
+        // 配る。まとめて 1 つの入力へ渡すとカンマ連結された文字列になり、同名の
+        // 入力すべてに同じ連結文字列が入ってしまう。出現順は収集側の並びと同じ
+        // なので、収集 → 書き戻しで値の対応が保たれる。
+        const key = String(name);
+        const cursor = listCursors.get(key) ?? 0;
+        listCursors.set(key, cursor + 1);
+        promises.push(
+          Form.applyFragmentValue(
+            fragment,
+            value[cursor] ?? null,
+            emitEvents,
+            origin,
+          ),
+        );
+      } else if (typeof value === 'undefined') {
+        // 未指定のキーは既存の入力値を維持する。
+      } else if (Array.isArray(value) && Form.isGroupedCheckable(fragment)) {
+        // チェックボックスグループ: 配列に自身の値が含まれるかでチェック状態を決める
+        promises.push(
+          Form.applyFragmentValue(
+            fragment,
+            value as Array<string | number | boolean | null>,
+            emitEvents,
+            origin,
+          ),
+        );
+      } else if (Array.isArray(value) && Form.isMultipleSelect(fragment)) {
+        // 複数選択 select: 配列をそのまま選択状態へ反映する
+        promises.push(
+          Form.applyFragmentValue(
+            fragment,
+            value as Array<string | number | boolean | null>,
+            emitEvents,
+            origin,
+          ),
+        );
+      } else if (
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean' ||
+        value === null
+      ) {
+        promises.push(
+          Form.applyFragmentValue(fragment, value, emitEvents, origin),
+        );
+      } else {
+        promises.push(
+          Form.applyFragmentValue(fragment, String(value), emitEvents, origin),
+        );
       }
     } else if (objectName) {
       const childValues = values[String(objectName)];

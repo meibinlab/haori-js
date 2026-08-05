@@ -514,14 +514,20 @@ export function collectInternalValueLeads(root: ParentNode): string[] {
       continue;
     }
     if (
-      element.hasAttribute(`${Env.prefix}form-detach`) ||
       element.hasAttribute(`${Env.prefix}form-list`) ||
       hasDeclaredValueBinding(element) ||
       triggersFetch(element)
     ) {
       continue;
     }
-    // 祖先まで見て外す対象を判定する（検査の除外指定、非表示分岐、外部ライブラリ）。
+    // 祖先まで見て外す対象を判定する（検査の除外指定、非表示分岐、外部ライブラリ、
+    // バインディングからの除外）。
+    //
+    // `data-form-detach` は自身と祖先の両方を見る。仕様「`data-form-detach`」の
+    // 「バインディングから除外します」「バインドデータからの**書き戻し（逆方向同期）
+    // も受けません**」「入力欄以外の要素へ付けた場合は、その配下すべてが収集と
+    // 書き戻しの対象から外れます」により、これらの入力欄はバインドデータを追随
+    // しないのが正しい状態で、内部値との一致を要求できない。
     let exempted = false;
     for (
       let node: HTMLElement | null = element;
@@ -531,7 +537,8 @@ export function collectInternalValueLeads(root: ParentNode): string[] {
       if (
         EXEMPT.has(node) ||
         node.hasAttribute(`${Env.prefix}if-false`) ||
-        node.hasAttribute(`${Env.prefix}external`)
+        node.hasAttribute(`${Env.prefix}external`) ||
+        node.hasAttribute(`${Env.prefix}form-detach`)
       ) {
         exempted = true;
         break;

@@ -16,7 +16,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
-import {waitForDomSettled, waitForIdle} from './helpers/async';
+import {nextTask, waitForDomSettled, waitForIdle} from './helpers/async';
 
 /** 保留中のフェッチを解決・失敗させる操作 */
 interface PendingFetch {
@@ -30,17 +30,6 @@ describe('click 手続きのロックとフェッチの完了', () => {
   let container: HTMLElement;
   let dispatcher: EventDispatcher;
   let pending: PendingFetch[];
-
-  /**
-   * 次のマクロタスクまで進めます。
-   *
-   * 応答を返していない状態を観測するため、`waitForIdle()` ではなくタスク境界を
-   * 1 つ越えるだけにします（`waitForIdle()` は保留中のフェッチを待てません）。
-   *
-   * @returns 進行を待つ Promise
-   */
-  const nextTask = (): Promise<void> =>
-    new Promise(resolve => setTimeout(resolve, 0));
 
   beforeEach(() => {
     vi.restoreAllMocks();

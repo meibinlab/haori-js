@@ -107,4 +107,150 @@ describe('data-form-detach の値収集', () => {
 
     expect(password.value).toBe('secret');
   });
+
+  describe('コンテナへの宣言', () => {
+    /**
+     * コンテナへ `data-form-detach` を付けたフォームを用意します。
+     *
+     * @param html フォームの中身
+     * @returns フォームのフラグメント
+     */
+    const mount = async (html: string): Promise<ElementFragment> => {
+      container.innerHTML = `<form>${html}</form>`;
+      await Core.scan(container);
+      await waitForIdle();
+      return Fragment.get(
+        container.querySelector('form') as HTMLElement,
+      ) as ElementFragment;
+    };
+
+    it('配下すべてが収集から外れる', async () => {
+      // 仕様「`data-form-detach`」の「入力欄以外の要素へ付けた場合は、その配下
+      // すべてが収集と書き戻しの対象から外れます」。
+      const form = await mount(`
+        <input name="username" value="user1">
+        <div data-form-detach>
+          <input name="password" value="secret">
+          <input name="passwordConfirm" value="secret">
+        </div>`);
+
+      expect(Form.getValues(form)).toEqual({username: 'user1'});
+    });
+
+    it('配下は逆方向同期でも書き換えられない', async () => {
+      const form = await mount(`
+        <input name="username" value="user1">
+        <div data-form-detach><input name="password" value="secret"></div>`);
+      const password = container.querySelector(
+        'input[name="password"]',
+      ) as HTMLInputElement;
+
+      await Core.setBindingData(form.getTarget() as HTMLElement, {
+        username: 'user2',
+        password: 'supplied',
+      });
+      await waitForIdle();
+
+      expect(password.value).toBe('secret');
+      // 除外していない欄は従来どおり供給を受ける。
+      expect(
+        (container.querySelector('input[name="username"]') as HTMLInputElement)
+          .value,
+      ).toBe('user2');
+    });
+
+    it('data-form-object を併記した場合はそのキー自体が出ない', async () => {
+      const form = await mount(`
+        <input name="username" value="user1">
+        <div data-form-object="secret" data-form-detach>
+          <input name="password" value="secret">
+        </div>`);
+
+      expect(Form.getValues(form)).toEqual({username: 'user1'});
+    });
+
+    it('data-form-list を併記した場合もそのキー自体が出ない', async () => {
+      const form = await mount(`
+        <input name="username" value="user1">
+        <div data-form-detach>
+          <div data-form-list="rows">
+            <div><input name="memo" value="a"></div>
+            <div><input name="memo" value="b"></div>
+          </div>
+        </div>`);
+
+      expect(Form.getValues(form)).toEqual({username: 'user1'});
+    });
+
+    it('入れ子のコンテナでも外側の宣言が配下すべてに及ぶ', async () => {
+      const form = await mount(`
+        <input name="username" value="user1">
+        <div data-form-detach>
+          <div data-form-object="inner">
+            <input name="memo" value="a">
+          </div>
+        </div>`);
+
+      expect(Form.getValues(form)).toEqual({username: 'user1'});
+    });
+  });
+
+  describe('非表示分岐との併記', () => {
+    /**
+     * `username` を編集して、収集値をバインドデータへコミットさせます。
+     *
+     * @returns 編集後のバインドデータ
+     */
+    const commitEdit = async (): Promise<unknown> => {
+      const form = container.querySelector('form') as HTMLFormElement;
+      const username = container.querySelector(
+        'input[name="username"]',
+      ) as HTMLInputElement;
+      username.value = 'user2';
+      username.dispatchEvent(new Event('input', {bubbles: true}));
+      username.dispatchEvent(new Event('change', {bubbles: true}));
+      await waitForIdle();
+      return Core.getBindingData(form);
+    };
+
+    it('非表示になっても detach した欄のキーをバインドデータから落とさない', async () => {
+      // 仕様「`data-form-detach`」の「バインディングから除外します」。detach した欄は
+      // そもそもバインディングの一部ではないため、仕様「`data-if-false` 分岐とフォーム
+      // 送信」の「除外された部分木が宣言している最上位の収集キーを落とす」の対象に
+      // ならない（そのキーの値は別の出どころが持っている）。
+      container.innerHTML = `
+        <form data-bind='{"username":"user1","password":"fromServer","show":false}'>
+          <input name="username" value="user1">
+          <div data-if="show" data-form-detach>
+            <input name="password" value="inside">
+          </div>
+        </form>`;
+      await Core.scan(container);
+      await waitForIdle();
+
+      expect(await commitEdit()).toEqual({
+        username: 'user2',
+        password: 'fromServer',
+        show: false,
+      });
+    });
+
+    it('非表示分岐の中にある detach した欄のキーも落とさない', async () => {
+      container.innerHTML = `
+        <form data-bind='{"username":"user1","password":"fromServer","show":false}'>
+          <input name="username" value="user1">
+          <div data-if="show">
+            <input name="password" value="inside" data-form-detach>
+          </div>
+        </form>`;
+      await Core.scan(container);
+      await waitForIdle();
+
+      expect(await commitEdit()).toEqual({
+        username: 'user2',
+        password: 'fromServer',
+        show: false,
+      });
+    });
+  });
 });

@@ -288,6 +288,12 @@ function appendPayloadEntry(
  * @return 上書き後のデータ。
  */
 function mergeUserEdits(base: unknown, edits: unknown): unknown {
+  if (Form.isCompleteSetValue(edits)) {
+    // 同名チェックボックス・ラジオの群の選択集合は、1 つのキーに対する完全な値
+    // （仕様「反映待ちの間に起きた変化」の「群の現在の選択集合をそのまま保護します」）。
+    // 位置合わせで要素ごとに混ぜると、応答に残っていた選択が重複して現れる。
+    return edits;
+  }
   if (Array.isArray(edits)) {
     const merged = Array.isArray(base) ? base.slice() : [];
     let applied = false;
