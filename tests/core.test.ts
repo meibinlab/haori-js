@@ -4,183 +4,59 @@
 
 import {vi} from 'vitest';
 import Core from '../src/core';
+import Form from '../src/form';
 import Fragment, {ElementFragment} from '../src/fragment';
-import {waitForCondition, waitForDomSettled} from './helpers/async';
+import {
+  waitForCondition,
+  waitForDomSettled,
+  waitForIdle,
+} from './helpers/async';
 
 describe('Core', () => {
   let container: HTMLElement;
-  let observer: MutationObserver;
-  let mutations: MutationRecord[];
 
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
-    mutations = [];
-
-    observer = new MutationObserver(mutationsList => {
-      mutations.push(...mutationsList);
-    });
-
-    observer.observe(container, {
-      attributes: true,
-      childList: true,
-      subtree: true,
-      attributeOldValue: true,
-    });
   });
 
   afterEach(() => {
-    observer.disconnect();
     document.body.removeChild(container);
-    mutations = [];
   });
 
   describe('evaluateAll', () => {
-    test('observerを通じてフォーム要素を処理する', async () => {
+    test('data-bind 属性の値が in-memory のバインドデータと一致する', async () => {
+      // 仕様「`data-bind`」の「`data-bind` 属性と in-memory のバインドデータは
+      // 常に一致します」。走査で属性から取り込み、`setBindingData()` の後は属性へ
+      // ミラーし返す。
       container.innerHTML = `
-        <form>
-          <input name="username" value="initial">
-          <input name="email" value="test@example.com">
-        </form>
-      `;
-
-      const form = container.querySelector('form') as HTMLFormElement;
-      const fragment = new ElementFragment(form);
-
-      // フォーム値を変更
-      const usernameInput = form.querySelector(
-        '[name="username"]',
-      ) as HTMLInputElement;
-      usernameInput.value = 'updated_username';
-
-      Core.evaluateAll(fragment);
-
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // MutationObserverが属性変更を検知していることを確認
-      const attributeMutations = mutations.filter(
-        mutation => mutation.type === 'attributes',
-      );
-      expect(attributeMutations.length).toBeGreaterThanOrEqual(0);
-    });
-
-    test('observerを通じてdata-bind属性を処理する', async () => {
-      container.innerHTML = `
-        <div data-bind="testValue">
-          Initial content
-        </div>
+        <div data-bind='{"state":"before"}'>{{state}}</div>
       `;
 
       const element = container.querySelector('div') as HTMLElement;
-      const fragment = new ElementFragment(element);
+      await Core.scan(container);
+      await waitForIdle();
 
-      Core.evaluateAll(fragment);
+      expect(Core.getBindingData(element)).toEqual({state: 'before'});
+      expect(element.textContent?.trim()).toBe('before');
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await Core.setBindingData(element, {state: 'after'});
+      await waitForIdle();
 
-      // data-bind属性の処理による変更を確認
-      const mutations_count = mutations.length;
-      expect(mutations_count).toBeGreaterThanOrEqual(0);
+      expect(JSON.parse(element.getAttribute('data-bind') as string)).toEqual({
+        state: 'after',
+      });
+      expect(element.textContent?.trim()).toBe('after');
     });
 
-    test('observerを通じてフォームオブジェクト構造を処理する', async () => {
+    test('入れ子の data-form-object が階層どおりに収集される', async () => {
+      // 仕様「`data-form-object`」の「フォーム値をネストしたオブジェクトとして
+      // 収集します」。
       container.innerHTML = `
         <form>
-          <div data-haori-form-object="user">
-            <input name="name" value="John">
-            <input name="age" value="30">
-          </div>
-        </form>
-      `;
-
-      const form = container.querySelector('form') as HTMLFormElement;
-      const fragment = new ElementFragment(form);
-
-      Core.evaluateAll(fragment);
-
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // フォーム構造の処理による変更を確認
-      expect(mutations.length).toBeGreaterThanOrEqual(0);
-    });
-
-    test('observerを通じてフォームリスト構造を処理する', async () => {
-      container.innerHTML = `
-        <form>
-          <div data-haori-form-list="items">
-            <div data-haori-row="0">
-              <input name="name" value="Item 1">
-            </div>
-            <div data-haori-row="1">
-              <input name="name" value="Item 2">
-            </div>
-          </div>
-        </form>
-      `;
-
-      const form = container.querySelector('form') as HTMLFormElement;
-      const fragment = new ElementFragment(form);
-
-      Core.evaluateAll(fragment);
-
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // リスト構造の処理による変更を確認
-      expect(mutations.length).toBeGreaterThanOrEqual(0);
-    });
-
-    test('observerを通じてフォームdetach属性を処理する', async () => {
-      container.innerHTML = `
-        <form>
-          <input name="attached" value="attached_value">
-          <input name="detached" value="detached_value"
-            data-haori-form-detach="true">
-        </form>
-      `;
-
-      const form = container.querySelector('form') as HTMLFormElement;
-      const fragment = new ElementFragment(form);
-
-      Core.evaluateAll(fragment);
-
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // data-haori-form-detach属性の処理による変更を確認
-      expect(mutations.length).toBeGreaterThanOrEqual(0);
-    });
-
-    test('observerを通じて複数のCore.evaluateAll呼び出しを処理する', async () => {
-      container.innerHTML = `
-        <form>
-          <input name="counter" value="0">
-        </form>
-      `;
-
-      const form = container.querySelector('form') as HTMLFormElement;
-      const fragment = new ElementFragment(form);
-      const input = form.querySelector('[name="counter"]') as HTMLInputElement;
-
-      // 最初の評価
-      Core.evaluateAll(fragment);
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      const firstMutationCount = mutations.length;
-
-      // 値を変更して再評価
-      input.value = '1';
-      Core.evaluateAll(fragment);
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // 複数回の評価による変更を確認
-      expect(mutations.length).toBeGreaterThanOrEqual(firstMutationCount);
-    });
-
-    test('observerを通じてネストしたフォーム要素を処理する', async () => {
-      container.innerHTML = `
-        <form>
-          <div data-haori-form-object="parent">
+          <div data-form-object="parent">
             <input name="parentName" value="Parent">
-            <div data-haori-form-object="child">
+            <div data-form-object="child">
               <input name="childName" value="Child">
             </div>
           </div>
@@ -188,24 +64,15 @@ describe('Core', () => {
       `;
 
       const form = container.querySelector('form') as HTMLFormElement;
-      const fragment = new ElementFragment(form);
+      await Core.scan(container);
+      await waitForIdle();
 
-      Core.evaluateAll(fragment);
-
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      // ネストした要素の処理による変更を確認
-      expect(mutations.length).toBeGreaterThanOrEqual(0);
-
-      // 実際の要素が存在することを確認
-      const parentInput = form.querySelector(
-        '[name="parentName"]',
-      ) as HTMLInputElement;
-      const childInput = form.querySelector(
-        '[name="childName"]',
-      ) as HTMLInputElement;
-      expect(parentInput).toBeTruthy();
-      expect(childInput).toBeTruthy();
+      expect(Form.getValues(Fragment.get(form) as ElementFragment)).toEqual({
+        parent: {
+          parentName: 'Parent',
+          child: {childName: 'Child'},
+        },
+      });
     });
 
     test('setBindingData で {{...}} を含む通常属性が再評価される', async () => {
@@ -294,7 +161,9 @@ describe('Core', () => {
       expect(renderSpy).toHaveBeenCalledTimes(baselineCalls);
       expect(container.querySelector('#status')?.textContent).toBe('after');
       expect(
-        Array.from(container.querySelectorAll('li')).map(item => item.textContent),
+        Array.from(container.querySelectorAll('li')).map(
+          item => item.textContent,
+        ),
       ).toEqual(['alpha', 'beta']);
     });
 
@@ -380,7 +249,9 @@ describe('Core', () => {
       expect(updateDiffSpy).not.toHaveBeenCalled();
       expect(container.querySelector('#status')?.textContent).toBe('after');
       expect(
-        Array.from(container.querySelectorAll('li')).map(item => item.textContent),
+        Array.from(container.querySelectorAll('li')).map(
+          item => item.textContent,
+        ),
       ).toEqual(['alpha', 'beta']);
 
       updateDiffSpy.mockRestore();
@@ -511,7 +382,9 @@ describe('Core', () => {
 
       expect(renderSpy).toHaveBeenCalledTimes(baselineCalls + 2);
       expect(
-        Array.from(container.querySelectorAll('li')).map(item => item.textContent),
+        Array.from(container.querySelectorAll('li')).map(
+          item => item.textContent,
+        ),
       ).toEqual(['alpha2', 'beta2']);
     });
 
@@ -541,7 +414,9 @@ describe('Core', () => {
 
       expect(renderSpy).toHaveBeenCalledTimes(2);
       expect(
-        Array.from(container.querySelectorAll('li')).map(item => item.textContent),
+        Array.from(container.querySelectorAll('li')).map(
+          item => item.textContent,
+        ),
       ).toEqual(['alpha', 'beta']);
     });
 
@@ -584,18 +459,19 @@ describe('Core', () => {
       await waitForDomSettled();
 
       expect(
-        Array.from(list.querySelectorAll('strong')).map(item => item.textContent),
+        Array.from(list.querySelectorAll('strong')).map(
+          item => item.textContent,
+        ),
       ).toEqual(['alpha', 'beta']);
       expect(list.querySelectorAll('.static-block')).toHaveLength(2);
       expect(
-        Array.from(list.querySelectorAll('.static-block')).map(
-          item => item.textContent?.trim(),
+        Array.from(list.querySelectorAll('.static-block')).map(item =>
+          item.textContent?.trim(),
         ),
       ).toEqual(['固定ラベル', '固定ラベル']);
       expect(
-        initializeElementAttributesSpy.mock.calls.filter(
-          ([fragment]) =>
-            fragment.getTarget().classList.contains('static-block'),
+        initializeElementAttributesSpy.mock.calls.filter(([fragment]) =>
+          fragment.getTarget().classList.contains('static-block'),
         ),
       ).toHaveLength(0);
 
@@ -636,7 +512,9 @@ describe('Core', () => {
         ),
       );
 
-      expect(visibleChildren.map(children => children.length)).toEqual([1, 1, 1]);
+      expect(visibleChildren.map(children => children.length)).toEqual([
+        1, 1, 1,
+      ]);
       expect(visibleChildren[0][0].textContent).toBe('…');
       expect(visibleChildren[1][0].textContent).toBe('2');
       expect(visibleChildren[2][0].textContent).toBe('3');
@@ -695,28 +573,25 @@ describe('Core', () => {
           {
             id: 'plus',
             name: '拡張改',
-            options: [
-              {id: 'phone', label: '電話'},
-            ],
+            options: [{id: 'phone', label: '電話'}],
           },
         ],
       });
       await waitForDomSettled();
 
       expect(
-        Array.from(container.querySelectorAll('.plan-name')).map(
-          item => item.textContent?.trim(),
+        Array.from(container.querySelectorAll('.plan-name')).map(item =>
+          item.textContent?.trim(),
         ),
       ).toEqual(['基本改', '拡張改']);
       expect(
-        Array.from(container.querySelectorAll('.option-list > li')).map(
-          item => item.textContent?.trim(),
+        Array.from(container.querySelectorAll('.option-list > li')).map(item =>
+          item.textContent?.trim(),
         ),
       ).toEqual(['メール', 'チャット', '電話']);
       expect(
-        evaluateEachSpy.mock.calls.filter(
-          ([fragment]) =>
-            fragment.getTarget().classList.contains('option-list'),
+        evaluateEachSpy.mock.calls.filter(([fragment]) =>
+          fragment.getTarget().classList.contains('option-list'),
         ),
       ).toHaveLength(0);
 
@@ -756,9 +631,9 @@ describe('Core', () => {
 
       expect(firstConditional.hasAttribute('data-if-false')).toBe(true);
       expect(secondConditional.hasAttribute('data-if-false')).toBe(false);
-      expect(
-        items[1].querySelector('.secondary-name')?.textContent,
-      ).toBe('表示対象');
+      expect(items[1].querySelector('.secondary-name')?.textContent).toBe(
+        '表示対象',
+      );
       expect(consoleSpy).not.toHaveBeenCalled();
     });
 
@@ -824,7 +699,9 @@ describe('Core', () => {
       const listFragment = Fragment.get(list) as ElementFragment;
       expect(listFragment.isMounted()).toBe(true);
       expect(
-        Array.from(list.querySelectorAll('li')).map(item => item.textContent?.trim()),
+        Array.from(list.querySelectorAll('li')).map(item =>
+          item.textContent?.trim(),
+        ),
       ).toEqual(['A']);
 
       await Core.setBindingData(root, {
@@ -849,7 +726,9 @@ describe('Core', () => {
 
       expect(section.hasAttribute('data-if-false')).toBe(false);
       expect(
-        Array.from(list.querySelectorAll('li')).map(item => item.textContent?.trim()),
+        Array.from(list.querySelectorAll('li')).map(item =>
+          item.textContent?.trim(),
+        ),
       ).toEqual(['A2', 'B']);
       expect(
         evaluateAllSpy.mock.calls.some(call => call[0] === listFragment),
@@ -890,12 +769,13 @@ describe('Core', () => {
 
       const tbody = container.querySelector('tbody') as HTMLElement;
       await Core.scan(tbody);
-      await waitForCondition(
-        () => tbody.querySelectorAll('tr').length === 3,
-        {description: 'tbody rows'},
-      );
+      await waitForCondition(() => tbody.querySelectorAll('tr').length === 3, {
+        description: 'tbody rows',
+      });
       await waitForDomSettled();
-      expect(tbody.querySelectorAll('[data-if-false]').length).toBeGreaterThan(0);
+      expect(tbody.querySelectorAll('[data-if-false]').length).toBeGreaterThan(
+        0,
+      );
 
       const rows = Array.from(tbody.querySelectorAll('tr'));
       expect(rows).toHaveLength(3);
@@ -909,19 +789,25 @@ describe('Core', () => {
       expect(row0Links[1].hasAttribute('data-if-false')).toBe(true);
       expect(row0Links[2].hasAttribute('data-if-false')).toBe(true);
       // href プレースホルダが行データで展開されていること
-      expect(row0Links[0].getAttribute('href')).toBe('customer-list.html?customerCode=C001');
+      expect(row0Links[0].getAttribute('href')).toBe(
+        'customer-list.html?customerCode=C001',
+      );
 
       // row1: category=請求 → 顧客リンク非表示、請求リンク表示、入金リンク非表示
       expect(row1Links[0].hasAttribute('data-if-false')).toBe(true);
       expect(row1Links[1].hasAttribute('data-if-false')).toBe(false);
       expect(row1Links[2].hasAttribute('data-if-false')).toBe(true);
-      expect(row1Links[1].getAttribute('href')).toBe('billing-list.html?customerCode=C002&billingId=B001');
+      expect(row1Links[1].getAttribute('href')).toBe(
+        'billing-list.html?customerCode=C002&billingId=B001',
+      );
 
       // row2: category=入金 → 顧客・請求リンク非表示、入金リンク表示
       expect(row2Links[0].hasAttribute('data-if-false')).toBe(true);
       expect(row2Links[1].hasAttribute('data-if-false')).toBe(true);
       expect(row2Links[2].hasAttribute('data-if-false')).toBe(false);
-      expect(row2Links[2].getAttribute('href')).toBe('payment-list.html?customerCode=C003');
+      expect(row2Links[2].getAttribute('href')).toBe(
+        'payment-list.html?customerCode=C003',
+      );
     });
 
     test('data-attr-src が生値を維持したまま実属性を再評価する', async () => {
@@ -968,7 +854,12 @@ describe('Core', () => {
 
       // Observer経由の書き戻しをシミュレート: 展開済みの値でsetAttributeを呼ぶ
       const fragment = Fragment.get(image) as ElementFragment;
-      await fragment.setAliasedAttribute('data-attr-src', 'src', 'img/before.jpg', true);
+      await fragment.setAliasedAttribute(
+        'data-attr-src',
+        'src',
+        'img/before.jpg',
+        true,
+      );
       await waitForDomSettled();
 
       // attributeMapのテンプレート式が保持され、再バインドで正しく展開されること。
@@ -1069,7 +960,9 @@ describe('Core', () => {
 
       // 初回の行生成では通常属性が各行に反映されること。
       expect(
-        Array.from(list.querySelectorAll('li')).map(item => item.getAttribute('title')),
+        Array.from(list.querySelectorAll('li')).map(item =>
+          item.getAttribute('title'),
+        ),
       ).toEqual(['A', 'B']);
 
       await Core.setBindingData(root, {
@@ -1300,13 +1193,11 @@ describe('Core', () => {
     });
 
     it('フェッチ結果の bind 更新が同一シグネチャなら再フェッチを起こさない', async () => {
-      const fetchSpy = vi
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(
-          new Response(JSON.stringify({query: 'alpha'}), {
-            headers: {'Content-Type': 'application/json'},
-          }),
-        );
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({query: 'alpha'}), {
+          headers: {'Content-Type': 'application/json'},
+        }),
+      );
 
       const root = document.createElement('div');
       root.setAttribute('data-bind', '{"query":"alpha"}');
@@ -1322,17 +1213,17 @@ describe('Core', () => {
       await waitForDomSettled();
 
       expect(fetchSpy).toHaveBeenCalledTimes(1);
-      expect(fetchSpy.mock.calls[0][0]).toBe('http://api.test/search?query=alpha');
+      expect(fetchSpy.mock.calls[0][0]).toBe(
+        'http://api.test/search?query=alpha',
+      );
     });
 
     it('初回 false の data-if 配下にある data-fetch は表示後に初期化される', async () => {
-      const fetchSpy = vi
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(
-          new Response(JSON.stringify({query: 'alpha'}), {
-            headers: {'Content-Type': 'application/json'},
-          }),
-        );
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({query: 'alpha'}), {
+          headers: {'Content-Type': 'application/json'},
+        }),
+      );
 
       container.innerHTML = `
         <div data-bind='{"visible":false,"query":"alpha"}'>
@@ -1420,10 +1311,9 @@ describe('data-fetch + data-each + data-if integration', () => {
     const section = container.querySelector('section') as HTMLElement;
     await Core.scan(section);
     const tbody = container.querySelector('tbody') as HTMLElement;
-    await waitForCondition(
-      () => tbody.querySelectorAll('tr').length === 3,
-      {description: 'tbody rows via fetch'},
-    );
+    await waitForCondition(() => tbody.querySelectorAll('tr').length === 3, {
+      description: 'tbody rows via fetch',
+    });
     await waitForDomSettled();
     expect(tbody.querySelectorAll('[data-if-false]').length).toBeGreaterThan(0);
 
@@ -1434,20 +1324,26 @@ describe('data-fetch + data-each + data-if integration', () => {
 
     // row0: category=顧客 → 顧客リンクのみ表示、href が展開されていること
     expect(row0Links[0].hasAttribute('data-if-false')).toBe(false);
-    expect(row0Links[0].getAttribute('href')).toBe('customer-list.html?customerCode=C001');
+    expect(row0Links[0].getAttribute('href')).toBe(
+      'customer-list.html?customerCode=C001',
+    );
     expect(row0Links[1].hasAttribute('data-if-false')).toBe(true);
     expect(row0Links[2].hasAttribute('data-if-false')).toBe(true);
 
     // row1: category=請求 → 請求リンクのみ表示、href が展開されていること
     expect(row1Links[0].hasAttribute('data-if-false')).toBe(true);
     expect(row1Links[1].hasAttribute('data-if-false')).toBe(false);
-    expect(row1Links[1].getAttribute('href')).toBe('billing-list.html?customerCode=C002&billingId=B001');
+    expect(row1Links[1].getAttribute('href')).toBe(
+      'billing-list.html?customerCode=C002&billingId=B001',
+    );
     expect(row1Links[2].hasAttribute('data-if-false')).toBe(true);
 
     // row2: category=入金 → 入金リンクのみ表示、href が展開されていること
     expect(row2Links[0].hasAttribute('data-if-false')).toBe(true);
     expect(row2Links[1].hasAttribute('data-if-false')).toBe(true);
     expect(row2Links[2].hasAttribute('data-if-false')).toBe(false);
-    expect(row2Links[2].getAttribute('href')).toBe('payment-list.html?customerCode=C003');
+    expect(row2Links[2].getAttribute('href')).toBe(
+      'payment-list.html?customerCode=C003',
+    );
   });
 });

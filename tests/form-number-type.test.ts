@@ -103,4 +103,67 @@ describe('type="number" の数値型変換', () => {
     const values = Form.getValues(form);
     expect(values.qty).toBe(7);
   });
+
+  describe('ブラウザが受け付けない文字列は数値にしない', () => {
+    /**
+     * 値をバインドしてから収集します。
+     *
+     * 期待値の根拠は仕様「収集は DOM を真とする」の「数値として採用するのは、
+     * ブラウザが `<input type="number">` の値として受け付ける文字列だけです」。
+     * 受理する形と否認する例は同節の表による。
+     *
+     * @param raw バインドする値
+     * @returns 収集された `qty` の値
+     */
+    const collect = async (raw: unknown): Promise<unknown> => {
+      // 呼び出しごとに新しい部分木を作る。同じ要素の `innerHTML` を差し替えると
+      // フラグメントが再利用され、2 回目以降は初期の逆方向同期が走らない。
+      const host = document.createElement('div');
+      container.appendChild(host);
+      host.innerHTML = `
+        <form data-bind='{"qty":${JSON.stringify(raw)}}'>
+          <input type="number" name="qty" data-attr-value="{{qty}}">
+        </form>`;
+      await Core.scan(host);
+      await waitForDomSettled();
+      const form = Fragment.get(host.querySelector('form')!) as ElementFragment;
+      return Form.getValues(form).qty;
+    };
+
+    it('16 進表記は null になる', async () => {
+      expect(await collect('0x10')).toBeNull();
+    });
+
+    it('前後に空白を含む数字は null になる', async () => {
+      expect(await collect('  12  ')).toBeNull();
+    });
+
+    it('先頭の + は null になる', async () => {
+      expect(await collect('+5')).toBeNull();
+    });
+
+    it('小数点で終わる形は null になる', async () => {
+      expect(await collect('5.')).toBeNull();
+    });
+
+    it('区切り文字を含む数字は null になる', async () => {
+      expect(await collect('1_000')).toBeNull();
+    });
+
+    it('Infinity は null になる', async () => {
+      expect(await collect('Infinity')).toBeNull();
+      expect(await collect('-Infinity')).toBeNull();
+    });
+
+    it('指数表記と先頭が小数点の形は受理する', async () => {
+      expect(await collect('1e5')).toBe(100000);
+      expect(await collect('1.5e-3')).toBe(0.0015);
+      expect(await collect('.5')).toBe(0.5);
+    });
+
+    it('符号つきの整数と小数は受理する', async () => {
+      expect(await collect('-3')).toBe(-3);
+      expect(await collect('-2.5')).toBe(-2.5);
+    });
+  });
 });

@@ -451,6 +451,20 @@ export default class Expression {
   /** 式 → 暗黙のオプショナルチェーン変換後の式のキャッシュ */
   private static readonly OPTIONAL_CHAIN_CACHE = new Map<string, string>();
 
+  /** 式 → 計算プロパティ名の検査を挿入した後の式のキャッシュ */
+  private static readonly GUARDED_MEMBER_CACHE = new Map<string, string>();
+
+  /**
+   * 計算プロパティ名を検査する関数の開き側。
+   *
+   * `obj[` の直後へ挿入し、`]` の直前で閉じます（`toGuardedMemberExpression()`）。
+   * 引数名 `_hk` はアロー関数の引数なので、同名のバインドキーがあっても
+   * 呼び出し側の引数式は外側のスコープで評価され、値は取り違えません。
+   */
+  private static readonly MEMBER_KEY_GUARD_OPEN =
+    "(_hk=>_hk==='constructor'||_hk==='__proto__'||_hk==='prototype'" +
+    '?undefined:_hk)(';
+
   /**
    * ブロック識別子の検出に使う正規表現。
    *
@@ -888,6 +902,73 @@ export default class Expression {
     }
 
     this.OPTIONAL_CHAIN_CACHE.set(expression, converted);
+    return converted;
+  }
+
+  /**
+   * 計算プロパティ名を評価時に検査する形へ書き換えます。
+   *
+   * `obj[key]` を `obj[(_hk=>禁止名なら undefined:_hk)(key)]` へ包み、キーの評価結果が
+   * `constructor` / `__proto__` / `prototype` のときプロパティ名を `undefined` へ
+   * 差し替えます（仕様「評価メカニズム」の「`constructor`、`__proto__`、`prototype`
+   * へのアクセスを遮断」。遮断されたアクセスは同節のとおり `undefined` になります）。
+   *
+   * 静的な検証（`hasAllowedSyntax()`）は文字列リテラルのトークンを 1 個ずつ照合する
+   * ため、`["con"+"structor"]` のように**式で組み立てた名前**を検出できません。連結・
+   * `String.fromCharCode`・`join`・Unicode エスケープと作り方は無限にあるので、名前が
+   * 確定する評価時に見るのが唯一の確実な位置です。
+   *
+   * 書き換えはメンバーアクセスの `[` … `]` に限り、配列リテラルには触れません。
+   * トークン位置に基づく差し替えのみで行い、それ以外の文字列は元のまま保持します。
+   *
+   * @param expression 変換対象の式（暗黙のオプショナルチェーン変換の後）
+   * @returns 変換後の式
+   */
+  private static toGuardedMemberExpression(expression: string): string {
+    const cached = this.GUARDED_MEMBER_CACHE.get(expression);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const tokens = this.tokenizeExpression(expression);
+    let converted = expression;
+    if (tokens !== null) {
+      const edits: {start: number; end: number; text: string}[] = [];
+      /** 開いている括弧の種別。`true` はメンバーアクセスの `[` */
+      const brackets: boolean[] = [];
+      let previous: ExpressionToken | null = null;
+      for (const token of tokens) {
+        if (token.value === '[') {
+          const isMember = this.startsMemberAccess(previous);
+          brackets.push(isMember);
+          if (isMember) {
+            edits.push({
+              start: token.position + 1,
+              end: token.position + 1,
+              text: Expression.MEMBER_KEY_GUARD_OPEN,
+            });
+          }
+        } else if (token.value === ']') {
+          if (brackets.pop() === true) {
+            edits.push({
+              start: token.position,
+              end: token.position,
+              text: ')',
+            });
+          }
+        }
+        previous = token;
+      }
+      for (let index = edits.length - 1; index >= 0; index -= 1) {
+        const edit = edits[index];
+        converted =
+          converted.slice(0, edit.start) +
+          edit.text +
+          converted.slice(edit.end);
+      }
+    }
+
+    this.GUARDED_MEMBER_CACHE.set(expression, converted);
     return converted;
   }
 
@@ -1506,8 +1587,11 @@ export default class Expression {
 
     const assignments = this.buildAssignments(bindKeys);
     const shadowDeclarations = this.buildShadowDeclarations(declarations);
-    // メンバーアクセスは暗黙のオプショナルチェーンへ変換してから評価する。
-    const source = this.toOptionalChainExpression(expression);
+    // メンバーアクセスは暗黙のオプショナルチェーンへ変換し、さらに計算プロパティ名の
+    // 検査（禁止プロパティ名の遮断）を挿入してから評価する。
+    const source = this.toGuardedMemberExpression(
+      this.toOptionalChainExpression(expression),
+    );
     const body = assignments
       ? '"use strict";\n' +
         `${assignments};\nreturn (${source});${shadowDeclarations}`
@@ -1973,6 +2057,10 @@ export default class Expression {
   /**
    * 角括弧がメンバーアクセスかどうかを判定します。
    *
+   * 文字列リテラルも基点に含めます。含めないと `""["constructor"]` の `[` を配列
+   * リテラルの開始と誤って分類し、メンバーアクセスに対する禁止プロパティ名の検証
+   * （`hasAllowedSyntax()`）を素通りして `String` へ到達できてしまいます。
+   *
    * @param previous 直前のトークン
    * @returns メンバーアクセスであればtrue
    */
@@ -1980,7 +2068,11 @@ export default class Expression {
     if (previous === null) {
       return false;
     }
-    if (previous.type === 'identifier' || previous.type === 'number') {
+    if (
+      previous.type === 'identifier' ||
+      previous.type === 'number' ||
+      previous.type === 'string'
+    ) {
       return true;
     }
     return (

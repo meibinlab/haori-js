@@ -38,8 +38,11 @@ describe('haori:eachupdate 発火タイミングの保証', () => {
     const tbody = container.querySelector('tbody') as HTMLElement;
 
     // eachupdate 発火時点の DOM スナップショットを記録する。
-    const snapshots: Array<{total: number; rendered: number; allFilled: boolean}> =
-      [];
+    const snapshots: Array<{
+      total: number;
+      rendered: number;
+      allFilled: boolean;
+    }> = [];
     tbody.addEventListener('haori:eachupdate', (e: Event) => {
       const detail = (e as CustomEvent).detail;
       const labels = Array.from(container.querySelectorAll('.lbl'));
@@ -97,5 +100,42 @@ describe('haori:eachupdate 発火タイミングの保証', () => {
     expect(detail.order).toEqual(['2', '3', '4']);
     expect(detail.added).toEqual(['3', '4']);
     expect(detail.removed).toEqual(['1']);
+  });
+
+  it('リストキーが重複していても order と total は行のとおりになる', async () => {
+    // 仕様「`haori:eachupdate`」の「`order` と `total` は重複していても行の並びと
+    // 行数のとおりです」。`added` / `removed` はキーの集合なので重複時は正確に
+    // ならず（同節）、ここでは検証しない。
+    // `data-each` はループコンテナへ付ける（仕様「`data-each`」の「誤り:
+    // `<tr data-each="rows"><td>…</td></tr>` … 子の `<td>` が複製され、行が増えません」）。
+    container.innerHTML = `
+      <div id="state3" data-bind='{"rows":[{"id":1}]}'>
+        <ul data-each="rows" data-each-key="id">
+          <li>{{id}}</li>
+        </ul>
+      </div>`;
+    const state = container.querySelector('#state3') as HTMLElement;
+    const list = container.querySelector('ul') as HTMLElement;
+
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const events: Array<Record<string, unknown>> = [];
+    list.addEventListener('haori:eachupdate', (e: Event) => {
+      events.push((e as CustomEvent).detail);
+    });
+
+    // 同じキーの行を 1 行増やす。
+    await Core.setBindingData(state, {rows: [{id: 1}, {id: 1}]});
+    await waitForCondition(() => events.length > 0, {
+      description: 'eachupdate 発火',
+    });
+
+    const detail = events[events.length - 1];
+    expect(detail.total).toBe(2);
+    expect(detail.order).toEqual(['1', '1']);
+    // 行は配列どおり 2 行描かれる（仕様「`data-each`」の「行の数・並び・各行の
+    // 要素データは配列どおりになります」）。
+    expect(container.querySelectorAll('li[data-row]').length).toBe(2);
   });
 });

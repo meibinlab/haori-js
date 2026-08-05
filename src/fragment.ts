@@ -670,6 +670,18 @@ export default abstract class Fragment {
  * DOM要素を表現し、子ノードを持つことができます。
  */
 export class ElementFragment extends Fragment {
+  /**
+   * `<input type="number">` が値として受け付ける文字列の形。
+   *
+   * 省略可の `-`、数字列、省略可の小数部、省略可の指数部で、先頭が `.` の小数も
+   * 受け付けます（Chromium で実測した受理範囲）。`+5` / `5.` / `0x10` / `1_000` /
+   * 前後に空白のある数字 / `Infinity` はブラウザが空表示にするため受け付けません。
+   * ここを緩めると、画面に出ていない値が収集・送信されます（仕様「収集は DOM を
+   * 真とする」）。
+   */
+  private static readonly NUMBER_INPUT_PATTERN =
+    /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
   /** HTML 真偽属性名のセット */
   private static readonly BOOLEAN_ATTRIBUTES = new Set([
     'allowfullscreen',
@@ -2274,8 +2286,10 @@ export class ElementFragment extends Fragment {
    * 入力要素の種別に応じて値を正規化します。
    *
    * `type="number"` の input では、文字列の入力値・バインド値を数値へ変換します
-   * （DTO が数値型を期待する場合に文字列で送られるのを防ぐため）。空文字・null・
-   * 数値化できない値は `null` を返します。それ以外の要素では値をそのまま返します。
+   * （DTO が数値型を期待する場合に文字列で送られるのを防ぐため）。数値として採用
+   * するのは、ブラウザが `<input type="number">` の値として受け付ける文字列だけで
+   * す（`NUMBER_INPUT_PATTERN`）。空文字・`null`・受け付けない文字列・有限でない数値
+   * は `null` を返します。それ以外の要素では値をそのまま返します。
    *
    * @param element 対象の入力要素
    * @param value 正規化する値
@@ -2289,8 +2303,19 @@ export class ElementFragment extends Fragment {
       if (value === null || value === '') {
         return null;
       }
-      const numeric = typeof value === 'number' ? value : Number(value);
-      return Number.isNaN(numeric) ? null : numeric;
+      if (typeof value === 'number') {
+        // `Infinity` / `NaN` は `JSON.stringify` で `null` に潰れるため、
+        // 送信値と収集値が食い違わないよう先に `null` へそろえる。
+        return Number.isFinite(value) ? value : null;
+      }
+      if (
+        typeof value !== 'string' ||
+        !ElementFragment.NUMBER_INPUT_PATTERN.test(value)
+      ) {
+        return null;
+      }
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
     }
     return value;
   }

@@ -686,7 +686,33 @@ export default class Form {
       minUserEditSequence !== null &&
       fragment.getUserEditSequence() <= minUserEditSequence;
     if (name) {
-      if (isValueList && skipAsUnedited) {
+      if (fragment.hasAttribute(`${Env.prefix}form-detach`)) {
+        // 仕様「`data-form-detach`」の「バインディングから除外します」「`getValues()`
+        // で取得されない」。キーを出さないことで、バインドデータにも送信ボディにも
+        // 載らない。判定は `hasAttribute` で行う（`data-form-detach` は属性値を
+        // 省略する印なので、値の有無で判定すると省略形を見落とす）。
+      } else if (isValueList && Form.isGroupedCheckable(fragment)) {
+        // 仕様「同名チェックボックス・ラジオの収集値の形」: `data-form-list` を併記
+        // した群は常に配列で、チェック済みの送信値だけを詰める。未チェックの欄で
+        // 場所を確保しない（選択状態は位置ではなく集合で決まるため、同じ収集キーの
+        // 出現順に配る規則の対象外）。チェック状態と送信値は仕様「収集は DOM を真と
+        // する」のとおり DOM から読む（内部値はイベントを伴わないチェックで更新され
+        // ないため、読むと画面と食い違う）。
+        const key = String(name);
+        const element = fragment.getTarget() as HTMLInputElement;
+        if (minUserEditSequence === null && !Array.isArray(values[key])) {
+          // 全体の収集では 0 個でもキーを空配列で出す（仕様「`data-form-list`」の
+          // 「行が 0 件の場合もキーは空配列として出力されます」と同じ理由）。編集分
+          // だけの収集では作らない（作ると、編集の無い群のキーを空で上書きする）。
+          values[key] = [];
+        }
+        if (!skipAsUnedited && element.checked) {
+          if (!Array.isArray(values[key])) {
+            values[key] = [];
+          }
+          (values[key] as unknown[]).push(element.value);
+        }
+      } else if (isValueList && skipAsUnedited) {
         // 同名リストでは、収集しない要素も位置を保つため null で場所を確保する。
         // 詰めて出すと、後段の位置合わせで別の要素の値として扱われてしまう。
         if (Array.isArray(values[String(name)])) {
@@ -1998,7 +2024,12 @@ export default class Form {
     const listName = fragment.getAttribute(`${Env.prefix}form-list`);
     // 入力要素に付けた `data-form-list` は属性値を省略できる（収集側と同じ規則）。
     const isValueList = fragment.hasAttribute(`${Env.prefix}form-list`);
-    const detach = fragment.getAttribute(`${Env.prefix}form-detach`);
+    // `data-form-detach` は属性値を省略する印なので、`hasAttribute` で判定する。
+    // `getAttribute` は省略形に対して空文字を返すため、値の有無で判定すると
+    // `<input name="password" data-form-detach>` を「detach していない」と誤判定し、
+    // 仕様「`data-form-detach`」の「バインディングから除外します」に反して値を
+    // 書き込んでしまう（収集キーの `data-form-list` と同じ種類の誤り）。
+    const detach = fragment.hasAttribute(`${Env.prefix}form-detach`);
     if (name) {
       if (!detach || force) {
         const rawValue = values[String(name)];

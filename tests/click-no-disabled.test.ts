@@ -5,8 +5,8 @@
  * 指定時は click 処理中にボタンへ native `disabled` を付与しない（Bootstrap など他の
  * click ハンドラ・CSS との共存のため）。内部の多重実行ガードは維持されることを確認する。
  *
- * 注意: click 手続きの実行ロックはごく短時間（同期フレーム）しか保持されないため、
- * disabled の有無は btn.click() 直後の同期チェックで検証する。
+ * ロックが手続きの完了まで保たれること（フェッチの応答待ちを含む）は
+ * [tests/click-lock-fetch.test.ts](./click-lock-fetch.test.ts) で検証する。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';

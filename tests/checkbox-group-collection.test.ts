@@ -2,10 +2,12 @@
 /**
  * @fileoverview 同一 name チェックボックスグループの値収集に関する回帰テスト。
  *
+ * 期待値の根拠は仕様「同名チェックボックス・ラジオの収集値の形」の表で、`name` のみ
+ * のときはチェック 0 個で `null`・1 個でスカラー・2 個以上で配列、`data-form-list` を
+ * 併記したときは常に配列（0 個は `[]`）と定めている。
+ *
  * 背景: ラジオの配列累積バグ修正（form.getPartValues で DOM の checked を真とし、
- * 未チェック要素の古い内部値を無視する）に伴い、チェックボックスグループの
- * 既存挙動（複数チェック→配列、単一→スカラ、未チェック→null）が退行しないことを
- * 保証する。
+ * 未チェック要素の古い内部値を無視する）に伴い、この形が退行しないことを保証する。
  */
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import Core from '../src/core';
@@ -74,6 +76,91 @@ describe('同一 name チェックボックスグループの値収集', () => {
   it('未チェック時は null で収集される', async () => {
     container.innerHTML = buildForm([]);
     expect(await collectHobby()).toBeNull();
+  });
+
+  describe('data-form-list を併記した群', () => {
+    /**
+     * `data-form-list` を併記した趣味選択フォームの HTML を組み立てます。
+     *
+     * @param checked チェック状態にする value の配列
+     * @returns フォームの HTML 文字列
+     */
+    const buildListForm = (checked: string[]): string => {
+      const box = (value: string, label: string): string =>
+        `<label><input type="checkbox" name="hobby" value="${value}"` +
+        ` data-form-list${checked.includes(value) ? ' checked' : ''}>` +
+        `${label}</label>`;
+      return `<form id="hobby-form">
+        ${box('reading', '読書')}
+        ${box('sports', 'スポーツ')}
+        ${box('music', '音楽')}
+      </form>`;
+    };
+
+    it('複数チェック時はチェック済みの送信値だけを配列で収集する', async () => {
+      container.innerHTML = buildListForm(['reading', 'music']);
+      expect(await collectHobby()).toEqual(['reading', 'music']);
+    });
+
+    it('単一チェック時も配列で収集する', async () => {
+      container.innerHTML = buildListForm(['sports']);
+      expect(await collectHobby()).toEqual(['sports']);
+    });
+
+    it('未チェック時は空配列で収集する（位置合わせの null を入れない）', async () => {
+      container.innerHTML = buildListForm([]);
+      expect(await collectHobby()).toEqual([]);
+    });
+
+    it('クリックで変更した後も DOM のチェック状態で収集する', async () => {
+      container.innerHTML = buildListForm(['reading']);
+      await Core.scan(container);
+      await waitForDomSettled();
+
+      const music = container.querySelector(
+        'input[value="music"]',
+      ) as HTMLInputElement;
+      music.click();
+      await waitForDomSettled();
+
+      const form = Fragment.get(
+        container.querySelector('#hobby-form') as HTMLElement,
+      ) as ElementFragment;
+      expect(Form.getValues(form).hobby).toEqual(['reading', 'music']);
+    });
+
+    it('イベントを伴わないチェックでも収集する', async () => {
+      // 仕様「収集は DOM を真とする」の「チェック状態…: DOM の `checked`」。
+      container.innerHTML = buildListForm([]);
+      await Core.scan(container);
+      await waitForDomSettled();
+
+      (
+        container.querySelector('input[value="sports"]') as HTMLInputElement
+      ).checked = true;
+
+      const form = Fragment.get(
+        container.querySelector('#hobby-form') as HTMLElement,
+      ) as ElementFragment;
+      expect(Form.getValues(form).hobby).toEqual(['sports']);
+    });
+
+    it('ラジオグループでも選択値だけを配列で収集する', async () => {
+      container.innerHTML = `<form id="hobby-form">
+        <label><input type="radio" name="hobby" value="reading" data-form-list>読書</label>
+        <label><input type="radio" name="hobby" value="sports" data-form-list checked>スポーツ</label>
+      </form>`;
+      expect(await collectHobby()).toEqual(['sports']);
+    });
+
+    it('真偽値チェックボックスは対象外で従来どおり真偽値を集める', async () => {
+      // 仕様「同名チェックボックス・ラジオの収集値の形」の「真偽値チェックボックスは
+      // 単一の真偽値なので、この規則の対象外です」。
+      container.innerHTML = `<form id="hobby-form">
+        <input type="checkbox" name="hobby" value="true" data-form-list checked>
+      </form>`;
+      expect(await collectHobby()).toEqual([true]);
+    });
   });
 
   it('change イベント後も最新の DOM チェック状態で収集される', async () => {

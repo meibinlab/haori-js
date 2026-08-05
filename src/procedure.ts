@@ -2464,7 +2464,15 @@ ${body}
           // フェッチ開始: loading 状態を注入する。
           await this.injectFetchState('loading');
 
-          return fetch(fetchUrl, finalOptions)
+          // `await` を外して `return fetch(...)` にしてはならない。async 関数の
+          // try 内で Promise を return すると、その Promise が解決する前に finally
+          // （`releaseExecutionLock()`）が走る。応答待ちの間にロックが解けるため、
+          // 保存ボタンの 2 度押しで重複送信が起きる（仕様「`data-click-no-disabled`」
+          // の「`click` 手続きの実行中は起点要素に `disabled` 属性が付与され、
+          // 二重実行を防ぎます」に反する）。`return promise` でも execute() は
+          // その解決を待ってから解決するため、呼出側から見た順序は変わらない
+          // （`return await` になることでマイクロタスク 2 つ分早まるだけ）。
+          return await fetch(fetchUrl, finalOptions)
             .then(response => {
               return this.handleFetchResult(
                 response,
@@ -2489,7 +2497,8 @@ ${body}
               throw error;
             });
         }
-        return fetch(fetchUrl, finalOptions).then(response => {
+        // ロックを応答まで保持するため `await` する（上のコメントを参照）。
+        return await fetch(fetchUrl, finalOptions).then(response => {
           return this.handleFetchResult(response, fetchUrl || undefined);
         });
       }
@@ -2584,7 +2593,10 @@ ${body}
       const response = new Response(JSON.stringify(merged), {
         headers: {'Content-Type': 'application/json'},
       });
-      return this.handleFetchResult(response);
+      // ロックを反映の完了まで保持するため `await` する（上のコメントを参照）。
+      // フェッチを伴わない `click`（`data-click-reset` / `data-click-copy` など）でも
+      // 反映は複数のタスクにまたがるため、await しないと反映中にロックが解ける。
+      return await this.handleFetchResult(response);
     } finally {
       this.releaseExecutionLock(executionLock);
     }

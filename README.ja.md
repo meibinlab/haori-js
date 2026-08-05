@@ -143,7 +143,9 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 
 JS からバインドデータを読むには `Haori.Core.getBindingData(element, {resolved?})` を使います。既定では要素自身の生バインドデータ（無ければ `null`）、`resolved: true` で継承を解決済みのスコープを返します（`setBindingData` の対となる読み取り API）。
 
-テンプレート式では、プロパティアクセス、動的インデックスを含むブラケットアクセス、optional chaining、三項演算子、配列 `map` / `filter` のアロー関数、spread を伴う呼び出しなどの安全な構文を利用できます。一方で、グローバルオブジェクト、`eval` や `arguments`、`constructor`、`__proto__`、`prototype`、`Reflect`、`Object` などの脱出経路は使用できません。`Object` がブロックされるため、`Object.assign` の代わりにスプレッド構文 `{...a, ...b}` を使ってください。ブロックされた識別子を式で参照すると、コンソールに `blocked identifier(s): …` という警告が出力されます。
+テンプレート式では、プロパティアクセス、動的インデックスを含むブラケットアクセス、optional chaining、三項演算子、配列 `map` / `filter` のアロー関数、spread を伴う呼び出しなどの構文を利用できます。一方で、グローバルオブジェクト、`eval` や `arguments`、`constructor`、`__proto__`、`prototype`、`Reflect`、`Object` などの脱出経路は遮断されます（計算プロパティ名で組み立てた場合も評価時に遮断します）。`Object` がブロックされるため、`Object.assign` の代わりにスプレッド構文 `{...a, ...b}` を使ってください。ブロックされた識別子を式で参照すると、コンソールに `blocked identifier(s): …` という警告が出力されます。
+
+> **セキュリティの前提**: 式のテキストは**開発者が書くコード**です。上記の遮断は事故を難しくする多層防御であり、悪意ある式を防ぐ境界ではありません（式は最終的に `new Function` で評価されます）。**利用者入力や API 応答を式のテキストへ差し込まないでください。** HTML エスケープは式のエスケープではありません（`&#39;` は属性値を読む時点で `'` に戻るため、文字列リテラルの外へ出られます）。信頼できない値は `data-bind` の**値**として渡し、式からはキーで参照してください。詳細は [docs/ja/specs.md](docs/ja/specs.md) の「XSS対策」を参照してください。
 
 テスト・デバッグ補助: `waitForRenders()`（`Haori.waitForRenders()` でも可）は、初期化・進行中のフェッチ・キューに積まれた描画タスクがすべて落ち着くまで待機します（E2E テストで描画完了を待つのに便利）。`Haori.Core.dumpScope(element)` は要素に解決されるスコープ（`resolved`）と各キーの由来（`sources`）を返します。開発モードでは falsy な `data-if` がその式と参照スコープを自動でログ出力します。
 
