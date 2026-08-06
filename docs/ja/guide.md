@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.42.0
+バージョン: 0.43.0
 
 ## 目次
 
@@ -2821,7 +2821,7 @@ state に持った配列（編集中のルール一覧など）への要素追�
 15. `data-click-open` / `data-click-close` - ダイアログ操作
 16. `data-click-dialog` / `data-click-toast` - メッセージ表示
 17. `data-click-history` - 履歴への pushState
-18. `data-click-redirect` - リダイレクト
+18. `data-click-redirect` / `data-click-redirect-replace` - リダイレクト（後者は履歴を置き換える）
 
 ### 他ライブラリとの共存（`data-click-no-disabled`）
 
@@ -3337,6 +3337,26 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
   完了
 </button>
 ```
+
+#### `data-click-redirect-replace`: 履歴を置き換えるリダイレクト
+
+遷移前のページを履歴に残しません（`location.replace()` 相当）。申込の確定のように
+「一度きり」の操作を終えた画面が履歴に残ると、完了画面から「戻る」で到達して同じ
+操作をもう一度実行できてしまいます。
+
+```html
+<button
+  data-click-fetch="/api/apply"
+  data-click-fetch-method="POST"
+  data-click-redirect-replace="/apply/complete.html"
+>
+  申込を確定する
+</button>
+```
+
+- 遷移先の書き方・評価のタイミングは `data-click-redirect` と同じです。違うのは履歴の扱いだけです
+- 両方を宣言した場合はこちらを採用し、開発コンソールへ警告します
+- `data-click-history` とは併用しないでください。先に追加された履歴項目を置き換えるだけになり、遷移前のページは履歴に残ります
 
 #### `data-click-scroll`: 成功時スクロール
 

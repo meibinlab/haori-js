@@ -819,12 +819,23 @@ export interface ProcedureOptions {
   redirectUrl?: string | null;
 
   /**
+   * 履歴を置き換えて遷移する URL（`data-{event}-redirect-replace`）。
+   *
+   * `redirectUrl` は履歴を 1 つ積むため、遷移後に「戻る」で元のページへ戻れます。
+   * こちらは `location.replace()` を使うので、遷移前のページは履歴に残りません。
+   * 両方が指定された場合はこちらを採用します。
+   */
+  redirectReplaceUrl?: string | null;
+
+  /**
    * 戻り先リダイレクトに用いる URL クエリ名。
    *
-   * `redirectUrl`（`data-{event}-redirect`）が指定されている場合のみ有効で、
+   * `redirectUrl`（`data-{event}-redirect`）または `redirectReplaceUrl`
+   * （`data-{event}-redirect-replace`）が指定されている場合のみ有効で、
    * 成功後の遷移直前に現在ページの当該クエリ値を読み取り、安全な同一オリジンの
    * ローカルパスであればその値へ遷移します（オープンリダイレクト対策）。安全で
-   * ない／値が無い場合は `redirectUrl` へフォールバックします。
+   * ない／値が無い場合は、指定された遷移先（`redirectReplaceUrl` があればそちら、
+   * なければ `redirectUrl`）へフォールバックします。
    */
   redirectReturnParam?: string | null;
 
@@ -1749,14 +1760,28 @@ ${body}
         const isValidLevel = validLevels.includes(rawLevel as ToastLevel);
         options.toastLevel = isValidLevel ? (rawLevel as ToastLevel) : null;
       }
-      if (fragment.hasAttribute(Procedure.attrName(event, 'redirect'))) {
+      const redirectAttr = Procedure.attrName(event, 'redirect');
+      const redirectReplaceAttr = Procedure.attrName(event, 'redirect-replace');
+      const hasRedirect = fragment.hasAttribute(redirectAttr);
+      const hasRedirectReplace = fragment.hasAttribute(redirectReplaceAttr);
+      if (hasRedirect) {
         options.redirectUrl = Procedure.readLateAttribute(
           fragment,
           options,
           'redirect',
-          Procedure.attrName(event, 'redirect'),
+          redirectAttr,
         );
-        // 戻り先クエリ名は redirect が指定されている場合のみ有効とする。
+      }
+      if (hasRedirectReplace) {
+        options.redirectReplaceUrl = Procedure.readLateAttribute(
+          fragment,
+          options,
+          'redirect-replace',
+          redirectReplaceAttr,
+        );
+      }
+      if (hasRedirect || hasRedirectReplace) {
+        // 戻り先クエリ名は遷移の指定がある場合のみ有効とする。
         const returnParamAttr = Procedure.attrName(
           event,
           'redirect-return-param',
@@ -2825,8 +2850,24 @@ ${body}
       'redirect',
       this.options.redirectUrl,
     );
-    if (redirectUrl) {
-      let destination = redirectUrl;
+    const redirectReplaceUrl = this.resolveLateAttribute(
+      'redirect-replace',
+      this.options.redirectReplaceUrl,
+    );
+    if (redirectUrl && redirectReplaceUrl) {
+      // どちらを優先するかを利用者が選べる仕様にはしていない。宣言の誤りとして
+      // 報告し、履歴を残さない方（意図がより限定的な方）を採用する。
+      Log.warn(
+        'Haori',
+        `${Procedure.attrName(this.eventType, 'redirect')} と ` +
+          `${Procedure.attrName(this.eventType, 'redirect-replace')} の` +
+          '両方が指定されています。履歴を置き換える方を採用します。',
+      );
+    }
+    // 履歴を置き換える指定があればそちらを使う。
+    const destinationUrl = redirectReplaceUrl || redirectUrl;
+    if (destinationUrl) {
+      let destination = destinationUrl;
       // 戻り先クエリ名が指定されていれば、安全なローカルパスのみ遷移先に採用する。
       const returnParam = this.resolveLateAttribute(
         'redirect-return-param',
@@ -2849,7 +2890,12 @@ ${body}
           }
         }
       }
-      window.location.href = destination;
+      if (redirectReplaceUrl) {
+        // 現在の履歴項目を置き換える。遷移前のページへは「戻る」で到達できない。
+        window.location.replace(destination);
+      } else {
+        window.location.href = destination;
+      }
     }
     return true;
   }

@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.42.0
+バージョン: 0.43.0
 最終更新: 2026-08-04
 
 ## 目次
@@ -891,6 +891,7 @@ interface ProcedureOptions {
   historyData?: Record<string, unknown> | null // history pushState クエリパラメータ
   historyFormFragment?: ElementFragment | null // history pushState フォーム
   redirectUrl?: string | null                // リダイレクトURL
+  redirectReplaceUrl?: string | null         // 履歴を置き換えるリダイレクトURL
   redirectReturnParam?: string | null        // 戻り先リダイレクトのクエリ名
   scrollOnError?: boolean | null             // エラー時に最初のエラー要素へスクロール
   scrollTarget?: string | null               // 成功時にスクロールする要素のCSSセレクター
@@ -1014,8 +1015,13 @@ async run(): Promise<void> {
 
   // 13. リダイレクト（redirectReturnParam があれば安全なローカルパスのみ採用）
   const redirectUrl = this.resolveLateAttribute('redirect', this.redirectUrl)
-  if (redirectUrl) {
-    let destination = redirectUrl
+  const redirectReplaceUrl = this.resolveLateAttribute('redirect-replace', this.redirectReplaceUrl)
+  if (redirectUrl && redirectReplaceUrl) {
+    Log.warn('Haori', '-redirect と -redirect-replace の両方が指定されています。履歴を置き換える方を採用します。')
+  }
+  const destinationUrl = redirectReplaceUrl || redirectUrl
+  if (destinationUrl) {
+    let destination = destinationUrl
     const returnParam = this.resolveLateAttribute('redirect-return-param', this.redirectReturnParam)
     if (returnParam) {
       const raw = new URLSearchParams(window.location.search).get(returnParam)
@@ -1028,7 +1034,11 @@ async run(): Promise<void> {
         }
       }
     }
-    window.location.href = destination
+    if (redirectReplaceUrl) {
+      window.location.replace(destination)
+    } else {
+      window.location.href = destination
+    }
   }
 }
 ```
@@ -3039,7 +3049,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 17. `data-{event}-dialog` / `data-{event}-toast`: メッセージ表示
 18. `data-{event}-store-clear`: ストレージレコードの破棄
 19. `data-{event}-history`: 履歴 pushState 実行
-20. `data-{event}-redirect`: リダイレクト実行
+20. `data-{event}-redirect` / `data-{event}-redirect-replace`: リダイレクト実行（後者は履歴を置き換える）
 
 17 以降（および 19 の後のスクロール）の属性値は、手続きの開始時ではなく**使用する直前**に評価します（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。
 
@@ -3058,7 +3068,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 | `data-{event}-dialog` / `data-{event}-toast` | 17 | 表示直前 |
 | `data-{event}-history` | 19 | `history.pushState()` 直前 |
 | `data-{event}-scroll` | 19 の後 | スクロール直前 |
-| `data-{event}-redirect` / `data-{event}-redirect-return-param` | 20 | 遷移直前 |
+| `data-{event}-redirect` / `data-{event}-redirect-replace` / `data-{event}-redirect-return-param` | 20 | 遷移直前 |
 
 **評価スコープ**: 属性を宣言した要素のバインディングデータ（祖先からの継承を含む）です。`data-each` の行の中にある要素は行スコープで評価されます。応答を参照するには、`data-{event}-bind` の対象を**その要素自身または祖先**にしてください。兄弟要素などへバインドした応答は評価スコープに入らないため参照できません。
 
@@ -3095,7 +3105,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 **注意**:
 
 - 反映されるのは、その手続き自身が完了させた更新です。`data-{event}-refetch` / `-click` が起動した**別の手続き**の完了は待たないため、その結果が反映されるとは限りません。
-- `data-store` のミラーはバインディングデータの確定と同期で行うため、遷移の前に必ず完了しています。破棄と遷移は `-store-clear`（18）→ `-history`（19）→ `-redirect`（20）の順です。
+- `data-store` のミラーはバインディングデータの確定と同期で行うため、遷移の前に必ず完了しています。破棄と遷移は `-store-clear`（18）→ `-history`（19）→ `-redirect` / `-redirect-replace`（20）の順です。
 - `data-{event}-dialog` の `
 ` 表記は、使用直前に評価した値でも改行へ復元されます。
 - 属性の描画では DOM 上の値が評価結果へ置き換わりますが、再評価は宣言（テンプレート）に対して行うため、同じ要素を続けて操作しても毎回その時点のデータで評価されます。
@@ -3362,7 +3372,7 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 ##### `data-{event}-if`
 
-手続きの**実行条件**です。条件が偽のときは、その手続きの以降のアクション（`data-{event}-run` / `-confirm` / `-reset-before` / `-before-run` / `-fetch` / `-bind` / `-store-clear` / `-history` / `-redirect` など）をすべて実行しません。非イベントの場合は `data-fetch-if` です。
+手続きの**実行条件**です。条件が偽のときは、その手続きの以降のアクション（`data-{event}-run` / `-confirm` / `-reset-before` / `-before-run` / `-fetch` / `-bind` / `-store-clear` / `-history` / `-redirect` / `-redirect-replace` など）をすべて実行しません。非イベントの場合は `data-fetch-if` です。
 
 表示制御の `data-if` とは別物です。`data-if` は要素の表示を切り替え、`data-{event}-if` は手続きを実行するかどうかを決めます。
 
@@ -4282,6 +4292,8 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 </button>
 ```
 
+`data-{event}-redirect-replace` とは併用しないでください。ここで追加した履歴項目が置き換えられるだけで、遷移前のページは履歴に残ります（[`data-{event}-redirect-replace`](#data-event-redirect-replace)）。
+
 ---
 
 ##### `data-{event}-redirect`
@@ -4306,6 +4318,29 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 </div>
 ```
 
+##### `data-{event}-redirect-replace`
+
+指定 URL にリダイレクトし、**現在の履歴項目を置き換えます**（`location.replace()` 相当）。`data-{event}-redirect` が履歴を 1 つ積むのに対し、こちらは**遷移前のページを履歴に残しません**。したがって遷移後に「戻る」を押しても、そのページへは戻りません。
+
+遷移先の評価タイミング・`{{...}}` 式の扱い・処理順（20）・`data-{event}-redirect-return-param` との併用は `data-{event}-redirect` と同じです。違いは履歴の扱いだけです。
+
+```html
+<!-- 確定した申込の確認画面を履歴に残さない。完了画面で「戻る」を押しても、
+     確認画面ではなくその前のページへ戻る -->
+<button
+  data-click-fetch="/api/apply"
+  data-click-method="POST"
+  data-click-redirect-replace="/apply/complete.html"
+>
+  申込を確定する
+</button>
+```
+
+- **一度きりの操作を終えた画面を履歴から外す**用途を想定しています。確定・送信の後に残った画面へ「戻る」で到達できると、同じ操作をもう一度実行できてしまうためです。
+- `data-{event}-redirect` と**両方を宣言した場合は本属性を採用**し、`Log.warn('Haori', ...)` で警告します。どちらを優先するかを宣言側が選べる仕様にはしていません。
+- `data-{event}-redirect-return-param` は本属性にも適用されます（同属性は `data-{event}-redirect` と本属性のいずれかがある場合だけ有効です）。
+- 履歴項目を**追加**する `data-{event}-history`（処理順 19）とは**併用しないでください**。置き換えの対象は「その時点の履歴項目」であり、`data-{event}-history`（19）が先に項目を追加するため、本属性（20）が置き換えるのは**追加された項目**になります。結果として `data-{event}-history` の URL は履歴に残らず、**遷移前のページは履歴に残ります**（履歴から外す目的は達成できません）。
+
 ##### `data-{event}-redirect-return-param`
 
 手続きの成功後リダイレクト先を、URL クエリパラメータから**安全に**解決します。認証ガードの戻り先クエリ自動付与（`*-return-param`、送り手）と**対称な受け手側**で、ログイン後に元のページへ復帰させる用途を宣言的に実現します。
@@ -4326,7 +4361,7 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 </button>
 ```
 
-- **`data-{event}-redirect` と併用**し、その既定遷移先を「安全な戻り先で上書きする」修飾子として動作します。**`data-{event}-redirect` が無い場合は本属性を無視**します（オプトイン。属性が無ければ従来どおり `data-{event}-redirect` のみが動作し、既存挙動は不変）。
+- **`data-{event}-redirect` または `data-{event}-redirect-replace` と併用**し、その既定遷移先を「安全な戻り先で上書きする」修飾子として動作します。**どちらも無い場合は本属性を無視**します（オプトイン。属性が無ければ従来どおり遷移の指定のみが動作し、既存挙動は不変）。
 - 手続きが**成功**したとき、現在ページ URL から指定クエリ名の値を `URLSearchParams.get()` で**1回だけ**デコードして読み取ります（二重デコードによる検証回避を防ぐため、追加のデコードは行いません）。
 - 読み取った値を**こちら側で `trim()`** したうえで、**安全な同一オリジンのローカルパス**であればそこへ遷移します。安全でない／値が無い場合は `data-{event}-redirect`（既定遷移先）へフォールバックします。
 - クエリ名は**遷移直前**に評価するため、応答の値で決めることもできます（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。
@@ -4559,7 +4594,7 @@ document.addEventListener('haori:ready', (event) => {
 
 **detail**:
 ```typescript
-{ version: string }  // ライブラリのバージョン（例: '0.42.0'）
+{ version: string }  // ライブラリのバージョン（例: '0.43.0'）
 ```
 
 > **補足**: `data-each` の描画完了を検知したい場合は、専用の完了マーカー
@@ -4972,7 +5007,7 @@ Haori.enhancers.register('choices', {init, refresh, destroy})
 
 ```javascript
 Haori.Core.dumpScope(element)
-Haori.version // '0.42.0'
+Haori.version // '0.43.0'
 ```
 
 `Haori.Haori` と `Haori.default` はグローバル自身への自己参照です

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>履歴を置き換える遷移: 確認画面</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 確定を終えた確認画面。履歴を置き換えて遷移すれば、完了画面から「戻る」で
+       ここへ戻れないため、二重に確定できない。 -->
+  <h1 id="confirm">確認画面</h1>
+  <button id="apply-replace" type="button"
+    data-click-fetch="/api/apply"
+    data-click-method="POST"
+    data-click-redirect-replace="/playwright/redirect-replace-complete.html">
+    確定する（履歴を置き換える）
+  </button>
+  <button id="apply-push" type="button"
+    data-click-fetch="/api/apply"
+    data-click-method="POST"
+    data-click-redirect="/playwright/redirect-replace-complete.html">
+    確定する（履歴を積む）
+  </button>
+  <!-- data-click-history との併用。置き換えの対象は history が追加した項目になるため、
+       この確認画面は履歴に残る（併用しないこと。仕様の注記の確認用）。 -->
+  <button id="apply-replace-with-history" type="button"
+    data-click-fetch="/api/apply"
+    data-click-method="POST"
+    data-click-history="/playwright/redirect-replace-confirm.html?pushed=1"
+    data-click-redirect-replace="/playwright/redirect-replace-complete.html">
+    確定する（history と併用）
+  </button>
+</body>
+</html>
