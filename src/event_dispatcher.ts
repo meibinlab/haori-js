@@ -426,7 +426,7 @@ export default class EventDispatcher {
 
     // change / input イベントの場合、DOM値と内部値を同期する
     if (type === 'change' || type === 'input') {
-      this.syncUserEdit(element);
+      this.syncUserEdit(element, type === 'change');
     }
 
     const runProcedure = () => {
@@ -517,9 +517,11 @@ export default class EventDispatcher {
    * 起動しない `input` では内部値を同期してはいけません（`recordUserEdit()`）。
    *
    * @param element 編集された要素
+   * @param isChange `change` による呼び出しかどうか。`change` は**編集の時点を
+   *     打ち直しません**（下記）
    * @returns 戻り値はない。
    */
-  private syncUserEdit(element: HTMLElement): void {
+  private syncUserEdit(element: HTMLElement, isChange: boolean): void {
     const fragment = Fragment.get(element);
     if (!(fragment instanceof ElementFragment)) {
       return;
@@ -527,7 +529,15 @@ export default class EventDispatcher {
     fragment.syncValue();
     // ユーザー編集として記録する。飛行中の通信の応答がこの編集より古い内容を
     // 持っていても、その応答でこの入力欄を巻き戻さないための基準になる。
-    fragment.markUserEdit();
+    //
+    // ただし編集の時点は**値が変わった時点**である。`change` はフォーカスを外した
+    // 時点でしか発火しないため、打鍵があればその時点を保つ
+    // （`markUserEditOnChange()`）。
+    if (isChange) {
+      fragment.markUserEditOnChange();
+    } else {
+      fragment.markUserEdit();
+    }
     // ラジオボタンは排他制御で他要素が未チェックになるが、その要素では
     // change が発火しないため内部値が古いまま残る。同一フォームスコープの
     // 同名ラジオを併せて同期し、値収集時の不整合（配列累積）を防ぐ。

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>確定していない編集とリセット</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 報告された最小の構成。欄から出ずに打鍵した直後にクリアを押し、その後の
+       ブラーで初めて change が発火する経路を確認する。 -->
+  <form id="search-form">
+    <input id="customerId" name="customerId" type="text">
+    <input id="staffName" name="staffName" type="text">
+  </form>
+  <button id="clear-btn" type="button" data-click-reset-before="#search-form">クリア</button>
+
+  <script>
+    /**
+     * 手順を 1 回実行する。
+     *
+     * ボタンは `click()` で押す。実マウスで押すとボタンへフォーカスが移り、
+     * ブラー由来の `change` がリセットより先に起きてしまう（Safari でボタンを
+     * クリックしたときはフォーカスが移らないため、`click()` と同じ状態になる）。
+     *
+     * @param {string} timing `staffName` へ入力するタイミング
+     * @returns {void}
+     */
+    window.runStep = function (timing) {
+      var customerId = document.getElementById('customerId');
+      var staffName = document.getElementById('staffName');
+      // 利用者の打鍵と同じ「信頼された input」で入れる（change は起こさない）。
+      customerId.focus();
+      customerId.select();
+      document.execCommand('insertText', false, '9999');
+
+      var type = function () {
+        // focus() により customerId がブラーし、値が変わっているため native な
+        // change が発火する。
+        staffName.focus();
+        staffName.value = 'クリア中に入力';
+        staffName.dispatchEvent(new Event('input', {bubbles: true}));
+      };
+
+      document.getElementById('clear-btn').click();
+      if (timing === 'none') {
+        return;
+      }
+      if (timing === 'same-task') {
+        type();
+      } else if (timing === 'timeout0') {
+        setTimeout(type, 0);
+      } else if (timing === 'raf1') {
+        requestAnimationFrame(type);
+      } else if (timing === 'raf2') {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(type);
+        });
+      } else {
+        throw new Error('未知のタイミング: ' + timing);
+      }
+    };
+  </script>
+</body>
+</html>

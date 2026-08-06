@@ -546,25 +546,91 @@ export default class Form {
    * 決まり、収集値からは同じ規則で経路を組み立てられません。行の編集は応答の反映側
    * （`Procedure` の `reconcileRowUserEdits()`）で保護します。
    *
+   * 経路には**その編集が起きた時点**の通番を持たせます。コミットの通番で主張すると、
+   * 編集の後・コミットの前に要求された供給（`data-{event}-reset` など）が「編集の方が
+   * 新しい」と判定されて棄却されます（`ValueChangeOrigin.editedPaths`）。
+   *
+   * 走査は「編集の通番の種類数」だけ繰り返します（＝編集された欄の数が上限）。経路の
+   * 組み立ては収集値の形に合わせる必要があり、収集は基準の通番で絞り込めるためこの形
+   * にしています。呼び出しは `change` / `input` の確定ごとで、走査 1 回はフォーム配下の
+   * 走査に相当します。
+   *
    * @param form 対象のフォームフラグメント
+   * @param updateSequence この更新（双方向コミット）の通番。編集そのものではなく
+   *     「この更新が引き起こした」経路（非表示分岐で除外されたキー）に使います
    * @param prefix 経路の接頭辞（`data-form-arg` のキーなど。無い場合は空文字）
    * @param collected この更新が運ぶ収集値。除外されたキーの判定に使います。
    *     **重ね合わせへ渡すものと同じオブジェクトを渡してください**（明示的に与えた
    *     値が収集値へ重なっている場合、そのキーは除外の対象外になります）。省略時は
    *     ここで収集し直します
-   * @returns 編集された経路の集合
+   * @returns 編集された経路と、その編集が起きた時点の通番
    */
   public static collectEditedPaths(
     form: ElementFragment,
+    updateSequence: number,
     prefix: string = '',
     collected: Record<string, unknown> | null = null,
-  ): ReadonlySet<string> {
-    const paths = new Set<string>();
-    // 基準を 0 にして「これまでに編集された欄すべて」を対象とする。編集の権威は
-    // 供給で明示的に引き取られるまで続くため（仕様「ユーザー編集と宣言バインドの権威」）。
-    Form.walkEditedPaths(Form.getValuesEditedAfter(form, 0), prefix, paths);
-    Form.walkExcludedPaths(collected ?? Form.getValues(form), prefix, paths);
+  ): ReadonlyMap<string, number> {
+    const paths = new Map<string, number>();
+    // 収集値の走査は基準の通番で絞れる（`getValuesEditedAfter`）。編集の通番を大きい
+    // 順にたどり「その通番以降の編集」を集めると、各経路には最初に現れた時点＝自身の
+    // 編集の通番が付く。基準を 0 にすれば「これまでに編集された欄すべて」になり、
+    // 編集の権威は供給で明示的に引き取られるまで続く（仕様「ユーザー編集と宣言バインドの権威」）。
+    for (const sequence of Form.collectUserEditSequences(form)) {
+      const edited = new Set<string>();
+      Form.walkEditedPaths(
+        Form.getValuesEditedAfter(form, sequence - 1),
+        prefix,
+        edited,
+      );
+      for (const path of edited) {
+        if (!paths.has(path)) {
+          paths.set(path, sequence);
+        }
+      }
+    }
+    // 非表示分岐で除外されたキーは、除外を引き起こしたこの更新自体を編集として扱う
+    // （どの入力欄の編集にも対応しないため、更新の通番を使う）。
+    const excluded = new Set<string>();
+    Form.walkExcludedPaths(collected ?? Form.getValues(form), prefix, excluded);
+    for (const path of excluded) {
+      if (!paths.has(path)) {
+        paths.set(path, updateSequence);
+      }
+    }
     return paths;
+  }
+
+  /**
+   * 部分木の入力欄が持つユーザー編集の通番を、大きい順の重複なしで返します。
+   *
+   * @param fragment 対象フラグメント（配下も辿る）
+   * @returns 編集の通番の配列（降順）
+   */
+  private static collectUserEditSequences(fragment: ElementFragment): number[] {
+    const sequences = new Set<number>();
+    Form.walkUserEditSequences(fragment, sequences);
+    return [...sequences].sort((left, right) => right - left);
+  }
+
+  /**
+   * 部分木をたどってユーザー編集の通番を集めます。
+   *
+   * @param fragment 対象フラグメント
+   * @param sequences 集める先
+   * @returns 戻り値はありません。
+   */
+  private static walkUserEditSequences(
+    fragment: ElementFragment,
+    sequences: Set<number>,
+  ): void {
+    const sequence = fragment.getUserEditSequence();
+    if (sequence > 0) {
+      sequences.add(sequence);
+    }
+    for (const child of fragment.getChildElementFragments()) {
+      Form.walkUserEditSequences(child, sequences);
+    }
   }
 
   /**

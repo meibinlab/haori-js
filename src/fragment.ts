@@ -58,13 +58,22 @@ export interface ValueChangeOrigin {
   /** 変化の種別 */
   readonly kind: ValueChangeKind;
   /**
-   * この更新のうち、**実際に利用者が編集した**バインドデータの経路。
+   * この更新のうち、**実際に利用者が編集した**バインドデータの経路と、**その編集が
+   * 起きた時点**の通番。
    *
    * `change` / `input` の双方向コミットはフォーム全体の収集値を運ぶため、更新全体を
    * 「編集」として扱うと未編集の欄まで編集の権威を得てしまいます。編集された経路だけ
    * をここで示し、残りは `kind` の種別として判定します。
+   *
+   * 経路ごとに通番を持つのは、**コミットが起きた時点ではなく編集が起きた時点**で
+   * 判定するためです。`change` はフォーカスを外した時点で発火するため、編集より
+   * ずっと後になります。コミットの通番で主張すると、編集の後・コミットの前に要求
+   * された供給（`data-{event}-reset` など）が「編集の方が新しい」と判定されて棄却
+   * され、供給が無かったことになります（仕様「ユーザー編集と宣言バインドの権威」の
+   * 「供給は、その供給を起こした操作が起きた時点までの編集を解除し、それより後の
+   * 編集は残します」）。
    */
-  readonly editedPaths?: ReadonlySet<string>;
+  readonly editedPaths?: ReadonlyMap<string, number>;
 }
 
 interface EvaluationProfilePlaceholderSnapshot {
@@ -2024,10 +2033,27 @@ export class ElementFragment extends Fragment {
    * `<select>` の候補が揃ってから載せ直す）。二度目を弾くと供給された値が画面に
    * 載りません。
    *
+   * **双方向コミットが運ぶ値は、この入力欄が自身の編集より後に初期化されていれば
+   * 適用しません。** コミット（`change` / `input`）はフォーム全体の収集値を運びますが、
+   * その値を読んだのは編集の時点です。`change` はフォーカスを外した時点で発火する
+   * ため、読んだ後・書き戻す前に初期化が挟まることがあります。呼び出しの時点だけで
+   * 比べると「初期化より後に始まった更新」と見なされ、クリアした値が復活します
+   * （仕様「`data-{event}-reset`」の「進行中のバインドデータ更新は書き戻しません」）。
+   * 初期化より後に行われた編集（`userEditSequence` の方が新しい欄）は対象外なので、
+   * クリアの途中に打った文字はそのまま残ります。
+   *
    * @param origin 適用しようとしている値の由来
    * @returns 適用してよい場合は true
    */
   public canApplyValue(origin: ValueChangeOrigin): boolean {
+    if (
+      origin.kind === 'nonSupply' &&
+      origin.editedPaths !== undefined &&
+      this.userEditSequence > 0 &&
+      this.wasResetAfter(this.userEditSequence)
+    ) {
+      return false;
+    }
     return ElementFragment.isApplicable(
       {sequence: this.lastValueSequence, kind: this.lastValueKind},
       origin,
@@ -2154,6 +2180,39 @@ export class ElementFragment extends Fragment {
     // この入力欄へ適用されない。
     this.markValueApplied({sequence: this.userEditSequence, kind: 'edit'});
     return this.userEditSequence;
+  }
+
+  /**
+   * 直前の `change` による編集の記録で使った通番。
+   *
+   * その後に打鍵（`input`）があったかどうかを `markUserEditOnChange()` で判定します。
+   */
+  private lastChangeSequence = 0;
+
+  /**
+   * `change` によるユーザー編集を記録します。
+   *
+   * **`change` の発火そのものは編集の時点になりません。** 編集の時点は値が変わった
+   * 時点で、打鍵なら `input` が記録しています（仕様「ユーザー編集と宣言バインドの
+   * 権威」の「印は打鍵ごと（`input`）に付きます」）。`change` はフォーカスを外した
+   * 時点でしか発火しないため、そこで打ち直すと、打鍵の後・`change` の前に要求された
+   * 供給（`data-{event}-reset` など）よりも新しい編集に見え、その供給が「要求より後の
+   * 編集」として棄却されてしまいます（仕様「反映待ちの間に起きた変化」）。
+   *
+   * したがって直前の `change` より後に打鍵があれば、**その打鍵の時点**を編集の時点
+   * とします。打鍵が無い場合（外部ライブラリが `<select>` の値を差し替えたときなど）
+   * は、値が変わったことをここで初めて知るため、この時点を編集として記録します。
+   *
+   * @returns この編集の通番
+   */
+  public markUserEditOnChange(): number {
+    const typedSinceLastChange =
+      this.userEditSequence > this.lastChangeSequence;
+    const sequence = typedSinceLastChange
+      ? this.userEditSequence
+      : this.markUserEdit();
+    this.lastChangeSequence = sequence;
+    return sequence;
   }
 
   /**

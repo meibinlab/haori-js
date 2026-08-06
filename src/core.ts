@@ -93,12 +93,14 @@ export interface SetBindingDataOptions {
    */
   readonly sequence?: number;
   /**
-   * この更新のうち、利用者が実際に編集したバインドデータの経路。
+   * この更新のうち、利用者が実際に編集したバインドデータの経路と、その編集が起きた
+   * 時点の通番。
    *
    * フォーム全体の収集値を運ぶ双方向コミットが、未編集の欄まで編集の権威を得ない
-   * ようにするために渡します（`Form.collectEditedPaths()`）。
+   * ようにするために渡します（`Form.collectEditedPaths()`）。経路ごとに通番を持つ
+   * 理由は `ValueChangeOrigin.editedPaths` を参照してください。
    */
-  readonly editedPaths?: ReadonlySet<string>;
+  readonly editedPaths?: ReadonlyMap<string, number>;
   /**
    * 供給でユーザー編集の印を解除するか（既定は供給なら解除する）。
    *
@@ -1102,9 +1104,13 @@ export default class Core {
     if (isSupply) {
       fragment.markSupplyApplied(originSequence);
     }
-    // 呼出時点の初期化の通番。入力欄へ書き戻す直前に宛先の通番と比較し、この呼出
-    // より後に初期化（`Form.reset()`）されていれば書き戻さない。運んでいる値は
-    // 初期化前の状態なので、書き戻すとクリアしたはずの値が復活する。
+    // 入力欄へ書き戻す直前に宛先の通番と比較し、この基準より後に初期化
+    // （`Form.reset()`）されていれば書き戻さない。運んでいる値は初期化前の状態なので、
+    // 書き戻すとクリアしたはずの値が復活する。
+    //
+    // 双方向コミットは呼び出しが編集よりずっと後になるため、この呼出単位の判定では
+    // 拾えない。入力欄ごとに「その欄の編集より後に初期化されたか」で判定する
+    // （`ElementFragment.canApplyValue()`）。
     const resetSequence = ElementFragment.currentSequence();
     const previous = fragment.getRawBindingData();
     if (isSupply && (options.clearUserEdits ?? true)) {
@@ -1333,10 +1339,16 @@ export default class Core {
       // 変化していない経路は判定も記録もしない。
       return next;
     }
-    const kind: ValueChangeKind = origin.editedPaths?.has(path)
-      ? 'edit'
-      : origin.kind;
-    const pathOrigin: ValueChangeOrigin = {sequence: origin.sequence, kind};
+    // 編集された経路は「編集」として、**その編集が起きた時点**の通番で判定する。
+    // 更新の通番（コミットが起きた時点）で判定すると、編集の後・コミットの前に
+    // 要求された供給が棄却される（`ValueChangeOrigin.editedPaths`）。
+    const editSequence = origin.editedPaths?.get(path);
+    const kind: ValueChangeKind =
+      editSequence === undefined ? origin.kind : 'edit';
+    const pathOrigin: ValueChangeOrigin = {
+      sequence: editSequence ?? origin.sequence,
+      kind,
+    };
     if (!fragment.canApplyPath(path, pathOrigin)) {
       return previous;
     }

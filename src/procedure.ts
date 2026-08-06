@@ -2595,12 +2595,17 @@ ${body}
         //
         // 通番はこの `change` / `input` を起こした操作のもの。呼び出し時点で発番すると、
         // 操作の後に届いた供給より新しい番号を得て後勝ちが逆転する。
+        //
+        // ただし**編集された経路の判定にはその編集の通番を使う**。`change` はフォーカスを
+        // 外した時点で発火するため編集よりずっと後になり、コミットの通番で主張すると、
+        // 編集の後・コミットの前に要求された供給（クリアなど）が棄却される。
         await Core.setBindingData(formElement, bindingData, {
           skipFragments,
           kind: 'nonSupply',
           sequence: this.operationSequence,
           editedPaths: Form.collectEditedPaths(
             formFragment,
+            this.operationSequence,
             formArg ? String(formArg) : '',
             formValues,
           ),
