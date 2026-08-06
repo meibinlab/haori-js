@@ -5,7 +5,8 @@
  * 統合テストです。ボタンなどネイティブの load イベントが発生しない要素でも、
  * 非表示→表示への遷移時に data-load-* 手続きが1回だけ実行されることを確認します。
  *
- * 起動契機の根拠は仕様「イベント属性」の `load`（ロード時）。`data-if` による表示（`haori:show`）を契機に発火することは仕様書に記述が無く、ここでは実装契約として固定している（仕様へ足すかは要判断）。
+ * 期待値の根拠は仕様「イベント属性」の「**`load` は `data-if` による表示でも発火します。**」
+ * 「発火は**遷移のたびに 1 回**です。表示のままの再評価では発火しません」。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
@@ -99,6 +100,96 @@ describe('data-load-* の data-if 表示連動発火', () => {
 
     // すでに表示済み（遷移なし）のため load Procedure は再発火しない。
     expect(runSpy).not.toHaveBeenCalled();
+  });
+
+  it('最初から表示されている要素では発火しない', async () => {
+    // 仕様「イベント属性」の「**初期表示は遷移に当たりません。** 最初の描画で表示
+    // された要素（条件が最初から真の要素、`data-if` を宣言していない要素）では
+    // 発火しません」。
+    container.innerHTML = `
+      <div id="result5" data-bind='{"picked":null}'></div>
+      <div id="state5" data-bind='{"items":[{"id":1}]}'>
+        <button
+          id="auto5"
+          type="button"
+          data-if="items.length > 0"
+          data-load-data="picked={{items[0]?.id}}"
+          data-load-bind="#result5"
+        >条件が最初から真</button>
+        <button
+          id="plain5"
+          type="button"
+          data-load-data="picked=9"
+          data-load-bind="#result5"
+        >data-if なし</button>
+      </div>
+    `;
+    const runSpy = vi.spyOn(Procedure.prototype, 'run');
+
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    // どちらの欄も表示されているが、遷移が無いため load 手続きは起動しない。
+    expect(
+      (container.querySelector('#auto5') as HTMLElement).hasAttribute(
+        'data-if-false',
+      ),
+    ).toBe(false);
+    expect(runSpy).not.toHaveBeenCalled();
+    expect(
+      JSON.parse(
+        (container.querySelector('#result5') as HTMLElement).getAttribute(
+          'data-bind',
+        ) as string,
+      ).picked,
+    ).toBe(null);
+  });
+
+  it('非表示へ戻って再び表示されると改めて 1 回発火する', async () => {
+    // 仕様「イベント属性」の「いったん非表示へ戻って再び表示された場合は、改めて
+    // 1 回発火します」。
+    container.innerHTML = `
+      <div id="result4" data-bind='{"hit":null}'></div>
+      <div id="state4" data-bind='{"show":false,"token":"1回目"}'>
+        <button
+          id="auto4"
+          type="button"
+          data-if="show"
+          data-load-data="hit={{token}}"
+          data-load-bind="#result4"
+        >x</button>
+      </div>
+    `;
+    const state = container.querySelector('#state4') as HTMLElement;
+    const result = container.querySelector('#result4') as HTMLElement;
+
+    /**
+     * `#result4` に載っている `hit` を返します。
+     *
+     * @returns 現在の `hit`
+     */
+    const hit = (): unknown =>
+      JSON.parse(result.getAttribute('data-bind') as string).hit;
+
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const runSpy = vi.spyOn(Procedure.prototype, 'run');
+
+    // 表示 → 非表示 → 表示。遷移は 2 回なので発火も 2 回。合図の値を入れ替えて
+    // おき、2 回目の発火が実際に起きたことを効果でも確かめる（呼び出し回数だけで
+    // 数えると、対象以外の手続きが増えたときに意味が変わる）。
+    await Core.setBindingData(state, {show: true, token: '1回目'});
+    await waitForDomSettled();
+    expect(hit()).toBe('1回目');
+
+    await Core.setBindingData(state, {show: false, token: '2回目'});
+    await waitForDomSettled();
+    await Core.setBindingData(state, {show: true, token: '2回目'});
+    await waitForDomSettled();
+
+    expect(runSpy).toHaveBeenCalledTimes(2);
+    expect(hit()).toBe('2回目');
   });
 
   it('data-load-* を持たない data-if 要素では load Procedure を起動しない', async () => {

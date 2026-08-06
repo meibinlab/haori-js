@@ -30,14 +30,18 @@
 悪い例: 「仕様」の直後に本文の引用を置く（検査が節名と区別できず、常に 1 件報告する状態になります）
 ```
 
-2026-08-06 の後追いで、**全テストファイル（151 件）に参照を書きました**（参照 323 件はすべて見出しと一致）。仕様書に根拠が無いものは、そのことを本文に明記しています。この後追いで見つかった仕様書の空白は次の 2 件で、いずれも実装契約として固定してあります。
+2026-08-06 の後追いで、**全テストファイル（151 件）に参照を書きました**（参照はすべて見出しと一致）。仕様書に根拠が無いものは、そのことを本文に明記しています。この後追いで仕様書の空白が 2 件見つかり、いずれも**現在の挙動を仕様として明記**したうえで、テストの参照先を新しい節へ差し替えました。
 
-| 事象 | 対応するテスト |
-| --- | --- |
-| `haori:bindcomplete` の発火時点（`data-if` / `data-each` の DOM 反映との前後） | [tests/bindcomplete-and-scope.test.ts](../../tests/bindcomplete-and-scope.test.ts) |
-| `data-if` による表示（`haori:show`）を契機に `data-load-*` が発火すること | [tests/data-load-on-show.test.ts](../../tests/data-load-on-show.test.ts) |
+| 見つかった空白 | 追記した節 | 対応するテスト |
+| --- | --- | --- |
+| `haori:bindcomplete` の発火時点（`data-if` / `data-each` の DOM 反映との前後） | 仕様「`haori:bindcomplete`」 | [tests/bindcomplete-and-scope.test.ts](../../tests/bindcomplete-and-scope.test.ts) |
+| `data-if` による表示を契機に `data-load-*` が発火すること | 仕様「イベント属性」 | [tests/data-load-on-show.test.ts](../../tests/data-load-on-show.test.ts) |
 
-次のコマンドで全参照を検査できます（テンプレートリテラル内のエスケープを外して比較します）。
+**参照が無いテストは、仕様書の空白を見つける手がかりです。** 根拠を書こうとして書けなければ、そこが仕様の空白です。
+
+**検査は [tests/spec-references.test.ts](../../tests/spec-references.test.ts) が常時行います。** 手作業の照合は要りません。節の名前を変えると、参照している側がフルスイートで落ちます。同じテストが**文書内リンク（`](#見出し)`）の解決**も検査します。こちらは検査が無かったため、節の名前を変えるとリンクが静かに切れていました。
+
+手元で参照だけを見たい場合は次のコマンドでも同じ照合ができます（テンプレートリテラル内のエスケープを外して比較します。この検査自身は自分の書式を含むため 2 件報告します）。
 
 ```powershell
 $h = Select-String -Path docs\ja\specs.md -Pattern "^#{2,6}\s+(.+)$" |

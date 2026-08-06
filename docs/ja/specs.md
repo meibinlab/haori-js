@@ -2018,6 +2018,8 @@ data-if="expression"
 - `haori:show` (表示時)
 - `haori:hide` (非表示時)
 
+非表示から表示へ遷移した要素が `data-load-*` を宣言している場合は、その手続きを 1 回実行します（[イベント属性](#イベント属性)を参照）。
+
 ---
 
 ### 繰り返し処理
@@ -2930,6 +2932,12 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 - `input`: 逐次入力時（テキスト入力1文字ごと）
 - `load`: ロード時
 - `on`: 任意（カスタム）イベント時（`data-on` でイベント名を指定）
+
+**`load` は `data-if` による表示でも発火します。** `data-load-*` を宣言した要素が `data-if` で**非表示から表示へ遷移した**時点で、`load` の手続きを 1 回実行します。ボタンや `<div>` のようにネイティブの `load` が起きない要素でも、条件で出し入れするパネルやタブを**開いたときの**取得や既定値の設定を宣言だけで書けます。
+
+- 発火は**遷移のたびに 1 回**です。表示のままの再評価では発火しません（毎回の再評価で発火させると、取得を繰り返して止まらなくなります）。いったん非表示へ戻って再び表示された場合は、改めて 1 回発火します。
+- **初期表示は遷移に当たりません。** 最初の描画で表示された要素（条件が最初から真の要素、`data-if` を宣言していない要素）では発火しません。**読み込み時に取得したい場合は `data-fetch` を宣言してください。** ページの読み込みで走る `data-load-*` は、`<html>` へ宣言したもの（`window` の `load`）と、`<img>` などネイティブの `load` イベントを発火する要素**自身**へ宣言したものだけです。
+- 表示処理は手続きの完了を**待ちません**。表示が手続きの応答でブロックされないようにするためで、`haori:show` は手続きの結果と無関係に発火します。
 
 `input` は逐次（1文字ごと）に発火するため、**手続きを実行するのは `data-input-*` を明示した要素のみ**です（オプトイン）。`change` と同様に、`data-input-form` の指定がなくても自動的に先祖フォームを検出して入力値を双方向バインディングへ反映します。検索欄の逐次絞り込みなどに利用できます。
 
@@ -4578,6 +4586,34 @@ element.addEventListener('haori:bindchange', (event) => {
   previous: Record<string, unknown> | null
   next: Record<string, unknown>
   reason: string  // 'data-bind' | 'form-change' | 'fetch-response' など
+}
+```
+
+#### `haori:bindcomplete`
+
+手続きによるバインドの処理を終えた時点で、**バインド先の要素**で発火します。バブリングします。
+
+**発火時点は「バインドの反映と、対象配下の再評価が終わった後」です。** `data-if` の表示・非表示の切り替えと `data-each` の行の生成が DOM へ載った状態で発火するため、リスナーの中で行数や表示状態をそのまま読めます（描画キューの完了を自分で待つ必要がありません）。
+
+- 対象は `data-{event}-bind` / `data-{event}-bind-arg`（`data-fetch-bind` などの非イベント版を含む）と、**バインド先を指定しない `data-fetch` / `data-{event}-fetch`** です。後者は応答を自要素へバインドするため、その要素で発火します。
+- 発火するのは**手続き経由のバインド**だけです。`Core.setBindingData()` を直接呼んだ場合は発火しません（そちらは `haori:bindchange` を使います）。
+- 書き込み先が所有者要素へ移る構成（[編集可能な行への書き込み](#編集可能な行への書き込み)）でも、`haori:bindcomplete` は**バインド先として指定した要素**で発火します（`haori:bindchange` は所有者要素で発火します）。
+- **行の中から起動された処理の書き戻しは待ちません。** 行内の `data-fetch` のように行の初期化から起動された処理は、描画側が完了を待たずに次へ進みます（[編集可能な行への書き込み](#編集可能な行への書き込み)）。行内の取得結果を前提にするリスナーでは、その要素の `haori:bindcomplete` を待ってください。
+- バインド先が**行として解決できなかった**場合（`data-each-before` / `data-each-after` の固定要素を指した、応答を待つ間に行が削除された）は、書き込みを見送ったうえで発火します。文字列の応答を `bind-arg` 無しでバインドしようとした場合は、バインド自体を行わないため発火しません。
+
+```javascript
+element.addEventListener('haori:bindcomplete', (event) => {
+  // この時点で data-each の行はすべて DOM に存在する
+  console.log('行数:', element.querySelectorAll('tbody tr').length)
+  console.log('bind-arg のキー:', event.detail.bindArg)
+})
+```
+
+**detail**:
+```typescript
+{
+  bindArg: string | null  // data-{event}-bind-arg のキー。指定が無ければ null
+  reason: string          // 予約。現在は常に 'other'
 }
 ```
 

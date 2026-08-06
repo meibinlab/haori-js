@@ -4,12 +4,13 @@
  * 依頼1: haori:bindcomplete が data-if / data-each の DOM 反映完了後に発火することを検証する。
  * 依頼2: Core.dumpScope による識別子解決スコープのダンプ（由来情報）を検証する。
  *
- * `haori:bindcomplete` の発火時点は仕様書に記述が無く、ここでは実装契約として固定している（仕様へ足すかは要判断）。`Core.dumpScope` の根拠は仕様「スコープ診断（開発モード）」。
+ * 期待値の根拠は仕様「`haori:bindcomplete`」の「発火時点は『バインドの反映と、対象配下の
+ * 再評価が終わった後』です」と、仕様「スコープ診断（開発モード）」（`Core.dumpScope`）。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
-import {waitForDomSettled} from './helpers/async';
+import {waitForCondition, waitForDomSettled} from './helpers/async';
 
 describe('依頼1: bindcomplete のDOM反映保証', () => {
   let container: HTMLElement;
@@ -85,6 +86,44 @@ describe('依頼1: bindcomplete のDOM反映保証', () => {
     // bindcomplete 時点で data-if は表示済み・data-each 全3行が DOM に存在する。
     expect(ifFalseAtComplete).toBe(false);
     expect(rowsAtComplete).toBe(3);
+  });
+
+  it('Core.setBindingData を直接呼んだ場合は発火しない', async () => {
+    // 仕様「`haori:bindcomplete`」の「発火するのは**手続き経由のバインド**だけです。
+    // `Core.setBindingData()` を直接呼んだ場合は発火しません」。
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response(JSON.stringify({items: [{id: 1}]}), {
+            headers: {'Content-Type': 'application/json'},
+          }),
+        ) as unknown as Promise<Response>,
+    );
+    container.innerHTML = `
+      <div id="state" data-bind='{"items":[]}'></div>
+      <button id="b" data-click-fetch="/api/i.json" data-click-bind="#state">
+        読み込む
+      </button>`;
+    await Core.scan(container);
+    await waitForDomSettled();
+
+    const state = container.querySelector('#state') as HTMLElement;
+    let fired = 0;
+    state.addEventListener('haori:bindcomplete', () => {
+      fired += 1;
+    });
+
+    // 直接の供給では発火しない（通知は haori:bindchange が担う）。
+    await Core.setBindingData(state, {items: [{id: 9}]});
+    await waitForDomSettled();
+    expect(fired).toBe(0);
+
+    // 同じ要素へ手続き経由でバインドすると発火する（上の 0 件が空振りでない証拠）。
+    (container.querySelector('#b') as HTMLElement).click();
+    await waitForCondition(() => fired > 0, {
+      description: '手続き経由のバインドで bindcomplete が発火する',
+    });
+    expect(fired).toBe(1);
   });
 });
 
