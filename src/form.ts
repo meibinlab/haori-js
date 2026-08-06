@@ -2512,7 +2512,11 @@ export default class Form {
 
     // 初期化は明示的な値の供給なので、ユーザー編集の印を解除する。解除しないと
     // 宣言バインドの再適用が抑止されたままになり、編集した欄だけが初期化されない。
-    Core.clearUserEditMarks(fragment);
+    // 解除するのは**初期化の操作の通番まで**の編集に限る。呼出時点の最新まで解除すると、
+    // クリアを押した後に打った文字の印まで消え、末尾の再評価（`Core.evaluateAll()`）が
+    // 宣言バインドの評価結果でその文字を上書きしてしまう（仕様「反映待ちの間に起きた
+    // 変化」の「保護の対象は打鍵 1 文字ごとです」）。他の供給と同じ規則（`Core.setBindingData()`）。
+    Core.clearUserEditMarks(fragment, operationSequence);
 
     // 値をクリア
     Form.clearValues(fragment);
