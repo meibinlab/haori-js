@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>reset-before と bind を同じホストへ向けた場合の data-fetch の結果</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- ホスト。data-fetch の結果を子孫から参照するためここへ寄せる。 -->
+  <div id="host" data-bind='{"dialog": {}}'>
+    <!-- 初期スキャン時に 1 回だけ取得する（URL は固定）。 -->
+    <div hidden data-fetch="/package.json"
+      data-fetch-bind="#host" data-fetch-arg="fetched"></div>
+    <p>fetched = <span id="out">{{fetched ? fetched.name : '(none)'}}</span></p>
+    <p>dialog.id = <span id="out-dialog">{{dialog.id || '(none)'}}</span></p>
+  </div>
+
+  <!-- reset-before と bind を同じホストへ向ける（実画面の「編集」ボタン相当）。 -->
+  <button id="btn" type="button"
+    data-click-reset-before="#host"
+    data-click-data="id=1"
+    data-click-bind="#host"
+    data-click-bind-arg="dialog">reset-before + bind</button>
+
+  <!-- 応答の反映より後に走る reset でも同じ経路を通る。 -->
+  <button id="btn-reset" type="button"
+    data-click-data="id=2"
+    data-click-bind="#host"
+    data-click-bind-arg="dialog"
+    data-click-reset="#host">bind + reset</button>
+
+  <!-- 入力欄の初期化そのものが働くことの確認用。 -->
+  <div id="values">
+    <input id="keyword" name="keyword" value="初期">
+    <select id="plan" name="planId">
+      <option value="1">A</option>
+      <option value="2" selected>B</option>
+    </select>
+  </div>
+  <button id="btn-values" type="button" data-click-reset="#values">値のみ初期化</button>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.43.1
+バージョン: 0.44.0
 
 ## 目次
 
@@ -1353,6 +1353,35 @@ HTML のラジオボタンは「同じフォームの中の同名要素」で 1 
 
 フォームデータを取得すると、`total`は除外され、`{"price":1000,"quantity":3}`のみが取得されます。
 
+#### 表示しない項目を型どおりに送る（`data-value-type`）
+
+`input`の値は常に文字列のため、`type="hidden"`に真偽値を載せても`"true"`という文字列で送られます。API が真偽値や数値を期待している場合は、**`data-value-type`** で収集値の型を宣言します。宣言できるのは`boolean`・`number`・`string`です。
+
+**記述するHTML**:
+```html
+<div data-bind='{"agree":true,"count":12}'>
+  <form id="applyForm">
+    <input type="hidden" name="agree" data-value-type="boolean" data-attr-value="{{agree}}">
+    <input type="hidden" name="count" data-value-type="number" data-attr-value="{{count}}">
+    <input name="memo">
+  </form>
+  <button
+    data-click-form="#applyForm"
+    data-click-fetch="/api/apply"
+    data-click-fetch-method="POST"
+  >
+    申し込む
+  </button>
+</div>
+```
+
+送信されるJSONは`{"agree":true,"count":12,"memo":"..."}`になります。値を利用者に見せる必要がないだけの項目を、真偽値のために「表示しないチェックボックス」で代用する必要はありません。
+
+- 判定できない値は`null`になります（`boolean`では空文字・`"1"`・`"on"` など、`number`では空文字・数値にならない文字列）。未入力を`false`として送らないためです。
+- `boolean`を宣言した欄では、`data-attr-value`の評価結果が`false`でも`"false"`が書かれます（通常は`false`で属性が削除されます）。
+- `checkbox` / `radio` / `file` と複数選択の`<select>`では無視されます（開発モードで警告します）。チェック状態を真偽値で送る場合は`value="true"`のチェックボックスを使います。
+- 単一選択の`<select>`や`<textarea>`でも宣言できます（`<select name="planId" data-value-type="number">`など）。
+
 #### `<form>` を置けない場所でのフォーム化（`data-form`）
 
 HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テーブルの各行に入力欄が並ぶ UI などでは `<form>` を使えません。このような場合、任意の要素に **`data-form`** 属性を付けると、その要素を `<form>` と同等の**値収集コンテナ**として扱えます（属性値は不要・無視されます）。
@@ -2144,11 +2173,9 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 </div>
 ```
 
-#### `data-fetch-arg` / `data-fetch-bind-arg`: データをネストするキー名を指定
+#### `data-fetch-arg`: データをネストするキー名を指定
 
-レスポンスデータを指定したキー名の下に格納してバインドします。
-`data-fetch-arg` と `data-fetch-bind-arg` は同義で、`data-fetch-arg` が優先されます。
-イベント属性版は `data-{event}-bind-arg` を使用します。
+レスポンスデータを指定したキー名の下に格納してバインドします。イベント属性版は `data-{event}-bind-arg` を使用します。
 
 ```html
 <div data-fetch="/api/user" data-fetch-arg="user">
@@ -2157,8 +2184,24 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
   <p>{{user.name}}</p>
   <p>{{user.email}}</p>
 </div>
+```
 
-<!-- data-fetch-bind-arg も同じ意味 -->
+**キー名を指定すると、バインド先の他のキーは保持されます。** そのキーの配下だけを更新するため、同じ要素へ別の `data-fetch` の結果を寄せていても消えません。`data-fetch-bind-merge` を併記する必要はなく、併記しても無視されます。
+
+**キー名を指定しないと全置換になります。** バインド先が持っていた他のキー（別の `data-fetch` が寄せた結果など）は消え、消えたキーを供給していた `data-fetch` は実行シグネチャが変わらないため再取得されません。参照側の式は未解決参照のまま復帰しないため、共有する state へ寄せる場合はキー名を指定してください。
+
+```html
+<!-- #state の me は保持される -->
+<div data-fetch="/api/auth/me" data-fetch-bind="#state" data-fetch-arg="me"></div>
+
+<!-- 注意: キー名が無いので #state は応答で全置換され、me も消える -->
+<div data-fetch="/api/detail" data-fetch-bind="#state"></div>
+```
+
+`data-fetch-bind-arg` は `data-fetch-arg` の別名です（両方ある場合は `data-fetch-arg` を採用）。**非推奨**のため、新しく書く宣言では `data-fetch-arg` を使ってください。
+
+```html
+<!-- 非推奨: 上の data-fetch-arg と同じ意味 -->
 <div data-fetch="/api/user" data-fetch-bind-arg="user">
   <p>{{user.name}}</p>
 </div>

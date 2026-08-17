@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.43.1
+バージョン: 0.44.0
 最終更新: 2026-08-04
 
 ## 目次
@@ -1414,7 +1414,7 @@ data-if / data-each / {{variable}} などが自動更新
 
 - 数値型の値をバインドした場合も、有限でない値（`Infinity` / `NaN`）は `null` になります
 - 真偽値は数値として扱いません（`true` / `false` はいずれも `null`）
-- `type="number"` 以外の入力（`text` 等）は従来どおり文字列のまま
+- `type="number"` 以外の入力（`text` 等）は従来どおり文字列のまま。型を宣言して収集したい場合は [`data-value-type`](#data-value-type) を使います（`type="hidden"` に真偽値・数値を載せる場合など）
 
 > 互換性に関する注意: 0.13.0 より前は `type="number"` も文字列で収集していました。0.13.0 以降は数値型になります。文字列のまま扱いたい場合は `type="text"` を使用してください。
 
@@ -2417,10 +2417,31 @@ data-fetch="url"
 - `data-fetch-data`: 送信データ（テンプレート式の埋め込み規則は [`data-{event}-data`](#data-event-data) と同じ）
 - `data-fetch-form`: フォーム要素のセレクタ
 - `data-fetch-bind`: バインド先セレクタ (デフォルト: 自要素)。セレクタは `document.body` 配下を探すため、`<head>` 内の要素（`<title>` など）はバインド先に指定できない
-- `data-fetch-arg`: バインドキー名（`data-fetch-bind-arg` と同義。こちらが優先）
-- `data-fetch-bind-arg`: バインドキー名（`data-fetch-arg` の別名。`data-fetch-arg` が無い場合に参照）
+- `data-fetch-arg`: バインドキー名（**推奨**。後述「バインドキー名の指定」）
+- `data-fetch-bind-arg`: バインドキー名（`data-fetch-arg` の別名。**非推奨**。`data-fetch-arg` が無い場合に参照）
 - `data-fetch-bind-params`: 抽出パラメータ (&区切り)
+- `data-fetch-bind-merge`: バインド先の既存キーを保持して浅くマージ（**バインドキー名を指定した場合は無視**。後述）
+- `data-fetch-bind-append`: 配列を追記するキー（[`data-fetch-bind-append` / `data-{event}-bind-append` / `data-intersect-bind-append`](#data-fetch-bind-append--data-event-bind-append--data-intersect-bind-append)）
+- `data-fetch-bind-transform`: 応答の変換（[`data-{event}-bind-transform`（非イベント: `data-fetch-bind-transform`）](#data-event-bind-transform非イベント-data-fetch-bind-transform)）
 - `data-fetch-state`: フェッチ状態 `_fetch` の注入先セレクタ（省略時は自要素）
+
+**バインドキー名の指定**:
+
+応答に名前を付けてバインドする属性は 2 つありますが、**推奨は `data-fetch-arg`** です。`data-fetch-bind-arg` は同義の別名で、両方ある場合は `data-fetch-arg` を採用します。新しく書く宣言では `data-fetch-arg` を使ってください（`data-fetch-bind-arg` は非推奨ですが、既存の宣言のために解釈は続けます）。イベント版は `data-{event}-bind-arg` だけで、`data-{event}-arg` はありません。
+
+- **キー名を指定した場合**は、そのキーの配下だけを更新し、**バインド先の他のキーは保持します**。したがって `data-fetch-bind-merge` を併記する必要はありません（併記しても**無視されます**）。
+- **キー名を指定しない場合**は、応答でバインド先を**全置換**します。バインド先が持っていた他のキー（別の `data-fetch` が寄せた結果など）は**消えます**。消えたキーを供給していた `data-fetch` は実行シグネチャが変わらないため再取得されず、参照側の式は[未解決参照](#未解決参照の診断)のまま復帰しません。既存のキーを残したい場合は、キー名を指定するか `data-fetch-bind-merge` を併用してください。
+
+```html
+<!-- 推奨: キー名を指定する（#state の他のキーは保持される） -->
+<div data-fetch="/api/auth/me" data-fetch-bind="#state" data-fetch-arg="me"></div>
+
+<!-- 非推奨: 別名。上と同じ意味 -->
+<div data-fetch="/api/auth/me" data-fetch-bind="#state" data-fetch-bind-arg="me"></div>
+
+<!-- 注意: キー名が無いので #state は応答で全置換され、me なども消える -->
+<div data-fetch="/api/detail" data-fetch-bind="#state"></div>
+```
 
 **未解決参照と再評価**:
 - プレースホルダ単体では、評価結果が空でない文字列のときだけ実行します。`false`、`null`、`undefined`、空文字、未解決参照は未実行とします。
@@ -2916,6 +2937,54 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 コミットで更新するのは**フォーム自身の**バインドデータだけです。祖先から継承したキーはコピーされません。コピーすると、以降その祖先を更新してもフォーム自身の古いコピーにシャドーされて届かなくなるためです。
 
 指定したキーを**祖先の `data-bind` が持っている**場合は、その値が入力欄へ反映されます（初期表示時と、祖先で値が変わったとき）。祖先がレコードを所有し、フォームがそのキーを編集する構成が書けます。この場合のコミットは祖先の値を土台に収集値を重ねるため、入力欄に対応しないフィールド（`id` など）も保たれます。詳細は「[祖先が所有するレコードの反映（`data-form-arg`）](#祖先が所有するレコードの反映data-form-arg)」を参照してください。
+
+#### `data-value-type`
+
+入力欄の**収集値の型**を宣言します。宣言した型へ正規化した値が、内部値・収集値・バインドデータ・送信ボディに現れます。
+
+```html
+<div data-bind='{"agree":true,"count":12}'>
+  <form>
+    <!-- 送信ボディ: {"agree": true, "count": 12} -->
+    <input type="hidden" name="agree" data-value-type="boolean"
+           data-attr-value="{{agree}}">
+    <input type="hidden" name="count" data-value-type="number"
+           data-attr-value="{{count}}">
+  </form>
+</div>
+```
+
+利用者に見せない項目（別の画面から引き継いだ真偽値など）を hidden へ載せる場合、`input.value` は常に文字列のため、API が真偽値・数値を期待していても文字列で送られます。この属性は、その入力欄だけ収集の型を宣言して食い違いを解消します。真偽値を「表示しないチェックボックス」で代用する必要はありません。
+
+**宣言できる型**:
+
+| 値 | 収集値 |
+| --- | --- |
+| `boolean` | `true` / `false`（判定できない場合は `null`） |
+| `number` | 数値（判定できない場合は `null`） |
+| `string` | 文字列（数値・真偽値をバインドしても文字列へそろえます） |
+
+- `boolean` は `"true"` / `"false"` を大文字小文字の区別なく判定します。**空文字と値なしは `null`** です（未入力を `false` として送らないため）。それ以外の文字列（`"1"` / `"on"` / `"はい"` など）も `null` です。判定を緩めると、画面に出ていない値が送信されます（[収集は DOM を真とする](#収集は-dom-を真とする)）。真偽値がそのまま渡された場合はその値を使います。
+- `number` の規則は `type="number"` と同じです（[収集は DOM を真とする](#収集は-dom-を真とする)の表を参照）。ブラウザが `<input type="number">` の値として受け付ける形だけを数値とし、空文字・受け付けない文字列・有限でない数値は `null` になります。
+- 上記以外の値（`"bool"` / `"int"` など）を書いた場合は**宣言が無いものとして扱い**、開発モードで警告します。
+
+**値は従来どおり DOM から読みます。** 正規化するのは読み取った後で、DOM の値を読むすべての経路（`change` での取り込み、収集、バインドから内部値への反映、`value="{{式}}"` / `data-attr-value` の評価）で同じ規則が適用されます。`type="number"` と同じ扱いです（原則「[収集は DOM を真とする](#収集は-dom-を真とする)」）。
+
+**`boolean` を宣言した入力欄では、`false` も値として書きます。** `data-attr-value` / `value="{{式}}"` は評価結果が `false` のとき通常は属性を削除しますが（[`data-attr-*`](#data-attr-)）、この宣言がある入力欄では `"false"` を書きます。`false` は「値が無い」ではなく送信すべき値だからです。`null` / `undefined` / 未解決参照は従来どおり空になり、収集値は `null` です。
+
+**対象は値を持つ入力です。** `<input>`（`checkbox` / `radio` / `file` を除く）、`<textarea>`、単一選択の `<select>` で有効です。それ以外（`checkbox` / `radio` / `file` / `<select multiple>`）へ宣言した場合は**無視し**、開発モードで警告します。チェック状態は `value="true"` の boolean モードで真偽値になります（[値の取得構造](#値の取得構造)）。
+
+**`type` より宣言が優先されます。** `type="number"` に `data-value-type="string"` を宣言した場合は文字列で収集します。
+
+**宣言しない限り従来どおりです。** 既存の入力欄の収集値は変わりません。
+
+```html
+<!-- 選択肢の値を数値で収集する -->
+<select name="planId" data-value-type="number">
+  <option value="1">A</option>
+  <option value="2">B</option>
+</select>
+```
 
 #### `data-message` / `data-message-level`
 
@@ -3843,13 +3912,13 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 1. 進行中のバインドデータ更新の書き戻しを無効化する（後述）
 2. ユーザー編集の印を解除する（「ユーザー編集と宣言バインドの権威」を参照）
 3. 内部値をクリアし、メッセージと `data-each` の複製を削除する。削除した行は 6 の再評価で現在のデータから描き直されるため、描画済み判定（要素データの署名）も破棄する
-4. `form.reset()` で DOM の値を既定値へ戻す。宣言バインドで値・状態が決まる入力は、評価結果が `value` / `checked` / `selected` 属性（= 既定値）へ書かれているため、併せて DOM 側も空へ揃える
+4. DOM の値を既定値へ戻す。`<form>` 要素は `form.reset()`、それ以外の要素は配下の入力欄を同じ既定値（`defaultValue` / `defaultChecked` / `defaultSelected`。既定の選択が無い単一選択の `<select>` は先頭の選択できる `<option>`）へ戻す。宣言バインドで値・状態が決まる入力は、評価結果が `value` / `checked` / `selected` 属性（= 既定値）へ書かれているため、併せて DOM 側も空へ揃える
 5. フォーム自身のバインドデータを初期 `data-bind` 宣言（宣言がなければ空）へ戻す。自身のバインドデータを持たないフォームは、祖先を参照しているためここでは何もしない（不要なシャドーイングを作らないため）
 6. 再評価して `data-each` の行と宣言バインドの現在の評価結果を入力欄へ入れ直す。続いて、自身のバインドデータを持たない `data-form-arg` フォームへ祖先のレコードを流し込み直し、その結果を含むフォーム値でバインドデータを更新する
 
 4 と 5 により、リセット前の編集やコミット済みの値がリセット後に復元されることはありません。
 
-**`name` を持つ入力欄には、5 で戻したバインドデータが逆方向同期で書き戻されます。** そのため宣言バインド（`value="{{式}}"` / `data-attr-value` など）の有無によらず、リセット後の値は**初期 `data-bind` 宣言の値**になります。6 の「宣言バインドの現在の評価結果を入力欄へ入れ直す」は宣言バインドを持つ欄の話で、`name` だけを持つ欄が 4 の `form.reset()` 直後の空のまま残るという意味ではありません。[初期 `data-bind` からの入力欄復元](#初期-data-bind-からの入力欄復元)と同じ規則で、初期表示とリセット後の値が一致します。
+**`name` を持つ入力欄には、5 で戻したバインドデータが逆方向同期で書き戻されます。** そのため宣言バインド（`value="{{式}}"` / `data-attr-value` など）の有無によらず、リセット後の値は**初期 `data-bind` 宣言の値**になります。6 の「宣言バインドの現在の評価結果を入力欄へ入れ直す」は宣言バインドを持つ欄の話で、`name` だけを持つ欄が 4 の直後の空のまま残るという意味ではありません。[初期 `data-bind` からの入力欄復元](#初期-data-bind-からの入力欄復元)と同じ規則で、初期表示とリセット後の値が一致します。
 
 ```html
 <form id="f" data-bind='{"keyword":"初期"}'>
@@ -3859,6 +3928,18 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 
 - 対象は逆方向同期の対象と同じ範囲です。`<form>` 要素と、祖先が所有するキーを `data-form-arg` で参照するフォームが対象で、**`data-form` 属性によるフォームコンテナは対象外**です。
 - 初期宣言そのものが無いフォームでは 5 で空へ戻るため、リセット後の値も空になります。
+
+**対象の要素を DOM から出し入れしません（4）。** `<form>` でない要素（バインドホストの `<div>` など）を対象にした場合も、DOM の構造は変えずに配下の入力欄を既定値へ戻します。要素を外すとその時点でフラグメントと**実行時のバインドデータ**が破棄され、同じ操作の後段の書き込み（`data-{event}-bind` など）が空のバインドデータを土台にしてしまいます。その結果、`data-fetch-bind` で同じホストへ寄せておいた取得結果が `data-bind` 属性から消え、URL が変わらない `data-fetch` は[再実行判定](#data-fetch)で「同じ内容」と判断されるため再取得もされません（参照側の式は[未解決参照](#未解決参照の診断)のまま復帰しません）。
+
+```html
+<div id="host" data-bind='{"dialog":{}}'>
+  <div hidden data-fetch="/api/auth/me" data-fetch-bind="#host" data-fetch-arg="me"></div>
+  …
+</div>
+<!-- リセットの対象と書き込み先が同じホストでも、me は保たれる -->
+<button data-click-reset-before="#host" data-click-data="id=1"
+        data-click-bind="#host" data-click-bind-arg="dialog">編集</button>
+```
 
 **進行中のバインドデータ更新は書き戻しません（1）。** バインドデータの更新は「`data-bind` 属性の反映 → 入力欄への書き戻し → 再評価（行生成）→ 載らなかった書き込みの載せ直し」を非同期に行うため、呼び出しの後もしばらく DOM を書き換え続けます。入力欄を離れた直後にクリアを押すと、その `change` による双方向コミットがまだ走っているので、後段の書き戻しがリセットの途中へ割り込み、クリアしたはずの値が戻ってしまいます。
 
@@ -4600,7 +4681,7 @@ document.addEventListener('haori:ready', (event) => {
 
 **detail**:
 ```typescript
-{ version: string }  // ライブラリのバージョン（例: '0.43.1'）
+{ version: string }  // ライブラリのバージョン（例: '0.44.0'）
 ```
 
 > **補足**: `data-each` の描画完了を検知したい場合は、専用の完了マーカー
@@ -5013,7 +5094,7 @@ Haori.enhancers.register('choices', {init, refresh, destroy})
 
 ```javascript
 Haori.Core.dumpScope(element)
-Haori.version // '0.43.1'
+Haori.version // '0.44.0'
 ```
 
 `Haori.Haori` と `Haori.default` はグローバル自身への自己参照です

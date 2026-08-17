@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.43.1
+バージョン: 0.44.0
 
 ---
 
@@ -99,6 +99,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 - `data-if` — 条件に応じて要素を表示 / 非表示
 - `data-each` — 配列を繰り返し表示（`data-each-key`, `data-each-arg`, `data-each-index` など）
 - `data-attr-xxx` — ブラウザが先に解釈する属性を安全に更新（`src`, `value` など）
+- `data-value-type` — 入力欄の収集値の型を宣言します（`boolean` / `number` / `string`）。`input` の値は常に文字列のため、真偽値を `type="hidden"` に載せると `"true"` という文字列で送られます。型を宣言すると、収集値・バインドデータ・送信ボディが API の期待する型になります（判定できない値は `null` になるため、未入力を `false` として送りません）。利用者に見せないだけの項目を、真偽値のために「表示しないチェックボックス」で代用する必要がなくなります。`checkbox` / `radio` / `file` と複数選択の `<select>` では無視します（開発モードで警告）。
 - `data-fetch` — サーバーからデータを取得してバインド
 - `data-import` — 外部 HTML を読み込んで挿入
 - `data-url-param` — URL のクエリパラメータをバインディングに取り込む
@@ -111,6 +112,7 @@ Haori.mount(document.body, {items: [{name: 'りんご'}, {name: 'みかん'}]});
 
 - `data-derive` / `data-derive-name` — 要素上で派生値を定義し、その要素の子孫にだけ公開します。親子プルダウンのような用途で使えます。
 - `data-*-bind-merge`（例: `data-click-bind-merge`・`data-fetch-bind-merge`）— 結果をバインド先要素へ反映する際、`data-bind` を全置換せず、既存の値を保持したまま浅くマージします（新しいデータに無いキーは保持）。`selectedId={{items[0].id}}` のような計算値を既存 state に追記したい場合に有用です。
+- `data-fetch-arg` / `data-{event}-bind-arg` — 結果をバインドするキー名を指定します。**そのキーの配下だけを更新するため、バインド先の他のキーは保持されます**（`-bind-merge` は不要で、キー名を指定した場合は無視します）。キー名を指定しないと**バインド先を全置換**するため、別の `data-fetch` が寄せていたキーが消え、そのフェッチは実行シグネチャが変わらないので再取得もされません。共有する state へ寄せる場合はキー名を指定してください。`data-fetch-bind-arg` は `data-fetch-arg` の別名で**非推奨**です（両方ある場合は `data-fetch-arg` を採用）。
 
 イベント駆動アクション:
 

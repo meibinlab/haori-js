@@ -691,6 +691,16 @@ export class ElementFragment extends Fragment {
   private static readonly NUMBER_INPUT_PATTERN =
     /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
+  /** `data-value-type` で宣言できる収集値の型（仕様「`data-value-type`」） */
+  private static readonly VALUE_TYPE_NAMES: ReadonlySet<string> = new Set([
+    'boolean',
+    'number',
+    'string',
+  ]);
+
+  /** `data-value-type` の宣言について警告済みのキー（同じ宣言で繰り返さない） */
+  private static readonly loggedValueTypeDeclarations = new Set<string>();
+
   /** HTML 真偽属性名のセット */
   private static readonly BOOLEAN_ATTRIBUTES = new Set([
     'allowfullscreen',
@@ -2342,41 +2352,198 @@ export class ElementFragment extends Fragment {
   }
 
   /**
-   * 入力要素の種別に応じて値を正規化します。
+   * 入力要素の種別と `data-value-type` の宣言に応じて値を正規化します。
    *
    * `type="number"` の input では、文字列の入力値・バインド値を数値へ変換します
    * （DTO が数値型を期待する場合に文字列で送られるのを防ぐため）。数値として採用
    * するのは、ブラウザが `<input type="number">` の値として受け付ける文字列だけで
    * す（`NUMBER_INPUT_PATTERN`）。空文字・`null`・受け付けない文字列・有限でない数値
-   * は `null` を返します。それ以外の要素では値をそのまま返します。
+   * は `null` を返します。
+   *
+   * `data-value-type` を宣言した入力欄では、宣言した型へ正規化します（仕様
+   * 「`data-value-type`」）。宣言は `type` より優先するため、`type="number"` へ
+   * `string` を宣言した場合は文字列になります。それ以外の要素では値をそのまま
+   * 返します。
    *
    * @param element 対象の入力要素
    * @param value 正規化する値
-   * @returns 正規化後の値（`type="number"` なら数値または null）
+   * @returns 正規化後の値（宣言または `type="number"` に従う）
    */
   private normalizeValueForElement(
     element: HTMLElement,
     value: string | number | boolean | null,
   ): string | number | boolean | null {
-    if (element instanceof HTMLInputElement && element.type === 'number') {
-      if (value === null || value === '') {
-        return null;
-      }
-      if (typeof value === 'number') {
-        // `Infinity` / `NaN` は `JSON.stringify` で `null` に潰れるため、
-        // 送信値と収集値が食い違わないよう先に `null` へそろえる。
-        return Number.isFinite(value) ? value : null;
-      }
-      if (
-        typeof value !== 'string' ||
-        !ElementFragment.NUMBER_INPUT_PATTERN.test(value)
-      ) {
-        return null;
-      }
-      const numeric = Number(value);
-      return Number.isFinite(numeric) ? numeric : null;
+    const declared = ElementFragment.resolveDeclaredValueType(element);
+    if (declared === 'boolean') {
+      return ElementFragment.normalizeBooleanValue(value);
+    }
+    if (declared === 'string') {
+      // 宣言が `type` より優先するため、`type="number"` でも文字列で保持する。
+      return value === null ? null : String(value);
+    }
+    if (
+      declared === 'number' ||
+      (declared === null &&
+        element instanceof HTMLInputElement &&
+        element.type === 'number')
+    ) {
+      return ElementFragment.normalizeNumberValue(value);
     }
     return value;
+  }
+
+  /**
+   * 値を数値へ正規化します。
+   *
+   * 数値として採用するのは、ブラウザが `<input type="number">` の値として受け付ける
+   * 文字列だけです（`NUMBER_INPUT_PATTERN`）。空文字・`null`・受け付けない文字列・
+   * 有限でない数値は `null` になります（仕様「収集は DOM を真とする」）。
+   *
+   * @param value 正規化する値
+   * @returns 数値。数値として採用できない場合は null
+   */
+  private static normalizeNumberValue(
+    value: string | number | boolean | null,
+  ): number | null {
+    if (value === null || value === '') {
+      return null;
+    }
+    if (typeof value === 'number') {
+      // `Infinity` / `NaN` は `JSON.stringify` で `null` に潰れるため、
+      // 送信値と収集値が食い違わないよう先に `null` へそろえる。
+      return Number.isFinite(value) ? value : null;
+    }
+    if (
+      typeof value !== 'string' ||
+      !ElementFragment.NUMBER_INPUT_PATTERN.test(value)
+    ) {
+      return null;
+    }
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  /**
+   * 値を真偽値へ正規化します。
+   *
+   * `"true"` / `"false"` を大文字小文字の区別なく判定します。空文字・`null`・それ以外
+   * の文字列（`"1"` / `"on"` など）は `null` です。未入力を `false` として送らない
+   * ため、また画面に出ていない値を送らないためで、真偽値がそのまま渡された場合は
+   * その値を使います（仕様「`data-value-type`」）。
+   *
+   * @param value 正規化する値
+   * @returns 真偽値。判定できない場合は null
+   */
+  private static normalizeBooleanValue(
+    value: string | number | boolean | null,
+  ): boolean | null {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const name = value.toLowerCase();
+    if (name === 'true') {
+      return true;
+    }
+    return name === 'false' ? false : null;
+  }
+
+  /**
+   * 入力欄に宣言された収集値の型（`data-value-type`）を解決します。
+   *
+   * 宣言は静的なものとして扱い、DOM の属性から直接読みます。宣言できるのは
+   * `boolean` / `number` / `string` で、対象は値を持つ入力（`<input>` のうち
+   * `checkbox` / `radio` / `file` を除くもの、`<textarea>`、単一選択の `<select>`）
+   * です。対象外の要素や未知の型は宣言が無いものとして扱い、開発モードで警告します
+   * （仕様「`data-value-type`」）。
+   *
+   * @param element 対象の要素
+   * @returns 宣言された型。宣言が無い場合と無視する場合は null
+   */
+  private static resolveDeclaredValueType(
+    element: HTMLElement,
+  ): 'boolean' | 'number' | 'string' | null {
+    const declared = element.getAttribute(`${Env.prefix}value-type`);
+    if (declared === null) {
+      return null;
+    }
+    const name = declared.trim().toLowerCase();
+    if (!ElementFragment.VALUE_TYPE_NAMES.has(name)) {
+      ElementFragment.warnValueTypeDeclaration(
+        element,
+        declared,
+        'boolean / number / string のいずれかを指定してください',
+      );
+      return null;
+    }
+    if (!ElementFragment.acceptsDeclaredValueType(element)) {
+      ElementFragment.warnValueTypeDeclaration(
+        element,
+        declared,
+        '値を持つ入力（checkbox / radio / file と複数選択の select を除く）' +
+          'にのみ指定できます',
+      );
+      return null;
+    }
+    return name as 'boolean' | 'number' | 'string';
+  }
+
+  /**
+   * `data-value-type` の宣言を受け付ける要素かどうかを判定します。
+   *
+   * チェック状態を収集する `checkbox` / `radio`、ファイルを収集する `file`、値を配列
+   * で収集する複数選択の `<select>` は、宣言した型へ正規化する対象になりません
+   * （仕様「`data-value-type`」）。
+   *
+   * @param element 対象の要素
+   * @returns 受け付ける場合は true
+   */
+  private static acceptsDeclaredValueType(element: HTMLElement): boolean {
+    if (element instanceof HTMLInputElement) {
+      return (
+        element.type !== 'checkbox' &&
+        element.type !== 'radio' &&
+        element.type !== 'file'
+      );
+    }
+    if (element instanceof HTMLSelectElement) {
+      return !element.multiple;
+    }
+    return element instanceof HTMLTextAreaElement;
+  }
+
+  /**
+   * `data-value-type` の宣言を無視したことを開発モードで警告します。
+   *
+   * 値の読み取りごとに解決するため、同じ宣言では一度だけ報告します。
+   *
+   * @param element 宣言した要素
+   * @param declared 宣言された値
+   * @param reason 無視した理由
+   * @returns 戻り値はありません。
+   */
+  private static warnValueTypeDeclaration(
+    element: HTMLElement,
+    declared: string,
+    reason: string,
+  ): void {
+    if (!Dev.isEnabled()) {
+      return;
+    }
+    const type =
+      element instanceof HTMLInputElement ? `[type=${element.type}]` : '';
+    const key = `${element.tagName}${type} ${declared} ${reason}`;
+    if (ElementFragment.loggedValueTypeDeclarations.has(key)) {
+      return;
+    }
+    ElementFragment.loggedValueTypeDeclarations.add(key);
+    Log.warn(
+      'Haori',
+      `${Env.prefix}value-type="${declared}" を無視しました（${reason}）:`,
+      element,
+    );
   }
 
   /**
@@ -2428,6 +2595,10 @@ export class ElementFragment extends Fragment {
    */
   private readValueFromDom(): string | number | boolean | string[] | null {
     const element = this.getTarget();
+    // 宣言（`data-value-type`）の妥当性はここで検査する。正規化を通らない要素
+    // （`checkbox` / `radio` / `file` / 複数選択の `<select>`）へ宣言した場合も、
+    // 無視したことを開発モードで報告するため（仕様「`data-value-type`」）。
+    ElementFragment.resolveDeclaredValueType(element);
     if (element instanceof HTMLInputElement) {
       if (element.type === 'checkbox' || element.type === 'radio') {
         const isBooleanCheckbox =
@@ -2459,14 +2630,15 @@ export class ElementFragment extends Fragment {
       // type="number" は数値へ正規化し、それ以外は文字列のまま保持する
       return this.normalizeValueForElement(element, element.value);
     } else if (element instanceof HTMLTextAreaElement) {
-      return element.value;
+      // `data-value-type` の宣言があれば宣言した型へ正規化する（無ければそのまま）。
+      return this.normalizeValueForElement(element, element.value);
     } else if (element instanceof HTMLSelectElement) {
       // 複数選択 select は選択済み option の値を文字列配列として保持する
       // （外部ウィジェットを含む選択変更をフォーム値へ配列で反映するため）。
       if (element.multiple) {
         return Array.from(element.selectedOptions).map(option => option.value);
       }
-      return element.value;
+      return this.normalizeValueForElement(element, element.value);
     }
     return this.value;
   }
@@ -2768,13 +2940,20 @@ export class ElementFragment extends Fragment {
     const joinedValue = TextContents.joinEvaluateResults(detail.results);
     const evaluatedValue =
       detail.results.length === 1 ? detail.results[0] : joinedValue;
+    // `data-value-type="boolean"` を宣言した入力欄の `value` では、`false` は「値が
+    // 無い」ではなく送信すべき値なので属性削除にしない（仕様「`data-value-type`」）。
+    // `null` / `undefined` / 未解決参照は従来どおり空にし、収集値を `null` にする。
+    const keepsFalseAsValue =
+      targetName === 'value' &&
+      ElementFragment.resolveDeclaredValueType(element) === 'boolean';
+    const removesFalse = evaluatedValue === false && !keepsFalseAsValue;
     const shouldRemoveTarget =
       !contents.isForceEvaluation() &&
       (targetName !== rawName
         ? detail.hasUnresolvedReference ||
           evaluatedValue === null ||
           evaluatedValue === undefined ||
-          evaluatedValue === false
+          removesFalse
         : isBooleanAttribute
           ? detail.hasUnresolvedReference ||
             evaluatedValue === null ||
@@ -2784,7 +2963,7 @@ export class ElementFragment extends Fragment {
             ? detail.hasUnresolvedReference ||
               evaluatedValue === null ||
               evaluatedValue === undefined ||
-              evaluatedValue === false
+              removesFalse
             : hasTemplateExpression && joinedValue === '');
     if (shouldRemoveTarget && detail.hasUnresolvedReference) {
       // 未解決参照が原因で反映を見送った場合だけ報告する（評価結果が素直に
@@ -2820,7 +2999,9 @@ export class ElementFragment extends Fragment {
       shouldSyncValueProperty &&
       (element === rootNode.activeElement || this.hasPendingUserEdit());
     const stringResult =
-      shouldRemoveTarget || result === null || result === false
+      shouldRemoveTarget ||
+      result === null ||
+      (result === false && !keepsFalseAsValue)
         ? null
         : String(result);
     const requiresRawAttributeWrite =

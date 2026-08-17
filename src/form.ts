@@ -414,6 +414,70 @@ export default class Form {
   }
 
   /**
+   * 対象の部分木にある入力欄を、ネイティブのフォームリセットと同じ既定値へ戻します。
+   *
+   * `<form>` でない要素を初期化する場合に使います。`form.reset()` は「フォームに属する
+   * 入力欄」しか戻せないため、以前は対象の要素を一時的な `<form>` へ移して呼び出して
+   * いましたが、**要素を DOM から外すとフラグメントと実行時のバインドデータが破棄され**、
+   * 同じ操作の後段の書き込みが空のバインドデータを土台にしてしまいます
+   * （`data-fetch-bind` で寄せたキーが消える。仕様「`data-{event}-reset`」）。
+   * そこで DOM の構造は変えず、HTML 仕様のリセットアルゴリズムと同じ既定値
+   * （`defaultValue` / `defaultChecked` / `defaultSelected`）へ戻します。
+   *
+   * @param root 対象の要素（自身と配下すべてが対象）
+   * @return 戻り値はありません。
+   */
+  private static restoreDefaultValues(root: HTMLElement): void {
+    // 対象は値を持つ入力に限る。`<output>` は HTML 仕様のリセット対象だが、値モードを
+    // 既定へ戻す手段がスクリプトに無く、Haori は収集もバインドもしないため扱わない。
+    const selector = 'input, textarea, select';
+    const targets: Element[] = [];
+    if (root.matches(selector)) {
+      // 入力欄自身を対象に指定した場合（`data-{event}-reset="#入力欄"`）。
+      targets.push(root);
+    }
+    targets.push(...root.querySelectorAll(selector));
+    for (const target of targets) {
+      if (target instanceof HTMLInputElement) {
+        if (target.type === 'checkbox' || target.type === 'radio') {
+          target.checked = target.defaultChecked;
+        } else if (target.type === 'file') {
+          // ファイルの選択はネイティブのリセットでも空になる。
+          target.value = '';
+        } else {
+          target.value = target.defaultValue;
+        }
+      } else if (target instanceof HTMLTextAreaElement) {
+        target.value = target.defaultValue;
+      } else if (target instanceof HTMLSelectElement) {
+        Form.restoreDefaultSelection(target);
+      }
+    }
+  }
+
+  /**
+   * `<select>` の選択状態を既定の選択（`defaultSelected`）へ戻します。
+   *
+   * 既定の選択が無い単一選択では、ブラウザのリセットと同じく先頭の選択できる
+   * `<option>` を選びます（HTML 仕様のリセットアルゴリズム）。
+   *
+   * @param select 対象の select エレメント
+   * @return 戻り値はありません。
+   */
+  private static restoreDefaultSelection(select: HTMLSelectElement): void {
+    const options = Array.from(select.options);
+    for (const option of options) {
+      option.selected = option.defaultSelected;
+    }
+    if (!select.multiple && select.selectedIndex < 0) {
+      const first = options.find(option => !option.disabled);
+      if (first) {
+        first.selected = true;
+      }
+    }
+  }
+
+  /**
    * 宣言バインドで値・状態が決まる入力について、DOM 側の値を空へ揃えます。
    *
    * `Form.reset()` から `form.reset()` の直後に呼び出します。評価結果の入れ直しは
@@ -2609,16 +2673,16 @@ export default class Form {
       if (element instanceof HTMLFormElement) {
         element.reset();
       } else {
-        // 配下のフォームは一時フォームでのリセット対象に含まれないため個別にリセットする
+        // 配下のフォームは個別にリセットする（`reset` イベントも従来どおり発火する）。
         element.querySelectorAll('form').forEach(form => form.reset());
-        const parent = element.parentElement;
-        if (parent) {
-          const next = element.nextElementSibling;
-          const form = document.createElement('form');
-          form.appendChild(element);
-          form.reset();
-          parent.insertBefore(element, next);
-        }
+        // フォームに属さない入力欄は、既定値へ戻す処理を自分で行う。**対象の要素を
+        // DOM から外してはいけない**（以前は一時的な `<form>` へ移して `form.reset()`
+        // を呼んでいた）。要素を外すとフラグメントが破棄され、実行時のバインドデータも
+        // 失われる。同じ操作の後段の書き込み（`data-{event}-bind` など）は空のバインド
+        // データを土台にするため、`data-fetch-bind` で寄せたキーが `data-bind` 属性から
+        // 消え、URL が同じ `data-fetch` は再取得されないので復帰しない
+        // （仕様「`data-{event}-reset`」）。
+        Form.restoreDefaultValues(element);
       }
       // `form.reset()` は `value` / `checked` / `selected` 属性を既定値として復元する。
       // 宣言バインドは評価結果をこれらの属性へ書くため、そのままでは「前回の評価

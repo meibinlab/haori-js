@@ -192,6 +192,7 @@ export default class Core {
       'form-list',
       'form-object',
       'form-detach',
+      'value-type',
       'store',
       'store-params',
       'store-arg',

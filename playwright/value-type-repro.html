@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>収集値の型宣言（data-value-type）</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 別の画面から引き継いだ値を、利用者に見せずに型どおり送る構成。 -->
+  <div id="state" data-bind='{"agree":true,"reject":false,"count":12}'>
+    <form id="apply-form">
+      <input type="hidden" name="agree" data-value-type="boolean"
+        data-attr-value="{{agree}}">
+      <input type="hidden" name="reject" data-value-type="boolean"
+        data-attr-value="{{reject}}">
+      <input type="hidden" name="count" data-value-type="number"
+        data-attr-value="{{count}}">
+      <input type="hidden" name="plain" data-attr-value="{{agree}}">
+      <select name="planId" data-value-type="number">
+        <option value="1">A</option>
+        <option value="2" selected>B</option>
+      </select>
+      <input name="memo" value="控え">
+    </form>
+    <button id="send" type="button"
+      data-click-form="#apply-form"
+      data-click-fetch="/api/apply"
+      data-click-fetch-method="POST">申し込む</button>
+  </div>
+</body>
+</html>

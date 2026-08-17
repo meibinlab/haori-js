@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.43.1
+Version: 0.44.0
 
 ---
 
@@ -99,6 +99,7 @@ Haori.mount(document.body, {items: [{name: 'apple'}, {name: 'orange'}]});
 - `data-if` — show/hide an element based on a condition
 - `data-each` — repeat an element for items in an array (`data-each-key`, `data-each-arg`, `data-each-index`)
 - `data-attr-xxx` — safely update browser-interpreted attributes such as `src` and `value`
+- `data-value-type` — declare the collected type of an input (`boolean` / `number` / `string`). `input.value` is always a string, so a `type="hidden"` field carrying a boolean would otherwise be sent as `"true"`; declaring the type keeps the collected value, the binding data and the request body in the shape the API expects (a value that cannot be judged becomes `null`, so a blank field is never sent as `false`). Values you do not show the user no longer need a hidden checkbox to carry a boolean. Ignored (with a development-mode warning) on `checkbox` / `radio` / `file` and multi-select `<select>`, where the collected value is not a single scalar read from `value`.
 - `data-fetch` — fetch data from a server and bind the result
 - `data-import` — load external HTML and insert it
 - `data-url-param` — import URL query parameters into bindings
@@ -111,6 +112,7 @@ Additional binding helpers:
 
 - `data-derive` / `data-derive-name` — define a derived value on an element and expose it to descendants only. This is useful for cases such as parent-child selects.
 - `data-*-bind-merge` (e.g. `data-click-bind-merge`, `data-fetch-bind-merge`) — when binding a result to a target element, shallow-merge it into the target's existing `data-bind` (keys not present in the new data are preserved) instead of replacing the whole binding. Useful for patching a single computed key (such as `selectedId={{items[0].id}}`) into existing state.
+- `data-fetch-arg` / `data-{event}-bind-arg` — name the key the result is bound under. **Only the keys under that name are replaced, so the target's other keys are preserved**; `-bind-merge` is unnecessary and is ignored when a key name is given. Without a key name the bind **replaces the whole target**, dropping keys another `data-fetch` had merged there — and that fetch will not re-run because its signature has not changed. `data-fetch-bind-arg` is a deprecated alias of `data-fetch-arg` (`data-fetch-arg` wins when both are present).
 
 Event-driven actions:
 
