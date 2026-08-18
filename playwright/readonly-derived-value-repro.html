@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>算出値を入れた欄の追従</title>
+</head>
+<body>
+<!--
+  他項目から算出した値を入力欄へ入れる構成。タブ移動の行き先が算出欄になるため、
+  フォーカス保護に掛かるかどうかが実ブラウザでしか確認できない。
+-->
+<form id="f">
+  <input id="src" name="src" type="text">
+  <p><span id="text-out">[{{src}}]</span></p>
+  <input id="calc" name="calc" type="text" readonly
+         data-attr-value="{{(src || '') + '-算出'}}">
+  <input id="calc-editable" name="calcEditable" type="text"
+         data-attr-value="{{(src || '') + '-編集可'}}">
+  <input id="calc-hidden" name="calcHidden" type="hidden"
+         data-attr-value="{{(src || '') + '-隠し'}}">
+  <input id="other" name="other" type="text">
+  <button id="send" type="button"
+    data-click-fetch="/api/save"
+    data-click-fetch-method="POST"
+    data-click-form="#f">送信</button>
+</form>
+<script src="/dist/haori.iife.js"></script>
+<script>
+  window.addEventListener('load', () => {
+    requestAnimationFrame(() =>
+      document.body.setAttribute('data-haori-ready', ''),
+    );
+  });
+</script>
+</body>
+</html>

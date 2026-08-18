@@ -2576,6 +2576,33 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 利用者が打鍵で値を変えられる入力欄かどうかを判定します。
+   *
+   * `readonly` の欄は打鍵で値が変わらないため、宣言バインドの再適用から守るべき
+   * 未コミットの入力を持ちません。それでいて `disabled` と違いタブ移動の対象には
+   * なるため、フォーカスを保護の条件にすると「算出値を入れた欄がタブ移動の行き先に
+   * なっただけで評価結果に追従しなくなる」ことになります。そこで `readonly` の欄は
+   * 保護の対象外とします（仕様「`data-attr-*`」）。
+   *
+   * `<select>` に `readonly` はないため常に編集できる扱いです。`disabled` も対象に
+   * しません。`disabled` の要素はフォーカスされないため保護に掛かる経路が無く、
+   * 「編集した欄を送信中だけ `disabled` にする」使い方で入力を評価結果へ巻き戻して
+   * しまう恐れがあるためです。
+   *
+   * @param element 判定対象のエレメント
+   * @returns 利用者が打鍵で値を変えられる場合 true
+   */
+  private static isUserEditableValue(element: Element): boolean {
+    if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement
+    ) {
+      return !element.readOnly;
+    }
+    return true;
+  }
+
+  /**
    * 内部の値をDOMの値と同期します。
    * changeイベント時など、DOM値が変更された後に呼び出されます。
    */
@@ -2994,9 +3021,12 @@ export class ElementFragment extends Fragment {
     // 確定済み（change / input を通した）編集も、明示的な値の供給を受けるまでは
     // 同様に守る。評価結果が変わらない再評価で書き戻すと、フォーカスが外れた後に
     // 「別の欄を触ったら前の欄が元へ戻る」現象になり、送信値も古くなる。
+    // ただし `readonly` の欄は守るべき入力を持たないため対象外とする
+    // （`isUserEditableValue()`）。
     const rootNode = element.getRootNode() as Document | ShadowRoot;
     const skipValueReapply =
       shouldSyncValueProperty &&
+      ElementFragment.isUserEditableValue(element) &&
       (element === rootNode.activeElement || this.hasPendingUserEdit());
     const stringResult =
       shouldRemoveTarget ||
