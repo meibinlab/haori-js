@@ -2,7 +2,7 @@
 
 Haori.js は、HTML 属性を中心にして動的な UI を実現する軽量なライブラリです。JavaScript をほとんど書かずに、データバインディング、条件分岐、繰り返し処理、フォームの双方向バインディング、サーバー通信などを HTML 属性で宣言できます。
 
-バージョン: 0.45.0
+バージョン: 0.45.1
 
 ---
 
@@ -172,7 +172,7 @@ JS からバインドデータを読むには `Haori.Core.getBindingData(element
 4. 新しい版数タグから GitHub Release を公開する
 5. npm、jsDelivr、GitHub Release の assets が新しい版数を指すことを確認する
 
-GitHub Release 起点で npm publish する workflow では、`NPM_TOKEN` に `haori` パッケージの owner として publish 権限を持つユーザーのトークンを設定してください。認証自体は通っても `haori` への publish 権限がない場合、`npm publish` で原因が分かりにくい `E404` になることがあります。
+GitHub Release 起点で npm publish する workflow は、npm の Trusted Publishing（OIDC）で認証します。長期トークンは使いません。npm のパッケージ設定で、この repository と `publish-on-release.yml` からの公開を Trusted Publisher として登録しておいてください。登録が無いと `npm publish` が認証エラーで失敗します。
 
 6. 依存インストール
 
@@ -208,11 +208,12 @@ git push origin --tags
 
 6. 新しいタグから GitHub Release を公開
 
-このリポジトリの npm 公開は GitHub Actions で行います。現在の workflow は `release.published` を契機に起動し、パッケージをビルドしたうえで、対象 version が未公開のときだけ `NPM_TOKEN` を使って npm へ公開し、あわせて `dist.zip` を GitHub Release のアセットとして添付します。
+このリポジトリの npm 公開は GitHub Actions で行います。現在の workflow は `release.published` を契機に起動し、パッケージをビルドしたうえで、対象 version が未公開のときだけ npm へ公開し、あわせて `dist.zip` を GitHub Release のアセットとして添付します。認証は npm の Trusted Publishing（OIDC）で行い、出自証明（provenance）が自動で付きます。
 
 必要な前提条件:
 
-- GitHub Actions の repository secrets に `NPM_TOKEN` が設定されていること
+- npm のパッケージ設定で、この repository と `publish-on-release.yml` が Trusted Publisher として登録されていること
+- 公開ジョブに `id-token: write` の権限があること（OIDC トークンの発行に必要）
 - 対象バージョンのタグから Release を `published` 状態で公開すること
 
 公開前の推奨確認:

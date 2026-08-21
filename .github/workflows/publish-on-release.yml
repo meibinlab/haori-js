@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+  # npm の Trusted Publishing（OIDC）で短命の公開トークンを受け取るために必要。
+  id-token: write
+
 jobs:
   publish:
     name: Publish npm package
@@ -19,6 +24,12 @@ jobs:
           node-version: '20.19.0'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
+
+      # Trusted Publishing は npm 11.5.1 以降でのみ利用できる。Node 20.19.0 に
+      # 同梱される npm は 10 系なので、公開に使う CLI だけ入れ替える（依存の
+      # 導入とビルドは CI と同じ Node で行うため、Node 自体は上げない）。
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@^11
 
       - name: Install dependencies
         run: npm ci
@@ -41,25 +52,10 @@ jobs:
 
       - name: Publish to npm
         if: steps.package-version.outputs.already_published != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
-          if [[ -z "${NODE_AUTH_TOKEN}" ]]; then
-            echo "NPM_TOKEN is not configured." >&2
-            exit 1
-          fi
-
-          package_name=$(node -p "require('./package.json').name")
-          npm_user=$(npm whoami)
-          if npm view "${package_name}" version >/dev/null 2>&1; then
-            owners=$(npm owner ls "${package_name}")
-            if ! grep -Fq "${npm_user}" <<< "${owners}"; then
-              echo "NPM_TOKEN is authenticated as ${npm_user}, but that user is not an owner of ${package_name}." >&2
-              echo "Package owners: ${owners}" >&2
-              echo "Configure NPM_TOKEN for a package owner or automation token with publish rights." >&2
-              exit 1
-            fi
-          fi
-
+          # 認証は npm の Trusted Publishing（OIDC）で行うため、長期トークンは
+          # 使わない。パッケージ側に「この repository とこの workflow から公開
+          # できる」と登録しておく必要がある。出自証明（provenance）は自動で付く。
+          echo "npm $(npm --version)"
           npm publish --access public

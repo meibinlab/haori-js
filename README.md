@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.45.0
+Version: 0.45.1
 
 ---
 
@@ -174,7 +174,7 @@ Quick release memo:
 4. Publish a GitHub Release from the new version tag.
 5. Confirm npm, jsDelivr, and the GitHub Release assets reflect the new version.
 
-For the GitHub Release-driven npm publish workflow, configure `NPM_TOKEN` for a user that is an owner of the `haori` package. If the token authenticates successfully but does not have publish rights for `haori`, npm may fail with a misleading `E404` during `npm publish`.
+The GitHub Release-driven npm publish workflow authenticates with npm trusted publishing (OIDC), so no long-lived token is used. Register this repository and `publish-on-release.yml` as a trusted publisher in the npm package settings; without that registration, `npm publish` fails with an authentication error.
 
 6. Install dependencies
 
@@ -210,11 +210,12 @@ git push origin --tags
 
 6. Publish a GitHub Release from the new tag
 
-Publishing to npm is handled by GitHub Actions when a GitHub Release is published. This repository uses release workflows that trigger on `release.published`, build the package, publish it to npm with `NPM_TOKEN` if that package version is not already published, and upload `dist.zip` to the release assets.
+Publishing to npm is handled by GitHub Actions when a GitHub Release is published. This repository uses release workflows that trigger on `release.published`, build the package, publish it to npm if that package version is not already published, and upload `dist.zip` to the release assets. Authentication uses npm trusted publishing (OIDC), which also attaches provenance automatically.
 
 Required repository setup:
 
-- `NPM_TOKEN` must be configured in GitHub Actions repository secrets.
+- This repository and `publish-on-release.yml` must be registered as a trusted publisher in the npm package settings.
+- The publish job must have the `id-token: write` permission so it can request an OIDC token.
 - The release must be published from the target version tag.
 
 Recommended pre-release checks:
