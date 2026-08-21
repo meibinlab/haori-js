@@ -1855,6 +1855,188 @@ export default class Expression {
   }
 
   /**
+   * 厳密比較の両辺で型が食い違っていないかを診断します。
+   *
+   * `opt.id === m.material.id` のように `===` の両辺の型が違うと、値が同じでも比較
+   * は必ず偽になります。API 由来の数値の `id` とフォームの収集値（文字列）を比べる
+   * 宣言で起きやすく、`data-attr-selected` や `data-attr-checked` では「選択や
+   * チェックが付かない」という形でしか現れないため原因に辿り着きにくいため、開発
+   * モードの診断で名指しできるようにします。
+   *
+   * 診断するのは `===` だけです。`!==` は型が違えば常に**真**になるため、この診断
+   * を呼ぶ条件（評価結果が偽）に当てはまりません。
+   *
+   * 報告するのは「両辺の型が違う」かつ「緩い比較（`==`）なら真になる」場合だけ
+   * です。値そのものが違うなら偽になるのは宣言どおりで、報告する意味がありません。
+   * 未解決参照を含む辺は対象外にします（値の無いキーを含む比較は「型が違う」以前に
+   * 宣言かデータの問題で、既存の未解決参照の警告が報告します）。単一の厳密比較
+   * でない式（論理演算・三項演算・算術演算・別の比較を含む式）も、全体の結果を
+   * 厳密比較だけでは決められないため対象外です。
+   *
+   * @param expression 診断する式
+   * @param bindedValues 評価に使うスコープ
+   * @returns 食い違っている場合は両辺の型。該当しない場合は null
+   */
+  public static diagnoseStrictComparison(
+    expression: string,
+    bindedValues: Record<string, unknown> = {},
+  ): {left: string; right: string} | null {
+    const split = Expression.splitStrictComparison(expression);
+    if (split === null) {
+      return null;
+    }
+    const left = Expression.evaluateDetailed(split.left, bindedValues);
+    const right = Expression.evaluateDetailed(split.right, bindedValues);
+    if (left.unresolvedReference || right.unresolvedReference) {
+      return null;
+    }
+    const leftValue = left.value;
+    const rightValue = right.value;
+    if (typeof leftValue === typeof rightValue) {
+      return null;
+    }
+    if (!Expression.isLooselyEqual(leftValue, rightValue)) {
+      return null;
+    }
+    return {left: typeof leftValue, right: typeof rightValue};
+  }
+
+  /**
+   * 型をまたいだ緩い比較（`==`）を行います。
+   *
+   * 厳密比較の診断では「型は違うが値は同じ」を判定する必要があるため、意図して
+   * 緩い比較を使います。
+   *
+   * @param left 左辺の値
+   * @param right 右辺の値
+   * @returns 緩い比較で等しい場合 true
+   */
+  private static isLooselyEqual(left: unknown, right: unknown): boolean {
+    return (left as never) == (right as never);
+  }
+
+  /**
+   * 式全体の結果を単一の厳密比較だけでは決められなくなる演算子。
+   *
+   * 論理演算・三項演算・算術演算・他の比較を含みます。オプショナルチェーン
+   * （`?.`）はメンバーアクセスなので含めません。`&&` は「左側が偽なら全体が偽」
+   * なので打ち切らず、左側を診断します（`splitStrictComparison()`）。
+   */
+  private static readonly COMPOSING_OPERATORS: ReadonlySet<string> = new Set([
+    '||',
+    '?',
+    ':',
+    '==',
+    '!=',
+    '>=',
+    '<=',
+    '>',
+    '<',
+    '=>',
+    ',',
+    '!',
+    '+',
+    '-',
+    '*',
+    '/',
+    '%',
+    '...',
+  ]);
+
+  /**
+   * 式を単一の厳密比較として左辺と右辺へ分割します。
+   *
+   * 括弧・配列・オブジェクトの内側は対象にしません（入れ子の比較は全体の結果を
+   * 決めないため）。`式 && 追加` の形は、`&&` の左側が偽なら全体が偽になるので、
+   * 左側だけを診断します（`data-attr-selected="{{a === b && 'selected'}}"` の
+   * 書き方に対応するため）。
+   *
+   * @param expression 対象の式
+   * @returns 左辺と右辺。単一の厳密比較でない場合は null
+   */
+  private static splitStrictComparison(
+    expression: string,
+  ): {left: string; right: string} | null {
+    const cached = Expression.strictComparisonSplits.get(expression);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const split = Expression.computeStrictComparisonSplit(expression);
+    Expression.strictComparisonSplits.set(expression, split);
+    return split;
+  }
+
+  /**
+   * 分割結果の記憶。式のテキストだけで決まるため、開発モードの診断が再評価ごとに
+   * 分解し直さないよう覚えておきます（診断は評価結果が偽になるたびに走るため、
+   * 大きな一覧では宣言の数だけ分解が繰り返されます）。
+   */
+  private static readonly strictComparisonSplits = new Map<
+    string,
+    {left: string; right: string} | null
+  >();
+
+  /**
+   * 式を単一の厳密比較として分割します（記憶しない実体）。
+   *
+   * @param expression 対象の式
+   * @returns 左辺と右辺。単一の厳密比較でない場合は null
+   */
+  private static computeStrictComparisonSplit(
+    expression: string,
+  ): {left: string; right: string} | null {
+    const tokens = Expression.tokenizeExpression(expression);
+    if (tokens === null) {
+      return null;
+    }
+    let depth = 0;
+    let comparison: ExpressionToken | null = null;
+    for (const token of tokens) {
+      if (token.type !== 'operator') {
+        continue;
+      }
+      if (token.value === '(' || token.value === '[' || token.value === '{') {
+        depth += 1;
+        continue;
+      }
+      if (token.value === ')' || token.value === ']' || token.value === '}') {
+        depth -= 1;
+        continue;
+      }
+      if (depth !== 0) {
+        continue;
+      }
+      if (token.value === '&&') {
+        // 左側が偽なら全体が偽になるため、左側だけを診断する。
+        return Expression.splitStrictComparison(
+          expression.slice(0, token.position),
+        );
+      }
+      if (token.value === '===') {
+        if (comparison !== null) {
+          return null;
+        }
+        comparison = token;
+        continue;
+      }
+      if (Expression.COMPOSING_OPERATORS.has(token.value)) {
+        return null;
+      }
+    }
+    if (comparison === null) {
+      return null;
+    }
+    const left = expression.slice(0, comparison.position).trim();
+    const right = expression
+      .slice(comparison.position + comparison.value.length)
+      .trim();
+    if (left === '' || right === '') {
+      return null;
+    }
+    return {left, right};
+  }
+
+  /**
    * 式をトークン列に分解します。
    *
    * @param expression 評価前に検証する式

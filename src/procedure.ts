@@ -944,6 +944,10 @@ interface RowWrite {
    * 無い、`change` の起点がまだコミットされていないなど）では、要素データが
    * 変わらないために差分更新が走らず、書き戻した内容が画面へ届きません。
    * 指定しない場合は何もしません。
+   *
+   * `'supply'` は「この書き戻しが明示的な値の供給である」ことも表します。要素
+   * データが**変わった**場合も対象行のユーザー編集の印を解除します（差分更新は
+   * 供給かどうかを判定できないため解除しません）。
    */
   syncWhenUnchanged?: UnchangedRowSync;
 }
@@ -4679,6 +4683,17 @@ ${body}
         }
         nextArray[index] = nextItem;
         changed = true;
+        if (write.syncWhenUnchanged === 'supply') {
+          // コピーは明示的な値の供給なので、対象行のユーザー編集の印を解除する。
+          // 宣言バインドで値が決まる入力欄は行データ由来の書き戻しの対象外なので、
+          // 印を解除して差分更新の再評価に載せる以外に反映の経路が無い（仕様
+          // 「編集可能な行への書き込み」）。差分更新（`Core.updateDiff()`）は
+          // 供給かどうかを判定できないため解除しない。
+          //
+          // 解除するのはコピーしたキーに属する欄だけである（行を丸ごと解除すると、
+          // コピーしていないキーの編集まで評価結果へ明け渡す）。
+          Form.clearRowUserEditMarksForChangedKeys(write.row, nextItem);
+        }
       }
       if (!changed) {
         return;
@@ -4694,8 +4709,8 @@ ${body}
           reentrant:
             this.reentrantBind && resolved.owner.isExecutingBindingWork(),
           // 対象は配列の一部の要素だけなので、所有者の部分木を丸ごと供給の宛先には
-          // しない。他の行の編集の印も解除しない（要素データが入れ替わる再利用行の
-          // 印は差分更新（Core.updateDiff）が個別に解除する）。
+          // しない。他の行の編集の印も解除しない（コピー先の行の印は上のループで
+          // 解除済み。差分更新は解除しない）。
           kind: 'nonSupply',
           sequence: this.operationSequence,
         },
@@ -4740,7 +4755,9 @@ ${body}
     mode: UnchangedRowSync,
   ): Promise<void> {
     if (mode === 'supply') {
-      Core.clearUserEditMarks(row);
+      // 解除するのは、画面の状態が書き戻す内容と食い違うキーに属する欄だけである
+      // （`Form.clearRowUserEditMarksForChangedKeys()`）。
+      Form.clearRowUserEditMarksForChangedKeys(row, item);
     }
     return Form.syncRowValues(row, item);
   }
@@ -4963,6 +4980,41 @@ ${body}
     if (!mutate(nextArray, index)) {
       return Promise.resolve();
     }
+    // 行と要素データの対応がインデックスで決まる場合（`data-each-key` を指定して
+    // いない場合）、行の増減・並べ替えでは別のレコードを受け取る行が出る。その行の
+    // ユーザー編集の印を解除する。解除しないと、宣言バインドで値が決まる入力欄が前
+    // のレコードの値を表示したまま残る（行データ由来の書き戻しは宣言バインドの欄を
+    // 対象外にするため、この経路以外では更新されない）。差分更新
+    // （`Core.updateDiff()`）は更新が供給かどうかを判定できないため解除しない。
+    //
+    // 行の特定には、DOM の並び順ではなく行が保持しているリストキーを使う（差分更新
+    // が行の再利用に使うものと同じ識別子）。並び順で数えると、描画が追いついて
+    // いない状態で別の行の印を解除してしまう。`data-each-key` を指定している場合は
+    // キーがその値になり、ここで組み立てるインデックスのキーには一致しないため、
+    // どの行も対象にならない（キーと一緒にレコードが移動するので解除は不要。消えた
+    // 行は差分更新が印ごと取り除く）。
+    const rowsByListKey = new Map<string, ElementFragment>();
+    rows.forEach(row => {
+      const listKey = row.getListKey();
+      if (listKey !== null && !rowsByListKey.has(String(listKey))) {
+        rowsByListKey.set(String(listKey), row);
+      }
+    });
+    nextArray.forEach((item, position) => {
+      if (Procedure.isSameRowItem(resolved.array[position], item)) {
+        return;
+      }
+      const row = rowsByListKey.get(
+        Core.createListKey(
+          item as Record<string, unknown> | string | number,
+          null,
+          position,
+        ),
+      );
+      if (row) {
+        Core.clearUserEditMarks(row);
+      }
+    });
     return Core.setBindingData(
       resolved.owner.getTarget(),
       Procedure.withPathValue(resolved.ownerData, resolved.path, nextArray),

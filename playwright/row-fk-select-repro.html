@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>行内 FK セレクトの選択保持</title>
+</head>
+<body>
+<!--
+  `data-form-list` の行に FK セレクトを置き、選択肢の `id`（数値）と収集値（文字列）を
+  厳密比較する構成。行の要素データはセレクトのコミット自身が書き換えるため、行の
+  再利用で編集の印が解除されると、その場で選択が空へ戻る。実ブラウザでは操作直後の
+  フォーカス位置で症状の出方が変わるため、ここで確認する。
+-->
+<div id="outer" data-bind='{"materialList":{"content":[{"id":1,"name":"鉄"},{"id":2,"name":"銅"}]}}'>
+  <form id="detail-form" data-bind='{"materials":[{"material":{"id":""},"amount":1},{"material":{"id":""},"amount":2}]}'>
+    <div id="list" data-form-list="materials" data-each="materials"
+         data-each-arg="m" data-each-index="i">
+      <div class="row" id="row-{{i}}">
+        <span data-form-object="material">
+          <select class="fk" name="id" data-each="materialList.content"
+                  data-each-arg="opt" data-each-key="id">
+            <option value="" data-each-before>選択</option>
+            <option value="{{opt.id}}"
+                    data-attr-selected="{{opt.id === m.material.id}}"
+                    >{{opt.name}}</option>
+          </select>
+        </span>
+        <input class="amount" type="number" name="amount"
+               data-attr-value="{{m.amount}}">
+        <button class="del" type="button" data-click-row-remove>削除</button>
+      </div>
+    </div>
+    <button id="add" type="button" data-click-row-add="#list">行を追加</button>
+    <button id="send" type="button"
+      data-click-fetch="/api/save"
+      data-click-fetch-method="POST"
+      data-click-form="#detail-form">送信</button>
+  </form>
+</div>
+<script src="/dist/haori.iife.js"></script>
+<script>
+  window.addEventListener('load', () => {
+    requestAnimationFrame(() =>
+      document.body.setAttribute('data-haori-ready', ''),
+    );
+  });
+</script>
+</body>
+</html>

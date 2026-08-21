@@ -195,6 +195,116 @@ export default class Form {
   }
 
   /**
+   * 行の入力欄のうち、新しい要素データと値が食い違う収集キーに属するものだけ、
+   * ユーザー編集の印を解除します。
+   *
+   * 行への `data-{event}-copy` で使います。コピーが優先するのは**コピーしたキー**
+   * なので（仕様「編集可能な行への書き込み」）、行の印を丸ごと解除すると、コピー
+   * していないキーの編集まで宣言バインドの評価結果へ明け渡してしまいます。評価が
+   * 要素データと食い違う構成（数値の `id` と文字列の収集値を厳密比較する
+   * `data-attr-selected` など）では、その欄の確定した編集が静かに消えます。
+   *
+   * 判定は**行の収集値と新しい要素データの突き合わせ**で行います。コピーしたキーは
+   * 値が変わるため食い違い、コピーしていないキーは編集がすでに要素データへ確定して
+   * いるため一致します。要素データが変わらない書き戻し（入力欄の状態が要素データへ
+   * 確定していない構成）でも、画面と食い違うキーだけが対象になります。
+   *
+   * @param row 行のフラグメント
+   * @param item 新しい要素データ
+   * @returns 戻り値はありません。
+   */
+  public static clearRowUserEditMarksForChangedKeys(
+    row: ElementFragment,
+    item: Record<string, unknown>,
+  ): void {
+    const collected = Form.getValues(row);
+    const changed = new Set<string>();
+    for (const key of new Set([
+      ...Object.keys(collected),
+      ...Object.keys(item),
+    ])) {
+      if (!Form.isSameCollectedValue(collected[key], item[key])) {
+        changed.add(key);
+      }
+    }
+    if (changed.size === 0) {
+      return;
+    }
+    Form.clearUserEditMarksForKeys(row, row, changed);
+  }
+
+  /**
+   * 収集値と要素データの値が同じ内容かどうかを判定します。
+   *
+   * 直列化できない値（循環参照など）は「違う」と扱います。
+   *
+   * @param left 比較元の値
+   * @param right 比較先の値
+   * @returns 同じ内容なら true
+   */
+  private static isSameCollectedValue(left: unknown, right: unknown): boolean {
+    if (left === right) {
+      return true;
+    }
+    try {
+      return JSON.stringify(left) === JSON.stringify(right);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 指定した収集キーに属する部分木のユーザー編集の印を解除します。
+   *
+   * @param fragment 走査中のフラグメント
+   * @param row 行のフラグメント（収集キーの起点）
+   * @param keys 対象の収集キー
+   * @returns 戻り値はありません。
+   */
+  private static clearUserEditMarksForKeys(
+    fragment: ElementFragment,
+    row: ElementFragment,
+    keys: ReadonlySet<string>,
+  ): void {
+    const key = Form.resolveRowTopLevelKey(fragment, row);
+    if (key !== null && keys.has(key)) {
+      fragment.clearUserEditMark();
+    }
+    fragment.getChildElementFragments().forEach(child => {
+      Form.clearUserEditMarksForKeys(child, row, keys);
+    });
+  }
+
+  /**
+   * 行の中の要素が属する、収集値の**最上位**キーを返します。
+   *
+   * 行から要素までの間にある `data-form-object` / `data-form-list` と `name`
+   * （`data-form-name`）のうち、行に最も近いものが最上位キーです。
+   *
+   * @param fragment 対象フラグメント
+   * @param row 行のフラグメント
+   * @returns 最上位の収集キー。無い場合は null
+   */
+  private static resolveRowTopLevelKey(
+    fragment: ElementFragment,
+    row: ElementFragment,
+  ): string | null {
+    let key: string | null = null;
+    let cursor: ElementFragment | null = fragment;
+    while (cursor !== null && cursor !== row) {
+      const name =
+        cursor.getAttribute(`${Env.prefix}form-object`) ||
+        cursor.getAttribute(`${Env.prefix}form-list`) ||
+        Form.resolveFieldName(cursor);
+      if (name !== null && name !== undefined && String(name) !== '') {
+        key = String(name);
+      }
+      cursor = cursor.getParent();
+    }
+    return key;
+  }
+
+  /**
    * `data-form-name` の初期化を行います。
    *
    * 収集キーが空になる指定を開発モードで警告し、ラジオボタンにはグループ用の

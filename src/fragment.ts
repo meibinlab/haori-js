@@ -2318,6 +2318,49 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 型の食い違う厳密比較を報告済みの宣言。
+   * 再評価ごとに警告すると開発コンソールが埋まるため、同じ宣言は一度だけ報告する。
+   */
+  private static readonly loggedTypeMismatchedComparisons = new Set<string>();
+
+  /**
+   * 開発モードで、型の食い違う厳密比較を警告します。
+   *
+   * `===` / `!==` の両辺の型が違うと、値が同じでも比較は必ず偽になります。API 由来
+   * の数値の `id` と、フォームの収集値（文字列）を比べる宣言で起きやすく、
+   * `data-attr-selected` / `data-attr-checked` では「選択やチェックが付かない」、
+   * その他の `data-attr-*` では「属性が消える」という形でしか現れません。原因の
+   * 属性とテンプレート、両辺の型を名指しで報告します。
+   *
+   * @param rawName 生の属性名
+   * @param template 宣言されたテンプレート
+   * @param types 両辺の型
+   * @param element 対象エレメント
+   * @return 戻り値はありません。
+   */
+  private static warnTypeMismatchedComparison(
+    rawName: string,
+    template: string,
+    types: {left: string; right: string},
+    element: Element,
+  ): void {
+    const key = `${rawName} ${template}`;
+    if (ElementFragment.loggedTypeMismatchedComparisons.has(key)) {
+      return;
+    }
+    ElementFragment.loggedTypeMismatchedComparisons.add(key);
+    Log.warn(
+      '[Haori]',
+      'The strict comparison compares different types' +
+        ` (${types.left} vs ${types.right}), so it is always false even` +
+        ' though the values match. Align the types (for example with' +
+        ` ${Env.prefix}value-type) or compare converted values:` +
+        ` ${rawName}="${template}"`,
+      element,
+    );
+  }
+
+  /**
    * チェック状態の宣言バインドについて、再適用を抑止すべきかを判定します。
    *
    * `option` の `selected` はユーザー操作で変化するのが所属する `<select>` の
@@ -3001,6 +3044,27 @@ export class ElementFragment extends Fragment {
         value,
         element,
       );
+    }
+    if (Dev.isEnabled() && evaluatedValue === false && isSingleExpression) {
+      // 評価結果が偽になった単一の厳密比較は、型の食い違いで「値は同じなのに必ず
+      // 偽」になる書き方の可能性がある。属性の削除・選択やチェックの解除という形で
+      // しか現れないため、原因を名指しで報告する（仕様「`data-attr-*`」）。
+      const expressionText = contents.getSingleExpression();
+      const mismatch =
+        expressionText === null
+          ? null
+          : Expression.diagnoseStrictComparison(
+              expressionText,
+              this.getBindingData(),
+            );
+      if (mismatch !== null) {
+        ElementFragment.warnTypeMismatchedComparison(
+          rawName,
+          value,
+          mismatch,
+          element,
+        );
+      }
     }
     const result = contents.isForceEvaluation()
       ? value
@@ -3984,6 +4048,15 @@ class TextContents {
       (this.contents[0].type === ExpressionType.EXPRESSION ||
         this.contents[0].type === ExpressionType.RAW_EXPRESSION)
     );
+  }
+
+  /**
+   * 単体プレースホルダの式テキストを返します。
+   *
+   * @returns 単体プレースホルダなら式テキスト。そうでなければ null
+   */
+  public getSingleExpression(): string | null {
+    return this.isSingleExpression() ? this.contents[0].text : null;
   }
 
   /**
