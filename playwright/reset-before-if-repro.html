@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>reset-before 配下の data-if</title>
+</head>
+<body>
+<!--
+  `data-{event}-reset-before` の対象を、まだ偽の `data-if` の配下に置いた構成。
+  リセットは非表示分岐の中のフォームも評価するため、その時点の評価結果
+  （`data-if-false` と `display: none`）が分岐の子へ書かれる。同じ押下の
+  `data-{event}-bind` で外側が表示になると、未スキャンの子を `scan` で初期化する
+  経路が属性を再適用するため、追随結果を宣言として取り込んでいると表示へ戻した
+  分岐が非表示へ引き戻される。
+-->
+<div id="state" data-bind='{"item": null}'>
+  <button type="button" id="edit"
+    data-click-reset-before="#detail-form"
+    data-click-data='{"id":30001,"editing":1}'
+    data-click-bind="#state" data-click-bind-arg="item">編集</button>
+  <div id="outer" data-if="item?.editing">
+    <form id="detail-form">
+      <div id="has-id" data-if="item?.id">ID あり</div>
+      <div id="no-id" data-if="!item?.id">ID なし</div>
+      <span id="id-text">{{item?.id}}</span>
+    </form>
+  </div>
+</div>
+<script src="/dist/haori.iife.js"></script>
+<script>
+  window.addEventListener('load', () => {
+    requestAnimationFrame(() =>
+      document.body.setAttribute('data-haori-ready', ''),
+    );
+  });
+</script>
+</body>
+</html>

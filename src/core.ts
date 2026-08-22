@@ -1587,6 +1587,30 @@ export default class Core {
       {value: unknown; source: string; kind: 'bind' | 'derive'; depth: number}
     >;
   } {
+    const dumped = Core.collectScope(element);
+    if (Dev.isEnabled()) {
+      Log.info('[Haori]', 'scope dump for', element, dumped);
+    }
+    return dumped;
+  }
+
+  /**
+   * スコープの解決結果と由来を収集します。
+   *
+   * `dumpScope()` の本体です。こちらは出力しません。診断（`data-if` の falsy 報告）は
+   * 自分で 1 行だけ出すため、ここで出すと同じ内容が二重に出て、再描画のたびに
+   * コンソールへ積み上がります。
+   *
+   * @param element 対象要素
+   * @return 解決済みスコープと各キーの由来情報
+   */
+  private static collectScope(element: HTMLElement): {
+    resolved: Record<string, unknown>;
+    sources: Record<
+      string,
+      {value: unknown; source: string; kind: 'bind' | 'derive'; depth: number}
+    >;
+  } {
     const fragment = Fragment.get(element) as ElementFragment | null;
     if (!fragment) {
       return {resolved: {}, sources: {}};
@@ -1635,9 +1659,6 @@ export default class Core {
       record(current.getRawBindingData(), current, 'bind', depth);
       current = current.getParent();
       depth += 1;
-    }
-    if (Dev.isEnabled()) {
-      Log.info('[Haori]', 'scope dump for', element, {resolved, sources});
     }
     return {resolved, sources};
   }
@@ -2043,7 +2064,7 @@ export default class Core {
       );
       return;
     }
-    const {sources} = Core.dumpScope(fragment.getTarget());
+    const {sources} = Core.collectScope(fragment.getTarget());
     // 式に現れるトップレベル識別子（プロパティアクセスの末尾などは除く）を抽出する。
     const identifiers = new Set<string>();
     const matches = expression.match(/[A-Za-z_$][\w$]*/g) ?? [];
@@ -2087,7 +2108,13 @@ export default class Core {
       // 開発モードでは、falsy で非表示になった data-if 式と、その式が参照する
       // 識別子の解決値・由来（どの要素の bind/derive か）を出力する。
       // 「フォームの name 由来の値が想定外に解決される」等のスコープ競合の特定に役立つ。
-      if (Dev.isEnabled()) {
+      //
+      // 出力するのは**非表示へ切り替わった時点**だけである。`data-if` は再描画の
+      // たびに評価されるため、非表示のまま毎回出力すると、スコープ全体の解決
+      // （`collectScope()`）と出力が再描画の回数だけ積み上がり、開発モードの
+      // 再描画コストを支配してしまう。切り替わりを契機にすれば、状態が変わった
+      // ときは何度でも報告できる（表示へ戻ってまた非表示になった場合を含む）。
+      if (Dev.isEnabled() && fragment.isVisible()) {
         Core.logFalsyIfDiagnostics(fragment);
       }
       promises.push(

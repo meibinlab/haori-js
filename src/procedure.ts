@@ -4475,16 +4475,40 @@ ${body}
       );
       return null;
     }
-    // 根の識別子を持つ最も近い祖先（自身を含む）を所有者とする。
-    let owner: ElementFragment | null = container;
-    let ownerData: Record<string, unknown> | null = null;
-    while (owner) {
-      const data = owner.getRawBindingData();
-      if (data && path[0] in data) {
-        ownerData = data;
-        break;
+    // 根の識別子が祖先の `data-each` の行スコープ名なら、その行が属する配列の
+    // 所有者まで遡り、経路へ行の位置を挟む。行データは描画のたびに親配列から
+    // 作り直す仮想スコープなので、行自身を所有者にすると書き戻しが次の描画で
+    // 消える（仕様「行操作の共通仕様（`data-{event}-row-*`）」）。
+    const rowScope = Procedure.resolveRowScopeBase(container, path[0]);
+    let owner: ElementFragment | null;
+    let ownerData: Record<string, unknown> | null;
+    let fullPath: string[];
+    if (rowScope) {
+      owner = rowScope.owner;
+      ownerData = rowScope.ownerData;
+      fullPath = [...rowScope.path, ...path.slice(1)];
+    } else {
+      // 根の識別子を持つ最も近い祖先（自身を含む）を所有者とする。行データは
+      // 所有者にしない。行データは描画のたびに親配列から作り直す仮想スコープなので、
+      // 書き戻しても次の描画で消えるうえ、DOM だけが入れ替わって画面とバインド
+      // データが食い違う。上の `resolveRowScopeBase()` が解決できなかった場合
+      // （外側が派生配列など）はここへ落ちるため、行を除外しないと無言で
+      // 画面だけが動く。
+      owner = container;
+      ownerData = null;
+      while (owner) {
+        const data = owner.getRawBindingData();
+        if (
+          data &&
+          path[0] in data &&
+          !Procedure.isRowScopeKey(owner, path[0])
+        ) {
+          ownerData = data;
+          break;
+        }
+        owner = owner.getParent();
       }
-      owner = owner.getParent();
+      fullPath = path;
     }
     if (!owner || !ownerData) {
       Log.error(
@@ -4493,18 +4517,7 @@ ${body}
       );
       return null;
     }
-    let current: unknown = ownerData;
-    for (const part of path) {
-      if (
-        current === null ||
-        typeof current !== 'object' ||
-        Array.isArray(current)
-      ) {
-        current = undefined;
-        break;
-      }
-      current = (current as Record<string, unknown>)[part];
-    }
+    const current = Procedure.readPathValue(ownerData, fullPath);
     if (!Array.isArray(current)) {
       Log.error(
         'Haori',
@@ -4512,7 +4525,120 @@ ${body}
       );
       return null;
     }
-    return {owner, ownerData, array: current, path};
+    return {owner, ownerData, array: current, path: fullPath};
+  }
+
+  /**
+   * 行スコープ名を根に持つ経路の土台（所有者と行までの経路）を解決します。
+   *
+   * `data-each="g.rules"` のように、外側の `data-each` が公開する行スコープ名を
+   * 根に持つ式のための解決です。行スコープ名を宣言している最も近い祖先の
+   * `data-each` コンテナを見つけ、そのコンテナ自身を再帰的に解決して
+   * 「所有者・所有者データ・配列までの経路」を得たうえで、経路の末尾へ行の位置を
+   * 足して返します。再帰するため、入れ子が何段でも解けます。
+   *
+   * @param container `data-each` コンテナのフラグメント
+   * @param rootName 経路の根の識別子
+   * @returns 所有者・所有者データ・行までの経路。行スコープ名でない場合は null
+   */
+  private static resolveRowScopeBase(
+    container: ElementFragment,
+    rootName: string,
+  ): {
+    owner: ElementFragment;
+    ownerData: Record<string, unknown>;
+    path: string[];
+  } | null {
+    let cursor: ElementFragment | null = container;
+    while (cursor) {
+      const row = cursor.closestByAttribute(`${Env.prefix}row`);
+      if (!row) {
+        return null;
+      }
+      const outer = row.getParent();
+      if (!outer) {
+        return null;
+      }
+      if (outer.getAttribute(`${Env.prefix}each-arg`) === rootName) {
+        const outerResolved = Procedure.resolveEachArray(outer);
+        if (!outerResolved) {
+          // 外側が派生配列などで書き戻せない場合。エラーは再帰先が出している。
+          return null;
+        }
+        const index = Procedure.resolveRowIndex(
+          outer,
+          row,
+          outerResolved.array,
+          `${Env.prefix}each="${outer.getRawAttribute(`${Env.prefix}each`)}"`,
+        );
+        if (index === null) {
+          return null;
+        }
+        return {
+          owner: outerResolved.owner,
+          ownerData: outerResolved.ownerData,
+          path: [...outerResolved.path, String(index)],
+        };
+      }
+      // 次に調べるのは `outer` 自身（`outer` が行を兼ねる場合、その行が属する
+      // コンテナの行スコープ名が候補になる）。`outer.getParent()` から始めると
+      // その候補を飛ばすため、「コンテナがそのまま行になっている入れ子」
+      // （`data-each` の直下の唯一の子が `data-each`）で解決できない。
+      cursor = outer;
+    }
+    return null;
+  }
+
+  /**
+   * 指定した名前が、そのフラグメントの行データ由来のキーかどうかを判定します。
+   *
+   * 行データ（`data-each-arg` / `data-each-index` で公開する値）は描画のたびに
+   * 親配列から作り直す仮想スコープです。行操作の書き戻し先にすると次の描画で
+   * 消えるため、所有者の候補から外すために使います。
+   *
+   * @param fragment 判定するフラグメント
+   * @param name キーの名前
+   * @returns 行データ由来なら true
+   */
+  private static isRowScopeKey(
+    fragment: ElementFragment,
+    name: string,
+  ): boolean {
+    if (!fragment.hasAttribute(`${Env.prefix}row`)) {
+      return false;
+    }
+    const container = fragment.getParent();
+    if (!container) {
+      return false;
+    }
+    return (
+      container.getAttribute(`${Env.prefix}each-arg`) === name ||
+      container.getAttribute(`${Env.prefix}each-index`) === name
+    );
+  }
+
+  /**
+   * 経路をたどって値を読み出します。
+   *
+   * 配列の要素を指す数値の経路要素も辿ります（行スコープ名を根に持つ経路は
+   * 途中に行の位置が入るため）。
+   *
+   * @param data 起点のデータ
+   * @param path キーの並び
+   * @returns 経路の値。辿れない場合は undefined
+   */
+  private static readPathValue(
+    data: Record<string, unknown>,
+    path: string[],
+  ): unknown {
+    let current: unknown = data;
+    for (const part of path) {
+      if (current === null || typeof current !== 'object') {
+        return undefined;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+    return current;
   }
 
   /**
@@ -4533,11 +4659,15 @@ ${body}
     value: unknown,
   ): Record<string, unknown> {
     const next: Record<string, unknown> = {...data};
-    let cursor = next;
+    let cursor: Record<string, unknown> = next;
     for (let index = 0; index < path.length - 1; index += 1) {
       const key = path[index];
-      const child = cursor[key] as Record<string, unknown>;
-      const cloned: Record<string, unknown> = {...child};
+      const child = cursor[key];
+      // 配列はスプレッドでオブジェクトへ潰れるため、配列のまま複製する。行スコープ名を
+      // 根に持つ経路（`g.rules`）は途中に行の位置が入り、配列を跨ぐ。
+      const cloned = Array.isArray(child)
+        ? (child.slice() as unknown as Record<string, unknown>)
+        : {...(child as Record<string, unknown>)};
       cursor[key] = cloned;
       cursor = cloned;
     }
@@ -4801,20 +4931,46 @@ ${body}
     write: RowWrite,
     array: unknown[],
   ): number | null {
-    const rows = Procedure.getRowFragments(write.container);
-    const position = rows.indexOf(write.row);
+    return Procedure.resolveRowIndex(
+      write.container,
+      write.row,
+      array,
+      write.attributeName,
+    );
+  }
+
+  /**
+   * 行に対応する配列要素のインデックスを解決します。
+   *
+   * `resolveRowArrayIndex()` の本体です。行への書き込み以外（行スコープ名を根に
+   * 持つ `data-each` の解決）からも使うため、コンテナと行を直接受け取ります。
+   *
+   * @param container `data-each` コンテナのフラグメント
+   * @param row 対象の行フラグメント
+   * @param array 現在の配列
+   * @param label 警告に添える宣言の名前
+   * @returns 配列のインデックス。解決できない場合は null
+   */
+  private static resolveRowIndex(
+    container: ElementFragment,
+    row: ElementFragment,
+    array: unknown[],
+    label: string,
+  ): number | null {
+    const rows = Procedure.getRowFragments(container);
+    const position = rows.indexOf(row);
     if (position === -1) {
       // 応答を待つ間に行が削除された場合。無関係な行へ書かないよう捨てる。
       Log.warn(
         'Haori',
         'The target row is no longer in the' +
           ` ${Env.prefix}each container; the write was skipped` +
-          ` (${write.attributeName}).`,
+          ` (${label}).`,
       );
       return null;
     }
-    const keyArg = write.container.getAttribute(`${Env.prefix}each-key`);
-    const listKey = write.row.getListKey();
+    const keyArg = container.getAttribute(`${Env.prefix}each-key`);
+    const listKey = row.getListKey();
     if (keyArg && listKey !== null) {
       const matched: number[] = [];
       array.forEach((item, index) => {
@@ -4831,7 +4987,7 @@ ${body}
       // 同じキーを持つ行の中で自分が何番目かを数え、その番目の要素へ対応させる。
       const occurrence = rows
         .slice(0, position)
-        .filter(row => row.getListKey() === listKey).length;
+        .filter(other => other.getListKey() === listKey).length;
       const found = matched[occurrence] ?? -1;
       if (found === -1) {
         // キーに一致する要素が無い場合と、キーが重複していて自分の出現順に対応する
@@ -4841,7 +4997,7 @@ ${body}
           'Haori',
           'No array element corresponds to the target row' +
             ` (key "${listKey}"); the write was skipped` +
-            ` (${write.attributeName}).`,
+            ` (${label}).`,
         );
         return null;
       }
@@ -4851,7 +5007,7 @@ ${body}
       Log.warn(
         'Haori',
         'The target row index is out of range; the write was skipped' +
-          ` (${write.attributeName}).`,
+          ` (${label}).`,
       );
       return null;
     }

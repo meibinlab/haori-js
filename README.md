@@ -2,7 +2,7 @@
 
 Haori.js is a lightweight, HTML-first UI library that enables dynamic user interfaces primarily through HTML attributes. It lets you declare data bindings, conditional rendering, list rendering, form two-way binding, server fetches, and HTML imports without writing much JavaScript.
 
-Version: 0.45.1
+Version: 0.45.2
 
 ---
 
@@ -152,7 +152,9 @@ Template expressions support JavaScript-like syntax such as property access, bra
 
 > **Security model:** expression text is **code you write**. The blocks above are defense in depth that make accidents harder, not a boundary against malicious expressions (expressions are ultimately evaluated with `new Function`). **Never interpolate user input or API responses into expression text.** HTML escaping is not expression escaping — `&#39;` turns back into `'` when the attribute value is parsed, which escapes the string literal. Pass untrusted data as `data-bind` **values** and reference it by key from expressions. See "XSS対策" in [docs/ja/specs.md](docs/ja/specs.md) for details.
 
-Helpers for tests and debugging: `waitForRenders()` (also `Haori.waitForRenders()`) resolves once initialization, in-flight fetches, and queued render tasks have all settled — useful for E2E tests. `Haori.Core.dumpScope(element)` returns the scope resolved for an element (`resolved`) and where each key comes from (`sources`); in dev mode a falsy `data-if` also logs its expression and referenced scope automatically.
+Helpers for tests and debugging: `waitForRenders()` (also `Haori.waitForRenders()`) resolves once initialization, in-flight fetches, and queued render tasks have all settled — useful for E2E tests. `Haori.Core.dumpScope(element)` returns the scope resolved for an element (`resolved`) and where each key comes from (`sources`); in dev mode a `data-if` logs its expression and referenced scope when it turns hidden (it is not logged again while it stays hidden). Expression timings are collected only after `window.__HAORI_EVALUATION_PROFILE__.start()`; read them with `snapshot()`.
+
+Dev mode can be forced with `<script src="haori.js" data-dev>` and is **enabled by default on localhost**. Its diagnostics add to render cost, so pass `data-dev="false"` when measuring production-like performance locally.
 
 `data-fetch` and `data-import` are automatically re-evaluated only when their evaluated values change after a binding update. `data-fetch` compares a request signature composed of the resolved URL, HTTP method, headers, and body, while `data-import` compares only the resolved URL. If either attribute contains even one unresolved reference, it is treated as invalid for that evaluation cycle, is not executed, and becomes executable only after a later binding update resolves the reference.
 

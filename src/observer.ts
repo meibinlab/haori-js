@@ -251,6 +251,23 @@ export class Observer {
             ) {
               break;
             }
+            // `data-if` の非表示化・表示は `data-if-false` と `style.display` を DOM
+            // へ直接書く。仕様「data-if の動作」の「判定の基準は内部状態であり、
+            // `style.display` や `data-if-false` は追随結果として扱う」に従い、
+            // これらは宣言として取り込まない。取り込むと内部の属性マップへ焼き付き、
+            // 未スキャンの子を `scan` で初期化する経路（同節）の属性再適用が
+            // 非表示の状態を書き戻して、表示へ戻した分岐を非表示へ引き戻す。
+            // `style` は非表示のあいだだけ外す（利用者が書いた `style` の宣言は
+            // 通常どおり取り込む）。復帰時は `data-if-false` を最後に外すため、
+            // `show()` が戻した `style` はこの判定に掛からず取り込まれる。
+            if (
+              mutation.attributeName &&
+              (mutation.attributeName === `${Env.prefix}if-false` ||
+                (mutation.attributeName === 'style' &&
+                  element.hasAttribute(`${Env.prefix}if-false`)))
+            ) {
+              break;
+            }
             if (
               mutation.attributeName &&
               Core.isAliasedAttributeReflection(element, mutation.attributeName)

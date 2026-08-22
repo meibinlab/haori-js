@@ -116,7 +116,13 @@ export default class Env {
         currentScript instanceof HTMLScriptElement &&
         currentScript.hasAttribute(`${Env._prefix}dev`)
       ) {
-        Dev.set(true);
+        // 値で明示的に切れるようにする。開発モードは下のローカルホスト判定で自動的に
+        // 有効になるため、これが無いとローカルで動かす本番相当の計測ができない
+        // （開発モードの診断は再描画のたびにスコープ全体を解決する）。
+        const value = (currentScript.getAttribute(`${Env._prefix}dev`) ?? '')
+          .trim()
+          .toLowerCase();
+        Dev.set(value !== 'false' && value !== 'off' && value !== '0');
         return;
       }
 

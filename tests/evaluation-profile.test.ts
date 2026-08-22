@@ -11,6 +11,8 @@ import Fragment, {ElementFragment} from '../src/fragment';
 import {waitForDomSettled} from './helpers/async';
 
 type EvaluationProfileAccessor = {
+  start: () => void;
+  stop: () => void;
   reset: () => void;
   snapshot: () => Array<{
     elementId: string;
@@ -54,6 +56,7 @@ describe('evaluation profile', () => {
     const profile = (globalThis as Record<string, unknown>).__HAORI_EVALUATION_PROFILE__ as
       | EvaluationProfileAccessor
       | undefined;
+    profile?.stop();
     profile?.reset();
     Dev.disable();
     document.body.removeChild(container);
@@ -79,6 +82,8 @@ describe('evaluation profile', () => {
       | undefined;
     expect(profile).toBeDefined();
     profile!.reset();
+    // 集計は明示的に開始するまで行わない（仕様「パフォーマンス測定」）。
+    profile!.start();
 
     await Core.evaluateAll(Fragment.get(host) as ElementFragment);
     await waitForDomSettled();

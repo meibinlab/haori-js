@@ -156,11 +156,48 @@ class EvaluationProfileRegistry {
   >();
 
   /**
+   * 集計中かどうか。
+   *
+   * 集計は明示的に開始するまで行いません。集計はエレメント識別子の組み立て
+   * （`createElementId()` が祖先をたどり、各段で兄弟の位置を数える）を評価ごとに
+   * 行うため、開発モードで常に集計すると再描画のコストを押し上げます。開発モードは
+   * localhost で自動的に有効になる（仕様「環境検出」）ため、既定では集計しません。
+   */
+  private static collecting = false;
+
+  /**
    * 集計状態を初期化します。
    */
   public static reset(): void {
     EvaluationProfileRegistry.ELEMENT_STORES.clear();
     EvaluationProfileRegistry.ensureGlobalAccess();
+  }
+
+  /**
+   * 集計を開始します。
+   *
+   * @returns 戻り値はありません。
+   */
+  public static start(): void {
+    EvaluationProfileRegistry.collecting = true;
+  }
+
+  /**
+   * 集計を停止します。
+   *
+   * @returns 戻り値はありません。
+   */
+  public static stop(): void {
+    EvaluationProfileRegistry.collecting = false;
+  }
+
+  /**
+   * 集計中かどうかを返します。
+   *
+   * @returns 集計中なら true
+   */
+  public static isCollecting(): boolean {
+    return EvaluationProfileRegistry.collecting && Dev.isEnabled();
   }
 
   /**
@@ -225,6 +262,9 @@ class EvaluationProfileRegistry {
       return;
     }
     EvaluationProfileRegistry.ensureGlobalAccess();
+    if (!EvaluationProfileRegistry.isCollecting()) {
+      return;
+    }
     const store = EvaluationProfileRegistry.getOrCreateElementStore(
       context.element,
     );
@@ -265,6 +305,8 @@ class EvaluationProfileRegistry {
       return;
     }
     globalRecord[EvaluationProfileRegistry.GLOBAL_KEY] = {
+      start: () => EvaluationProfileRegistry.start(),
+      stop: () => EvaluationProfileRegistry.stop(),
       reset: () => EvaluationProfileRegistry.reset(),
       snapshot: () => EvaluationProfileRegistry.snapshot(),
     };
@@ -417,6 +459,11 @@ class EvaluationProfileRegistry {
     value: T;
     durationMs: number;
   } {
+    if (!EvaluationProfileRegistry.isCollecting()) {
+      // 集計していないときは時刻を読まない。式ごとに 2 回呼ぶため、宣言の多い画面では
+      // 誰も見ない計測のために無視できない回数の呼び出しが積み上がる。
+      return {value: callback(), durationMs: 0};
+    }
     const startedAt = EvaluationProfileRegistry.now();
     const value = callback();
     return {

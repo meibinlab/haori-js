@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.45.1
+バージョン: 0.45.2
 最終更新: 2026-08-21
 
 ## 目次
@@ -250,6 +250,7 @@ Core.setAttributeは以下の優先順位で属性を処理します：
 #### data-if の動作
 
 - 判定の基準は内部状態であり、`style.display` や `data-if-false` は追随結果として扱う
+- 追随結果は**宣言として取り込みません**。`data-if-false` と、非表示のあいだの `style` は、DOM を監視して内部状態へ取り込む対象から外します。取り込むと属性の再適用（下の「未スキャンの子は `scan` で初期化する」）が非表示の状態を書き戻し、表示へ戻した分岐を非表示へ引き戻します
 - 評価値が `false`, `null`, `undefined`, `NaN` の場合、要素を非表示化
 - 非表示時:
   - `style.display = 'none'` を設定
@@ -3863,6 +3864,7 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 
 - **対象の決定**: 値を省略した場合は対象要素が属する行（`data-row`）です。CSS セレクタを指定した場合は、そのセレクタが指す `data-each` コンテナの**末尾の行**を対象とします。行の外に置いたボタンや、行が 0 件で複製元が存在しない状態からの追加に使用します。
 - **配列の所有者**: `data-each` の式を単純な識別子パス（`contracts` / `form.contracts` など）とみなし、根の識別子を持つ最も近い祖先（自身を含む）のバインディングデータを所有者とします。関数呼び出しや演算を含む式（`items.filter(...)` など）は書き戻し先を一意に決められないため、エラーログを出して何もしません。
+- **行スコープ名を根に持つ `data-each`**: 入れ子の `data-each` で外側の行スコープ名を根に持つ式（`data-each="g.rules"`）も対象です。行データは描画のたびに親配列から作り直す仮想スコープなので、行自身のバインディングデータへ書き戻しても次の描画で消えます。そのため外側の `data-each` をたどって**行データの実体である配列要素**（`groups[i].rules`）まで遡り、そこへ書き戻します。入れ子は何段でも遡ります。行の位置は `data-each-key` を指定していればキーで、指定していなければ描画順で対応付けます（[編集可能な行への書き込み](#編集可能な行への書き込み)と同じ規則）。外側が派生配列で書き戻せない場合は、内側の行の位置も一意に決まらないため何もしません（**行データへ書き戻して画面だけを動かすことはしません**）。
 - **行の値**: 追加した行には空のオブジェクト（`{}`）を挿入します。`data-form-list` を併用している場合、行内の入力欄は要素データのキーと `name` で対応するため空の状態で描画されます。
 - **ユーザー編集の印**: `data-each-key` を指定していない場合、行と要素データはインデックスで対応するため、増減・並べ替えで**別のレコードを受け取る行**が出ます。その行の中のユーザー編集の印を解除し、宣言バインドが評価結果を取り戻せるようにします（解除しないと、宣言バインドで値が決まる入力欄が前のレコードの値を表示したまま残ります）。`data-each-key` を指定している場合は、キーと一緒にレコードが移動するのでどの行も別のレコードを受け取らず、解除しません（消えた行は差分更新が印ごと取り除きます）。
 
@@ -4703,7 +4705,7 @@ document.addEventListener('haori:ready', (event) => {
 
 **detail**:
 ```typescript
-{ version: string }  // ライブラリのバージョン（例: '0.45.1'）
+{ version: string }  // ライブラリのバージョン（例: '0.45.2'）
 ```
 
 > **補足**: `data-each` の描画完了を検知したい場合は、専用の完了マーカー
@@ -5116,7 +5118,7 @@ Haori.enhancers.register('choices', {init, refresh, destroy})
 
 ```javascript
 Haori.Core.dumpScope(element)
-Haori.version // '0.45.1'
+Haori.version // '0.45.2'
 ```
 
 `Haori.Haori` と `Haori.default` はグローバル自身への自己参照です
@@ -5505,7 +5507,17 @@ DOMツリーを `Fragment` ツリーとして管理し、DOM操作を最小化:
 
 ### パフォーマンス測定
 
-開発モードでは、各操作の所要時間をログ出力:
+開発モードでは、式評価の所要時間を要素・宣言ごとに集計できます。**集計は明示的に開始するまで行いません。** 集計は宣言 1 つごとに要素の識別子を組み立てる（祖先をたどり各段で兄弟の位置を数える）ため、常に集計すると宣言の多い画面で再描画のコストを押し上げます。
+
+```javascript
+window.__HAORI_EVALUATION_PROFILE__.start() // 集計を開始
+// 計測したい操作を行う
+window.__HAORI_EVALUATION_PROFILE__.snapshot() // 集計結果を取得
+window.__HAORI_EVALUATION_PROFILE__.stop() // 集計を停止
+window.__HAORI_EVALUATION_PROFILE__.reset() // 集計結果を破棄
+```
+
+各操作の所要時間はイベントでも取得できます:
 
 ```javascript
 document.addEventListener('haori:fetchend', (event) => {
@@ -5519,7 +5531,7 @@ document.addEventListener('haori:importend', (event) => {
 
 ### スコープ診断（開発モード）
 
-開発モードでは、`data-if` 式が falsy（非表示）と評価されるたびに、その式と参照しているトップレベル識別子の解決値・由来（`dumpScope` の `sources`）をコンソールへ自動出力します。`data-if="!(dialog?.id || id)"` が想定外に非表示になる場合に、`id` がどの要素（例: フォームの `name="id"` 入力）の値で解決されているかをそのまま確認でき、スコープ競合のデバッグに役立ちます。任意のタイミングでスコープを確認するには `Core.dumpScope(element)`（ブラウザからは `Haori.Core.dumpScope(element)`）を使います。
+開発モードでは、`data-if` 式が falsy（非表示）と評価されたときに、その式と参照しているトップレベル識別子の解決値・由来（`dumpScope` の `sources`）をコンソールへ自動出力します。**出力するのは非表示へ切り替わった時点だけです。** `data-if` は再描画のたびに評価されるため、非表示のまま毎回出力すると、スコープ全体の解決と出力が再描画の回数だけ積み上がり、開発モードの再描画コストを支配してしまいます（開発モードはローカルホストで自動的に有効になります。[環境検出](#環境検出)を参照）。表示へ戻ってまた非表示になった場合は、状態が変わったので再度出力します。**新しく作られた要素は別の要素として扱います**（`data-each` の行を追加した場合など）。行の再利用（差分更新）では要素が変わらないため再出力しません。任意の時点のスコープは `Core.dumpScope(element)` で確認できます。`data-if="!(dialog?.id || id)"` が想定外に非表示になる場合に、`id` がどの要素（例: フォームの `name="id"` 入力）の値で解決されているかをそのまま確認でき、スコープ競合のデバッグに役立ちます。任意のタイミングでスコープを確認するには `Core.dumpScope(element)`（ブラウザからは `Haori.Core.dumpScope(element)`）を使います。
 
 ---
 
@@ -5533,13 +5545,15 @@ Haori.jsは以下のロジックで環境を検出します:
 // <script> タグから設定を取得
 const scriptTag = document.querySelector('script[src*="haori"]')
 const prefix = scriptTag?.getAttribute('data-prefix') || 'data-'
-const devMode = scriptTag?.hasAttribute('data-dev')
+const devAttribute = scriptTag?.getAttribute('data-dev')
 const strictBind = scriptTag?.hasAttribute('data-strict-bind')
 
-// ホスト名で開発モードを判定
-const isDev = devMode ||
-  ['localhost', '127.0.0.1', '::1'].includes(location.hostname) ||
-  location.hostname.endsWith('.local')
+// data-dev があればその値で決まる（false / off / 0 で無効、それ以外は有効）
+// 無ければホスト名で判定する
+const isDev = devAttribute !== null
+  ? !['false', 'off', '0'].includes(devAttribute.trim())
+  : ['localhost', '127.0.0.1', '::1'].includes(location.hostname) ||
+    location.hostname.endsWith('.local')
 ```
 
 **使用例**:
@@ -5554,9 +5568,14 @@ const isDev = devMode ||
 <!-- 開発モードを強制 -->
 <script src="haori.js" data-dev></script>
 
+<!-- 開発モードを明示的に無効化（ローカルホストでも無効になる） -->
+<script src="haori.js" data-dev="false"></script>
+
 <!-- 未解決参照を即時エラーとして報告する -->
 <script src="haori.js" data-strict-bind></script>
 ```
+
+開発モードは**ローカルホストでは既定で有効**です。開発モードの診断（[スコープ診断（開発モード）](#スコープ診断開発モード)など）は再描画のコストに乗るため、ローカルで本番相当の性能を測る場合は `data-dev="false"` を指定してください。
 
 `data-strict-bind` は[未解決参照の診断](#未解決参照の診断)を厳格化するオプトインです。既定では未解決参照は正常系として扱い、開発モードで集約警告のみを出力します。
 
