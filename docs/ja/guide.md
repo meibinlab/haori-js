@@ -1,6 +1,6 @@
 # Haori.js 利用ガイド
 
-バージョン: 0.45.2
+バージョン: 0.45.3
 
 ## 目次
 
@@ -3226,6 +3226,23 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 ```html
 <button data-click-row-next>↓</button>
 ```
+
+#### 絞り込んだ一覧で行操作を使う: `data-each-array`
+
+`data-each` に `rules.filter(...)` のような**派生配列**を書いた場合、結果の位置と元の配列の位置の対応は式によって決まるため、行操作の書き戻し先が決まりません。`data-each-array` に元の配列を宣言してください。行と要素はキーで対応付けるため、`data-each-key` の指定が必須です。
+
+```html
+<div data-each="rules.filter(rule => rule.c === g)" data-each-arg="r"
+  data-each-key="id" data-each-array="rules">
+  <div>
+    <span>{{r.id}}</span>
+    <button data-click-row-prev>↑</button>
+    <button data-click-row-next>↓</button>
+  </div>
+</div>
+```
+
+`↑` / `↓` は、対象の行を**表示上の前後の行が居る位置**へ移します。グループごとに絞り込んだ一覧では、そのグループの中だけが入れ替わり、表示に出ていない要素の順序は変わりません。
 
 #### `data-click-reset`: リセット
 

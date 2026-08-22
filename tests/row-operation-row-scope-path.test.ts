@@ -223,10 +223,11 @@ describe('行スコープ名を根に持つ data-each の行操作', () => {
     expect(tags()).toBe('y,x');
   });
 
-  it('派生配列は従来どおり書き戻せないと報告する', async () => {
+  it('派生配列は書き戻せないと報告し、data-each-array を案内する', async () => {
     // 書き戻し先が一意に決まらないため、行操作は拒否する（仕様
     // 「行操作の共通仕様（`data-{event}-row-*`）」の「対象は所有者のバインドデータが
-    // 持つ配列です」）。
+    // 持つ配列です」）。同節の「エラーログには `data-each-array` の宣言を案内します」
+    // に従い、書き戻し先を宣言する手段を案内する。
     container.innerHTML = `
       <div id="st" data-bind='{"rules":[{"n":"a","c":"X"},{"n":"b","c":"X"}]}'>
         <div data-each="rules.filter(r => r.c === 'X')" data-each-arg="r">
@@ -243,6 +244,11 @@ describe('行スコープ名を根に持つ data-each の行操作', () => {
     expect(
       errors.some(message =>
         message.includes('Row operations require a plain identifier path'),
+      ),
+    ).toBe(true);
+    expect(
+      errors.some(message =>
+        message.includes(`Declare ${Env.prefix}each-array`),
       ),
     ).toBe(true);
     const rules = ownerData().rules as Array<{n: string}>;

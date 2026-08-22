@@ -4443,27 +4443,40 @@ ${body}
   }
 
   /**
-   * `data-each` コンテナが参照している配列と、その所有者を解決します。
+   * 行操作の書き戻し先となる配列と、その所有者を解決します。
    *
    * `data-each` の式を単純な識別子パス（`contracts` / `form.contracts` など）と
    * みなし、根の識別子を持つ最も近い祖先（自身を含む）のバインディングデータを
    * 所有者として扱います。関数呼び出しや演算を含む式は書き戻し先を一意に決められ
-   * ないため、エラーログを出して null を返します。
+   * ないため、エラーログを出して null を返します。ただし `data-each-array` で
+   * 書き戻し先を宣言している場合は、`data-each` の式ではなくその宣言を解決します。
    *
    * @param container `data-each` コンテナのフラグメント
-   * @returns 所有者・所有者データ・配列。解決できない場合は null
+   * @returns 所有者・所有者データ・配列・経路と、表示位置と配列の位置が一致しない
+   *     （`data-each-array` による宣言）かどうか。解決できない場合は null
    */
   private static resolveEachArray(container: ElementFragment): {
     owner: ElementFragment;
     ownerData: Record<string, unknown>;
     array: unknown[];
     path: string[];
+    mapped: boolean;
   } | null {
-    const expression = container.getRawAttribute(`${Env.prefix}each`);
-    if (expression === null) {
+    const eachExpression = container.getRawAttribute(`${Env.prefix}each`);
+    if (eachExpression === null) {
       Log.error('Haori', `Row container has no ${Env.prefix}each expression.`);
       return null;
     }
+    // `data-each-array` があれば、その宣言を書き戻し先とする。派生配列
+    // （`rules.filter(...)`）は結果の位置と元の配列の位置の対応が式によって決まり、
+    // 宣言が無ければ書き戻し先を決められない
+    // （仕様「派生配列の書き戻し先（`data-each-array`）」）。
+    const declared = container.getRawAttribute(`${Env.prefix}each-array`);
+    const mapped = declared !== null;
+    const attributeName = mapped
+      ? `${Env.prefix}each-array`
+      : `${Env.prefix}each`;
+    const expression = mapped ? declared : eachExpression;
     const path = expression.trim().split('.');
     const isIdentifierPath =
       path.length > 0 && path.every(part => /^[A-Za-z_$][\w$]*$/.test(part));
@@ -4471,7 +4484,20 @@ ${body}
       Log.error(
         'Haori',
         'Row operations require a plain identifier path for ' +
-          `${Env.prefix}each (got: ${expression}).`,
+          `${attributeName} (got: ${expression}).` +
+          (mapped
+            ? ''
+            : ` Declare ${Env.prefix}each-array to specify the array to` +
+              ' write back to.'),
+      );
+      return null;
+    }
+    if (mapped && container.getRawAttribute(`${Env.prefix}each-key`) === null) {
+      // 表示の並びと配列の並びが一致しないため、行と要素は位置では対応付けられない。
+      Log.error(
+        'Haori',
+        `${Env.prefix}each-array requires ${Env.prefix}each-key` +
+          ` (${Env.prefix}each-array="${expression}").`,
       );
       return null;
     }
@@ -4513,7 +4539,7 @@ ${body}
     if (!owner || !ownerData) {
       Log.error(
         'Haori',
-        `Binding data owner not found for ${Env.prefix}each="${expression}".`,
+        `Binding data owner not found for ${attributeName}="${expression}".`,
       );
       return null;
     }
@@ -4521,11 +4547,11 @@ ${body}
     if (!Array.isArray(current)) {
       Log.error(
         'Haori',
-        `${Env.prefix}each="${expression}" does not resolve to an array.`,
+        `${attributeName}="${expression}" does not resolve to an array.`,
       );
       return null;
     }
-    return {owner, ownerData, array: current, path: fullPath};
+    return {owner, ownerData, array: current, path: fullPath, mapped};
   }
 
   /**
@@ -5069,12 +5095,16 @@ ${body}
     if (this.options.rowMovePrev !== true) {
       return Promise.resolve();
     }
-    return this.spliceRows('row-prev', (array, index) => {
-      if (index <= 0 || index >= array.length) {
+    return this.spliceRows('row-prev', (array, index, prevIndex) => {
+      // 移動先は「表示上の前の行が居る位置」。`data-each-array` で派生配列を描画
+      // している場合、前の行は配列上で隣り合っていない
+      // （仕様「派生配列の書き戻し先（`data-each-array`）」）。
+      const target = prevIndex();
+      if (target === null || index <= 0 || index >= array.length) {
         return false;
       }
       const [moved] = array.splice(index, 1);
-      array.splice(index - 1, 0, moved);
+      array.splice(target, 0, moved);
       return true;
     });
   }
@@ -5088,14 +5118,20 @@ ${body}
     if (this.options.rowMoveNext !== true) {
       return Promise.resolve();
     }
-    return this.spliceRows('row-next', (array, index) => {
-      if (index < 0 || index >= array.length - 1) {
-        return false;
-      }
-      const [moved] = array.splice(index, 1);
-      array.splice(index + 1, 0, moved);
-      return true;
-    });
+    return this.spliceRows(
+      'row-next',
+      (array, index, _prevIndex, nextIndex) => {
+        // 移動先は「表示上の次の行が居る位置」。対象を抜いた後は次の行がその位置の
+        // 手前へ詰まるため、抜く前の位置へ挿し込むと次の行の直後へ入る。
+        const target = nextIndex();
+        if (target === null || index < 0 || index >= array.length - 1) {
+          return false;
+        }
+        const [moved] = array.splice(index, 1);
+        array.splice(target, 0, moved);
+        return true;
+      },
+    );
   }
 
   /**
@@ -5105,8 +5141,13 @@ ${body}
    * `Core.setBindingData()` を適用します。DOM の行は差分更新で再描画されるため、
    * DOM とバインディングデータが常に一致します。
    *
-   * `mutate` の第 2 引数は操作対象の行インデックスです。属性値でコンテナを指定した
-   * 場合（行の外に置いたボタン）は末尾の行を指し、`row-add` では末尾へ追加されます。
+   * `mutate` の第 2 引数は操作対象の行に対応する配列のインデックス、第 3・第 4 引数は
+   * 表示上の前後の行に対応するインデックスを返す関数（無ければ null を返す）です。
+   * 属性値でコンテナを指定した場合（行の外に置いたボタン）は末尾の行を指し、
+   * `row-add` では末尾へ追加されます。`data-each-array` を指定した場合、表示の並びと
+   * 配列の並びは一致しないため、これらは `data-each-key` で対応付けた配列上の位置に
+   * なります。前後の行の解決は関数越しにします。増減の操作では使わないため、
+   * 対応する要素が無い隣の行について無関係な警告を出さないためです。
    *
    * @param attributeKey 属性のキー（`row-add` など）
    * @param mutate 配列を書き換える関数。書き換えた場合は true を返す
@@ -5114,7 +5155,12 @@ ${body}
    */
   private spliceRows(
     attributeKey: string,
-    mutate: (array: unknown[], index: number) => boolean,
+    mutate: (
+      array: unknown[],
+      index: number,
+      prevIndex: () => number | null,
+      nextIndex: () => number | null,
+    ) => boolean,
   ): Promise<void> {
     const container = this.resolveRowContainer(attributeKey);
     if (!container) {
@@ -5130,10 +5176,52 @@ ${body}
       : null;
     const rows = Procedure.getRowFragments(container);
     // 自身が行の内側にあればその行を、外側（属性値でコンテナ指定）なら末尾を対象とする。
-    const index = ownRow ? rows.indexOf(ownRow) : rows.length - 1;
+    const position = ownRow ? rows.indexOf(ownRow) : rows.length - 1;
+    /**
+     * 表示位置を書き戻し先の配列の位置へ写します。
+     *
+     * @param at 表示位置
+     * @returns 配列の位置。対応する要素が無い場合は null
+     */
+    const arrayIndex = (at: number): number | null => {
+      if (at < 0 || at >= rows.length) {
+        return null;
+      }
+      if (!resolved.mapped) {
+        return at;
+      }
+      return Procedure.resolveRowIndex(
+        container,
+        rows[at],
+        resolved.array,
+        Procedure.attrName(this.eventType, attributeKey),
+      );
+    };
+    // 行が 1 つも無い場合（属性値でコンテナを指定し、絞り込みの結果が 0 件）は表示から
+    // 位置を決められないため、宣言した配列の末尾を対象とする（仕様「行操作の共通仕様
+    // （`data-{event}-row-*`）」の「セレクタを指定した場合は、そのセレクタが指す
+    // `data-each` コンテナの末尾の行を対象とします」）。宣言が無い場合は配列と表示の
+    // 位置が一致するため、従来どおり -1 のまま渡す（空の配列の先頭へ追加する）。
+    const index =
+      position >= 0
+        ? arrayIndex(position)
+        : resolved.mapped
+          ? resolved.array.length - 1
+          : position;
+    if (index === null) {
+      // `resolveRowIndex()` が警告を出している。
+      return Promise.resolve();
+    }
     // 元の配列は変更せず、コピーを書き換えて差し替える。
     const nextArray = resolved.array.slice();
-    if (!mutate(nextArray, index)) {
+    if (
+      !mutate(
+        nextArray,
+        index,
+        () => arrayIndex(position - 1),
+        () => arrayIndex(position + 1),
+      )
+    ) {
       return Promise.resolve();
     }
     // 行と要素データの対応がインデックスで決まる場合（`data-each-key` を指定して
@@ -5156,15 +5244,15 @@ ${body}
         rowsByListKey.set(String(listKey), row);
       }
     });
-    nextArray.forEach((item, position) => {
-      if (Procedure.isSameRowItem(resolved.array[position], item)) {
+    nextArray.forEach((item, arrayPosition) => {
+      if (Procedure.isSameRowItem(resolved.array[arrayPosition], item)) {
         return;
       }
       const row = rowsByListKey.get(
         Core.createListKey(
           item as Record<string, unknown> | string | number,
           null,
-          position,
+          arrayPosition,
         ),
       );
       if (row) {
