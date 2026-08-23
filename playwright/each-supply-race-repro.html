@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>scan と同じタスクでの供給の再現</title>
+</head>
+<body data-dev="false">
+  <p>
+    scan の進行より先に値が供給される間隙を突く再現ページです。
+    <code>window.__run()</code> を呼ぶたびにマークアップを組み立てて scan し、
+    同じタスクで値を供給して、描画結果を返します。
+  </p>
+  <div id="host"></div>
+
+  <script src="../dist/haori.iife.js" data-dev="false"></script>
+  <script>
+    /* global window, document, Haori, Promise, Date */
+
+    // 1 行あたりの宣言数を報告の内訳に寄せる（{{}} 27・data-if 12・
+    // data-attr-* 5・data-click-* 17）。宣言が多いほど scan の初期化が長くなり、
+    // 供給が先に届く間隙が広がる。
+    var cells = [];
+    cells.push('<span class="nm">{{r.name}}</span>');
+    for (var t = 1; t < 27; t += 1) {
+      cells.push('<span>{{r.name}}-' + t + '/{{r.amount}}</span>');
+    }
+    for (var f = 0; f < 12; f += 1) {
+      cells.push('<span data-if="r.amount > ' + f * 100 + '">c' + f + '</span>');
+    }
+    var attrNames = ['title', 'lang', 'dir', 'id', 'name'];
+    for (var a = 0; a < 5; a += 1) {
+      cells.push('<span data-attr-' + attrNames[a] + '="{{r.name}}-' + a +
+        '">a' + a + '</span>');
+    }
+    var clickDecls = [
+      'data-click-row-prev', 'data-click-row-next', 'data-click-row-remove',
+      'data-click-bind="#host"', 'data-click-bind-merge',
+      'data-click-confirm="{{r.name}}"', 'data-click-prevent',
+      'data-click-defer', 'data-click-reset', 'data-click-copy="#host"',
+      'data-click-form="#editor"', 'data-click-store-clear="picked"',
+      'data-click-message="{{r.name}}"', 'data-click-fetch-state="#host"',
+      'data-click-redirect-replace', 'data-click-row-add',
+      'data-click-bind-arg="picked"'
+    ];
+    var buttons = [];
+    for (var c = 0; c < clickDecls.length; c += 1) {
+      buttons.push('<button type="button" ' + clickDecls[c] + '>b' + c +
+        '</button>');
+    }
+    cells.push(buttons.join(''));
+
+    var listMarkup =
+      '<div class="list" data-each="rules" data-each-arg="r"' +
+      ' data-each-index="i" data-each-key="id">' +
+      '<div class="rule" data-row>' + cells.join('') + '</div>' +
+      '</div>';
+
+    // 呼び出しごとに組み立てて供給する。読み込み直後は監視の起動と重なって
+    // 間隙が消えることがあるため、呼び出し時に作る。
+    window.__run = function () {
+      var host = document.getElementById('host');
+      host.innerHTML =
+        '<form data-form id="editor" data-bind="{&quot;rules&quot;:[],' +
+        '&quot;picked&quot;:&quot;&quot;}">' + listMarkup + '</form>';
+
+      var rules = [];
+      for (var r = 0; r < 7; r += 1) {
+        rules.push({
+          id: r + 1,
+          name: 'row' + (r + 1),
+          amount: 1000 * ((r % 9) + 1)
+        });
+      }
+
+      // scan の完了を待たずに、同じタスクで値を供給する。
+      var scanned = Haori.Core.scan(host);
+      var supplied = Haori.Core.setBindingData(
+        document.getElementById('editor'), {rules: rules, picked: ''});
+      return Promise.all([scanned, supplied]).then(function () {
+        return new Promise(function (resolve) {
+          var start = Date.now();
+          var tick = function () {
+            var list = document.querySelector('.list');
+            if (document.querySelectorAll('.rule').length === 7 ||
+                Date.now() - start > 2000) {
+              resolve({
+                rows: document.querySelectorAll('.rule').length,
+                done: list ? list.hasAttribute('data-each-done') : false
+              });
+              return;
+            }
+            window.setTimeout(tick, 20);
+          };
+          window.setTimeout(tick, 20);
+        });
+      });
+    };
+  </script>
+</body>
+</html>

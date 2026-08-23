@@ -2227,6 +2227,18 @@ export default class Core {
         Core.getRowScopeName(fragment, 'each-index'),
       ]);
     }
+    if (!fragment.isMounted()) {
+      // マウント済みなら取り直さない。`evaluateEach` はバインド更新のたびに
+      // 呼ばれるため、親の探索と `document.body.contains()` を毎回払わない
+      // （上の開発モードの分岐と同じ理由。挙動は取り直しても変わらない）。
+      //
+      // 内部のマウント状態は scan の進行に遅れる。`scan` は属性を 1 つずつ非同期に
+      // 初期化するため、コンテナの初期化が始まる前に値が供給されると（フェッチ応答や
+      // `Core.setBindingData()` が scan と同じタスクで走る場合）ここへ到達する。
+      // このまま捨てると、後から差分更新を呼び直す経路が無いため一覧は空のまま
+      // 永久に残る。DOM の実際の状態でマウント状態を取り直す。
+      Core.syncMountedState(fragment);
+    }
     if (!fragment.isVisible() || !fragment.isMounted()) {
       return Promise.resolve();
     }
