@@ -2486,7 +2486,22 @@ export default class Expression {
   }
 
   /**
+   * この仕組みで作ったラップ済みの値。再ラップの判定に使います。
+   *
+   * 弱参照なので、値が使われなくなれば一緒に回収されます。
+   */
+  private static readonly WRAPPED_VALUES = new WeakSet<object>();
+
+  /**
    * 危険なプロパティアクセスを防ぐために値を再帰的にラップします。
+   *
+   * **ラップは冪等です。** すでにこの仕組みでラップした値は、新しい層を重ねずに
+   * そのまま返します（仕様「評価メカニズム」の「すでにこの仕組みでラップした値を
+   * もう一度ラップの対象にしたときは、同じ Proxy をそのまま返します」）。式の
+   * 評価結果はラップ済みの値なので、それが何らかの経路でバインドデータへ入ると
+   * 次の評価で層が 1 つ増えます。層が増えるとプロパティアクセス 1 回あたりの
+   * トラップ通過数が層の数だけ増え、操作を重ねるほど再評価が遅くなります。
+   * 遮断の内容は層の数によらないため、重ねる意味はありません。
    *
    * @param value ラップ対象の値
    * @param cache 既存Proxyのキャッシュ
@@ -2501,6 +2516,9 @@ export default class Expression {
     }
 
     const target = value as object;
+    if (this.WRAPPED_VALUES.has(target)) {
+      return target;
+    }
     const cachedValue = cache.get(target);
     if (cachedValue !== undefined) {
       return cachedValue;
@@ -2561,6 +2579,7 @@ export default class Expression {
       },
     });
 
+    this.WRAPPED_VALUES.add(proxy);
     cache.set(target, proxy);
     return proxy;
   }

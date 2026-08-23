@@ -201,6 +201,20 @@ export default class Core {
       'enhance-new',
     ]);
 
+  /**
+   * 行スコープ判定で「属性値が式ではない」とみなす行操作の宣言。
+   *
+   * `data-{event}-row-next` のようにイベント名を含むため、サフィックスの後半で
+   * 判定します。値は空またはセレクタで、描画のたびに評価する式ではありません
+   * （`{{...}}` を含む値は先に別の分岐で行スコープと照合しています）。
+   *
+   * 列挙しないと、行操作のボタンを置いただけで「行の外を参照している」と判定され、
+   * 要素データが同値の行でも子孫の再評価を省略できなくなります。行操作は一覧の
+   * 並べ替えそのものなので、除外すると並べ替えのたびに全行を再評価します。
+   */
+  private static readonly ROW_LOCAL_ROW_OPERATIONS: ReadonlySet<string> =
+    new Set(['row-add', 'row-remove', 'row-prev', 'row-next']);
+
   /** data-fetch の自動再評価状態 */
   private static readonly REACTIVE_FETCH_STATES = new WeakMap<
     HTMLElement,
@@ -2733,9 +2747,19 @@ export default class Core {
         }
         continue;
       }
-      if (!Core.ROW_LOCAL_STATIC_ATTRIBUTES.has(suffix)) {
-        return false;
+      if (Core.ROW_LOCAL_STATIC_ATTRIBUTES.has(suffix)) {
+        continue;
       }
+      // `data-{event}-row-next` のような行操作の宣言はイベント名を含むため、
+      // サフィックスの後半で判定する。
+      const separator = suffix.indexOf('-');
+      if (
+        separator !== -1 &&
+        Core.ROW_LOCAL_ROW_OPERATIONS.has(suffix.slice(separator + 1))
+      ) {
+        continue;
+      }
+      return false;
     }
     // ネストした data-each は自身の行スコープを子孫へ追加で公開する。
     let childScopeNames = scopeNames;
@@ -3280,8 +3304,15 @@ export default class Core {
                   loopIndex,
                 );
               }
-              if (!changed) {
+              if (!changed && Core.isRowLocalEachTemplate(parent)) {
                 // 行の入力が同一なら子孫の再評価も値の再適用も行わない。
+                //
+                // 省略できるのは、行スコープの値だけで描画が決まるテンプレート
+                // に限る。行スコープの外を参照するテンプレート（行の中に別の
+                // `data-each` があり、その式が行外の配列を参照する構成など）は、
+                // 要素データが同値でも行外データの更新で描画が変わるため、
+                // 省略すると DOM が古い並びのまま残る。差分更新が不要なときの
+                // 経路（`reevaluateEachRows()`）と同じ判定にそろえる。
                 return undefined;
               }
               // ここでユーザー編集の印は解除しない。要素データを入れ替えた更新が
