@@ -23,7 +23,12 @@ export interface ExpressionEvaluationDetail {
   unresolvedReference: boolean;
 }
 
-type ExpressionTokenType = 'identifier' | 'number' | 'string' | 'operator';
+type ExpressionTokenType =
+  | 'identifier'
+  | 'number'
+  | 'string'
+  | 'regexp'
+  | 'operator';
 
 interface ExpressionToken {
   type: ExpressionTokenType;
@@ -2096,6 +2101,16 @@ export default class Expression {
         return null;
       }
 
+      if (current === '/' && this.startsRegexpLiteral(tokens)) {
+        const regexpToken = this.readRegexpToken(expression, index);
+        if (regexpToken === null) {
+          return null;
+        }
+        tokens.push(regexpToken.token);
+        index = regexpToken.nextIndex;
+        continue;
+      }
+
       if (current === '"' || current === "'") {
         const stringToken = this.readStringToken(expression, index);
         if (stringToken === null) {
@@ -2139,6 +2154,108 @@ export default class Expression {
     }
 
     return tokens;
+  }
+
+  /**
+   * `/` が正規表現リテラルの開始かどうかを判定します。
+   *
+   * 正規表現リテラルは「値が来る位置」にだけ現れます。直前が値（識別子・数値・
+   * 文字列・正規表現リテラル）またはグループの閉じ（`)` / `]` / `}`）であれば、
+   * その `/` は除算演算子です（仕様「正規表現リテラル」の「`/` が正規表現
+   * リテラルの開始になるのは、値が来る位置に限られます」）。
+   *
+   * 後置の `++` / `--` も値を返すため除算です。トークン列は空白を落としているので
+   * `a++ /` と `a + + /` を区別できませんが、除算へ倒せば従来どおり評価でき、
+   * 中身も通常のトークンとして検証されます（リテラルへ倒すと検証を飛ばした本体を
+   * JavaScript が除算として実行し得るため、安全側は除算です）。
+   *
+   * @param tokens ここまでに読み取ったトークン列
+   * @returns 正規表現リテラルの開始であれば true
+   */
+  private static startsRegexpLiteral(tokens: ExpressionToken[]): boolean {
+    const previous = tokens[tokens.length - 1];
+    if (previous === undefined) {
+      return true;
+    }
+    if (previous.type !== 'operator') {
+      return false;
+    }
+    if (
+      previous.value === ')' ||
+      previous.value === ']' ||
+      previous.value === '}'
+    ) {
+      return false;
+    }
+    const beforePrevious = tokens[tokens.length - 2];
+    return !(
+      (previous.value === '+' || previous.value === '-') &&
+      beforePrevious?.value === previous.value
+    );
+  }
+
+  /**
+   * 正規表現リテラルを読み取ります。
+   *
+   * 本体は `\` エスケープと `[…]` 文字クラスを追跡して終端の `/` を探します。
+   * 文字クラスの中の `/` は終端になりません（仕様「正規表現リテラル」の
+   * 「文字クラスの中の `/` は終端になりません」）。終端に続く英字はフラグです。
+   *
+   * **本体の改行は判定しません。** 改行を含む正規表現リテラルは JavaScript の
+   * 構文として不正なので、読み取りを打ち切っても打ち切らなくても式は評価できず
+   * （打ち切れば許可構文の検証で、読み切ればコンパイルで失敗する）、観測できる
+   * 差がありません。
+   *
+   * @param expression 式全体
+   * @param start 開始位置（`/` の位置）
+   * @returns トークンと次の位置。終端の `/` が無い場合は null
+   */
+  private static readRegexpToken(
+    expression: string,
+    start: number,
+  ): {token: ExpressionToken; nextIndex: number} | null {
+    let index = start + 1;
+    /** 文字クラス（`[…]`）の内側かどうか */
+    let inCharacterClass = false;
+
+    while (index < expression.length) {
+      const current = expression[index];
+      if (current === '\\') {
+        // エスケープされた文字は、終端（`\/`）にも文字クラスの境界（`\[`）にも
+        // ならないため 1 文字まとめて読み飛ばす。
+        index += 2;
+        continue;
+      }
+      if (current === '[') {
+        inCharacterClass = true;
+      } else if (current === ']') {
+        inCharacterClass = false;
+      } else if (current === '/' && !inCharacterClass) {
+        index += 1;
+        // フラグまでを 1 個のトークンに含める。切り離すとフラグが識別子トークンに
+        // なり、`getFreeIdentifiers()` が式の参照名として報告してしまう。
+        while (
+          index < expression.length &&
+          /[A-Za-z]/.test(expression[index])
+        ) {
+          index += 1;
+        }
+        return {
+          token: {
+            type: 'regexp',
+            value: expression.slice(start, index),
+            position: start,
+          },
+          nextIndex: index,
+        };
+      }
+      index += 1;
+    }
+
+    // 終端の `/` が無い場合。式は許可構文の検証でも拒否されるため、ここを
+    // トークンとして返しても評価結果は変わらないが、読み取りに失敗したことを
+    // 呼び出し側へ伝える経路として null を返す。
+    return null;
   }
 
   /**
@@ -2242,6 +2359,7 @@ export default class Expression {
    * 文字列リテラルも基点に含めます。含めないと `""["constructor"]` の `[` を配列
    * リテラルの開始と誤って分類し、メンバーアクセスに対する禁止プロパティ名の検証
    * （`hasAllowedSyntax()`）を素通りして `String` へ到達できてしまいます。
+   * 正規表現リテラルも同じ理由で基点に含めます（`/a/["constructor"]`）。
    *
    * @param previous 直前のトークン
    * @returns メンバーアクセスであればtrue
@@ -2253,7 +2371,8 @@ export default class Expression {
     if (
       previous.type === 'identifier' ||
       previous.type === 'number' ||
-      previous.type === 'string'
+      previous.type === 'string' ||
+      previous.type === 'regexp'
     ) {
       return true;
     }

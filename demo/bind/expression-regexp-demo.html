@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>式の正規表現リテラル デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    label { display: block; margin: 10px 0; }
+    input[type="text"] { width: 32rem; padding: 4px; }
+    .output { background: #e8f5e9; padding: 10px; border-left: 4px solid #4CAF50; }
+    .note { background: #fff8e1; padding: 10px; border-left: 4px solid #ffb300; }
+    code { background: #f3f4f6; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    table { border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 4px 10px; text-align: left; }
+  </style>
+</head>
+<body>
+  <h2>式の正規表現リテラル デモ</h2>
+  <p>
+    テキスト補間（<code>{{}}</code>）や <code>data-if</code>・<code>data-derive</code> の式には、正規表現リテラル
+    （<code>/…/フラグ</code>）を書けます。文字列リテラルと同じく 1 個のリテラルとして扱われ、中身は
+    解釈されません。全置換・判定・分割を、画面個別の JavaScript なしで宣言だけで書けます。
+  </p>
+
+  <form data-form data-bind='{"content":"[b]重要[/b]なお知らせ（[red]至急[/red]）","code":"12345","tags":"電気 , ガス,セット"}'>
+    <label>
+      装飾記法つきの本文
+      <input type="text" name="content" data-attr-value="{{content}}">
+    </label>
+    <label>
+      コード（数字だけなら妥当）
+      <input type="text" name="code" data-attr-value="{{code}}">
+    </label>
+    <label>
+      カンマ区切りのタグ（前後の空白は無視）
+      <input type="text" name="tags" data-attr-value="{{tags}}">
+    </label>
+
+    <div class="output">
+      <h3>評価結果</h3>
+      <table>
+        <tr>
+          <th>宣言</th>
+          <th>結果</th>
+        </tr>
+        <tr>
+          <td><code>content.replace(/\[\/?(?:b|red|u)\]/g, '')</code></td>
+          <td id="plain">{{content.replace(/\[\/?(?:b|red|u)\]/g, '')}}</td>
+        </tr>
+        <tr>
+          <td><code>/^\d+$/.test(code)</code></td>
+          <td id="valid">{{/^\d+$/.test(code) ? '妥当' : '数字以外を含みます'}}</td>
+        </tr>
+        <tr>
+          <td><code>tags.split(/\s*,\s*/).join(' / ')</code></td>
+          <td id="tag-list">{{tags.split(/\s*,\s*/).join(' / ')}}</td>
+        </tr>
+        <tr>
+          <td><code>content.replace(/\s+/g, '')</code>（空白の除去）</td>
+          <td id="squeezed">{{content.replace(/\s+/g, '')}}</td>
+        </tr>
+      </table>
+    </div>
+
+    <p data-if="/^\d+$/.test(code)" class="output">
+      data-if の条件にも書けます（コードが数字だけのときだけ表示）。
+    </p>
+
+    <div data-derive="tags.split(/\s*,\s*/)" data-derive-name="tagList">
+      <h3>data-derive で分割した一覧</h3>
+      <ul id="derived-tags" data-each="tagList" data-each-arg="tag">
+        <li>{{tag}}</li>
+      </ul>
+    </div>
+  </form>
+
+  <div class="note">
+    <h3>注意</h3>
+    <ul>
+      <li>テキスト補間（<code>{{}}</code>）の中では <code>}}</code> を含む正規表現（<code>/a{2}}/</code> など）は書けません。
+        プレースホルダの終端が先に見つかり、式が途中で切れます。</li>
+      <li><code>/</code> が正規表現リテラルの開始になるのは値が来る位置だけです。
+        <code>(100 + 8) / 2</code> のような除算はそのまま評価されます（結果:
+        <span id="division">{{(100 + 8) / 2}}</span>）。</li>
+      <li>置換対象が固定の文字列だけなら <code>replaceAll('[b]', '')</code> でも書けます
+        （<code>replace</code> に文字列を渡すと最初の 1 件しか置換されません）。</li>
+    </ul>
+  </div>
+
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>
