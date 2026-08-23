@@ -971,6 +971,42 @@ console.log(resolved.id, sources.id) // 値と由来（例: { source: '#state', 
 
 さらに**開発モードでは、`data-if` が falsy（非表示）と評価されるたびに、その式と参照している識別子の解決値・由来をコンソールへ自動出力**します。`data-if="!(dialog?.id || id)"` が想定外に非表示になる場合、`id` がどの要素（例: フォーム）の値で解決されているかをそのまま確認できます。
 
+#### 操作が遅いときの調べ方（開発モード）
+
+ボタンを押してから画面が固まる場合は、**どの宣言が時間を使っているか**を測ってから直します。
+
+計測は開発モードでのみ使えます。ローカルホスト（`localhost` / `127.0.0.1` / `.local`）では自動で有効ですが、それ以外のホスト（検証環境など）では読み込みの `<script>` に `data-dev` を付けてください。
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-dev></script>
+```
+
+開発者ツールのコンソールで次の 4 行を実行します。
+
+```js
+window.__HAORI_EVALUATION_PROFILE__.reset()
+window.__HAORI_EVALUATION_PROFILE__.start()
+// ここで遅い操作を 1 回だけ行う（ボタンを 1 回押す）
+window.__HAORI_EVALUATION_PROFILE__.report()
+```
+
+所要時間の合計が大きい宣言から順に、位置・元テンプレート・評価回数がコンソールへ表形式で出力されます。
+
+```
+[Haori][evaluation-profile] total=812.4ms calls=1560 declarations=42
+ 1.     241.0ms  29.7% calls=   240 elements=   8 max=     3.1ms tbody#list > tr:nth-child(3) > td:nth-child(9) #0  {{haori.number(r.qty * r.price)}}
+ 2.     180.2ms  22.2% calls=   240 elements=   8 max=     2.4ms tbody#list > tr:nth-child(3) > td:nth-child(11) @data-if  r.kind === '費目'
+```
+
+**`data-each` の行に書いた宣言は、行ごとに分けず 1 行にまとめて出ます。** `elements` がその宣言が現れた要素の数（＝行数）、`calls` が評価回数の合計です。読み方は次のとおりです。
+
+- **`calls` が `elements` を大きく超えている**場合は、同じ宣言が 1 回の操作で何度も再評価されています。上の例は 8 行で 240 回、1 行あたり 30 回です。行スコープ（`data-each-arg` / `data-each-index`）の外を参照している宣言があると、要素データが同じでも行の再評価を省略できません。行の中では行スコープの名前だけを参照するようにすると省けます
+- **1 つの宣言が全体の大半を占めている**場合は、その式が重いか、評価回数が多いかのどちらかです。`totalDurationMs ÷ calls` が大きければ式が重く、`calls` が大きければ回数の問題です
+- **`declarations` が想定より多い**場合は、行あたりの宣言数が多すぎます。表示に使っていない列や、条件が固定の `data-if` を削ると効きます
+- **`total` が体感の待ち時間より大幅に小さい**場合、原因は式評価ではありません。この集計が測るのは式の評価だけで、DOM への書き込み・フォームの値の収集・通信の待ち・他ライブラリの処理は含みません。この場合は開発者ツールの Performance で記録してください
+
+`where` はそのまとまりの中で最も時間を使った要素の位置なので、調べ始める行としてそのまま使えます。集計は明示的に `start()` するまで行いません（集計自体にコストがあるため）。測り終わったら `stop()` してください。
+
 ---
 
 ## フォームとデータの双方向バインディング

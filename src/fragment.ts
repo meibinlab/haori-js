@@ -143,6 +143,52 @@ interface EvaluationProfileElementStore {
 }
 
 /**
+ * `report()` が返す 1 宣言分の要約です。
+ */
+interface EvaluationProfileReportEntry {
+  /**
+   * 宣言の位置。属性は `要素識別子 @属性名`、テキストは `要素識別子 #子の位置`。
+   * まとまりの代表として、所要時間の合計が最も大きい要素の位置を載せる
+   */
+  where: string;
+
+  /** 宣言の元テンプレート */
+  template: string;
+
+  /** このまとまりに含まれる要素の数（`data-each` の行なら行の数） */
+  elements: number;
+
+  /** 評価回数の合計 */
+  calls: number;
+
+  /** 所要時間の合計（ミリ秒） */
+  totalDurationMs: number;
+
+  /** 1 回の最大所要時間（ミリ秒） */
+  maxDurationMs: number;
+
+  /** 所要時間の合計が全体に占める割合（パーセント、小数第 1 位） */
+  sharePercent: number;
+}
+
+/**
+ * `report()` が返す要約です。
+ */
+interface EvaluationProfileReport {
+  /** 集計期間の評価所要時間の合計（ミリ秒） */
+  totalDurationMs: number;
+
+  /** 評価回数の合計 */
+  totalCalls: number;
+
+  /** まとめた後の宣言の数 */
+  entryCount: number;
+
+  /** 所要時間の合計が大きい順の宣言 */
+  top: EvaluationProfileReportEntry[];
+}
+
+/**
  * 開発時の属性・テキスト評価回数を集計するレジストリです。
  */
 class EvaluationProfileRegistry {
@@ -247,6 +293,150 @@ class EvaluationProfileRegistry {
       });
   }
 
+  /** `report()` の既定の出力件数 */
+  private static readonly DEFAULT_REPORT_LIMIT = 20;
+
+  /**
+   * 所要時間の合計が大きい宣言から順に並べた要約を返します。
+   *
+   * `snapshot()` は要素ごとの生の集計なので、どの宣言が時間を使ったかを知るには
+   * 集計する側でまとめ直す必要があります。遅い操作の原因を報告してもらうときに
+   * 手作業の集計を挟まないよう、順位付きの要約をここで組み立てます
+   * （仕様「重い宣言の一覧（`report`）」）。
+   *
+   * **まとめる単位は宣言です。** `data-each` の行テンプレートに書いた 1 つの宣言は
+   * 行の数だけ要素に現れるため、要素単位のままでは同じ宣言が行の数だけ並び、
+   * いずれも `calls` が 1 になって「どの宣言が重いか」が読めません。
+   *
+   * @param limit 出力する宣言の数。既定は 20
+   * @returns 要約。合計は `limit` で絞る前の全件から求める
+   */
+  public static report(
+    limit: number = EvaluationProfileRegistry.DEFAULT_REPORT_LIMIT,
+  ): EvaluationProfileReport {
+    /** 宣言のまとまり。キーは「位置の種別・名前・テンプレート」 */
+    const groups = new Map<
+      string,
+      EvaluationProfileReportEntry & {representativeDurationMs: number}
+    >();
+    let totalDurationMs = 0;
+    let totalCalls = 0;
+    /**
+     * 1 要素分の集計をまとまりへ足します。
+     *
+     * @param key まとまりのキー
+     * @param where この要素での位置
+     * @param counter 集計値
+     */
+    const merge = (
+      key: string,
+      where: string,
+      counter: {
+        template: string;
+        calls: number;
+        totalDurationMs: number;
+        maxDurationMs: number;
+      },
+    ): void => {
+      totalDurationMs += counter.totalDurationMs;
+      totalCalls += counter.calls;
+      const existing = groups.get(key);
+      if (existing === undefined) {
+        groups.set(key, {
+          where,
+          template: counter.template,
+          elements: 1,
+          calls: counter.calls,
+          totalDurationMs: counter.totalDurationMs,
+          maxDurationMs: counter.maxDurationMs,
+          sharePercent: 0,
+          representativeDurationMs: counter.totalDurationMs,
+        });
+        return;
+      }
+      existing.elements += 1;
+      existing.calls += counter.calls;
+      existing.totalDurationMs += counter.totalDurationMs;
+      existing.maxDurationMs = Math.max(
+        existing.maxDurationMs,
+        counter.maxDurationMs,
+      );
+      // 代表の位置は所要時間の合計が最も大きい要素にする（調べ始める先として
+      // 意味があるのは、そのまとまりで最も時間を使った要素）。
+      if (counter.totalDurationMs > existing.representativeDurationMs) {
+        existing.where = where;
+        existing.representativeDurationMs = counter.totalDurationMs;
+      }
+    };
+    EvaluationProfileRegistry.snapshot().forEach(element => {
+      element.attributes.forEach(attribute => {
+        merge(
+          `@${attribute.name}\n${attribute.template}`,
+          `${element.elementId} @${attribute.name}`,
+          attribute,
+        );
+      });
+      element.texts.forEach(text => {
+        merge(
+          `#${text.childIndex}\n${text.template}`,
+          `${element.elementId} #${text.childIndex}`,
+          text,
+        );
+      });
+    });
+    const entries = [...groups.values()].map(
+      ({representativeDurationMs: _representative, ...entry}) => entry,
+    );
+    entries.sort((left, right) => right.totalDurationMs - left.totalDurationMs);
+    const top = entries.slice(0, limit).map(entry => ({
+      ...entry,
+      sharePercent:
+        totalDurationMs > 0
+          ? Math.round((entry.totalDurationMs / totalDurationMs) * 1000) / 10
+          : 0,
+    }));
+    const report: EvaluationProfileReport = {
+      totalDurationMs,
+      totalCalls,
+      entryCount: entries.length,
+      top,
+    };
+    EvaluationProfileRegistry.logReport(report);
+    return report;
+  }
+
+  /**
+   * 要約を表形式でコンソールへ出力します。
+   *
+   * 戻り値をそのまま読むと入れ子が深く、コンソールで折り畳まれて読みにくいため、
+   * 貼り付けやすい形でも出します。
+   *
+   * @param report 出力する要約
+   * @returns 戻り値はありません。
+   */
+  private static logReport(report: EvaluationProfileReport): void {
+    const lines = report.top.map((entry, index) => {
+      const rank = String(index + 1).padStart(2);
+      const duration = entry.totalDurationMs.toFixed(1).padStart(9);
+      const share = `${entry.sharePercent.toFixed(1)}%`.padStart(6);
+      const calls = String(entry.calls).padStart(6);
+      const elements = String(entry.elements).padStart(4);
+      const max = entry.maxDurationMs.toFixed(1).padStart(8);
+      return (
+        `${rank}. ${duration}ms ${share} calls=${calls}` +
+        ` elements=${elements} max=${max}ms` +
+        ` ${entry.where}  ${entry.template}`
+      );
+    });
+    Log.info(
+      '[Haori][evaluation-profile]',
+      `total=${report.totalDurationMs.toFixed(1)}ms` +
+        ` calls=${report.totalCalls}` +
+        ` declarations=${report.entryCount}\n` +
+        lines.join('\n'),
+    );
+  }
+
   /**
    * 評価呼び出しを記録します。
    *
@@ -309,6 +499,7 @@ class EvaluationProfileRegistry {
       stop: () => EvaluationProfileRegistry.stop(),
       reset: () => EvaluationProfileRegistry.reset(),
       snapshot: () => EvaluationProfileRegistry.snapshot(),
+      report: (limit?: number) => EvaluationProfileRegistry.report(limit),
     };
   }
 
