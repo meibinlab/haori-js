@@ -124,6 +124,10 @@ function findExtraChildren(
 /**
  * markdown の中の HTML のコードブロックを取り出します。
  *
+ * **改行を正規化してから照合します。** 囲みの言語名の直後は `\n` で照合するため、
+ * 作業コピーが CRLF の文書では 1 つも取り出せず、その文書の検査が**黙って空振り**
+ * します（Windows の作業コピーでは `docs/ja/specs.md` が実際にそうなっていました）。
+ *
  * @param text markdown の内容
  * @returns コードブロックの内容
  */
@@ -131,7 +135,8 @@ function htmlBlocks(text: string): string[] {
   const blocks: string[] = [];
   const pattern = /```(\w*)\n([\s\S]*?)```/g;
   let matched: RegExpExecArray | null;
-  while ((matched = pattern.exec(text)) !== null) {
+  const normalized = text.replace(/\r\n/g, '\n');
+  while ((matched = pattern.exec(normalized)) !== null) {
     if (matched[2].includes('<')) {
       blocks.push(matched[2]);
     }
@@ -150,10 +155,20 @@ describe('data-each の書き方（文書・デモ）', () => {
       ...collect('playwright', /\.html$/, false),
     ].sort();
     // 対象が 0 件だと常に通ってしまうため、実行ディレクトリと件数を確かめる。
-    expect(existsSync(path.join(repositoryRoot, 'docs', 'ja', 'specs.md'))).toBe(
-      true,
-    );
+    expect(
+      existsSync(path.join(repositoryRoot, 'docs', 'ja', 'specs.md')),
+    ).toBe(true);
     expect(targets.length).toBeGreaterThan(20);
+    // ファイルを開けても markup を取り出せていなければ、同じく常に通ってしまう
+    // （作業コピーが CRLF のとき、囲みの照合が 1 つも当たらない状態が実際にあった）。
+    expect(
+      htmlBlocks(
+        readFileSync(
+          path.join(repositoryRoot, 'docs', 'ja', 'specs.md'),
+          'utf8',
+        ),
+      ).length,
+    ).toBeGreaterThan(50);
 
     const violations: string[] = [];
     const usedAllowances = new Set<number>();

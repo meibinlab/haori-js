@@ -1050,25 +1050,29 @@ export default class Procedure {
   }
 
   /**
-   * 表示メッセージの評価値を文字列へ正規化します。
+   * 文字列を受け取る属性の評価値を、文字列へ正規化します。
    *
-   * `data-{event}-confirm` / `-dialog` / `-toast` の属性値には `{{式}}` を書けるため、
-   * 評価結果は文字列に限りません（`null` / `false` / 数値になり、未解決参照は `null`
-   * になります）。仕様「`data-{event}-confirm`」の「単体プレースホルダの評価結果が
-   * `null` / `undefined` / `false` / 空文字 / `0`、または未解決参照になった場合は、
-   * 確認を出さずに手続きを続けます」に従い、falsy は `null`（表示なし）へ寄せます。
+   * `data-{event}-confirm` / `-dialog` / `-toast` / `-fetch-method` /
+   * `-fetch-content-type` の属性値には `{{式}}` を書けるため、評価結果は文字列に
+   * 限りません（`null` / `false` / 数値になり、未解決参照は `null` になります）。
+   * 仕様「`data-{event}-confirm`」の「単体プレースホルダの評価結果が `null` /
+   * `undefined` / `false` / 空文字 / `0`、または未解決参照になった場合は、確認を
+   * 出さずに手続きを続けます」に従い、falsy は `null`（属性が無いものとして扱う）
+   * へ寄せます。
    *
    * falsy 以外を文字列へ寄せるのは、同じ節の「それ以外の評価結果は**文字列にして
    * メッセージにします**」と、仕様「`data-{event}-dialog`」の「それ以外は文字列に
-   * して表示します」のとおりです。数値などを表示なし側へ落とすと、確認したい場面で
-   * 確認が黙って飛びます。表示する側を文字列へ寄せるのは、`haori.dialog()` などの
-   * 差し替え実装が引数を文字列として扱うためです（`haori-bootstrap` は改行の復元で
-   * `String.prototype.replace` を呼ぶため、数値を渡すと例外になります）。
+   * して表示します」のとおりです。数値などを falsy 側へ落とすと、確認したい場面で
+   * 確認が黙って飛び、`POST` を要求したつもりの送信が `GET` になります。
+   * 文字列へ寄せるのは、受け取る側が文字列として扱うためです（`haori.dialog()` の
+   * 差し替え実装は改行の復元で `String.prototype.replace` を呼び、`RequestInit` の
+   * メソッドは正規化で `String.prototype.toUpperCase` を呼ぶため、数値を渡すと
+   * 例外になります）。
    *
    * @param value 属性の評価値
-   * @returns メッセージの文字列。表示しない場合は null
+   * @returns 正規化した文字列。属性が無いものとして扱う場合は null
    */
-  private static normalizeMessage(value: unknown): string | null {
+  private static normalizeAttributeText(value: unknown): string | null {
     if (!value) {
       return null;
     }
@@ -1333,7 +1337,7 @@ export default class Procedure {
       // confirm
       if (fragment.hasAttribute(Procedure.attrName(event, 'confirm'))) {
         options.confirmMessage = Procedure.unescapeNewlines(
-          Procedure.normalizeMessage(
+          Procedure.normalizeAttributeText(
             fragment.getAttribute(Procedure.attrName(event, 'confirm')),
           ),
         );
@@ -1455,28 +1459,23 @@ ${body}
     const fetchOptions: RequestInit = {};
     // fetch-method（イベントあり/なし）
     // event: data-{event}-fetch-method, non-event: data-fetch-method
-    if (event) {
-      const fetchMethodAttrEvent = Procedure.attrName(event, 'fetch-method');
-      if (fragment.hasAttribute(fetchMethodAttrEvent)) {
-        const fetchMethodEvaluation =
-          fragment.getAttributeEvaluation(fetchMethodAttrEvent);
-        if (fetchMethodEvaluation?.hasUnresolvedReference) {
-          options.fetchHasUnresolvedReference = true;
-        } else {
-          fetchOptions.method = fetchMethodEvaluation?.value as string;
-        }
-      }
-    } else {
-      const fetchMethodAttrNonEvent = Procedure.attrName(null, 'method', true);
-      if (fragment.hasAttribute(fetchMethodAttrNonEvent)) {
-        const fetchMethodEvaluation = fragment.getAttributeEvaluation(
-          fetchMethodAttrNonEvent,
-        );
-        if (fetchMethodEvaluation?.hasUnresolvedReference) {
-          options.fetchHasUnresolvedReference = true;
-        } else {
-          fetchOptions.method = fetchMethodEvaluation?.value as string;
-        }
+    const fetchMethodAttr = event
+      ? Procedure.attrName(event, 'fetch-method')
+      : Procedure.attrName(null, 'method', true);
+    if (fragment.hasAttribute(fetchMethodAttr)) {
+      const fetchMethodEvaluation =
+        fragment.getAttributeEvaluation(fetchMethodAttr);
+      if (fetchMethodEvaluation?.hasUnresolvedReference) {
+        options.fetchHasUnresolvedReference = true;
+      } else {
+        // 評価値は文字列に限らない。falsy は宣言が無いものとして既定（GET）へ、
+        // それ以外は文字列へ寄せる（仕様「`data-{event}-fetch-method`」の
+        // 「評価結果の扱い」）。素の評価値を入れると、送信直前の正規化
+        // （`String.prototype.toUpperCase`）が数値で例外になり、手続き全体が
+        // 止まる。
+        fetchOptions.method =
+          Procedure.normalizeAttributeText(fetchMethodEvaluation?.value) ??
+          undefined;
       }
     }
     // fetch-headers（イベントあり/なし）
@@ -1519,70 +1518,39 @@ ${body}
     // fetch-content-type（イベントあり/なし）
     // event: data-{event}-fetch-content-type
     // non-event: data-fetch-content-type
-    if (event) {
-      const fetchCTAttrEvent = Procedure.attrName(event, 'fetch-content-type');
-      if (fragment.hasAttribute(fetchCTAttrEvent)) {
-        const fetchContentTypeEvaluation =
-          fragment.getAttributeEvaluation(fetchCTAttrEvent);
-        if (fetchContentTypeEvaluation?.hasUnresolvedReference) {
-          options.fetchHasUnresolvedReference = true;
-        }
-        fetchOptions.headers = {
-          ...fetchOptions.headers,
-          'Content-Type': fetchContentTypeEvaluation?.value as string,
-        };
-      } else if (
-        fetchOptions.method &&
-        fetchOptions.method !== 'GET' &&
-        fetchOptions.method !== 'HEAD' &&
-        fetchOptions.method !== 'OPTIONS'
-      ) {
-        // only set default Content-Type when one is not already provided
-        let hasContentType = false;
-        if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-          const headersObj = fetchOptions.headers as Record<string, unknown>;
-          hasContentType = 'Content-Type' in headersObj;
-        }
-        if (!hasContentType) {
-          fetchOptions.headers = {
-            ...fetchOptions.headers,
-            'Content-Type': 'application/json',
-          };
-        }
-      } else if (
-        fetchOptions.method &&
-        (fetchOptions.method === 'GET' ||
-          fetchOptions.method === 'HEAD' ||
-          fetchOptions.method === 'OPTIONS')
-      ) {
-        // 仕様: GET/HEAD/OPTIONS 既定は application/x-www-form-urlencoded
-        fetchOptions.headers = {
-          ...fetchOptions.headers,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        };
+    const fetchCTAttr = event
+      ? Procedure.attrName(event, 'fetch-content-type')
+      : Procedure.attrName(null, 'content-type', true);
+    let contentType: string | null = null;
+    if (fragment.hasAttribute(fetchCTAttr)) {
+      const fetchContentTypeEvaluation =
+        fragment.getAttributeEvaluation(fetchCTAttr);
+      if (fetchContentTypeEvaluation?.hasUnresolvedReference) {
+        options.fetchHasUnresolvedReference = true;
       }
-    } else {
-      const fetchCTAttrNonEvent = Procedure.attrName(
-        null,
-        'content-type',
-        true,
+      // 評価値は文字列に限らない。falsy は宣言が無いものとして既定値へ落とし、それ
+      // 以外は文字列へ寄せる（仕様「`data-{event}-fetch-content-type`」の「評価結果
+      // の扱い」）。素の評価値を入れると `Content-Type: null` のような不正なヘッダを
+      // 送ってしまい、既定値も失われる。
+      contentType = Procedure.normalizeAttributeText(
+        fetchContentTypeEvaluation?.value,
       );
-      if (fragment.hasAttribute(fetchCTAttrNonEvent)) {
-        const fetchContentTypeEvaluation =
-          fragment.getAttributeEvaluation(fetchCTAttrNonEvent);
-        if (fetchContentTypeEvaluation?.hasUnresolvedReference) {
-          options.fetchHasUnresolvedReference = true;
-        }
+    }
+    if (contentType !== null) {
+      fetchOptions.headers = {
+        ...fetchOptions.headers,
+        'Content-Type': contentType,
+      };
+    } else if (fetchOptions.method) {
+      // 既定値（仕様「`data-{event}-fetch-content-type`」の「デフォルト値」）。
+      // メソッドの綴りは宣言のままなので、大文字へ揃えてから判定する。
+      const method = fetchOptions.method.toUpperCase();
+      if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
         fetchOptions.headers = {
           ...fetchOptions.headers,
-          'Content-Type': fetchContentTypeEvaluation?.value as string,
+          'Content-Type': 'application/x-www-form-urlencoded',
         };
-      } else if (
-        fetchOptions.method &&
-        fetchOptions.method !== 'GET' &&
-        fetchOptions.method !== 'HEAD' &&
-        fetchOptions.method !== 'OPTIONS'
-      ) {
+      } else {
         // only set default Content-Type when one is not already provided
         let hasContentType = false;
         if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
@@ -1595,17 +1563,6 @@ ${body}
             'Content-Type': 'application/json',
           };
         }
-      } else if (
-        fetchOptions.method &&
-        (fetchOptions.method === 'GET' ||
-          fetchOptions.method === 'HEAD' ||
-          fetchOptions.method === 'OPTIONS')
-      ) {
-        // 仕様: GET/HEAD/OPTIONS 既定は application/x-www-form-urlencoded
-        fetchOptions.headers = {
-          ...fetchOptions.headers,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        };
       }
     }
     if (Object.keys(fetchOptions).length > 0) {
@@ -2857,14 +2814,14 @@ ${body}
     await Promise.all(deferredPromises);
     // その後にダイアログ/トーストを表示（いずれも使用直前に属性を評価し直す）
     const dialogMessage = Procedure.unescapeNewlines(
-      Procedure.normalizeMessage(
+      Procedure.normalizeAttributeText(
         this.resolveLateAttribute('dialog', this.options.dialogMessage),
       ),
     );
     if (dialogMessage) {
       await activeHaori.dialog(dialogMessage);
     }
-    const toastMessage = Procedure.normalizeMessage(
+    const toastMessage = Procedure.normalizeAttributeText(
       this.resolveLateAttribute('toast', this.options.toastMessage),
     );
     if (toastMessage) {

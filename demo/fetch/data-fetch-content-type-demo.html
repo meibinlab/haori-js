@@ -3,12 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <title>data-fetch-content-type デモ</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; }
+    code { background: #f3f4f6; padding: 0.1rem 0.35rem; border-radius: 4px; }
+    section { margin-bottom: 24px; }
+  </style>
 </head>
 <body>
-  <button data-fetch="./data-fetch-content-type-demo.json" data-fetch-content-type="application/json" data-fetch-bind="#result">JSON取得</button>
-  <div id="result">
-    <p>結果: {{result}}</p>
-  </div>
+  <section>
+    <button data-fetch="./data-fetch-content-type-demo.json" data-fetch-content-type="application/json" data-fetch-bind="#result">JSON取得</button>
+    <div id="result">
+      <p>結果: {{result}}</p>
+    </div>
+  </section>
+
+  <section id="conditional" data-bind='{"upload":false}'>
+    <h3>条件で Content-Type を切り替える</h3>
+    <p>
+      属性値に <code>{{}}</code> の式を書き、指定が不要な場合は
+      <code>null</code> を返してください。<code>null</code> /
+      <code>false</code> / 空文字に評価されたときは属性が無いものとして扱い、
+      メソッドごとの既定値（GET は
+      <code>application/x-www-form-urlencoded</code>、それ以外は
+      <code>application/json</code>）になります。
+    </p>
+    <p id="cond-result">結果: {{result}}</p>
+    <button
+      id="cond-send"
+      data-click-fetch="./data-fetch-content-type-default.json"
+      data-click-fetch-method="GET"
+      data-click-fetch-content-type="{{upload ? 'multipart/form-data' : null}}"
+      data-click-bind="#conditional"
+      data-click-bind-merge
+    >取得</button>
+  </section>
+
   <script src="../../dist/haori.iife.js"></script>
 </body>
 </html>

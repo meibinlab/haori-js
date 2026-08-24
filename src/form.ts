@@ -1119,6 +1119,7 @@ export default class Form {
           rowKeys,
           Form.isCollectedListFromEachSource(fragment),
         );
+        Form.warnDerivedRowsWithoutKey(fragment);
         // 行が 0 件でもキー自体は空配列として出す。キーを落とすと、サーバ側で
         // 「0 件」と「そのフィールドが未送信」を区別できず、全件削除を表現できない。
         values[String(listName)] = childList;
@@ -1660,6 +1661,13 @@ export default class Form {
   private static readonly warnedPositionalRowFallbacks = new Set<string>();
 
   /**
+   * キーの無い派生一覧の収集を知らせた `data-each` の式。
+   *
+   * 収集は入力のたびに走るため、同じ宣言を繰り返し報告しないようにします。
+   */
+  private static readonly warnedDerivedRowsWithoutKey = new Set<string>();
+
+  /**
    * 収集した行配列に、行の識別情報を結び付けます。
    *
    * @param rows 収集した行配列
@@ -1730,6 +1738,45 @@ export default class Form {
       '[Haori]',
       `${Env.prefix}form-list の行を出現順で対応付けます（${reason}）。` +
         '配列と画面の行数・並びが一致していない場合、行の値を取り違えます。',
+    );
+  }
+
+  /**
+   * 派生一覧を `data-each-key` なしで収集する宣言を、開発モードで知らせます。
+   *
+   * `data-each-key` が無いとリストキーはインデックス由来（`__index_N`）になるため、
+   * 行と配列要素の対応は出現順と同じになります。絞り込んだ一覧
+   * （`data-each="rules.filter(...)"`）を `data-form-list="rules"` で収集する構成では
+   * 画面の並びが配列の並びと一致しないため、画面の 2 行目の値が配列の 2 番目の要素
+   * （絞り込みで除かれた要素）へ書き込まれます。収集値は画面のとおりに見えるので
+   * 気づけません（仕様「行の対応付けと `data-each-key`」の「`data-each-key` なし」）。
+   *
+   * 素の経路（`rules` / `dialog.rules`）は配列そのものを描くため対象外です。
+   *
+   * @param container `data-form-list` を持つコンテナのフラグメント
+   */
+  private static warnDerivedRowsWithoutKey(container: ElementFragment): void {
+    if (
+      !Dev.isEnabled() ||
+      container.getRawAttribute(`${Env.prefix}each-key`) !== null
+    ) {
+      return;
+    }
+    const each = container.getRawAttribute(`${Env.prefix}each`);
+    if (
+      each === null ||
+      Form.resolveLeadingPath(each) !== null ||
+      Form.warnedDerivedRowsWithoutKey.has(each)
+    ) {
+      return;
+    }
+    Form.warnedDerivedRowsWithoutKey.add(each);
+    Log.warn(
+      '[Haori]',
+      `${Env.prefix}each="${each}" の一覧を ${Env.prefix}form-list で` +
+        `収集していますが、${Env.prefix}each-key がありません。` +
+        '行と配列要素を出現順で対応付けるため、画面に出ていない要素があると' +
+        `行の値を取り違えます。${Env.prefix}each-key を宣言してください。`,
     );
   }
 
@@ -1985,6 +2032,14 @@ export default class Form {
    * 配列に無いリストキーの行は、配列から消えた行が画面に残っているものとして落とし
    * ます。行の増減は配列を先に更新するため、配列に無い行は常に古い画面です。
    *
+   * 逆に、**収集した行に対応しない配列要素は元の位置に元の値のまま残します**（仕様
+   * 「行の対応付けと `data-each-key`」の「収集した行に対応しない配列要素」）。収集は
+   * 集められた行だけを集めるため、収集した行だけで組み立て直すと、絞り込んだ一覧
+   * （`data-each="rules.filter(...)"`）を `data-form-list="rules"` で収集する構成で、
+   * 絞り込みで除かれた要素が丸ごと失われます（行そのものを `data-if` で隠した場合も
+   * 同様です）。並びも土台の配列に従うため、配列を先に入れ替えて画面を描き直す前に
+   * 収集が走っても（`row-prev` の直後など）並びが巻き戻りません。
+   *
    * @param previous 直前の配列（配列要素が権威）
    * @param collected 収集した行配列
    * @returns 重ね合わせた配列。対応付けができない場合は null（出現順へ退く）
@@ -2022,7 +2077,8 @@ export default class Form {
       return null;
     }
     const remaining = Form.createRowKeyIndexes(previous, identity.keyArg);
-    const merged: unknown[] = [];
+    // 土台は配列そのもの。収集した行に対応する位置だけを上書きする。
+    const merged = previous.slice();
     for (let index = 0; index < collected.length; index += 1) {
       const key = identity.keys[index] as string;
       const candidates = remaining.get(key);
@@ -2032,8 +2088,9 @@ export default class Form {
       }
       // 同じキーが重複する場合は出現順に消費する（重複時は出現順と同じ挙動）。
       const previousIndex = candidates.shift() as number;
-      merged.push(
-        Form.overlayCollectedValue(previous[previousIndex], collected[index]),
+      merged[previousIndex] = Form.overlayCollectedValue(
+        previous[previousIndex],
+        collected[index],
       );
     }
     return merged;

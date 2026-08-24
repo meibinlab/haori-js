@@ -3191,6 +3191,18 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 </button>
 ```
 
+**条件でメソッドや Content-Type を出し分けられます。** 属性値に `{{...}}` を書き、指定が不要な場合は `null` を返してください。`null` / `false` / 空文字 / `0` に評価されたときは属性が無いものとして扱い、メソッドは既定の `GET`、Content-Type はメソッドごとの既定値（`GET` は `application/x-www-form-urlencoded`、それ以外は `application/json`）になります。
+
+```html
+<!-- 新規なら POST、更新なら PUT。ファイルがあるときだけ multipart -->
+<button
+  data-click-fetch="/api/items"
+  data-click-fetch-method="{{item.id ? 'PUT' : 'POST'}}"
+  data-click-fetch-content-type="{{item.file ? 'multipart/form-data' : null}}"
+  data-click-form="#itemForm"
+>保存</button>
+```
+
 #### `data-click-fetch-headers`: リクエストヘッダー
 
 ```html
@@ -3350,6 +3362,32 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 ```
 
 `↑` / `↓` は、対象の行を**表示上の前後の行が居る位置**へ移します。グループごとに絞り込んだ一覧では、そのグループの中だけが入れ替わり、表示に出ていない要素の順序は変わりません。
+
+**絞り込んだ一覧を `data-form-list` で収集しても、バインドデータからは画面に出ていない要素が失われません。** 収集は画面にある行だけを集めますが、収集した行に対応しない配列要素は元の位置に元の値のまま残ります。`data-each-array` は行操作の書き戻し先を決めるだけなので、行操作を使わないなら宣言は不要です。
+
+この構成には次の 2 つの決まりがあります。
+
+- **`data-each-key` は必須です。** 宣言が無いと行と配列要素を出現順で対応付けるため、画面の 2 行目の値が配列の 2 番目の要素（絞り込みで除かれた要素）へ書き込まれます（開発モードで警告します）。
+- **配列は収集する `<form>`（または `data-form`）自身の `data-bind` が持つようにしてください。** 祖先が持つ配列を収集すると、収集値がフォーム自身のバインドへ入って祖先を隠すため、重ね合わせの土台が無く一覧が消えます。
+
+```html
+<!-- 有効な規則だけを編集する。無効な規則は画面に出ないが保存値には残る -->
+<form data-bind='{"rules":[
+  {"id":1,"name":"基本料金","active":true},
+  {"id":2,"name":"早期割","active":false}]}'>
+  <tbody data-form-list="rules" data-each="rules.filter(rule => rule.active)"
+    data-each-arg="r" data-each-key="id">
+    <tr><td><input name="name"></td></tr>
+  </tbody>
+</form>
+```
+
+**送信データ（`data-{event}-form` が集める payload）には画面にある行だけが入ります。** 送信データは画面と一致させる決まりなので、絞り込みで除かれた行は入りません。payload をそのまま配列の置き換えとして保存すると、除かれた要素がサーバ側で消えます。絞り込んだ一覧を保存する場合は、`data-{event}-data` にバインドデータを渡してください（フォームの収集値より**後**に重なるため、同じキーを上書きできます）。
+
+```html
+<button data-click-fetch="/api/rules" data-click-fetch-method="POST"
+  data-click-form="#ruleForm" data-click-data='{"rules": {{rules}}}'>保存</button>
+```
 
 #### `data-click-reset`: リセット
 

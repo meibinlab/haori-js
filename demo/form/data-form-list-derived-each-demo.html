@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-form-list と派生配列の data-each デモ</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main { max-width: 780px; margin: 0 auto; }
+
+    h1 { margin: 0 0 8px; font-size: 26px; }
+
+    p { margin: 0 0 16px; line-height: 1.6; }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+
+    th, td {
+      padding: 8px 6px;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    code {
+      background: #f3f4f6;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    ul { margin: 0; padding-left: 20px; font-size: 13px; color: #475569; }
+
+    li { margin-bottom: 4px; }
+
+    .hidden-row { color: #b45309; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>data-form-list と派生配列の data-each デモ</h1>
+    <p>
+      有効な規則だけを絞り込んだ一覧（<code>rules.filter(...)</code>）を
+      <code>data-form-list="rules"</code> で収集します。収集は画面にある行だけを
+      集めますが、<strong>対応する行が画面に無い配列要素は元の位置に元の値のまま
+      残ります</strong>。名称を書き換えて欄から出たあと、画面に出ていない
+      <span class="hidden-row">2: 早期割（無効）</span>
+      が下の一覧に残っていることを確認してください。
+    </p>
+    <p>
+      派生配列を <code>data-form-list</code> で収集する場合は
+      <code>data-each-key</code> が必須です。宣言が無いと行と配列要素を出現順で
+      対応付けるため、画面の 2 行目の値が配列の 2 番目の要素（絞り込みで除かれた
+      要素）へ書き込まれます。
+    </p>
+
+    <form id="ruleForm" class="panel" data-bind='{"rules":[
+      {"id":1,"category":"料金","name":"基本料金","active":true},
+      {"id":2,"category":"割引","name":"早期割","active":false},
+      {"id":3,"category":"料金","name":"従量料金","active":true}
+    ]}'>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>区分</th>
+            <th>名称</th>
+          </tr>
+        </thead>
+        <tbody
+          id="ruleRows"
+          data-form-list="rules"
+          data-each="rules.filter(rule => rule.active)"
+          data-each-arg="r"
+          data-each-key="id"
+        >
+          <tr>
+            <td>{{r.id}}</td>
+            <td>{{r.category}}</td>
+            <td><input type="text" name="name" id="name-{{r.id}}"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>バインディングデータ（送信される内容）</h2>
+      <p>件数: {{rules.length}}</p>
+      <ul id="ruleData" data-each="rules" data-each-arg="row">
+        <li>{{row.id}}: {{row.name}}（{{row.active ? '有効' : '無効・画面に出ていない行'}}）</li>
+      </ul>
+    </form>
+  </main>
+
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

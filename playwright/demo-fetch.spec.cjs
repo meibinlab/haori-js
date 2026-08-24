@@ -79,6 +79,31 @@ test.describe('data-fetch', () => {
     await expect(page.locator('#result')).toContainText('結果: 成功');
   });
 
+  // 仕様「`data-{event}-fetch-content-type`」の「**評価結果が falsy（`null` /
+  // `undefined` / `false` / 空文字 / `0`）のときは、属性が無いものとして扱います**
+  // （上記のデフォルト値になります）」。素の評価値を入れると実ブラウザでは
+  // `Content-Type: null` を送り、GET の既定値
+  // （application/x-www-form-urlencoded）が失われる。
+  test('data-fetch-content-type が null に評価されたら既定値を送る', async ({
+    page,
+  }) => {
+    const contentTypes = [];
+    await page.route('**/data-fetch-content-type-default.json', async route => {
+      contentTypes.push(route.request().headers()['content-type']);
+      await route.continue();
+    });
+    const errors = await open(
+      page,
+      '/demo/fetch/data-fetch-content-type-demo.html',
+    );
+    await page.locator('#cond-send').click();
+    await expect(page.locator('#cond-result')).toContainText(
+      '結果: 既定の Content-Type で取得',
+    );
+    expect(contentTypes).toEqual(['application/x-www-form-urlencoded']);
+    expect(errors).toEqual([]);
+  });
+
   test('data-fetch-form で対象フォームの値を送る', async ({page}) => {
     await open(page, '/demo/fetch/data-fetch-form-demo.html');
     await page.getByRole('button', {name: '送信'}).click();
