@@ -2514,6 +2514,9 @@ export default class Core {
         }
         // TextNodeやCommentNodeはテンプレートにならないので無視
       });
+      if (found) {
+        Core.warnExtraEachChildren(fragment);
+      }
       if (!found) {
         // フォールバック: フラグメントの子に要素が無いが DOM には要素子がある場合
         // （タブ表示やネスト data-if など特定フローでフラグメント木と DOM の子が
@@ -3186,7 +3189,15 @@ export default class Core {
   ): Promise<void> {
     const template = parent.getTemplate();
     if (template === null) {
-      Log.error('[Haori]', 'Template is not set for each element.');
+      // 対象と式を出す。テンプレートが無いのは「コンテナに要素の子が無い」
+      // 構成が原因なので、どのコンテナの話かが分からないと直せない。
+      Log.error(
+        '[Haori]',
+        `Template is not set for ${Env.prefix}each=` +
+          `"${parent.getRawAttribute(`${Env.prefix}each`)}".` +
+          ' The container needs one element child as the row template.',
+        parent.getTarget(),
+      );
       return Promise.resolve();
     }
     let indexKey = parent.getAttribute(`${Env.prefix}each-index`);
@@ -3392,6 +3403,56 @@ export default class Core {
         );
         return undefined;
       });
+  }
+
+  /**
+   * `data-each` コンテナに要素の子が 2 つ以上あることを開発モードで警告します。
+   *
+   * 仕様「`data-each`」の配置ルールは、最初の要素の子だけをテンプレートとし、
+   * 2 つめ以降は行に入りません。残った子はコンテナへそのまま留まるため、行スコープ
+   * の名前を参照している式は解決できず（テキスト補間が展開されないまま表示され）、
+   * 行操作のボタンは行に属さないため失敗します。どちらも例外にはならないので、
+   * 気づけるようコンテナごとに一度だけ知らせます。
+   *
+   * テンプレート化の直後に呼ぶ前提です。この時点で残っている子はテンプレート化
+   * されなかった残りだけなので、そのまま数えられます。テンプレート化はコンテナ
+   * ごとに 1 回だけ通るため（`setTemplate()` を null へ戻す経路はありません）、
+   * 警告済みの記録は持ちません。開発モード以外へ出さないのは `Log.warn()` 側の
+   * 判定です。
+   *
+   * 数えるのは DOM の子ではなくフラグメントの子です。DOM を数えると、フラグメント木
+   * と DOM の子が同期しない経路（テンプレート復旧のフォールバックが対象にしている
+   * 状況）で残った未管理の要素まで数えてしまい、利用者が書いていない構成を指して
+   * 警告することになります。
+   *
+   * @param fragment `data-each` コンテナのフラグメント
+   * @returns 戻り値はありません。
+   */
+  private static warnExtraEachChildren(fragment: ElementFragment): void {
+    const extra = fragment
+      .getChildren()
+      .filter(
+        (child): child is ElementFragment => child instanceof ElementFragment,
+      )
+      .filter(
+        child =>
+          !child.hasAttribute(`${Env.prefix}each-before`) &&
+          !child.hasAttribute(`${Env.prefix}each-after`),
+      );
+    if (extra.length === 0) {
+      return;
+    }
+    Log.warn(
+      '[Haori]',
+      `${Env.prefix}each="${fragment.getRawAttribute(`${Env.prefix}each`)}"` +
+        ' のコンテナに要素の子が 2 つ以上あります。テンプレートになるのは最初の' +
+        `子だけで、残り ${extra.length} 個は行に入りません` +
+        `（${extra
+          .map(child => child.getTarget().tagName.toLowerCase())
+          .join(', ')}）。` +
+        '行の中身は 1 つの要素で包んでください。',
+      fragment.getTarget(),
+    );
   }
 
   /**

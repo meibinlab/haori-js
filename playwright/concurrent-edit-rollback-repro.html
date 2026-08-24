@@ -42,8 +42,10 @@
       <input id="staff" name="staffName" type="text" />
       <div class="rows">
         <div data-each="rows" data-each-arg="row">
-          <span>{{row.a}}</span> / <span>{{row.b}}</span> /
-          <span>{{row.a + row.b}}</span>
+          <div>
+            <span>{{row.a}}</span> / <span>{{row.b}}</span> /
+            <span>{{row.a + row.b}}</span>
+          </div>
         </div>
       </div>
     </form>

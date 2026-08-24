@@ -4452,10 +4452,16 @@ ${body}
    * 書き戻し先を宣言している場合は、`data-each` の式ではなくその宣言を解決します。
    *
    * @param container `data-each` コンテナのフラグメント
+   * @param quiet 解決に失敗した理由をログへ出さないかどうか。入れ子の解決から
+   *     呼ぶときに指定します（呼び出し元が構成全体を指す 1 本のログを出すため、
+   *     ここで出すと祖先の事情だけを述べた紛らわしいログが重なります）
    * @returns 所有者・所有者データ・配列・経路と、表示位置と配列の位置が一致しない
    *     （`data-each-array` による宣言）かどうか。解決できない場合は null
    */
-  private static resolveEachArray(container: ElementFragment): {
+  private static resolveEachArray(
+    container: ElementFragment,
+    quiet = false,
+  ): {
     owner: ElementFragment;
     ownerData: Record<string, unknown>;
     array: unknown[];
@@ -4464,7 +4470,12 @@ ${body}
   } | null {
     const eachExpression = container.getRawAttribute(`${Env.prefix}each`);
     if (eachExpression === null) {
-      Log.error('Haori', `Row container has no ${Env.prefix}each expression.`);
+      if (!quiet) {
+        Log.error(
+          'Haori',
+          `Row container has no ${Env.prefix}each expression.`,
+        );
+      }
       return null;
     }
     // `data-each-array` があれば、その宣言を書き戻し先とする。派生配列
@@ -4481,24 +4492,28 @@ ${body}
     const isIdentifierPath =
       path.length > 0 && path.every(part => /^[A-Za-z_$][\w$]*$/.test(part));
     if (!isIdentifierPath) {
-      Log.error(
-        'Haori',
-        'Row operations require a plain identifier path for ' +
-          `${attributeName} (got: ${expression}).` +
-          (mapped
-            ? ''
-            : ` Declare ${Env.prefix}each-array to specify the array to` +
-              ' write back to.'),
-      );
+      if (!quiet) {
+        Log.error(
+          'Haori',
+          'Row operations require a plain identifier path for ' +
+            `${attributeName} (got: ${expression}).` +
+            (mapped
+              ? ''
+              : ` Declare ${Env.prefix}each-array to specify the array to` +
+                ' write back to.'),
+        );
+      }
       return null;
     }
     if (mapped && container.getRawAttribute(`${Env.prefix}each-key`) === null) {
       // 表示の並びと配列の並びが一致しないため、行と要素は位置では対応付けられない。
-      Log.error(
-        'Haori',
-        `${Env.prefix}each-array requires ${Env.prefix}each-key` +
-          ` (${Env.prefix}each-array="${expression}").`,
-      );
+      if (!quiet) {
+        Log.error(
+          'Haori',
+          `${Env.prefix}each-array requires ${Env.prefix}each-key` +
+            ` (${Env.prefix}each-array="${expression}").`,
+        );
+      }
       return null;
     }
     // 根の識別子が祖先の `data-each` の行スコープ名なら、その行が属する配列の
@@ -4506,6 +4521,10 @@ ${body}
     // 作り直す仮想スコープなので、行自身を所有者にすると書き戻しが次の描画で
     // 消える（仕様「行操作の共通仕様（`data-{event}-row-*`）」）。
     const rowScope = Procedure.resolveRowScopeBase(container, path[0]);
+    if (rowScope === 'unresolvable') {
+      // 理由と回避策は `resolveRowScopeBase()` が報告済み。
+      return null;
+    }
     let owner: ElementFragment | null;
     let ownerData: Record<string, unknown> | null;
     let fullPath: string[];
@@ -4537,18 +4556,22 @@ ${body}
       fullPath = path;
     }
     if (!owner || !ownerData) {
-      Log.error(
-        'Haori',
-        `Binding data owner not found for ${attributeName}="${expression}".`,
-      );
+      if (!quiet) {
+        Log.error(
+          'Haori',
+          `Binding data owner not found for ${attributeName}="${expression}".`,
+        );
+      }
       return null;
     }
     const current = Procedure.readPathValue(ownerData, fullPath);
     if (!Array.isArray(current)) {
-      Log.error(
-        'Haori',
-        `${attributeName}="${expression}" does not resolve to an array.`,
-      );
+      if (!quiet) {
+        Log.error(
+          'Haori',
+          `${attributeName}="${expression}" does not resolve to an array.`,
+        );
+      }
       return null;
     }
     return {owner, ownerData, array: current, path: fullPath, mapped};
@@ -4565,16 +4588,22 @@ ${body}
    *
    * @param container `data-each` コンテナのフラグメント
    * @param rootName 経路の根の識別子
-   * @returns 所有者・所有者データ・行までの経路。行スコープ名でない場合は null
+   * @returns 所有者・所有者データ・行までの経路。行スコープ名でない場合は null。
+   *     行スコープ名だが外側を書き戻し先として解決できない場合は `'unresolvable'`
+   *     （呼び出し元は祖先の探索へ進まずに打ち切ります。祖先には行スコープ名と
+   *     同名のキーが無いため、進めても実態と違う理由のログになります）
    */
   private static resolveRowScopeBase(
     container: ElementFragment,
     rootName: string,
-  ): {
-    owner: ElementFragment;
-    ownerData: Record<string, unknown>;
-    path: string[];
-  } | null {
+  ):
+    | {
+        owner: ElementFragment;
+        ownerData: Record<string, unknown>;
+        path: string[];
+      }
+    | 'unresolvable'
+    | null {
     let cursor: ElementFragment | null = container;
     while (cursor) {
       const row = cursor.closestByAttribute(`${Env.prefix}row`);
@@ -4586,10 +4615,25 @@ ${body}
         return null;
       }
       if (outer.getAttribute(`${Env.prefix}each-arg`) === rootName) {
-        const outerResolved = Procedure.resolveEachArray(outer);
+        const outerResolved = Procedure.resolveEachArray(outer, true);
         if (!outerResolved) {
-          // 外側が派生配列などで書き戻せない場合。エラーは再帰先が出している。
-          return null;
+          // 外側が派生配列などで書き戻せない場合。行スコープ名の出どころは
+          // 特定できているので、原因と回避策を 1 本にまとめて報告する。
+          // 再帰先のログを抑えているのは、祖先の式だけを述べたログが重なると
+          // 「どちらの `data-each` の話なのか」が読み取れなくなるため。
+          Log.error(
+            'Haori',
+            'Row operations cannot resolve the write-back array for ' +
+              `${Env.prefix}each="${container.getRawAttribute(
+                `${Env.prefix}each`,
+              )}": the ancestor container that supplies "${rootName}" ` +
+              `(${Env.prefix}each="${outer.getRawAttribute(
+                `${Env.prefix}each`,
+              )}") does not resolve to a writable array. Build the outer list` +
+              ` with ${Env.prefix}derive and declare ${Env.prefix}each-array` +
+              ` on this ${Env.prefix}each.`,
+          );
+          return 'unresolvable';
         }
         const index = Procedure.resolveRowIndex(
           outer,

@@ -560,6 +560,25 @@ window.Dates = {
 > - 正しい: `<ul data-each="items"><li>…</li></ul>` → `<li>` が要素数ぶん複製される。
 > - テーブルは `<tbody data-each="rows"><tr>…</tr></tbody>` のように **`<tbody>` に付与**し、`<tr>` をテンプレートにします。
 > - 誤り: `<tr data-each="rows"><td>…</td></tr>` … これは `<tr>` ではなく**子の `<td>` が複製**され、行が増えません（Vue の `v-for` のように「その要素自身」を繰り返す挙動ではありません）。
+> - 誤り: 子の要素を 2 つ以上並べる … **複製されるのは最初の子だけ**で、2 つめ以降は行に入りません。残った子はコンテナに居座るため、`{{r.label}}` のような行の名前を使う式は展開されないまま画面に出て、行操作（`data-click-row-remove` など）のボタンは「行に属していない」ため効きません（セレクタでコンテナを指定した `data-click-row-add="#list"` だけは、行の外から使う宣言なので効きます）。**行の中身は 1 つの要素で包んでください。**
+>
+>   ```html
+>   <!-- 誤り: button が行に入らない -->
+>   <div data-each="rows" data-each-arg="r">
+>     <input name="title">
+>     <button data-click-row-remove>削除</button>
+>   </div>
+>
+>   <!-- 正しい: 行を 1 つの要素で包む -->
+>   <div data-each="rows" data-each-arg="r">
+>     <div>
+>       <input name="title">
+>       <button data-click-row-remove>削除</button>
+>     </div>
+>   </div>
+>   ```
+>
+>   開発モードでは、この形を見つけるとコンテナごとに一度だけ警告します。
 
 ### 基本的な使い方
 
@@ -784,11 +803,14 @@ window.Dates = {
 
 ```html
 <!-- 日付ごとにグループ化して見出し＋明細を表示 -->
+<!-- 行の中身は 1 つの要素で包む（テンプレートになるのは最初の子だけ） -->
 <div data-each="haori.groupBy(rows, 'date')" data-each-key="key">
-  <h3>{{key}}</h3>
-  <ul data-each="items" data-each-arg="item">
-    <li>{{item.name}}</li>
-  </ul>
+  <div>
+    <h3>{{key}}</h3>
+    <ul data-each="items" data-each-arg="item">
+      <li>{{item.name}}</li>
+    </ul>
+  </div>
 </div>
 ```
 
@@ -3258,8 +3280,10 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 ```html
 <div data-bind='{"items":[{"name":"A"}]}'>
   <div data-each="items" data-each-key="name">
-    <input type="text" name="name" value="{{name}}">
-    <button data-click-row-add>行追加</button>
+    <div>
+      <input type="text" name="name" value="{{name}}">
+      <button data-click-row-add>行追加</button>
+    </div>
   </div>
 </div>
 ```

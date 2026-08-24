@@ -13,9 +13,12 @@
     {"optionId":"12","optionName":"広告非表示"}]}}'>
     <form id="f">
       <div data-each="view.options" data-each-key="optionId" data-each-arg="o">
-        <input type="checkbox" name="optionIds" data-attr-value="{{o.optionId}}"
-          data-attr-id="opt-{{o.optionId}}">
-        <label data-attr-for="opt-{{o.optionId}}">{{o.optionName}}</label>
+        <div>
+          <input type="checkbox" name="optionIds"
+            data-attr-value="{{o.optionId}}"
+            data-attr-id="opt-{{o.optionId}}">
+          <label data-attr-for="opt-{{o.optionId}}">{{o.optionName}}</label>
+        </div>
       </div>
     </form>
     <button id="send" type="button"

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-each の子が 2 つ以上ある構成の再現</title>
+</head>
+<body data-dev="true">
+  <p>
+    <code>data-each</code> コンテナに要素の子を 2 つ以上書いた構成の再現ページ
+    です。テンプレートになるのは最初の子だけなので、2 つめ以降は行に入りません。
+    開発モードの警告と、行操作が失敗することを確認します。
+  </p>
+
+  <!-- 誤った形。2 つめの子（button）は行に入らない -->
+  <form id="bad" data-bind='{"rows":[{"id":1,"title":"a"},{"id":2,"title":"b"}]}'>
+    <div data-form-list="rows" data-each="rows" data-each-arg="r"
+      data-each-key="id">
+      <input name="title">
+      <button type="button" class="rm" data-click-row-remove>削除</button>
+    </div>
+  </form>
+
+  <!-- 正しい形。行を 1 つの要素で包む -->
+  <form id="good" data-bind='{"rows":[{"id":1,"title":"a"},{"id":2,"title":"b"}]}'>
+    <div data-form-list="rows" data-each="rows" data-each-arg="r"
+      data-each-key="id">
+      <div>
+        <input name="title">
+        <button type="button" class="rm" data-click-row-remove>削除</button>
+      </div>
+    </div>
+  </form>
+
+  <script>
+    /* global window */
+
+    // コンソールの差し替えは Haori の読み込みより前に置く。読み込み後に置くと
+    // 「scan が非同期だから間に合う」という前提に頼ることになり、初期化の
+    // タイミングが変わったときに観測できていないことに気づけない。
+    window.__logs = {warn: [], error: []};
+    for (const level of ['warn', 'error']) {
+      const original = window.console[level].bind(window.console);
+      window.console[level] = function (...args) {
+        window.__logs[level].push(args.map(arg => String(arg)).join(' '));
+        original(...args);
+      };
+    }
+  </script>
+
+  <script src="../dist/haori.iife.js" data-dev="true"></script>
+  <script>
+    /* global window, document */
+
+    /**
+     * 指定したフォームの行数と、削除ボタンの数を返します。
+     *
+     * @param {string} id フォームの id
+     * @return {{inputs: number, buttons: number}} 数え上げの結果
+     */
+    window.__count = function (id) {
+      const form = document.getElementById(id);
+      return {
+        inputs: form.querySelectorAll('input[name="title"]').length,
+        buttons: form.querySelectorAll('button.rm').length,
+      };
+    };
+
+    /**
+     * 指定したフォームの先頭の削除ボタンを押します。
+     *
+     * @param {string} id フォームの id
+     * @return {void}
+     */
+    window.__remove = function (id) {
+      document.getElementById(id).querySelector('button.rm').click();
+    };
+  </script>
+</body>
+</html>

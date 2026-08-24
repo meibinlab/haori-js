@@ -71,9 +71,12 @@ describe('宣言バインドで送信値を与えたチェックボックス群'
         {"optionId":"12","optionName":"広告非表示"}]}}'>
         <form>
           <div data-each="view.options" data-each-key="optionId" data-each-arg="o">
-            <input type="checkbox" name="optionIds" data-attr-value="{{o.optionId}}"
-              data-attr-id="opt-{{o.optionId}}">
-            <label data-attr-for="opt-{{o.optionId}}">{{o.optionName}}</label>
+            <div>
+              <input type="checkbox" name="optionIds"
+                data-attr-value="{{o.optionId}}"
+                data-attr-id="opt-{{o.optionId}}">
+              <label data-attr-for="opt-{{o.optionId}}">{{o.optionName}}</label>
+            </div>
           </div>
         </form>
       </div>`);

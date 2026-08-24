@@ -1223,8 +1223,10 @@ async handleError(response: Response): Promise<void> {
 ```html
 <form data-bind='{"rows":[{"id":1,"name":"あ","label":"表示用"}]}'>
   <div data-form-list="rows" data-each="rows" data-each-arg="r" data-each-key="id">
-    <input name="name">
-    <span>{{r.label}}</span>
+    <div>
+      <input name="name">
+      <span>{{r.label}}</span>
+    </div>
   </div>
 </form>
 <!-- name を編集して確定しても、行の id と label は残る -->
@@ -1262,8 +1264,10 @@ async handleError(response: Response): Promise<void> {
 <!-- 削除ボタンを押した直後に別の行を編集して確定しても取り違えない -->
 <form data-bind='{"rows":[{"id":1,"title":"a"},{"id":2,"title":"b"},{"id":3,"title":"c"}]}'>
   <div data-form-list="rows" data-each="rows" data-each-arg="r" data-each-key="id">
-    <input name="title">
-    <button type="button" data-click-row-remove></button>
+    <div>
+      <input name="title">
+      <button type="button" data-click-row-remove></button>
+    </div>
   </div>
 </form>
 ```
@@ -2108,6 +2112,7 @@ data-each="arrayExpression"
 - 正しい: `<ul data-each="items"><li>…</li></ul>` → `<li>` が複製される。
 - テーブルは `<tbody data-each="rows"><tr>…</tr></tbody>` のように `<tbody>` に付与し、`<tr>` をテンプレートにします。
 - 誤り: `<tr data-each="rows"><td>…</td></tr>` … 子の `<td>` が複製され、行が増えません（Vue の `v-for` のように「その要素自身」を繰り返す挙動ではありません）。
+- 誤り: 要素の子を 2 つ以上並べる … **最初の要素の子だけがテンプレートになり、2 つめ以降は行に入りません。** 残った子はコンテナへそのまま留まるため、行スコープの名前を参照している式（`{{r.label}}`）は解決できず、テキスト補間は展開されないまま表示され、値を省略した行操作（`data-{event}-row-*`）のボタンは行に属さないため `Row fragment not found.` で失敗します（セレクタでコンテナを指定した `data-{event}-row-add` は行の外から使う宣言なので、この位置でも末尾への追加として働きます）。**行の中身は 1 つの要素で包んでください**（`<div data-each="rows"><div><input name="name"><button data-click-row-remove></button></div></div>`）。この形を検出すると、開発モードでコンテナごとに一度だけ警告します（`data-each-before` / `data-each-after` を付けた子は固定要素なので数えません）。
 
 **関連属性**:
 - `data-each-arg`: 各要素のバインド名 (プリミティブ配列では必須)
@@ -3940,14 +3945,17 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 <div data-bind='{"rules":[{"id":1,"c":"X"},{"id":2,"c":"Y"},{"id":3,"c":"X"}]}'>
   <div data-derive="rules.map(rule => rule.c).filter((c, i, all) => all.indexOf(c) === i)"
     data-derive-name="categories">
+    <!-- グループ見出しと明細は 1 つの要素で包む（テンプレートは最初の子だけ） -->
     <div data-each="categories" data-each-arg="g">
-      <h3>{{g}}</h3>
-      <div data-each="rules.filter(rule => rule.c === g)" data-each-arg="r"
-        data-each-key="id" data-each-array="rules">
-        <div>
-          <span>{{r.id}}</span>
-          <button data-click-row-prev>↑</button>
-          <button data-click-row-next>↓</button>
+      <div>
+        <h3>{{g}}</h3>
+        <div data-each="rules.filter(rule => rule.c === g)" data-each-arg="r"
+          data-each-key="id" data-each-array="rules">
+          <div>
+            <span>{{r.id}}</span>
+            <button data-click-row-prev>↑</button>
+            <button data-click-row-next>↓</button>
+          </div>
         </div>
       </div>
     </div>

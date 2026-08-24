@@ -27,8 +27,8 @@ describe('haori:eachupdate 発火タイミングの保証', () => {
     const rows = Array.from({length: 25}, (_, i) => ({id: i, label: `M${i}`}));
     container.innerHTML = `
       <div id="state" data-bind='{"rows":[]}'>
-        <table><tbody>
-          <tr data-each="rows" data-each-key="id" data-each-arg="row">
+        <table><tbody data-each="rows" data-each-key="id" data-each-arg="row">
+          <tr>
             <td class="lbl">{{row.label}}</td>
             <td><input name="value" type="number"></td>
           </tr>
@@ -74,8 +74,8 @@ describe('haori:eachupdate 発火タイミングの保証', () => {
   it('eachupdate の detail は added / removed / order / total を提供する', async () => {
     container.innerHTML = `
       <div id="state2" data-bind='{"rows":[{"id":1},{"id":2}]}'>
-        <table><tbody>
-          <tr data-each="rows" data-each-key="id" data-each-arg="r" class="row"><td>{{r.id}}</td></tr>
+        <table><tbody data-each="rows" data-each-key="id" data-each-arg="r">
+          <tr class="row"><td>{{r.id}}</td></tr>
         </tbody></table>
       </div>`;
     const state = container.querySelector('#state2') as HTMLElement;
