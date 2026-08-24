@@ -11,6 +11,20 @@
   <div id="result">
     <p>結果: {{result}}</p>
   </div>
+
+  <h3>条件で確認を出し分ける</h3>
+  <div>破棄されるものがあるときだけ確認します。式が null に評価されたときは確認せずに手続きを続けます。</div>
+  <div id="draft" data-bind='{"dirty":false,"applied":false}'>
+    <p>入力: <span id="dirty-state">{{dirty ? 'あり' : 'なし'}}</span></p>
+    <p>実行: <span id="applied-state">{{applied ? '済' : '未'}}</span></p>
+    <button id="make-dirty" data-click-data='{"dirty":true,"applied":false}'
+      data-click-bind="#draft" data-click-bind-merge>入力ありにする</button>
+    <button id="apply"
+      data-click-confirm="{{dirty ? '入力済みの内容は破棄されます。よろしいですか?' : null}}"
+      data-click-data='{"dirty":false,"applied":true}'
+      data-click-bind="#draft" data-click-bind-merge>実行</button>
+  </div>
+
   <script src="../../dist/haori.iife.js"></script>
 </body>
 </html>

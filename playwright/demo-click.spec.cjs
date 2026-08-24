@@ -124,6 +124,34 @@ test.describe('data-click-confirm', () => {
     await page.getByRole('button', {name: '削除'}).click();
     await expect(result).toContainText('削除されました');
   });
+
+  // 期待値の根拠は仕様「`data-{event}-confirm`」の「単体プレースホルダの評価結果が
+  // `null` / `undefined` / `false` / 空文字 / `0`、または未解決参照になった場合は、
+  // 確認を出さずに手続きを続けます」。0.46.1 までは `null` に評価されると例外で
+  // 手続き全体が止まっていたため、実ブラウザでも続くことを確かめる。
+  test('式が null に評価されたら確認せずに手続きが走る', async ({page}) => {
+    const errors = await open(page, '/demo/click/data-click-confirm-demo.html');
+    const dialogs = [];
+    page.on('dialog', dialog => {
+      dialogs.push(dialog.message());
+      dialog.accept();
+    });
+
+    // 入力が無い状態では確認を出さずにバインドまで進む。
+    await page.locator('#apply').click();
+    await expect(page.locator('#applied-state')).toHaveText('済');
+    expect(dialogs).toEqual([]);
+    expect(errors).toEqual([]);
+
+    // 入力があるときだけ確認を出す。
+    await page.locator('#make-dirty').click();
+    await expect(page.locator('#dirty-state')).toHaveText('あり');
+    await page.locator('#apply').click();
+    await expect(page.locator('#dirty-state')).toHaveText('なし');
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0]).toContain('破棄されます');
+    expect(errors).toEqual([]);
+  });
 });
 
 test.describe('data-click-data / bind-arg / bind-params', () => {

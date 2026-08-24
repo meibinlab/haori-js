@@ -1050,6 +1050,32 @@ export default class Procedure {
   }
 
   /**
+   * 表示メッセージの評価値を文字列へ正規化します。
+   *
+   * `data-{event}-confirm` / `-dialog` / `-toast` の属性値には `{{式}}` を書けるため、
+   * 評価結果は文字列に限りません（`null` / `false` / 数値になり、未解決参照は `null`
+   * になります）。仕様「`data-{event}-confirm`」の「単体プレースホルダの評価結果が
+   * `null` / `undefined` / `false` / 空文字 / `0`、または未解決参照になった場合は、
+   * 確認を出さずに手続きを続けます」に従い、falsy は `null`（表示なし）へ寄せます。
+   *
+   * falsy 以外を文字列へ寄せるのは、同じ節の「それ以外の評価結果は**文字列にして
+   * メッセージにします**」と、仕様「`data-{event}-dialog`」の「それ以外は文字列に
+   * して表示します」のとおりです。数値などを表示なし側へ落とすと、確認したい場面で
+   * 確認が黙って飛びます。表示する側を文字列へ寄せるのは、`haori.dialog()` などの
+   * 差し替え実装が引数を文字列として扱うためです（`haori-bootstrap` は改行の復元で
+   * `String.prototype.replace` を呼ぶため、数値を渡すと例外になります）。
+   *
+   * @param value 属性の評価値
+   * @returns メッセージの文字列。表示しない場合は null
+   */
+  private static normalizeMessage(value: unknown): string | null {
+    if (!value) {
+      return null;
+    }
+    return String(value);
+  }
+
+  /**
    * 属性値の `\n` 表記を改行へ復元します。
    *
    * @param value 属性の評価値
@@ -1306,9 +1332,11 @@ export default class Procedure {
       }
       // confirm
       if (fragment.hasAttribute(Procedure.attrName(event, 'confirm'))) {
-        options.confirmMessage = (
-          fragment.getAttribute(Procedure.attrName(event, 'confirm')) as string
-        ).replace(/\\n/g, '\n');
+        options.confirmMessage = Procedure.unescapeNewlines(
+          Procedure.normalizeMessage(
+            fragment.getAttribute(Procedure.attrName(event, 'confirm')),
+          ),
+        );
       }
       // data（イベント）
       if (fragment.hasAttribute(Procedure.attrName(event, 'data'))) {
@@ -2829,14 +2857,15 @@ ${body}
     await Promise.all(deferredPromises);
     // その後にダイアログ/トーストを表示（いずれも使用直前に属性を評価し直す）
     const dialogMessage = Procedure.unescapeNewlines(
-      this.resolveLateAttribute('dialog', this.options.dialogMessage),
+      Procedure.normalizeMessage(
+        this.resolveLateAttribute('dialog', this.options.dialogMessage),
+      ),
     );
     if (dialogMessage) {
       await activeHaori.dialog(dialogMessage);
     }
-    const toastMessage = this.resolveLateAttribute(
-      'toast',
-      this.options.toastMessage,
+    const toastMessage = Procedure.normalizeMessage(
+      this.resolveLateAttribute('toast', this.options.toastMessage),
     );
     if (toastMessage) {
       await activeHaori.toast(toastMessage, this.options.toastLevel ?? 'info');

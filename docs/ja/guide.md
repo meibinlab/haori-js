@@ -3118,6 +3118,18 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 </button>
 ```
 
+**条件で確認を出し分けられます。** 属性値に `{{...}}` を書き、確認が不要な場合は `null` を返してください。`null` / `false` / 空文字 / `0`、未解決参照に評価されたときは確認を出さずに手続きを続けます。ボタンを `data-if` で 2 つに分ける必要はありません。
+
+```html
+<!-- 入力済みの内容があるときだけ確認する -->
+<button
+  data-click-confirm="{{draft.dirty ? '入力済みの内容は破棄されます。よろしいですか？' : null}}"
+  data-click-redirect="/apply"
+>
+  申込入力へ進む
+</button>
+```
+
 #### `data-click-data`: 送信データを指定
 
 ```html
