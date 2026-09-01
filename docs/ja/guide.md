@@ -701,6 +701,28 @@ window.Dates = {
 - `data-each-before`: ループの前に表示（繰り返されない）
 - `data-each-after`: ループの後に表示（繰り返されない）
 
+### 一覧そのものを条件で出し分ける（`data-if` との併用）
+
+`data-if` は `data-each` と**同じ要素へ書けます**。一覧ごと出したり隠したりしたい場合は、包む要素を増やさずにそのまま並べてください。
+
+```html
+<div data-bind='{"loaded":true,"rules":[
+  {"id":1,"name":"基本料金","pinned":true},
+  {"id":2,"name":"早期割","pinned":false}
+]}'>
+  <ul data-if="loaded" data-each="rules" data-each-arg="r" data-each-key="id">
+    <li>
+      <span data-if="r.pinned">[重要]</span>
+      {{r.name}}
+    </li>
+  </ul>
+</div>
+```
+
+**行の中の `data-if` や `data-attr-*` は、行のデータで判定されます。** 上の例では 1 件目にだけ `[重要]` が付きます。同じ要素へ `data-if` を書いても書かなくても、行の中の判定は変わりません。
+
+> **0.47.0 まではここが正しく動きませんでした。** `data-if` と `data-each` を同じ要素へ書くと、行の中の `data-if` が**全行で偽**になり（印がどの行にも出ない）、行を作り直しても戻りませんでした。回避のために `<div data-if="...">` で包んでいた場合、その包みはもう要りません（包んだままでも動きます）。
+
 ### 番号ページネーションを作る（`haori.pages`）
 
 `haori.pages(totalPages, current, options?)` は、先頭・末尾と現在ページ周辺を残し、間を省略記号（…）で省いた「番号ページネーション」用の配列を返します。`data-each` の式に直接書いて、自前の JavaScript なしでページ番号リンクを構築できます。

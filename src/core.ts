@@ -2108,6 +2108,23 @@ export default class Core {
   }
 
   /**
+   * `data-each` コンテナの子のうち、行にならない固定要素かどうかを返します。
+   *
+   * 仕様「`data-each`」の `data-each-before` / `data-each-after`（「ループ前に表示
+   * する要素をマーク」「ループ後に表示する要素をマーク」）です。テンプレートの選定
+   * （`performEachUpdate`）でも同じ属性で除いています。
+   *
+   * @param fragment 判定する子フラグメント
+   * @returns 行にならない固定要素なら true
+   */
+  private static isEachFixedChild(fragment: ElementFragment): boolean {
+    return (
+      fragment.hasAttribute(`${Env.prefix}each-before`) ||
+      fragment.hasAttribute(`${Env.prefix}each-after`)
+    );
+  }
+
+  /**
    * if要素を評価します。
    * 値が falsy（false・null・undefined・NaN・0・空文字列）の場合は非表示にし、
    * それ以外の場合は表示します。
@@ -2143,8 +2160,20 @@ export default class Core {
       // 非表示→表示への遷移を検出するため、show() 前の表示状態を退避する。
       const wasVisible = fragment.isVisible();
       const childPromises: Promise<void>[] = [];
+      // `data-each` を宣言した要素では、行テンプレートと行は `data-each` が管理する
+      // （仕様「`data-if` と `data-each` の同一要素への宣言」）。ここで評価すると、
+      // まだ切り出していないテンプレートをコンテナのスコープで評価してしまい、行
+      // スコープの名前が解決できないまま `data-if` が偽になったり、行が無いのに
+      // テンプレートの `data-fetch` が走ったりする。`evaluateAll` も each コンテナ
+      // では子へ降りない。行は `evaluateAll` がこの後に呼ぶ `evaluateEach` が描く。
+      // 固定要素（`data-each-before` / `data-each-after`）とテキストノードは行では
+      // ないので、コンテナのスコープで従来どおり評価する。
+      const hasEach = fragment.hasAttribute(`${Env.prefix}each`);
       fragment.getChildren().forEach(child => {
         if (child instanceof ElementFragment) {
+          if (hasEach && !Core.isEachFixedChild(child)) {
+            return;
+          }
           // 未スキャンの子は scan で初期化し、既に表示済みの子は再評価だけ行う。
           childPromises.push(
             child.isMounted()

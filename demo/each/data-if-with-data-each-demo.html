@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-if と data-each の同一要素への宣言 デモ</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main { max-width: 720px; margin: 0 auto; }
+
+    h1 { margin: 0 0 8px; font-size: 26px; }
+
+    p { margin: 0 0 16px; line-height: 1.6; }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    ul { margin: 0; padding-left: 20px; }
+
+    li { margin-bottom: 6px; line-height: 1.6; }
+
+    .badge {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #fee2e2;
+      color: #b91c1c;
+      font-size: 12px;
+    }
+
+    code {
+      background: #f3f4f6;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    button {
+      padding: 6px 14px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>data-if と data-each の同一要素への宣言 デモ</h1>
+    <p>
+      一覧そのものの表示条件（<code>data-if="loaded"</code>）と繰り返し
+      （<code>data-each="rules"</code>）を、包む要素を増やさずに同じ
+      <code>&lt;ul&gt;</code> へ宣言しています。
+      <strong>行の中の <code>data-if</code> は行のデータで判定されるため</strong>、
+      <span class="badge">重要</span> が付くのは 1 件目と 3 件目だけです。
+    </p>
+    <p>
+      「隠す」「出す」を押して一覧を作り直しても、印の出方は変わりません。
+      コンテナの子は <code>data-each</code> が管理し、行テンプレートは
+      コンテナのスコープでは評価されません。
+    </p>
+
+    <div class="panel" id="rulePanel" data-bind='{"loaded":true,"rules":[
+      {"id":1,"name":"基本料金","pinned":true},
+      {"id":2,"name":"早期割","pinned":false},
+      {"id":3,"name":"従量料金","pinned":true}
+    ]}'>
+      <p>
+        <button type="button" data-click-data='{"loaded": false}'
+                data-click-bind="#rulePanel" data-click-bind-merge>隠す</button>
+        <button type="button" data-click-data='{"loaded": true}'
+                data-click-bind="#rulePanel" data-click-bind-merge>出す</button>
+      </p>
+
+      <ul id="ruleList" data-if="loaded" data-each="rules" data-each-arg="r"
+          data-each-key="id">
+        <li>
+          <span class="badge" data-if="r.pinned">重要</span>
+          {{r.id}}: {{r.name}}
+        </li>
+      </ul>
+    </div>
+  </main>
+
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

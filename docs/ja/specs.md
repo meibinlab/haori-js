@@ -2198,6 +2198,24 @@ data-each="arrayExpression"
 - `haori:rowremove` (行削除時)
 - `haori:rowmove` (行移動時)
 
+##### `data-if` と `data-each` の同一要素への宣言
+
+一覧そのものを条件で出し分けるため、`data-if` と `data-each` は**同じ要素へ宣言できます**。
+
+```html
+<div data-bind='{"show":true,"items":[{"id":1,"pinned":true},{"id":2,"pinned":false}]}'>
+  <ul data-if="show" data-each="items" data-each-key="id">
+    <li><span data-if="pinned">[重要]</span>{{title}}</li>
+  </ul>
+</div>
+```
+
+**コンテナの子は `data-each` が管理します。** `data-if` が真になったときの子の再評価（[data-if の動作](#data-if-の動作)の「子要素を再評価 (evaluateAll)。未スキャンの子は `scan` で初期化する」）は、`data-each` を宣言した要素では**行わず**、続けて走る `data-each` の描画に任せます。行テンプレートはコンテナのスコープではなく**行スコープ**で評価するものだからです。
+
+したがって、行の中の `data-if` や `data-attr-*` は、同一要素へ `data-if` を宣言してもしなくても**同じ行スコープで評価します**。行テンプレートの中の `data-fetch` などの取得も、行の数だけ走ります（テンプレートのぶんが余分に走ることはありません）。
+
+固定要素（`data-each-before` / `data-each-after`）とコンテナ直下のテキストノードは行ではないため、従来どおり**コンテナのスコープ**で評価します。
+
 #### `data-each-visible`（スクロール追従の可視行範囲）
 
 無限スクロールなどで「いまビューポートに見えている行範囲（x - y）」を、JavaScript なしで宣言的に表示するための仕組みです。`data-each` コンテナに付与すると、各行を `IntersectionObserver` で監視し、可視行範囲を**指定名の組み込み変数**として**最近接の上位 `data-bind` スコープ**へ公開します。実装は `src/visible_range.ts`。
