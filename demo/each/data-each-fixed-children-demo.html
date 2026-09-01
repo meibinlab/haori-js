@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-each-before / data-each-after の再評価 デモ</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      color: #1f2937;
+    }
+
+    main { max-width: 720px; margin: 0 auto; }
+
+    h1 { margin: 0 0 8px; font-size: 26px; }
+
+    p { margin: 0 0 16px; line-height: 1.6; }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid #d8dee9;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    ul { margin: 0; padding-left: 20px; }
+
+    li { margin-bottom: 6px; line-height: 1.6; }
+
+    .caption { font-weight: 600; list-style: none; margin-left: -20px; }
+
+    .empty { color: #b45309; list-style: none; margin-left: -20px; }
+
+    code {
+      background: #f3f4f6;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    button {
+      padding: 6px 14px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>data-each-before / data-each-after の再評価 デモ</h1>
+    <p>
+      <code>data-each-before</code> と <code>data-each-after</code> を付けた固定要素は
+      行ではないため、<strong>コンテナのスコープで評価されます</strong>。行の中の式が
+      行のデータで判定されるのに対し、固定要素の中の式は一覧そのもの
+      （<code>{{}}</code> に <code>items.length</code> など）を参照できます。
+    </p>
+    <p>
+      「追加」「空にする」を押すと、見出しの件数と「該当なし」の表示が
+      <strong>そのつど更新されます</strong>。一覧を隠すと
+      <code>data-each-done</code> が外れ、出し直して描き終えた時点で戻ります。
+    </p>
+
+    <div class="panel" id="fruitPanel"
+         data-bind='{"visible":true,"items":["りんご","バナナ"]}'>
+      <p>
+        <button type="button"
+                data-click-data='{"items":["りんご","バナナ","みかん","ぶどう"]}'
+                data-click-bind="#fruitPanel" data-click-bind-merge>追加</button>
+        <button type="button" data-click-data='{"items":[]}'
+                data-click-bind="#fruitPanel" data-click-bind-merge>空にする</button>
+        <button type="button" data-click-data='{"visible":false}'
+                data-click-bind="#fruitPanel" data-click-bind-merge>隠す</button>
+        <button type="button" data-click-data='{"visible":true}'
+                data-click-bind="#fruitPanel" data-click-bind-merge>出す</button>
+      </p>
+
+      <ul id="fruitList" data-if="visible" data-each="items" data-each-arg="item">
+        <li data-each-before class="caption">くだもの（{{items.length}} 件）</li>
+        <li>{{item}}</li>
+        <li data-each-after class="empty" data-if="items.length === 0">
+          該当なし
+        </li>
+      </ul>
+    </div>
+  </main>
+
+  <script src="../../dist/haori.iife.js"></script>
+</body>
+</html>

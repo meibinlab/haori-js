@@ -26,7 +26,6 @@ import Env from '../src/env';
 import EventDispatcher from '../src/event_dispatcher';
 
 import {waitForIdle} from './helpers/async';
-import {exemptFromInvariants} from './helpers/invariants';
 
 /** 1 件目だけが `pinned` な行データ */
 const ITEMS =
@@ -262,12 +261,6 @@ describe('data-if と data-each の同一要素への宣言', () => {
       'data-if="show" id="list" data-each-arg="r"',
       '<span>{{r.title}}</span>',
     );
-    // 非表示のあいだは行を描き直さないため、行数が配列とずれた状態が正しい。
-    // このずれは `data-each-done` が付いたまま起きるので不変条件 I2 が発火する
-    // （`data-each-done` の発火保証が非表示中に破れている件は課題 28。解決したら
-    // この除外を外す）。
-    exemptFromInvariants(document.getElementById('list') as HTMLElement);
-
     await Core.setBindingData(root, {show: false, items: []});
     await waitForIdle();
     await Core.setBindingData(root, {

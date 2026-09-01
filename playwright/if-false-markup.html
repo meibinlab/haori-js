@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-if の追随結果を含む markup</title>
+  <script src="../dist/haori.iife.js"></script>
+</head>
+<body>
+  <!--
+    Haori が出力した HTML を保存して再配信した状態を再現するページ。
+    `data-if-false` と `style="display: none;"` は判定の結果（追随結果）なので、
+    内部状態を持たない要素に残っていても宣言として取り込まず、条件が真なら表示へ
+    戻る必要がある（仕様「data-if の動作」）。
+  -->
+  <div id="root" data-bind='{"show":true,"hide":false}'>
+    <p id="shown" data-if="show" data-if-false="" style="display: none;">
+      条件が真なので見えるべき
+    </p>
+    <p id="styled" data-if="show" data-if-false=""
+       style="color: rgb(180, 83, 9); display: none;">
+      利用者が書いた color は残るべき
+    </p>
+    <p id="hidden" data-if="hide" data-if-false="" style="display: none;">
+      条件が偽なので隠れたまま
+    </p>
+  </div>
+</body>
+</html>

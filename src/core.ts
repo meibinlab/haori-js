@@ -957,10 +957,20 @@ export default class Core {
         promises.push(deriveChangedPromise.then(() => undefined));
         break;
       case `${Env.prefix}if`:
-        promises.push(Core.evaluateIf(fragment));
+        // 属性の反映（内部の属性マップの更新）より**後**に評価する。並べて実行すると、
+        // 外部が宣言そのものを書き換えた場合に 1 つ前の宣言で判定してしまい、**反映が
+        // 1 手遅れる**（仕様「監視対象」の「宣言の属性が書き換えられた場合、その属性の
+        // 処理は**更新後の宣言**で行います」）。書き換えが 1 回だけなら反映されない。
+        // `data-fetch` と同じ対策で、引き換えも同じ（判定が 1 フレーム遅れる）。
+        //
+        // 走査経路だけ従来どおり並べて実行する形は採らない。外しても落ちるテストが
+        // 無く、規則どおり分岐を削っている（`docs/ja/testing.md` の規則 3）。
+        afterAttributeWrite = () => Core.evaluateIf(fragment);
         break;
       case `${Env.prefix}each`:
-        promises.push(Core.evaluateEach(fragment));
+        // `data-if` と同じ理由で属性マップの更新より後に評価する。並べて実行すると、
+        // 書き換え前の式で描いた行が残る。
+        afterAttributeWrite = () => Core.evaluateEach(fragment);
         break;
       case `${Env.prefix}fetch`:
         // 属性の反映（内部の属性マップの更新）より**後**に実行する。先に実行すると、
@@ -1917,7 +1927,9 @@ export default class Core {
       if (fragment.getDeriveSubtreeSignature() !== null) {
         fragment.setDeriveSubtreeSignature(null);
       }
-      return chain.then(() => Core.evaluateEach(fragment));
+      return chain
+        .then(() => Core.evaluateEachFixedChildren(fragment))
+        .then(() => Core.evaluateEach(fragment));
     }
     if (hasIf) {
       if (fragment.getDeriveSubtreeSignature() !== null) {
@@ -2125,6 +2137,63 @@ export default class Core {
   }
 
   /**
+   * `data-each` コンテナが固定要素を持つかどうかを返します。
+   *
+   * 固定要素（`data-each-before` / `data-each-after`）はコンテナのスコープで評価する
+   * ため、配列が同値でも一覧の外のデータの更新で描画が変わります。行と行テンプレートは
+   * 行スコープで評価するため数えません。
+   *
+   * コンテナ直下のテキストノードは数えません。式を含むテキストは
+   * `hasNonEachDynamicElementState()` がすでに拾っており、ここで重ねても落ちるテストが
+   * 無いためです（`docs/ja/testing.md` の規則 3）。
+   *
+   * @param fragment `data-each` コンテナのフラグメント
+   * @returns 固定要素があれば true
+   */
+  private static hasEachFixedChildren(fragment: ElementFragment): boolean {
+    return fragment
+      .getChildren()
+      .some(
+        child =>
+          child instanceof ElementFragment && Core.isEachFixedChild(child),
+      );
+  }
+
+  /**
+   * `data-each` コンテナの固定要素とテキストノードを再評価します。
+   *
+   * 行と行テンプレートは `data-each` が管理するため `evaluateAll` は each コンテナの
+   * 子へ降りません。しかし固定要素（`data-each-before` / `data-each-after`）と
+   * コンテナ直下のテキストノードは行ではなく、仕様「`data-each`」の「固定要素と
+   * コンテナ直下のテキストノードは、行と違いコンテナのスコープで、バインドデータの
+   * 更新のたびに再評価します」に従ってコンテナのスコープで再評価します。
+   *
+   * これが無いと、ガイドが案内している「空のリストの場合のメッセージ」
+   * （`data-each-after` に `data-if="items.length === 0"` を書く形）が、配列が
+   * 変わっても初期の判定のまま固定されます。
+   *
+   * @param fragment `data-each` コンテナのフラグメント
+   * @returns 再評価完了の Promise
+   */
+  private static evaluateEachFixedChildren(
+    fragment: ElementFragment,
+  ): Promise<void> {
+    const promises: Promise<void>[] = [];
+    fragment.getChildren().forEach(child => {
+      if (child instanceof ElementFragment) {
+        if (Core.isEachFixedChild(child)) {
+          promises.push(Core.evaluateAll(child));
+        }
+      } else if (child instanceof TextFragment) {
+        promises.push(Core.evaluateText(child));
+      }
+    });
+    // 空のときの早期 return は置かない。外しても落ちるテストが無く（`Promise.all([])`
+    // との観測差が無い）、規則どおり削っている（`docs/ja/testing.md` の規則 3）。
+    return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
    * if要素を評価します。
    * 値が falsy（false・null・undefined・NaN・0・空文字列）の場合は非表示にし、
    * それ以外の場合は表示します。
@@ -2283,6 +2352,11 @@ export default class Core {
       Core.syncMountedState(fragment);
     }
     if (!fragment.isVisible() || !fragment.isMounted()) {
+      // 描画を保留するあいだは完了マーカーを外す（仕様「`data-each`」の
+      // 「`data-each-done`」の「**非表示のあいだは外れます**」）。付けたままにすると、
+      // 配列が変わった後も古い行数のまま「描画完了」を示し続け、`[data-each-done]`
+      // を待つ外部テストや外部ウィジェットが古い状態を完了と見なす。
+      fragment.getTarget().removeAttribute(`${Env.prefix}each-done`);
       return Promise.resolve();
     }
     const state = Core.getEachUpdateState(fragment);
@@ -2689,6 +2763,13 @@ export default class Core {
     // 行スコープの外を参照するテンプレートは、要素データが同値でも行外データの
     // 更新で描画が変わる。走査ごと省略すると更新が行内へ届かない。
     if (!Core.isRowLocalEachTemplate(fragment)) {
+      return false;
+    }
+    // 固定要素はコンテナのスコープで評価するため（仕様「`data-each`」）、配列が同値でも
+    // 一覧の外のデータの更新で描画が変わる。走査ごと省略すると、「該当なし」のメッセージ
+    // や件数の見出しが更新されない。省略しなくても、行そのものの再評価は
+    // `reevaluateEachRows()` が引き続き省く。
+    if (Core.hasEachFixedChildren(fragment)) {
       return false;
     }
     const data = Core.resolveEachItems(fragment);

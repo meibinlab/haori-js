@@ -1175,6 +1175,9 @@ export class ElementFragment extends Fragment {
    */
   public constructor(target: HTMLElement) {
     super(target);
+    // 属性を取り込む前に、DOM に残っている `data-if` の追随結果を落とす。
+    // 取り込むと宣言として焼き付き、属性の再適用が非表示の状態を書き戻す。
+    ElementFragment.dropIfVisibilityArtifacts(target);
     this.syncValue();
     this.initialBindAttribute = target.getAttribute(`${Env.prefix}bind`);
     target.getAttributeNames().forEach(name => {
@@ -1275,6 +1278,43 @@ export class ElementFragment extends Fragment {
     clone.freshInitializationSkippable = this.freshInitializationSkippable;
     clone.normalizeClonedVisibilityState();
     return clone;
+  }
+
+  /**
+   * `data-if` の非表示化が DOM へ書いた追随結果を落とします。
+   *
+   * 仕様「data-if の動作」の「判定の基準は内部状態であり、`style.display` や
+   * `data-if-false` は追随結果として扱う」に従います。内部状態を持たない要素
+   * （フラグメントを作る時点の要素、複製した要素）に追随結果が残っていると、
+   * 内部状態は「表示」なのに DOM は非表示という食い違いになり、`show()` は内部状態を
+   * 基準に何もしないため**表示に戻れません**。
+   *
+   * @param target 対象エレメント
+   * @returns 戻り値はありません。
+   */
+  private static dropIfVisibilityArtifacts(target: HTMLElement): void {
+    // 判定は `data-if-false` の有無だけで行う。`display: none` だけを根拠にすると、
+    // 利用者が「初期状態で隠しておく」ために書いた `style="display: none"` を追随結果と
+    // 取り違えて剥がしてしまう（`hide()` は両方を必ず書くので、印の有無で足りる）。
+    if (!target.hasAttribute(`${Env.prefix}if-false`)) {
+      return;
+    }
+    target.style.removeProperty('display');
+    if (target.getAttribute('style')?.trim() === '') {
+      // 空の `style` を残すと、それが宣言として属性マップへ入り、属性の再適用が
+      // `hide()` の書いた `display: none` を消してしまう（`data-if` が偽の要素が
+      // `data-if-false` だけ付いた状態で見えてしまう）。
+      target.removeAttribute('style');
+    }
+    target.removeAttribute(`${Env.prefix}if-false`);
+    ElementFragment.forEachFormControlInBranch(target, element => {
+      if (!element.hasAttribute(IF_DISABLED_MARKER)) {
+        return;
+      }
+      // 印を先に外す（`restoreFormControlsDisabledByIf()` と同じ理由）。
+      element.removeAttribute(IF_DISABLED_MARKER);
+      element.removeAttribute('disabled');
+    });
   }
 
   /**
