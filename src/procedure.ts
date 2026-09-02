@@ -4004,18 +4004,25 @@ ${body}
   private resolveCopySourceData(): Record<string, unknown> {
     // コピー先はバインドデータになるため、File はファイル名へ正規化する
     // （そのまま入れると JSON 化で `{}` に潰れ data-bind 属性が壊れる）。
+    // 要素のバインドデータを直接読む経路では、予約キー（`_fetch` / `_poll`）を
+    // 落とす。宣言データとして外へ出さないため（仕様「`data-bind`」）。フォームの
+    // 収集は DOM の入力欄から行うので予約キーを含まない。
     if (this.options.copySourceFragment) {
       const sourceTarget = this.options.copySourceFragment.getTarget();
       if (sourceTarget.tagName === 'FORM') {
         return collectFormValuesForBinding(this.options.copySourceFragment);
       }
-      return {...(this.options.copySourceFragment.getRawBindingData() ?? {})};
+      return Core.withoutReservedBindingKeys(
+        this.options.copySourceFragment.getRawBindingData() ?? {},
+      );
     }
     if (this.options.formFragment) {
       return collectFormValuesForBinding(this.options.formFragment);
     }
     if (this.options.targetFragment) {
-      return {...(this.options.targetFragment.getRawBindingData() ?? {})};
+      return Core.withoutReservedBindingKeys(
+        this.options.targetFragment.getRawBindingData() ?? {},
+      );
     }
     return {};
   }

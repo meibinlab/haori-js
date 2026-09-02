@@ -110,13 +110,15 @@ export default class Store {
   /**
    * 予約キー（エンジン管理変数）かどうかを判定します。
    *
-   * `_fetch` / `_poll` などのエンジン管理変数を保存対象から常に除外します。
+   * `_fetch` / `_poll` などのエンジン管理変数を保存対象から常に除外します。判定の
+   * 規則は `ElementFragment` に集約しています（属性ミラーや `data-{event}-copy` の
+   * 除外と同じ規則です）。
    *
    * @param key 判定対象のキー
    * @returns 予約キーなら true
    */
   private static isReservedKey(key: string): boolean {
-    return key.startsWith('_');
+    return ElementFragment.isReservedBindingKey(key);
   }
 
   /**

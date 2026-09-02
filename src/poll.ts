@@ -426,8 +426,6 @@ export default class PollObserver {
       }
     }
 
-    await PollObserver.restoreStateIfCleared(registration);
-
     // バインド反映後に停止条件を評価する。失敗時はバインドが行われないため
     // 評価しない（`Procedure` は HTTP エラー応答ではバインドせずに終了する）。
     if (succeeded && PollObserver.isUntilSatisfied(registration.fragment)) {
@@ -640,30 +638,6 @@ export default class PollObserver {
         });
       }),
     ).then(() => undefined);
-  }
-
-  /**
-   * 手続きの実行で `_poll` が失われていた場合に注入し直します。
-   *
-   * `data-poll-bind` は既定でバインド先を全置換するため、注入先が bind 先と同じ
-   * 要素（`data-poll-state` の値を省略して自要素を対象にした場合など）では、
-   * 取得成功のたびに `_poll` が消えます。失われたときだけ書き戻すことで、毎回の
-   * 注入による再評価コスト（`injectState()` のコメント参照）を避けながら状態を
-   * 維持します。
-   *
-   * @param registration 登録情報
-   * @returns 処理完了の Promise
-   */
-  private static async restoreStateIfCleared(
-    registration: PollRegistration,
-  ): Promise<void> {
-    const targets = PollObserver.resolveStateFragments(registration);
-    const cleared = targets.some(
-      target => (target.getRawBindingData() ?? {})._poll === undefined,
-    );
-    if (cleared) {
-      await PollObserver.injectState(registration);
-    }
   }
 
   /**

@@ -1191,7 +1191,10 @@ export default class Core {
       // reflectToAttribute=false のときは data-bind 属性への全データ直列化を抑止する
       // （一時変数の高頻度更新での直列化コストを避ける。in-memory が権威）。
       let chain = reflectToAttribute
-        ? fragment.setAttribute(`${Env.prefix}bind`, JSON.stringify(current))
+        ? fragment.setAttribute(
+            `${Env.prefix}bind`,
+            JSON.stringify(Core.withoutReservedBindingKeys(current)),
+          )
         : Promise.resolve();
       // ここから 3 段は「入力欄への書き戻し」。いずれも初期化（`Form.reset()`）と
       // 競合しうるため、宛先ごとに `resetSequence` と突き合わせて、この呼出より後に
@@ -1251,6 +1254,30 @@ export default class Core {
    * 経路が存在しないことを表す番兵。`undefined` を値として持つ経路と区別します。
    */
   private static readonly ABSENT_PATH = Symbol('absent');
+
+  /**
+   * 宣言データとして外へ出すデータから予約キーを取り除きます。
+   *
+   * `_fetch` / `_poll` は内部バインディングデータにのみ持つ実行時の値で、宣言
+   * データとしては外へ出しません（仕様「`data-bind`」）。内部データ側は予約キーを
+   * 引き継ぐため（`ElementFragment.setBindingData()`）、出口の側で取り除かないと、
+   * `data-bind` 属性が数秒ごとの状態遷移で書き換わり続け、`data-{event}-copy` は
+   * 別の要素のフェッチ状態をコピー先へ運びます。
+   *
+   * @param data 外へ出すバインドデータ
+   * @returns 予約キーを除いたデータ
+   */
+  public static withoutReservedBindingKeys(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const key of Object.keys(data)) {
+      if (!ElementFragment.isReservedBindingKey(key)) {
+        result[key] = data[key];
+      }
+    }
+    return result;
+  }
 
   /**
    * 変化した経路ごとに適用可否を判定し、棄却した経路を前の値のまま残したデータを

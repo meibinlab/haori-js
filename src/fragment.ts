@@ -1488,11 +1488,58 @@ export class ElementFragment extends Fragment {
   /**
    * バインドデータを設定します。
    *
+   * 予約キー（`_` 始まりのエンジン管理変数）は、新しいデータが同じキーを持たない
+   * 限り引き継ぎます（仕様「`data-bind`」）。予約キーは `data-bind` 属性へ書き出さ
+   * ないため、宣言を取り込む側も外部から属性を書き換える側もこの値を運べません。
+   * 引き継がないと、`data-if` が真になったときの子の初期化や外部からの書き換えの
+   * たびに `_fetch` / `_poll` が消え、注入した状態が「まだ何も起きていない」状態と
+   * 区別できなくなります。明示的に落とす場合はキー自体を持たせてください
+   * （`{_fetch: undefined}`）。
+   *
    * @param data バインドデータ
    */
   public setBindingData(data: Record<string, unknown>): void {
-    this.bindingData = data;
+    this.bindingData = this.withRetainedReservedKeys(data);
     this.clearBindingDataCache();
+  }
+
+  /**
+   * 新しいバインドデータへ、現在の予約キーのうち引き継ぐものを足します。
+   *
+   * @param data 新しいバインドデータ
+   * @returns 予約キーを引き継いだバインドデータ
+   */
+  private withRetainedReservedKeys(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const previous = this.bindingData;
+    if (previous === null) {
+      return data;
+    }
+    // 新しいデータが同じキーを持つ場合は、下の展開で新しい値が後勝ちする。
+    // 「新しいデータが持つキーは引き継がない」判定を足しても結果は変わらない
+    // （外して全テストが緑）ため置いていない。
+    const retained: Record<string, unknown> = {};
+    for (const key of Object.keys(previous)) {
+      if (ElementFragment.isReservedBindingKey(key)) {
+        retained[key] = previous[key];
+      }
+    }
+    return {...retained, ...data};
+  }
+
+  /**
+   * 予約キー（エンジン管理変数）かどうかを判定します。
+   *
+   * `_fetch` / `_poll` など、Haori が実行時に注入し、`data-bind` 属性へ書き出さない
+   * 値が対象です（仕様「`data-bind`」）。`data-bind` 属性へのミラー
+   * （`Core.setBindingData()`）も同じ判定で対象から外します。
+   *
+   * @param key 判定対象のキー
+   * @returns 予約キーなら true
+   */
+  public static isReservedBindingKey(key: string): boolean {
+    return key.startsWith('_');
   }
 
   /**

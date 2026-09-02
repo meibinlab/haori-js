@@ -123,6 +123,34 @@ describe('data-poll-*', () => {
       expect(maxInFlight).toBe(1);
     });
 
+    it('data-poll-bind の全置換のあとも _poll が残る', async () => {
+      // 仕様「`data-poll-state`」の「`data-poll-bind` は既定でバインド先を全置換
+      // するため、注入先が bind 先と同じ要素になる構成では `data-poll-bind-merge`
+      // を併用してください（併用しない場合も `_poll` は保持されますが、bind 先の
+      // 他のキーは保持されません）」。`_poll` は予約キーなので、宣言データの
+      // 差し替えでは落ちない（仕様「`data-bind`」）。
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation(() => Promise.resolve(jsonResponse({items: []})));
+
+      const target = await mount(
+        `<div data-poll-fetch="https://example.com/status"
+              data-poll-interval="100"
+              data-poll-state
+              data-bind='{"seed":1}'></div>`,
+      );
+
+      await waitForCondition(() => fetchSpy.mock.calls.length >= 2, {
+        description: 'poll fetch repetition',
+        maxAttempts: 20,
+        delayMs: 40,
+      });
+      await waitForDomSettled();
+
+      // bind 先の他のキー（seed）は全置換で消えるが、予約キーは残る。
+      expect(getPollState(target)?.running).toBe(true);
+    });
+
     it('設定用属性だけの要素は監視対象にならない', async () => {
       const fetchSpy = vi
         .spyOn(globalThis, 'fetch')
