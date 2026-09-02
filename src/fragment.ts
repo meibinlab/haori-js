@@ -1175,9 +1175,9 @@ export class ElementFragment extends Fragment {
    */
   public constructor(target: HTMLElement) {
     super(target);
-    // 属性を取り込む前に、DOM に残っている `data-if` の追随結果を落とす。
-    // 取り込むと宣言として焼き付き、属性の再適用が非表示の状態を書き戻す。
-    ElementFragment.dropIfVisibilityArtifacts(target);
+    // 属性を取り込む前に、DOM に残っている追随結果を落とす。
+    // 取り込むと宣言として焼き付き、属性の再適用が判定の結果を書き戻す。
+    ElementFragment.dropFollowUpArtifacts(target);
     this.syncValue();
     this.initialBindAttribute = target.getAttribute(`${Env.prefix}bind`);
     target.getAttributeNames().forEach(name => {
@@ -1276,8 +1276,35 @@ export class ElementFragment extends Fragment {
     clone.deriveSubtreeSignature = null;
     clone.deriveInputSignature = null;
     clone.freshInitializationSkippable = this.freshInitializationSkippable;
-    clone.normalizeClonedVisibilityState();
     return clone;
+  }
+
+  /**
+   * エンジンが判定の結果として DOM へ書いた属性（追随結果）を落とします。
+   *
+   * 追随結果は宣言ではないため、内部状態を持たない要素（フラグメントを作る時点の
+   * 要素、複製した要素）に残っていても取り込みません（仕様「data-if の動作」の
+   * 「追随結果を取り込まない範囲は、DOM の監視だけでなく**要素の内部状態を作る
+   * 時点**（走査・複製）にも及びます」）。Haori が出力した HTML を保存して再配信
+   * する構成、`innerHTML` でコピーした断片、`data-import` で取り込む断片が該当
+   * します。
+   *
+   * @param target 対象エレメント
+   * @returns 戻り値はありません。
+   */
+  private static dropFollowUpArtifacts(target: HTMLElement): void {
+    ElementFragment.dropIfVisibilityArtifacts(target);
+    // `data-each-done` は描画完了の通知であって宣言ではない（仕様「`data-each`」の
+    // 「**markup が持ち込んだ `data-each-done` は宣言として取り込みません。**」）。
+    // 残すと行を 1 つも描いていない状態で完了を主張し、`[data-each-done]` を待つ
+    // 外部テストや外部ウィジェットが古い状態を完了と見なす。描き終えた時点で
+    // `data-each` が付け直すため、落としても完了の通知は失われない。
+    target.removeAttribute(`${Env.prefix}each-done`);
+    // `data-importing` は読み込み中の表示（追随結果）であって宣言ではない
+    // （仕様「`data-import`」の「**markup が持ち込んだ `data-importing` は宣言と
+    // して取り込みません。**」）。仕様は `[data-importing] { visibility: hidden }`
+    // を案内しているため、残すと読み込み中の見た目のまま恒久的に固定される。
+    target.removeAttribute(`${Env.prefix}importing`);
   }
 
   /**
@@ -1314,31 +1341,6 @@ export class ElementFragment extends Fragment {
       // 印を先に外す（`restoreFormControlsDisabledByIf()` と同じ理由）。
       element.removeAttribute(IF_DISABLED_MARKER);
       element.removeAttribute('disabled');
-    });
-  }
-
-  /**
-   * clone 時に runtime の hidden 状態だけを落とします。
-   */
-  private normalizeClonedVisibilityState(): void {
-    if (
-      this.visible === false ||
-      this.getTarget().style.display === 'none' ||
-      this.getTarget().hasAttribute(`${Env.prefix}if-false`)
-    ) {
-      this.visible = true;
-      this.display = null;
-      this.displayPriority = null;
-      this.getTarget().style.removeProperty('display');
-      this.getTarget().removeAttribute(`${Env.prefix}if-false`);
-      // 非表示状態を落とすので、非表示のあいだ外していた検証対象も復帰させる
-      // （複製元が非表示だった行が、複製後も入力できないまま残らないようにする）。
-      this.restoreFormControlsDisabledByIf();
-    }
-    this.children.forEach(child => {
-      if (child instanceof ElementFragment) {
-        child.normalizeClonedVisibilityState();
-      }
     });
   }
 

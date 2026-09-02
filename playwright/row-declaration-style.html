@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>行テンプレートに書いた display の宣言</title>
+    <script src="/dist/haori.iife.js"></script>
+    <style>
+      .badge {
+        background: #eee;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      行テンプレートの中に、利用者が「初期状態で隠しておく」ために書いた
+      style="display: none" がある。追随結果ではないので、行を増やしても残る。
+    -->
+    <div id="state" data-bind='{"rows":[{"id":1}]}'>
+      <ul id="list" data-each="rows" data-each-arg="row" data-each-key="id">
+        <li class="line">
+          行 {{row.id}}
+          <span class="badge" style="display: none">印</span>
+          <span class="always">常時</span>
+        </li>
+      </ul>
+    </div>
+    <button id="grow" type="button">行を増やす</button>
+    <script>
+      // 一覧を 3 行へ増やす（あとから増えた行が観測点）。
+      document.getElementById('grow').addEventListener('click', () => {
+        Haori.Core.setBindingData(document.getElementById('state'), {
+          rows: [{id: 1}, {id: 2}, {id: 3}],
+        });
+      });
+    </script>
+  </body>
+</html>
