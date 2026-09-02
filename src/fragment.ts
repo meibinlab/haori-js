@@ -3514,6 +3514,17 @@ export class ElementFragment extends Fragment {
             this.recordSelfWrittenBind(stringResult);
           }
         }
+        if (targetName === 'style') {
+          // `style` は属性ごと置き換わるため、`hide()` が書いた追随結果
+          // （`display: none !important`）も一緒に捨てられる。判定の基準は内部状態
+          // なので `show()` は何もせず、`data-if-false` は付いているのに要素は
+          // 見えたままになる（仕様「data-if の動作」の「`data-if` が false の場合、
+          // 要素を `display: none` で非表示にする」に反する）。追随結果は宣言より
+          // 優先するため、書き戻す。`data-attr-style` の書き込みも解決後の名前が
+          // `style` になるため、この 1 つの判定で足りる（`rawName === 'style'` を
+          // 足しても結果は変わらず、外して全テストが緑だったため置いていない）。
+          this.reassertHiddenDisplay();
+        }
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、
         // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
         // 属性削除となる場合は空へ揃える（属性の有無と値の食い違いを残さない）。
@@ -3898,6 +3909,27 @@ export class ElementFragment extends Fragment {
    *
    * @returns エレメントの非表示のPromise
    */
+  /**
+   * 非表示の追随結果を書き直します。
+   *
+   * `style` 属性の再適用は属性ごと置き換わるため、`hide()` が書いた
+   * `display: none !important` が宣言の内容にかかわらず捨てられます（空の宣言でも
+   * 同じです）。内部状態が非表示のあいだは追随結果を宣言より優先するため、書き
+   * 直します。表示中の要素には触りません（利用者の `display` の宣言が権威です）。
+   *
+   * 控えた元の値（`display` / `displayPriority`）は `hide()` の時点のものを保ちます。
+   * 非表示のあいだに宣言が変わった場合、その値は表示へ戻したあとの再適用が反映
+   * します。
+   *
+   * @returns 戻り値はありません。
+   */
+  private reassertHiddenDisplay(): void {
+    if (this.visible) {
+      return;
+    }
+    this.getTarget().style.setProperty('display', 'none', 'important');
+  }
+
   public hide(): Promise<void> {
     if (!this.visible) {
       return Promise.resolve();

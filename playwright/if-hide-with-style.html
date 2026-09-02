@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>style の宣言を持つ要素の data-if</title>
+    <script src="/dist/haori.iife.js"></script>
+  </head>
+  <body>
+    <!--
+      data-if と inline style を同じ要素へ書いた構成。非表示は追随結果なので、
+      宣言の再適用で消えてはならない。表示へ戻したら宣言どおりに戻る。
+    -->
+    <div id="state" data-bind='{"show":false}'>
+      <div id="flexBox" data-if="show" style="display: flex; gap: 4px">
+        <span>A</span><span>B</span>
+      </div>
+      <div id="colored" data-if="show" style="color: rgb(180, 83, 9)">色つき</div>
+      <div id="plain" data-if="show">宣言なし</div>
+    </div>
+    <button id="toggle" type="button">切り替え</button>
+    <script>
+      let shown = false;
+      document.getElementById('toggle').addEventListener('click', () => {
+        shown = !shown;
+        Haori.Core.setBindingData(document.getElementById('state'), {
+          show: shown,
+        });
+      });
+    </script>
+  </body>
+</html>
