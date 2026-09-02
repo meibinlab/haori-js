@@ -116,6 +116,92 @@ describe('display の宣言を持つ要素の data-if', () => {
     expect(target.style.display).not.toBe('none');
   });
 
+  it('非表示のあいだに宣言が変わっても、戻すと最新の宣言になる', async () => {
+    // 非表示は追随結果なので、表示へ戻したときに残るのは**その時点の宣言**。
+    // `hide()` の時点で控えた値を戻すと、非表示のあいだに変えた宣言が失われる
+    // （仕様「data-if の動作」の「**戻す値はその時点の宣言**（`style` /
+    // `data-attr-style`）であり、隠した時点の値ではない」）。
+    const host = document.createElement('div');
+    host.setAttribute('data-bind', '{"show":false,"d":"display: flex"}');
+    host.innerHTML = '<i id="t" data-if="show" data-attr-style="{{d}}">x</i>';
+    document.body.appendChild(host);
+    await Core.scan(host);
+    await waitForIdle();
+    const target = document.getElementById('t') as HTMLElement;
+    expect(target.style.display).toBe('none');
+
+    // 非表示のまま宣言を変える。
+    await Core.setBindingData(host, {show: false, d: 'display: grid'});
+    await waitForIdle();
+    expect(target.style.display).toBe('none');
+
+    // 表示へ戻すと、最新の宣言が効く。
+    await Core.setBindingData(host, {show: true, d: 'display: grid'});
+    await waitForIdle();
+    expect(target.hasAttribute('data-if-false')).toBe(false);
+    expect(target.style.display).toBe('grid');
+  });
+
+  it('非表示のあいだに宣言の優先度が変わっても、戻すと最新の優先度になる', async () => {
+    // 期待値は仕様「data-if の動作」の「控えはそのたびに宣言から取り直す」。
+    // 控えは値と優先度の組で戻すため、片方だけ取り直すと食い違う。`!important` の
+    // 宣言を外したのに `!important` が残ると、後から当てる CSS が効かなくなる。
+    // 表示状態から隠す。`hide()` はこの時点の優先度（`important`）を控える。
+    // 最初から非表示だと `hide()` が宣言の書き込みより先に走り、控えが空のまま
+    // になるため、優先度の食い違いが出ない。
+    // この観測点の検出力は、表示へ戻す更新で `show()` が `style` の再適用より
+    // 後に走ることに依っている（先に走ると、再適用が優先度なしの宣言をそのまま
+    // 書き直すため、控えが古くても差が出ない）。順序が変わった場合、このテストは
+    // 落ちずに検出力だけを失うので、そのときは観測点を作り直す。
+    const host = document.createElement('div');
+    host.setAttribute(
+      'data-bind',
+      '{"show":true,"d":"display: flex !important"}',
+    );
+    host.innerHTML = '<i id="t" data-if="show" data-attr-style="{{d}}">x</i>';
+    document.body.appendChild(host);
+    await Core.scan(host);
+    await waitForIdle();
+    const target = document.getElementById('t') as HTMLElement;
+    expect(target.style.getPropertyPriority('display')).toBe('important');
+
+    await Core.setBindingData(host, {
+      show: false,
+      d: 'display: flex !important',
+    });
+    await waitForIdle();
+    expect(target.style.display).toBe('none');
+
+    // 非表示のまま、優先度を外した宣言へ変える。
+    await Core.setBindingData(host, {show: false, d: 'display: grid'});
+    await waitForIdle();
+
+    await Core.setBindingData(host, {show: true, d: 'display: grid'});
+    await waitForIdle();
+    expect(target.style.display).toBe('grid');
+    expect(target.style.getPropertyPriority('display')).toBe('');
+  });
+
+  it('非表示のあいだに宣言が変わらなければ、元の宣言へ戻る', async () => {
+    // 対照。控えを取り直しても、宣言が変わっていなければ結果は変わらない。
+    const host = document.createElement('div');
+    host.setAttribute('data-bind', '{"show":true,"d":"display: flex"}');
+    host.innerHTML = '<i id="t" data-if="show" data-attr-style="{{d}}">x</i>';
+    document.body.appendChild(host);
+    await Core.scan(host);
+    await waitForIdle();
+    const target = document.getElementById('t') as HTMLElement;
+    expect(target.style.display).toBe('flex');
+
+    await Core.setBindingData(host, {show: false, d: 'display: flex'});
+    await waitForIdle();
+    expect(target.style.display).toBe('none');
+
+    await Core.setBindingData(host, {show: true, d: 'display: flex'});
+    await waitForIdle();
+    expect(target.style.display).toBe('flex');
+  });
+
   it('真のときは宣言どおりに表示する', async () => {
     // 対照。非表示でない要素の `display` には触らない。
     const {target} = await mount('display: flex', true);

@@ -48,4 +48,35 @@ test.describe('style の宣言を持つ要素の data-if', () => {
 
     expect(errors).toEqual([]);
   });
+
+  test('非表示のあいだに宣言を変えても、戻すと最新の宣言になる', async ({
+    page,
+  }) => {
+    // 期待値は仕様「data-if の動作」の「戻す値はその時点の宣言」。表示へ戻した
+    // ときに残るのは、控えた値ではなくその時点の宣言である。
+    const errors = [];
+    page.on('console', message => {
+      if (message.type() === 'error') {
+        errors.push(message.text());
+      }
+    });
+    page.on('pageerror', error => errors.push(String(error)));
+    await page.goto('/playwright/if-hide-with-style.html');
+    await page.waitForFunction(() =>
+      document.body.hasAttribute('data-haori-ready'),
+    );
+
+    await expect(page.locator('#dynamic')).toBeHidden();
+
+    // 非表示のまま宣言を切り替える。
+    await page.locator('#change').click();
+    await expect(page.locator('#dynamic')).toBeHidden();
+
+    // 表示へ戻すと、変えたあとの宣言が効く。
+    await page.locator('#toggle').click();
+    await expect(page.locator('#dynamic')).toBeVisible();
+    await expect(page.locator('#dynamic')).toHaveCSS('display', 'grid');
+
+    expect(errors).toEqual([]);
+  });
 });

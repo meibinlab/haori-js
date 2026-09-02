@@ -10,21 +10,36 @@
       data-if と inline style を同じ要素へ書いた構成。非表示は追随結果なので、
       宣言の再適用で消えてはならない。表示へ戻したら宣言どおりに戻る。
     -->
-    <div id="state" data-bind='{"show":false}'>
+    <div id="state" data-bind='{"show":false,"d":"display: flex; gap: 4px"}'>
       <div id="flexBox" data-if="show" style="display: flex; gap: 4px">
         <span>A</span><span>B</span>
       </div>
       <div id="colored" data-if="show" style="color: rgb(180, 83, 9)">色つき</div>
       <div id="plain" data-if="show">宣言なし</div>
+      <!-- 宣言を動的に切り替える要素。非表示のあいだに変えても、戻したら最新の
+           宣言が効く。 -->
+      <div id="dynamic" data-if="show" data-attr-style="{{d}}">
+        <span>C</span><span>D</span>
+      </div>
     </div>
     <button id="toggle" type="button">切り替え</button>
+    <button id="change" type="button">宣言を変える</button>
     <script>
       let shown = false;
-      document.getElementById('toggle').addEventListener('click', () => {
-        shown = !shown;
+      let declaration = 'display: flex; gap: 4px';
+      const apply = () => {
         Haori.Core.setBindingData(document.getElementById('state'), {
           show: shown,
+          d: declaration,
         });
+      };
+      document.getElementById('toggle').addEventListener('click', () => {
+        shown = !shown;
+        apply();
+      });
+      document.getElementById('change').addEventListener('click', () => {
+        declaration = 'display: grid; gap: 8px';
+        apply();
       });
     </script>
   </body>

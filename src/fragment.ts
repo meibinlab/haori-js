@@ -1265,8 +1265,9 @@ export class ElementFragment extends Fragment {
     clone.derivedBindingData = this.derivedBindingData;
     clone.clearBindingDataCache();
     clone.visible = true;
-    clone.display = this.display;
-    clone.displayPriority = this.displayPriority;
+    // `display` / `displayPriority` の控えは引き継がない。複製は表示状態から始まり、
+    // 控えを読むのは `show()` だけで、そこへ至る唯一の経路である `hide()` が両方を
+    // 取り直すため、引き継いだ値は観測できない（2 行を外して全テストが緑）。
     clone.template = this.template;
     // 行スコープ判定はテンプレートと each 属性から決まり、どちらも複製されるため
     // 判定結果もそのまま引き継げる。
@@ -3523,7 +3524,7 @@ export class ElementFragment extends Fragment {
           // 優先するため、書き戻す。`data-attr-style` の書き込みも解決後の名前が
           // `style` になるため、この 1 つの判定で足りる（`rawName === 'style'` を
           // 足しても結果は変わらず、外して全テストが緑だったため置いていない）。
-          this.reassertHiddenDisplay();
+          this.captureAndHideDisplay();
         }
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、
         // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
@@ -3905,40 +3906,51 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 宣言の `display` を控えて、非表示の追随結果を書きます。
+   *
+   * 非表示化の不変条件（控えを取る → `display: none !important` を書く）は、
+   * ここ 1 か所に置きます。`hide()` と `style` の再適用の両方から呼ぶため、
+   * 分けて持つと片方だけ直したときに食い違います（再適用側で控えを取り直して
+   * いなかったのが課題 37 です）。表示中の要素には触りません（利用者の
+   * `display` の宣言が権威です）。
+   *
+   * `style` 属性の再適用は属性ごと置き換わるため、書いた追随結果
+   * （`display: none !important`）は宣言の内容にかかわらず捨てられます（空の
+   * 宣言でも同じです）。内部状態が非表示のあいだは追随結果を宣言より優先する
+   * ため、書き直します。
+   *
+   * 控え（`display` / `displayPriority`）は、書くたびに**そのときの宣言から
+   * 取り直します**。`hide()` の時点で固定すると、非表示のあいだに宣言が変わって
+   * も控えが古いまま残り、表示へ戻したときに宣言が失われます（初期走査で
+   * `hide()` が宣言の書き込みより先に走る構成では、控えが空のままになります）。
+   * `show()` が戻すべきは「隠す直前の宣言」ではなく「最新の宣言」です。呼び出し
+   * 時点の DOM は宣言をそのまま書いた直後なので、読み取る値は宣言の内容です。
+   *
+   * @returns 戻り値はありません。
+   */
+  private captureAndHideDisplay(): void {
+    if (this.visible) {
+      return;
+    }
+    const style = this.getTarget().style;
+    this.display = style.getPropertyValue('display');
+    this.displayPriority = style.getPropertyPriority('display');
+    style.setProperty('display', 'none', 'important');
+  }
+
+  /**
    * エレメントを非表示にします。
    *
    * @returns エレメントの非表示のPromise
    */
-  /**
-   * 非表示の追随結果を書き直します。
-   *
-   * `style` 属性の再適用は属性ごと置き換わるため、`hide()` が書いた
-   * `display: none !important` が宣言の内容にかかわらず捨てられます（空の宣言でも
-   * 同じです）。内部状態が非表示のあいだは追随結果を宣言より優先するため、書き
-   * 直します。表示中の要素には触りません（利用者の `display` の宣言が権威です）。
-   *
-   * 控えた元の値（`display` / `displayPriority`）は `hide()` の時点のものを保ちます。
-   * 非表示のあいだに宣言が変わった場合、その値は表示へ戻したあとの再適用が反映
-   * します。
-   *
-   * @returns 戻り値はありません。
-   */
-  private reassertHiddenDisplay(): void {
-    if (this.visible) {
-      return;
-    }
-    this.getTarget().style.setProperty('display', 'none', 'important');
-  }
-
   public hide(): Promise<void> {
     if (!this.visible) {
       return Promise.resolve();
     }
     this.visible = false;
     const target = this.getTarget();
-    this.display = target.style.getPropertyValue('display');
-    this.displayPriority = target.style.getPropertyPriority('display');
-    target.style.setProperty('display', 'none', 'important');
+    // 内部状態を非表示にした後に呼ぶ（表示中は何もしないため）。
+    this.captureAndHideDisplay();
     target.setAttribute(`${Env.prefix}if-false`, '');
     // 非表示分岐の入力を制約検証の対象から外す（値収集の除外と基準を揃える）。
     ElementFragment.disableFormControlsInBranch(target);
