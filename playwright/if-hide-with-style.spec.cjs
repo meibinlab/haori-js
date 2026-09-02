@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* global require, document */
 // `data-if` と inline style を同じ要素へ書いた場合の非表示の確認。
-// 期待値は仕様「data-if の動作」の「`data-if` が false の場合、要素を
-// `display: none` で非表示にする」と、同節の「判定の基準は内部状態であり、
-// `style.display` や `data-if-false` は追随結果として扱う」から取っている。
+// 期待値は仕様「data-if の動作」の「評価値が `false`, `null`, `undefined`, `NaN`
+// の場合、要素を非表示化」・「`style.display = 'none'` を設定」と、同節の「判定の
+// 基準は内部状態であり、`style.display` や `data-if-false` は追随結果として扱う」
+// から取っている。
 //
 // 属性の再適用は `style` 属性をまるごと宣言の値へ置き換えるため、追随結果を
 // 優先しないと `data-if-false` は付いているのに要素が見えたままになる。単体

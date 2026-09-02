@@ -254,7 +254,7 @@ Core.setAttributeは以下の優先順位で属性を処理します：
 - 追随結果を取り込まない範囲は、DOM の監視だけでなく**要素の内部状態を作る時点**（走査・複製）にも及びます。内部状態を持たない要素に追随結果（`data-if-false` / `display: none` / `data-haori-if-disabled`）が残っていた場合は、宣言として取り込まずに**落とします**。落とさないと、内部状態は「表示」なのに DOM は非表示という食い違いが残り、判定の基準は内部状態なので表示へ戻す処理が働かず、その要素は二度と表示されません。Haori が出力した HTML を保存して再配信する構成、`innerHTML` でコピーした断片、`data-import` で取り込む断片が該当します（`data-if-false` は手動で書く属性ではありません）
 - 評価値が `false`, `null`, `undefined`, `NaN` の場合、要素を非表示化
 - 非表示時:
-  - `style.display = 'none'` を設定
+  - `style.display = 'none'` を設定する。**`!important` を付ける**（クラスや外部 CSS が `display` を `!important` で宣言している要素でも隠すため。付けないと、非表示にしたはずの要素が見えたままになる）
   - `data-if-false` 属性を付与
   - **要素と子要素は DOM に残る**（削除しない）
   - 配下のフォームコントロールへ `disabled` を付与し、制約検証の対象から外す（エンジンが付けた印は `data-haori-if-disabled`）
@@ -263,7 +263,7 @@ Core.setAttributeは以下の優先順位で属性を処理します：
   - 配下は再評価しない（`data-attr-*` も評価されない）。表示へ戻った時点でまとめて再評価する
 - 表示時:
   - 非表示時に付けた `disabled` を、印がある要素だけ解除する（子要素の再評価より前に行う）
-  - `style.display` を復元する。**戻す値はその時点の宣言**（`style` / `data-attr-style`）であり、隠した時点の値ではない。非表示のあいだに宣言が変わった場合は、変更後の値へ戻す。非表示のあいだも、その要素自身の `style` の宣言は書き込まれる（配下は再評価しないが、`data-if` を宣言した要素自身の属性は評価される）ため、追随結果を書き直すたびに控えを宣言から取り直す。宣言が権威であって、追随結果を控えた値が権威になってはならない
+  - `style.display` を復元する。**戻す値はその時点の宣言**（`style` / `data-attr-style`）であり、隠した時点の値ではない。非表示のあいだに宣言が変わった場合は、変更後の値へ戻す。非表示のあいだも、その要素自身の `style` の宣言は書き込まれる（配下は再評価しないが、`data-if` を宣言した要素自身の属性は評価される）ため、追随結果を書き直すたびに控えを宣言から取り直す。控えは値と**優先度**（`!important`）の組であり、両方を宣言のとおりに戻す。宣言が権威であって、追随結果を控えた値が権威になってはならない
   - `data-if-false` 属性を削除
   - `haori:show` イベント発火
   - 子要素を再評価 (evaluateAll)。未スキャンの子は `scan` で初期化する
@@ -372,6 +372,7 @@ class ElementFragment extends Fragment {
   private bindingDataCache: Record<string, unknown> | null
   private visible: boolean
   private display: string | null
+  private displayPriority: string | null
   private template: ElementFragment | null
   private listKey: string | null
   private value: string | number | boolean | null

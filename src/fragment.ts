@@ -3519,11 +3519,11 @@ export class ElementFragment extends Fragment {
           // `style` は属性ごと置き換わるため、`hide()` が書いた追随結果
           // （`display: none !important`）も一緒に捨てられる。判定の基準は内部状態
           // なので `show()` は何もせず、`data-if-false` は付いているのに要素は
-          // 見えたままになる（仕様「data-if の動作」の「`data-if` が false の場合、
-          // 要素を `display: none` で非表示にする」に反する）。追随結果は宣言より
-          // 優先するため、書き戻す。`data-attr-style` の書き込みも解決後の名前が
-          // `style` になるため、この 1 つの判定で足りる（`rawName === 'style'` を
-          // 足しても結果は変わらず、外して全テストが緑だったため置いていない）。
+          // 見えたままになる（仕様「data-if の動作」の「`style.display = 'none'`
+          // を設定」に反する）。追随結果は宣言より優先するため、書き戻す。
+          // `data-attr-style` の書き込みも解決後の名前が `style` になるため、この
+          // 1 つの判定で足りる（`rawName === 'style'` を足しても結果は変わらず、
+          // 外して全テストが緑だったため置いていない）。
           this.captureAndHideDisplay();
         }
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、

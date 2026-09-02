@@ -7,9 +7,10 @@
  * `data-if-false` は付いているのに要素は見えたまま、という食い違いが残ります。
  * 判定の基準は内部状態なので `show()` は何もせず、その要素は条件によらず見え続けます。
  *
- * 期待値の根拠は仕様「data-if の動作」の「`data-if` が false の場合、要素を
- * `display: none` で非表示にする」と、同節の「判定の基準は内部状態であり、
- * `style.display` や `data-if-false` は追随結果として扱う」。
+ * 期待値の根拠は仕様「data-if の動作」の「評価値が `false`, `null`, `undefined`,
+ * `NaN` の場合、要素を非表示化」・「`style.display = 'none'` を設定」と、同節の
+ * 「判定の基準は内部状態であり、`style.display` や `data-if-false` は追随結果として
+ * 扱う」。
  *
  * 追随結果を宣言として取り込まないことは
  * [tests/follow-up-artifact-intake.test.ts](./follow-up-artifact-intake.test.ts)
@@ -62,8 +63,9 @@ describe('display の宣言を持つ要素の data-if', () => {
   };
 
   it('display の宣言があっても隠れる', async () => {
-    // 仕様「data-if の動作」の「`data-if` が false の場合、要素を `display: none`
-    // で非表示にする」。宣言の再適用が追随結果を消してはならない。
+    // 仕様「data-if の動作」の「評価値が `false`, `null`, `undefined`, `NaN` の
+    // 場合、要素を非表示化」・「`style.display = 'none'` を設定」。宣言の再適用が
+    // 追随結果を消してはならない。
     const {target} = await mount('display: flex', false);
     expect(target.hasAttribute('data-if-false')).toBe(true);
     expect(target.style.display).toBe('none');
@@ -143,7 +145,8 @@ describe('display の宣言を持つ要素の data-if', () => {
   });
 
   it('非表示のあいだに宣言の優先度が変わっても、戻すと最新の優先度になる', async () => {
-    // 期待値は仕様「data-if の動作」の「控えはそのたびに宣言から取り直す」。
+    // 期待値は仕様「data-if の動作」の「追随結果を書き直すたびに控えを宣言から
+    // 取り直す」。
     // 控えは値と優先度の組で戻すため、片方だけ取り直すと食い違う。`!important` の
     // 宣言を外したのに `!important` が残ると、後から当てる CSS が効かなくなる。
     // 表示状態から隠す。`hide()` はこの時点の優先度（`important`）を控える。
@@ -153,6 +156,10 @@ describe('display の宣言を持つ要素の data-if', () => {
     // 後に走ることに依っている（先に走ると、再適用が優先度なしの宣言をそのまま
     // 書き直すため、控えが古くても差が出ない）。順序が変わった場合、このテストは
     // 落ちずに検出力だけを失うので、そのときは観測点を作り直す。
+    // 「優先度をまったく控えない」実装は、このテストでは検出できない（控えが
+    // `null` のまま `?? ''` に落ちて、期待値の `''` と一致する）。そちらは
+    // tests/fragment.test.ts の「hide() は display を important 付きで上書きし、
+    // show() で元に戻す」が固定しているため、ここでは観測点を足していない。
     const host = document.createElement('div');
     host.setAttribute(
       'data-bind',
