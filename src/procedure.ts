@@ -2572,7 +2572,13 @@ ${body}
             formValues,
           );
         } else {
-          bindingData = Form.mergeCollectedValues(previous, formValues);
+          // arg なしでも、収集キーを祖先が所有する場合は同じく祖先の値を土台にする
+          // （仕様「祖先が所有する値の反映（`data-form-arg` なし）」）。
+          bindingData = Form.mergeCollectedValues(
+            previous,
+            formValues,
+            Form.ancestorBaseResolver(formFragment),
+          );
         }
         // 双方向コミットは値の供給ではないため、ユーザー編集の印は解除しない。
         // 解除すると、この再評価で宣言バインドが編集値を評価結果へ巻き戻す。

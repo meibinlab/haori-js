@@ -1106,6 +1106,23 @@ window.__HAORI_EVALUATION_PROFILE__.report()
 
 フォーム自身に `data-bind` を設定して `Core.setBindingData()` や `data-fetch` で値を更新した場合も、フォーム内の入力要素へ無イベントで同期されます。text input / textarea / select は `value`、checkbox / radio は既存の `Form.setValues()` と同じ規則で反映されます。
 
+**レコードや一覧を外側の要素で持ち、フォームには `data-bind` を書かない書き方もできます。** 入力を確定すると、外側が持っている値を土台に、入力欄が表す部分だけが上書きされます。`id` のように入力欄と対応しないフィールドは残るので、編集した後も `{{row.id}}` を参照できます。
+
+```html
+<div data-bind='{"rows":[{"id":1,"label":"あ"},{"id":2,"label":"い"}]}'>
+  <form>
+    <div data-form-list="rows" data-each="rows" data-each-arg="row" data-each-key="id">
+      <div>
+        <input name="label">
+        <span>{{row.id}}</span>   <!-- 編集しても残る -->
+      </div>
+    </div>
+  </form>
+</div>
+```
+
+ただし、**フォーム直下の入力欄へ外側の値を出したい場合は `data-form-arg` を宣言してください。** 宣言が無いと、フォームのどのキーが外側のどのキーに対応するかを Haori が判断できないため、初期表示でも入力欄には値が入りません（上の例で値が入るのは `data-each` が行ごとに反映しているからです）。
+
 ### 送信ボタンでページを再読込せずに処理する（`data-click-prevent`）
 
 `<form>` 内の `type="submit"` ボタンをクリックすると、Haori の処理に加えてブラウザのネイティブなフォーム送信が走り、ページが再読込されてフェッチ結果やトーストが破棄されてしまいます。`data-click-prevent` を付けると、ネイティブ送信を抑止したうえで `data-click-fetch` などの処理だけを実行できます。

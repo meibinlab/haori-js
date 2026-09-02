@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>祖先が一覧を持つ編集フォーム</title>
+    <script src="/dist/haori.iife.js"></script>
+  </head>
+  <body>
+    <!-- 一覧は外側の要素が持ち、フォームには data-bind を書かない構成。 -->
+    <div id="state" data-bind='{"rows":[{"id":1,"label":"あ"},{"id":2,"label":"い"}]}'>
+      <form id="editor">
+        <div
+          id="list"
+          data-form-list="rows"
+          data-each="rows"
+          data-each-arg="row"
+          data-each-key="id"
+        >
+          <div class="line">
+            <input name="label" />
+            <span class="rowId">{{row.id}}</span>
+          </div>
+        </div>
+        <!-- フォーム自身のバインドデータを映す。コミットが済むと label が変わるので、
+             これが変わった時点を「コミット完了」として id の残存を判定できる。 -->
+        <span id="labels">{{rows.map(row => row.label).join('|')}}</span>
+        <span id="ids">{{rows.map(row => row.id).join('|')}}</span>
+      </form>
+      <button id="reload" type="button">再取得</button>
+      <button id="rst" type="button" data-click-reset="#editor">リセット</button>
+    </div>
+    <script>
+      // 一覧の再取得に相当する更新を、外側の要素へ与える。
+      document.getElementById('reload').addEventListener('click', () => {
+        Haori.Core.setBindingData(document.getElementById('state'), {
+          rows: [
+            {id: 1, label: 'X'},
+            {id: 2, label: 'Y'},
+          ],
+        });
+      });
+    </script>
+  </body>
+</html>

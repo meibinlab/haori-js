@@ -1225,7 +1225,7 @@ export default class Core {
       // 再評価より前に行うのは自フォームへの書き戻しと同じ理由（宣言バインドの
       // 評価結果を後から入れ直す）。初期化の判定はフォームごとに行う。
       chain = chain.then(() =>
-        Form.syncAncestorArgForms(fragment, resetSequence, origin),
+        Form.syncAncestorArgForms(fragment, resetSequence, origin, previous),
       );
       chain = chain.then(() => Core.evaluateAll(fragment, skipFragments));
       // (c) 入力欄への書き戻しは行生成より前に走るため、候補を `data-each` で流し込む
@@ -1856,7 +1856,13 @@ export default class Core {
           values,
         );
       } else {
-        bindingData = Form.mergeCollectedValues(previous, values);
+        // arg なしでも、収集キーを祖先が所有する場合は同じく祖先の値を土台にする
+        // （仕様「祖先が所有する値の反映（`data-form-arg` なし）」）。
+        bindingData = Form.mergeCollectedValues(
+          previous,
+          values,
+          Form.ancestorBaseResolver(formFragment),
+        );
       }
       promises.push(
         // 値の設定に伴うコミットなので、値の供給ではない更新として扱う（権威を
