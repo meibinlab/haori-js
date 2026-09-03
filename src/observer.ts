@@ -266,6 +266,14 @@ export class Observer {
                 (mutation.attributeName === 'style' &&
                   element.hasAttribute(`${Env.prefix}if-false`)))
             ) {
+              if (mutation.attributeName === 'style') {
+                // 取り込まないだけでは、外部のスクリプトが `display` を書き換えた
+                // ときに要素が見えたまま残る。判定の基準は内部状態なので、追随結果
+                // を書き直す（`reassertHiddenDisplay()` のコメントを参照）。
+                // エンジン自身の書き込みもここへ来るが、その時点で追随結果どおり
+                // なので書き直しは起きない。
+                ElementFragment.reassertHiddenDisplay(element);
+              }
               break;
             }
             if (

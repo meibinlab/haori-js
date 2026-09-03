@@ -3926,6 +3926,10 @@ export class ElementFragment extends Fragment {
    * `show()` が戻すべきは「隠す直前の宣言」ではなく「最新の宣言」です。呼び出し
    * 時点の DOM は宣言をそのまま書いた直後なので、読み取る値は宣言の内容です。
    *
+   * 対になる `hideDisplayWithoutCapture()` は、DOM にあるのが宣言でない場合
+   * （外部のスクリプトによる書き換え）に使います。2 つの違いは控えを取るかどうかで、
+   * 「DOM にいま入っている値が宣言かどうか」で選びます。
+   *
    * @returns 戻り値はありません。
    */
   private captureAndHideDisplay(): void {
@@ -3936,6 +3940,55 @@ export class ElementFragment extends Fragment {
     this.display = style.getPropertyValue('display');
     this.displayPriority = style.getPropertyPriority('display');
     style.setProperty('display', 'none', 'important');
+  }
+
+  /**
+   * 外部が書き換えた `display` を、非表示の追随結果へ戻します。
+   *
+   * DOM の監視は、非表示のあいだの `style` を宣言として取り込みません（取り込むと
+   * `display: none` が宣言として焼き付き、表示へ戻した分岐を引き戻します）。ただし
+   * 取り込まないだけでは、外部のスクリプトが `display` を直接書き換えたときに
+   * `data-if-false` が付いたまま要素が見えてしまいます。判定の基準は内部状態なので、
+   * 追随結果を書き直します（仕様「data-if の動作」の「非表示のあいだに外部から
+   * `style.display` を書き換えた場合は、追随結果を書き直して非表示へ戻します」）。
+   *
+   * 控え（`display` / `displayPriority`）は**取り直しません**。外部の書き換えは宣言
+   * ではないため、取り直すと表示へ戻したときに宣言でない値が復元されます。
+   *
+   * すでに追随結果どおりなら何もしません。エンジン自身の書き込みもこの監視に乗る
+   * ため、無条件に書くと書き込みが次の監視を呼ぶ繰り返しになります（この判定を
+   * 外して測ると、テストが完走しなくなります）。
+   *
+   * @returns 戻り値はありません。
+   */
+  private hideDisplayWithoutCapture(): void {
+    if (this.visible) {
+      return;
+    }
+    const style = this.getTarget().style;
+    if (
+      style.getPropertyValue('display') === 'none' &&
+      style.getPropertyPriority('display') === 'important'
+    ) {
+      return;
+    }
+    style.setProperty('display', 'none', 'important');
+  }
+
+  /**
+   * 要素の非表示の追随結果を書き直します。
+   *
+   * 監視側から呼びます。内部状態を持たない要素や表示中の要素では何もしません。
+   *
+   * @param target 対象エレメント
+   * @returns 戻り値はありません。
+   */
+  public static reassertHiddenDisplay(target: HTMLElement): void {
+    const fragment = Fragment.get(target);
+    if (!(fragment instanceof ElementFragment)) {
+      return;
+    }
+    fragment.hideDisplayWithoutCapture();
   }
 
   /**
