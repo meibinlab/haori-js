@@ -109,6 +109,35 @@ describe('data-fetch-state によるフェッチ状態注入', () => {
     expect(state.statusCode).toBe(500);
   });
 
+  it('fetch が同期的に例外を投げても _fetch.error が注入される', async () => {
+    // 期待値は仕様「`data-fetch-state` / `data-{event}-fetch-state`」の「ネットワーク
+    // 断・タイムアウト等の例外で `status="error"`（`statusCode` は `null`、`message`
+    // に例外メッセージ）」。
+    // 標準の `fetch()` は不正な引数でもリジェクトを返すが、差し替えた実装（テストの
+    // モック、ポリフィル、計測用のラッパー）は同期的に投げることがある。同期の
+    // throw では `.then` / `.catch` の連鎖が組まれないため、失敗の処理が丸ごと飛び、
+    // 注入先は「まだ何も起きていない」状態のまま残る。
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    // 失敗は呼び出し側へ投げ直す設計なので、走査の Promise は拒否される
+    // （リジェクトを返す標準の `fetch()` と同じ）。ここで見るのは、投げ直す前に
+    // 状態の注入とイベントの発火が行われているかどうか。
+    await mount(
+      '<div id="target" data-fetch="http://api.test/list" data-fetch-state></div>',
+    ).catch(() => undefined);
+
+    await waitForCondition(() => getFetch('#target')?.status === 'error', {
+      description: '同期例外でもエラー状態が注入される',
+    });
+    const state = getFetch('#target')!;
+    expect(state.error).toBe(true);
+    expect(state.success).toBe(false);
+    expect(state.loading).toBe(false);
+    expect(state.statusCode).toBe(null);
+    expect(state.message).toBe('Failed to fetch');
+  });
+
   it('data-fetch-state="#panel" で別要素へ _fetch を注入できる', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('{}', {

@@ -3862,6 +3862,10 @@ Content-Typeを指定します。
 
 デフォルト値を決めるのは `data-{event}-fetch-method` の宣言があるときだけです。メソッドを宣言しない場合、`Content-Type` は付けません（`data-{event}-fetch-headers` で指定した値はそのまま残ります）。
 
+**優先順位**: `data-{event}-fetch-content-type` の明示 > `data-{event}-fetch-headers` の指定 > デフォルト値。デフォルト値は宣言を補うものなので、`data-{event}-fetch-headers` で `Content-Type` を指定している場合は入れません。**メソッドを宣言していても同じです**（メソッドで扱いを分けると、同じ宣言がメソッドによって残ったり消えたりします）。ヘッダー名の**大小は区別しません**（HTTP のヘッダー名は大小を区別しないため。区別すると `content-type` と書いた指定にデフォルト値が加わり、両方を結合した `text/plain, application/json` のような値を送ります）。
+
+ボディを作る経路では、この優先順位で決めた値のあとに、**作ったボディの形式へ合わせて決め直します**。`multipart/form-data` は境界を付けるためヘッダーを外し、`multipart/form-data` でも `application/x-www-form-urlencoded` でもない指定で本体を作る場合は JSON にするため `application/json` にします。ボディの形式と食い違う `Content-Type` は送りません。
+
 #### バインド
 
 ##### `data-{event}-bind`

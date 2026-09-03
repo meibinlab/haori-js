@@ -1080,6 +1080,131 @@ export default class Procedure {
   }
 
   /**
+   * `data-{event}-fetch-headers` の宣言を読み取ります。
+   *
+   * 宣言はヘッダー名と値のオブジェクトです。解析できない場合と、解析できても
+   * オブジェクトでない場合（配列・文字列・数値）は、ヘッダーを設定せずに記録します。
+   * 設定すると、配列なら添字がヘッダー名になった `{0: ...}` のような宣言になり、
+   * 送信内容が黙って壊れます。
+   *
+   * @param fragment 宣言を持つフラグメント
+   * @param attributeName 読み取る属性名
+   * @returns ヘッダーの宣言。宣言が無い場合と不正な場合は null
+   */
+  private static readFetchHeaders(
+    fragment: ElementFragment,
+    attributeName: string,
+  ): Record<string, string> | null {
+    if (!fragment.hasAttribute(attributeName)) {
+      return null;
+    }
+    const raw = fragment.getRawAttribute(attributeName) as string;
+    let parsed: unknown;
+    try {
+      parsed = Core.parseDataBind(raw);
+    } catch (e) {
+      Log.error('Haori', `Invalid fetch headers: ${e}`);
+      return null;
+    }
+    if (
+      parsed === null ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed)
+    ) {
+      // 解析の失敗と同じく、宣言の誤りなので常に記録する（開発モードに限らない）。
+      Log.warn(
+        'Haori',
+        `${attributeName} はヘッダー名と値のオブジェクトで指定してください` +
+          `（${Array.isArray(parsed) ? '配列' : `${typeof parsed} 型の値`}が` +
+          '指定されたため、ヘッダーは設定しません）。',
+      );
+      return null;
+    }
+    return parsed as Record<string, string>;
+  }
+
+  /**
+   * ヘッダーの宣言が `Content-Type` を含むかどうかを返します。
+   *
+   * HTTP のヘッダー名は大小を区別しないため（RFC 9110）、綴りを問わず判定します。
+   * 区別すると、`content-type` と書いた宣言に既定値の `Content-Type` が加わり、
+   * `Headers` が両方を結合した `text/plain, application/json` のような値を送ります。
+   *
+   * `data-{event}-fetch-headers` は JSON として解釈するため、ここへ来る宣言は
+   * 素のオブジェクトです。
+   *
+   * @param headers ヘッダーの宣言
+   * @returns `Content-Type` を宣言していれば true
+   */
+  private static hasDeclaredContentType(
+    headers: HeadersInit | undefined,
+  ): boolean {
+    if (!headers || typeof headers !== 'object') {
+      return false;
+    }
+    return Object.keys(headers as Record<string, unknown>).some(
+      name => name.toLowerCase() === 'content-type',
+    );
+  }
+
+  /**
+   * ヘッダーの宣言へ `Content-Type` を設定した、新しい宣言を返します。
+   *
+   * 綴りの違う既存のキー（`content-type` など）は取り除きます。残すと `Headers` が
+   * 両方を結合し、`text/plain, application/xml` のような値を送ります。
+   *
+   * @param headers ヘッダーの宣言
+   * @param value 設定する `Content-Type`
+   * @returns `Content-Type` を設定した新しい宣言
+   */
+  private static withContentType(
+    headers: HeadersInit | undefined,
+    value: string,
+  ): Record<string, string> {
+    const merged: Record<string, string> = {};
+    if (headers && typeof headers === 'object') {
+      Object.entries(headers as Record<string, string>).forEach(
+        ([name, headerValue]) => {
+          if (name.toLowerCase() === 'content-type') {
+            return;
+          }
+          merged[name] = headerValue;
+        },
+      );
+    }
+    merged['Content-Type'] = value;
+    return merged;
+  }
+
+  /**
+   * `fetch()` を呼び、同期的な例外もリジェクトへ寄せて返します。
+   *
+   * 標準の `fetch()` は不正な引数でもリジェクトを返しますが、差し替えた実装
+   * （テストのモック、ポリフィル、計測用のラッパー）は同期的に投げることがあります。
+   * 同期の throw では呼び出し側の `.then` / `.catch` の連鎖が組まれないため、失敗の
+   * 処理（`_fetch` の error 注入と `data-fetch-error` の発火）が丸ごと飛び、注入先は
+   * 「まだ何も起きていない」状態のまま残ります（仕様「`data-fetch-state` /
+   * `data-{event}-fetch-state`」の「ネットワーク断・タイムアウト等の例外で
+   * `status="error"`」に反する）。
+   *
+   * 標準の経路では返る Promise をそのまま返すため、待ち時間は変わりません。
+   *
+   * @param url 取得先
+   * @param options fetch のオプション
+   * @returns 応答の Promise。同期例外はリジェクトになります
+   */
+  private static invokeFetch(
+    url: string,
+    options: RequestInit,
+  ): Promise<Response> {
+    try {
+      return fetch(url, options);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
+  /**
    * 属性値の `\n` 表記を改行へ復元します。
    *
    * @param value 属性の評価値
@@ -1480,40 +1605,15 @@ ${body}
     }
     // fetch-headers（イベントあり/なし）
     // event: data-{event}-fetch-headers, non-event: data-fetch-headers
-    if (event) {
-      const fetchHeadersAttrEvent = Procedure.attrName(event, 'fetch-headers');
-      if (fragment.hasAttribute(fetchHeadersAttrEvent)) {
-        const headersString = fragment.getRawAttribute(
-          fetchHeadersAttrEvent,
-        ) as string;
-        try {
-          fetchOptions.headers = Core.parseDataBind(headersString) as Record<
-            string,
-            string
-          >;
-        } catch (e) {
-          Log.error('Haori', `Invalid fetch headers: ${e}`);
-        }
-      }
-    } else {
-      const fetchHeadersAttrNonEvent = Procedure.attrName(
-        null,
-        'headers',
-        true,
-      );
-      if (fragment.hasAttribute(fetchHeadersAttrNonEvent)) {
-        const headersString = fragment.getRawAttribute(
-          fetchHeadersAttrNonEvent,
-        ) as string;
-        try {
-          fetchOptions.headers = Core.parseDataBind(headersString) as Record<
-            string,
-            string
-          >;
-        } catch (e) {
-          Log.error('Haori', `Invalid fetch headers: ${e}`);
-        }
-      }
+    const fetchHeadersAttr = event
+      ? Procedure.attrName(event, 'fetch-headers')
+      : Procedure.attrName(null, 'headers', true);
+    const declaredHeaders = Procedure.readFetchHeaders(
+      fragment,
+      fetchHeadersAttr,
+    );
+    if (declaredHeaders !== null) {
+      fetchOptions.headers = declaredHeaders;
     }
     // fetch-content-type（イベントあり/なし）
     // event: data-{event}-fetch-content-type
@@ -1537,33 +1637,28 @@ ${body}
       );
     }
     if (contentType !== null) {
-      fetchOptions.headers = {
-        ...fetchOptions.headers,
-        'Content-Type': contentType,
-      };
-    } else if (fetchOptions.method) {
+      // 明示は最優先（仕様「`data-{event}-fetch-content-type`」の「優先順位」）。
+      // 綴りの違う指定が残ると結合されて明示が効かないため、まとめて置き換える。
+      fetchOptions.headers = Procedure.withContentType(
+        fetchOptions.headers,
+        contentType,
+      );
+    } else if (
+      fetchOptions.method &&
+      !Procedure.hasDeclaredContentType(fetchOptions.headers)
+    ) {
       // 既定値（仕様「`data-{event}-fetch-content-type`」の「デフォルト値」）。
+      // 既定値は宣言を補うものなので、`data-{event}-fetch-headers` で Content-Type を
+      // 指定している場合は入れない（同節の「優先順位」）。メソッドで判定を分けると、
+      // 同じ宣言がメソッドによって残ったり消えたりする。
       // メソッドの綴りは宣言のままなので、大文字へ揃えてから判定する。
       const method = fetchOptions.method.toUpperCase();
-      if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-        fetchOptions.headers = {
-          ...fetchOptions.headers,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        };
-      } else {
-        // only set default Content-Type when one is not already provided
-        let hasContentType = false;
-        if (fetchOptions.headers && typeof fetchOptions.headers === 'object') {
-          const headersObj = fetchOptions.headers as Record<string, unknown>;
-          hasContentType = 'Content-Type' in headersObj;
-        }
-        if (!hasContentType) {
-          fetchOptions.headers = {
-            ...fetchOptions.headers,
-            'Content-Type': 'application/json',
-          };
-        }
-      }
+      fetchOptions.headers = Procedure.withContentType(
+        fetchOptions.headers,
+        method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
+          ? 'application/x-www-form-urlencoded'
+          : 'application/json',
+      );
     }
     if (Object.keys(fetchOptions).length > 0) {
       options.fetchOptions = fetchOptions;
@@ -2492,7 +2587,9 @@ ${body}
           // 二重実行を防ぎます」に反する）。`return promise` でも execute() は
           // その解決を待ってから解決するため、呼出側から見た順序は変わらない
           // （`return await` になることでマイクロタスク 2 つ分早まるだけ）。
-          return await fetch(fetchUrl, finalOptions)
+          // 同期例外もリジェクトへ寄せて下の `.catch()` へ流す
+          // （`invokeFetch()` のコメントを参照）。
+          return await Procedure.invokeFetch(fetchUrl, finalOptions)
             .then(response => {
               return this.handleFetchResult(
                 response,
@@ -2518,6 +2615,9 @@ ${body}
             });
         }
         // ロックを応答まで保持するため `await` する（上のコメントを参照）。
+        // こちらは注入先を持たないため失敗の処理が無く、同期例外でもリジェクトでも
+        // 呼出側から見た結果が同じなので `invokeFetch()` を通していない。失敗の
+        // 処理をここへ足すときは、同期例外が飛ばさないよう `invokeFetch()` へ替える。
         return await fetch(fetchUrl, finalOptions).then(response => {
           return this.handleFetchResult(response, fetchUrl || undefined);
         });
