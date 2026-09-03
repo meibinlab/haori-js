@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## [0.47.6] - 2026-09-03
+
+**未解決だった 3 件を直した版です。** `Content-Type` の既定値が `data-{event}-fetch-headers` の指定を上書きしていた問題、`fetch()` が同期的に例外を投げる実装で取得状態が `loading` のまま固まる問題、非表示のあいだに外部から `style.display` を書き換えると要素が見えてしまう問題を修正しています。`Content-Type` については、報告のあった経路のほかに 2 つの侵入口が見つかったため、あわせて塞ぎました。
+
+### Fixed
+
+- **GET / HEAD / OPTIONS の既定 `Content-Type` が `data-{event}-fetch-headers` の指定を上書きしていた**（課題 34、`src/procedure.ts`）。既定値は宣言を補うものだが、GET 系だけ無条件に後勝ちしていた。メソッドで扱いを分けるのをやめ、`Content-Type` を宣言していないときだけ入れるようにした。同じ規則の侵入口が報告以外に 2 つあり、いずれも塞いだ。
+  - `data-{event}-fetch-headers` に `content-type` と綴った指定を既定値が見落とし、`Headers` が結合した `text/plain, application/json` を送っていた。HTTP のヘッダー名は大小を区別しないため（RFC 9110）、綴りを問わず宣言として扱うようにした。
+  - 明示した `data-{event}-fetch-content-type` も、綴りの違う指定と共存すると結合され、最優先のはずの明示が効かなかった。`Content-Type` の設定を 1 か所へ寄せ、綴りの違うキーを外してから設定するようにした。
+- **`fetch()` が同期的に例外を投げる実装で、`_fetch` が `loading` のまま固まっていた**（課題 35、`src/procedure.ts`）。同期の throw では `.then` / `.catch` の連鎖が組まれないため、`_fetch` の error 注入と `data-fetch-error` の発火が丸ごと飛び、注入先は「まだ何も起きていない」状態のまま残っていた。同期例外をリジェクトへ寄せ、既存の失敗処理へ流すようにした。**標準の `fetch()` は該当しません**（WHATWG Fetch はリジェクトを返す）。効くのはテストのモック、ポリフィル、計測用のラッパーで差し替えている場合。
+- **`data-{event}-fetch-headers` がオブジェクトでない場合に、宣言が黙って壊れていた**（`src/procedure.ts`）。JSON の配列を書くと、添字がヘッダー名になった `0: a` のようなヘッダーを送っていた。ヘッダーを設定せずに記録するようにした。
+- **非表示のあいだに外部から `style.display` を書き換えると、要素が見えてしまっていた**（課題 38、`src/observer.ts`、`src/fragment.ts`）。DOM の監視は非表示のあいだの `style` を宣言として取り込まないが、取り込まないだけで追随結果の書き直しを行っていなかった。判定の基準は内部状態なので、書き直すようにした。`style` 属性ごと削除された場合も同じ経路で戻る。
+  - 控えは取り直さない。外部の書き換えは宣言ではないため、取り直すと表示へ戻したときに宣言でない値が復元される。
+  - すでに追随結果どおりなら書かない。エンジン自身の書き込みも同じ監視に乗るため、無条件に書くと書き込みが次の監視を呼ぶ繰り返しになる。
+
+### Changed
+
+- 仕様「`data-{event}-fetch-content-type`」に**優先順位**（明示 > `data-{event}-fetch-headers` の指定 > デフォルト値、ヘッダー名の大小は非区別）と、ボディを作る経路がその後にボディの形式へ合わせて `Content-Type` を決め直すことを明記した。
+- 仕様「data-if の動作」に、非表示のあいだに外部から `style.display` を書き換えた場合は追随結果を書き直すこと、そのとき控えは取り直さないことを明記した。
+
+### Internal
+
+- **単体テスト 12 件を追加した**（`tests/fetch-content-type-default.test.ts`、`tests/fetch-state-binding.test.ts`、`tests/if-hide-external-style-write.test.ts`）。うち 10 件は修正前に落ちる。
+- イベントありとなしで重複していた `data-{event}-fetch-headers` の解析処理を 1 か所へ抽出した。
+- `Content-Type` を書く箇所は 5 つある。宣言と既定値の 2 つを `withContentType()` に集約し、残る 3 つ（`multipart/form-data` の境界、JSON 本体、demo ランタイムの GET 正規化）はボディや転送形式に合わせる書き換えとして仕様へ明記した。
+
 ## [0.47.5] - 2026-09-03
 
 **`data-if` で隠したはずの要素が見えてしまう問題を直した版です。** `style` を宣言している要素（`data-attr-style` を含む）では、属性の再適用が `style` をまるごと宣言の値へ置き換えるため、`data-if-false` は付いているのに要素が見えたままになっていました。同じ経路で、非表示のあいだに宣言が変わると表示へ戻したときに宣言が失われる問題も直しています。あわせて、エンジンが判定の結果として DOM へ書いた属性（追随結果）を宣言として取り込まない範囲を広げました。Haori が出力した HTML を保存して再配信する構成、`innerHTML` でコピーした断片、`data-import` で取り込む断片が対象です。
