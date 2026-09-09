@@ -4485,8 +4485,37 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 
 注意点:
 
-- 呼び出し元は子の取得完了を待たないため、モーダルは取得前に開き、`#page-state` への反映で**リアクティブに**中身が埋まります。「両方の取得完了後に処理」が必要な用途には向きません。
+- 呼び出し元は子の取得完了を待たないため、モーダルは取得前に開き、`#page-state` への反映で**リアクティブに**中身が埋まります。「両方の取得完了後に処理」が必要な用途には、[`data-{event}-click-await`](#data-event-click-await) を併用してください。
 - トリガーは同じバインドスコープに置くこと（`{{id}}` 等の解決のため）。`<button disabled>` は `click()` が無反応になるため、`data-click-fetch` を持つ `<span>` 等を用いるのが安全です（委譲は最も近い `data-click-*` 要素を拾います）。
+
+##### `data-{event}-click-await`
+
+`data-{event}-click` でクリックした対象の**手続きの完了を待ちます**。宣言した順に 1 件ずつ待つため、複数のリクエストが**直列**になり、**いずれかが失敗した時点で後続を止めます**。
+
+一覧の並べ替えのように「移動元と移動先の 2 件を順に更新し、前段が失敗したら後段を送らない」構成を、画面個別の JavaScript を書かずに宣言できます。
+
+**構文**:
+```html
+<!-- 表示順の更新を 2 件、宣言した順に直列で送る -->
+<button data-click-click=".order-updaters" data-click-click-await>↑</button>
+
+<span hidden class="order-updaters"
+  data-click-fetch="{{'/api/items/' + prevId}}" data-click-fetch-method="PUT"
+  data-click-data='{"order": {{order}}}'></span>
+<span hidden class="order-updaters"
+  data-click-fetch="{{'/api/items/' + id}}" data-click-fetch-method="PUT"
+  data-click-data='{"order": {{prevOrder}}}'></span>
+```
+
+**挙動**:
+
+- 属性値は取りません（宣言するだけで有効です）。
+- 待つのは `data-{event}-click` が**クリックした対象の手続き**です。対象自身が `data-{event}-click-*` を持たず、**祖先への委譲で手続きが起動する場合も待ちます**（クリックした要素を基準に結果を受け取ります）。その手続きがさらに起動した手続き（対象の中の `data-{event}-click` など）は、その手続き自身がこの属性を宣言していれば同じように待ちます。
+- **失敗したら後続の対象をクリックしません。** 失敗とは、HTTP エラー応答（4xx/5xx）・通信の例外・検証エラー（`data-{event}-validate`）・確認ダイアログのキャンセル（`data-{event}-confirm`）です。エラーの表示は、失敗した手続き自身が通常どおり行います（[エラーハンドリング](#エラーハンドリング)）。
+- **`data-{event}-if` が偽で実行されなかった場合は失敗として扱いません**（意図したスキップのため、後続へ進みます）。対象に `data-{event}-*` が 1 つも無い場合も同じです。
+- 失敗で止めた場合、**呼び出し元の手続きも以降のアクションを実行しません**（ダイアログ・トースト・リダイレクトなどへ進みません）。
+- **待てない対象があります。** [`data-click-defer`](#data-click-defer)を宣言している場合（起動が次フレームになる）と、`disabled` でクリックが発火しない場合（[`data-{event}-click`](#data-event-click)の注意点）です。この場合は**警告を記録し**（開発モードに限らず。宣言どおりに直列化できていないため）、待たずに次の対象へ進みます。
+- 対象が**すでに実行中**（多重実行の抑止に掛かった）の場合は失敗として扱い、後続を止めます。押した操作が実行されていないためです。
 
 ##### `data-{event}-open`
 

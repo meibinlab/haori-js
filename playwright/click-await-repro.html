@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>クリックの完了待ち</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 上下移動の 2 件更新。宣言した順に直列で送り、失敗したら後段を送らない -->
+  <div id="row" data-bind='{"id":2,"prevId":1,"order":10,"prevOrder":20}'>
+    <button id="move-up"
+      data-click-click=".order-updaters"
+      data-click-click-await
+      data-click-toast="表示順を更新しました">↑</button>
+
+    <span hidden class="order-updaters"
+      data-click-fetch="{{'/api/items/' + prevId}}"
+      data-click-fetch-method="PUT"
+      data-click-data='{"displayOrder": {{order}}}'></span>
+    <span hidden class="order-updaters"
+      data-click-fetch="{{'/api/items/' + id}}"
+      data-click-fetch-method="PUT"
+      data-click-data='{"displayOrder": {{prevOrder}}}'></span>
+  </div>
+</body>
+</html>

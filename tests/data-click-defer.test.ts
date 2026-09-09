@@ -7,6 +7,10 @@
  * 先に完了させる。
  *
  * 期待値の根拠は仕様「`data-click-defer`」。
+ *
+ * 起動の観測は `Procedure.runWithOutcome()`（ディスパッチャが呼ぶ入口）で行う。
+ * 完了待ち（`data-{event}-click-await`）が結果を必要とするため、ディスパッチャは
+ * `run()` ではなくこちらを呼ぶ。
  */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
@@ -39,7 +43,7 @@ describe('data-click-defer', () => {
     await Core.scan(container);
     await waitForDomSettled();
 
-    const runSpy = vi.spyOn(Procedure.prototype, 'run');
+    const runSpy = vi.spyOn(Procedure.prototype, 'runWithOutcome');
     (container.querySelector('#b') as HTMLElement).click();
     // クリックイベントの同期実行直後は、まだ Procedure が起動していない（遅延）。
     expect(runSpy).not.toHaveBeenCalled();
@@ -58,7 +62,7 @@ describe('data-click-defer', () => {
     await Core.scan(container);
     await waitForDomSettled();
 
-    const runSpy = vi.spyOn(Procedure.prototype, 'run');
+    const runSpy = vi.spyOn(Procedure.prototype, 'runWithOutcome');
     (container.querySelector('#b2') as HTMLElement).click();
     // 遅延しないため、同期実行中に起動済み。
     expect(runSpy).toHaveBeenCalled();

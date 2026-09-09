@@ -650,6 +650,15 @@ export interface AfterCallbackResult {
 /**
  * Procedureクラスのオプションインターフェース。
  */
+/**
+ * 手続きの実行結果。
+ *
+ * - `success`: 最後まで実行した
+ * - `failure`: 検証エラー・確認のキャンセル・HTTP エラー・例外などで止まった
+ * - `skipped`: `data-{event}-if` が偽、またはアクションの宣言が無く実行しなかった
+ */
+export type ProcedureOutcome = 'success' | 'failure' | 'skipped';
+
 export interface ProcedureOptions {
   /** 処理対象のフラグメント */
   targetFragment?: ElementFragment;
@@ -785,6 +794,12 @@ export interface ProcedureOptions {
 
   /** クリックするフラグメント */
   clickFragments?: ElementFragment[] | null;
+
+  /**
+   * `data-{event}-click` でクリックした対象の手続きの完了を待つかどうか。
+   * `data-{event}-click-await` の宣言で立てる。
+   */
+  clickAwait?: boolean;
 
   /** ダイアログを開くフラグメント */
   openFragments?: ElementFragment[] | null;
@@ -997,6 +1012,51 @@ export default class Procedure {
 
   /** click 手続きの再入を防ぐ対象要素の集合 */
   private static readonly RUNNING_CLICK_TARGETS = new WeakSet<HTMLElement>();
+
+  /**
+   * クリックで起動した手続きの結果（要素 → 結果の Promise）。
+   *
+   * `data-{event}-click-await` の待ち合わせに使います。起動のたびに置き換わる
+   * ため、取り出す側は `click()` の直後に読みます。
+   */
+  private static readonly CLICK_OUTCOMES = new WeakMap<
+    HTMLElement,
+    Promise<ProcedureOutcome>
+  >();
+
+  /**
+   * クリックで起動した手続きの結果を控えます。
+   *
+   * @param element クリックされた要素
+   * @param outcome 手続きの結果
+   * @returns 戻り値はありません。
+   */
+  public static recordClickOutcome(
+    element: HTMLElement,
+    outcome: Promise<ProcedureOutcome>,
+  ): void {
+    Procedure.CLICK_OUTCOMES.set(element, outcome);
+  }
+
+  /**
+   * 直前のクリックで起動した手続きの結果を取り出します。
+   *
+   * 取り出した記録は消します。続けてクリックしたときに前の結果を二度取らない
+   * ようにするためです。
+   *
+   * @param element クリックした要素
+   * @returns 手続きの結果。起動していない場合は null
+   */
+  private static takeClickOutcome(
+    element: HTMLElement,
+  ): Promise<ProcedureOutcome> | null {
+    const outcome = Procedure.CLICK_OUTCOMES.get(element);
+    if (!outcome) {
+      return null;
+    }
+    Procedure.CLICK_OUTCOMES.delete(element);
+    return outcome;
+  }
 
   /**
    * 検証 UI の表示待ちを最後の 1 件に絞るための世代番号。
@@ -2030,6 +2090,8 @@ ${body}
               break;
             case 'click':
               options.clickFragments = list;
+              // 完了待ちの宣言（値は取らない印）。
+              options.clickAwait = fragment.hasAttribute(`${attrName}-await`);
               break;
             case 'copy':
               options.copyFragments = list;
@@ -2438,6 +2500,12 @@ ${body}
    * bind 結果の反映を reentrant（即時実行）で行うよう指定します。マネージド
    * `data-fetch` の自動再評価から生成した Procedure に対して使います。
    */
+  /**
+   * 実行しなかった（失敗ではない）で終わったかどうか。
+   * `runWithOutcome()` が失敗とスキップを見分けるために使います。
+   */
+  private skipped = false;
+
   public markReentrantBind(): void {
     this.reentrantBind = true;
   }
@@ -2449,6 +2517,22 @@ ${body}
    */
   runWithResult(): Promise<boolean> {
     return this.execute();
+  }
+
+  /**
+   * 一連の処理を実行し、結果を 3 通りで返します。
+   *
+   * `data-{event}-click-await` は「失敗したら後続を止める」ため、失敗と
+   * 「実行しなかった（スキップ）」を区別する必要があります。
+   *
+   * @returns 成功・失敗・スキップのいずれか
+   */
+  public async runWithOutcome(): Promise<ProcedureOutcome> {
+    const succeeded = await this.execute();
+    if (succeeded) {
+      return 'success';
+    }
+    return this.skipped ? 'skipped' : 'failure';
   }
 
   /**
@@ -2464,6 +2548,10 @@ ${body}
 
     try {
       if (Object.keys(this.options).length === 0) {
+        // アクションの宣言が 1 つも無い。何も起きないだけで失敗ではない
+        // （仕様「`data-{event}-click-await`」の「対象に `data-{event}-*` が
+        // 1 つも無い場合も同じです」）。
+        this.skipped = true;
         return false;
       }
       if (
@@ -2484,6 +2572,10 @@ ${body}
       // 先に見せる）、data-{event}-run の前（条件が偽なら run の副作用も起こさない）
       // に、属性の再描画を待たず同期評価する。
       if (!this.evaluateExecutionCondition()) {
+        // 条件が偽で実行しなかった。意図したスキップなので失敗ではない
+        // （仕様「`data-{event}-click-await`」の「`data-{event}-if` が偽で
+        // 実行されなかった場合は失敗として扱いません」）。
+        this.skipped = true;
         return false;
       }
       // data-{event}-run: 任意 JS を同期実行する。await を挟む前に実行することで、
@@ -3140,12 +3232,20 @@ ${body}
         deferredPromises.push(new Procedure(fragment, null).run());
       });
     }
+    // `data-{event}-click-await` の待ち合わせで失敗を受け取ったかどうか。
+    let stoppedByClickAwait = false;
     if (this.options.clickFragments && this.options.clickFragments.length > 0) {
       // bind 後の最新 DOM を参照させるため click 前に再評価する。
       // 複数フラグメントは直列実行：各 click が前の evaluateAll 完了後に発火する。
       for (const fragment of this.options.clickFragments) {
         await Core.evaluateAll(fragment);
         const target = fragment.getTarget();
+        if (this.options.clickAwait) {
+          // 前のクリックの結果が残っていると、今回のクリックが手続きを起こさな
+          // かったとき（`disabled` などで発火しない）に古い結果を拾ってしまう。
+          // 押す前に捨てる。
+          Procedure.takeClickOutcome(target);
+        }
         if (typeof target.click === 'function') {
           target.click();
         } else {
@@ -3153,9 +3253,38 @@ ${body}
             new MouseEvent('click', {bubbles: true, cancelable: true}),
           );
         }
+        if (!this.options.clickAwait) {
+          continue;
+        }
+        // 完了待ち（仕様「`data-{event}-click-await`」）。`click()` は同期に
+        // 委譲されるため、起動された手続きの結果はこの時点で控えられている。
+        const outcome = Procedure.takeClickOutcome(target);
+        if (outcome === null) {
+          // 起動が次フレームへ回された（`data-click-defer`）、または `disabled`
+          // でクリックが発火しない。待たずに次の対象へ進む。宣言どおりに直列化
+          // できていないため、開発モードに限らず記録する（仕様
+          // 「`data-{event}-click-await`」の「警告を記録し」）。
+          Log.warn(
+            'Haori',
+            `${Env.prefix}${this.eventType ?? 'fetch'}-click-await は` +
+              'この対象の完了を待てません（手続きが同期に起動していません）。',
+          );
+          continue;
+        }
+        if ((await outcome) === 'failure') {
+          // 失敗したら後続の対象をクリックせず、呼び出し元の手続きも止める
+          // （同節「失敗で止めた場合、呼び出し元の手続きも以降のアクションを
+          // 実行しません」）。エラーの表示は失敗した手続き自身が行う。
+          stoppedByClickAwait = true;
+          break;
+        }
       }
     }
-    if (this.options.openFragments && this.options.openFragments.length > 0) {
+    if (
+      !stoppedByClickAwait &&
+      this.options.openFragments &&
+      this.options.openFragments.length > 0
+    ) {
       this.options.openFragments.forEach(fragment => {
         const target = fragment.getTarget();
         if (target instanceof HTMLElement) {
@@ -3165,7 +3294,11 @@ ${body}
         }
       });
     }
-    if (this.options.closeFragments && this.options.closeFragments.length > 0) {
+    if (
+      !stoppedByClickAwait &&
+      this.options.closeFragments &&
+      this.options.closeFragments.length > 0
+    ) {
       this.options.closeFragments.forEach(fragment => {
         const target = fragment.getTarget();
         if (target instanceof HTMLElement) {
@@ -3177,6 +3310,11 @@ ${body}
     }
     // 仕様順序: 先に各種操作（bind/adjust/row/reset/refetch/click/open/close）を完了
     await Promise.all(deferredPromises);
+    if (stoppedByClickAwait) {
+      // ここまでに始めた処理（再フェッチなど）は落ち着かせたうえで止める。
+      // 待たずに戻ると、その失敗が手続きの外へこぼれる。
+      return false;
+    }
     // その後にダイアログ/トーストを表示（いずれも使用直前に属性を評価し直す）
     const dialogMessage = Procedure.unescapeNewlines(
       Procedure.normalizeAttributeText(

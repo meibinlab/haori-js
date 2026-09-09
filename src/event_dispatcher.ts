@@ -7,7 +7,7 @@
 import Enhance from './enhance';
 import Form from './form';
 import Fragment, {ElementFragment} from './fragment';
-import Procedure from './procedure';
+import Procedure, {ProcedureOutcome} from './procedure';
 import Log from './log';
 import Env from './env';
 
@@ -464,9 +464,27 @@ export default class EventDispatcher {
     }
 
     const runProcedure = () => {
-      new Procedure(fragment, type, event).run().catch(error => {
-        Log.error('[Haori]', 'Procedure execution error:', error);
-      });
+      const outcome = new Procedure(fragment, type, event)
+        .runWithOutcome()
+        .catch(error => {
+          Log.error('[Haori]', 'Procedure execution error:', error);
+          return 'failure' as ProcedureOutcome;
+        });
+      if (type === 'click') {
+        // クリックで起動した手続きの結果を、クリックを起こした側が受け取れる
+        // ようにする（`data-{event}-click-await`）。`click()` は同期に委譲される
+        // ため、起こした側は直後にこの記録を取り出せる。
+        Procedure.recordClickOutcome(element, outcome);
+        // 押した要素でも引けるようにする。`data-{event}-click` が指した要素が
+        // 自分では `data-{event}-click-*` を持たず、祖先への委譲で起動する構成
+        // では、起こした側が知っているのは押した要素だけである（仕様
+        // 「`data-{event}-click-await`」の「祖先への委譲で手続きが起動する場合も
+        // 待ちます」）。
+        const clicked = event.target;
+        if (clicked instanceof HTMLElement && clicked !== element) {
+          Procedure.recordClickOutcome(clicked, outcome);
+        }
+      }
     };
 
     // data-click-defer 指定時は、Haori の click 処理を次フレーム（または次マクロ

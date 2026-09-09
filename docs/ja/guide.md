@@ -2688,9 +2688,27 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 
 注意点:
 
-- 各取得は**非同期**で、編集ボタン側は完了を待ちません。モーダルは取得前に開き、結果が届くと中身が**リアクティブに**埋まります。「両方そろってから処理」が必要な場合は別の作りにしてください。
+- 各取得は**非同期**で、編集ボタン側は完了を待ちません。モーダルは取得前に開き、結果が届くと中身が**リアクティブに**埋まります。「両方そろってから処理」や「順に送って失敗したら止める」が必要な場合は、次の `data-click-click-await` を併用してください。
 - トリガー要素は対象と同じバインドスコープ（行内など）に置きます（`{{id}}` を解決するため）。
 - トリガーは `<button disabled>` だと `click()` が効かないため、`data-click-fetch` を持つ `<span>` などを使うと確実です。
+
+### 1クリックで複数の更新を順に送る（`data-click-click-await`）
+
+一覧の並べ替えのように「移動元と移動先の 2 件を順に更新し、前段が失敗したら後段を送らない」構成は、`data-click-click-await` を足すだけで書けます。宣言した順に 1 件ずつ完了を待ち、失敗（HTTP エラー・通信の例外・検証エラー・確認のキャンセル）で後続を止めます。エラーの表示は失敗した手続き自身が行います。
+
+```html
+<!-- 上へ移動: 2 件の表示順を宣言した順に直列で更新する -->
+<button data-click-click=".order-updaters" data-click-click-await>↑</button>
+
+<span hidden class="order-updaters"
+  data-click-fetch="{{'../api/items/' + prevId}}" data-click-fetch-method="PUT"
+  data-click-data='{"displayOrder": {{order}}}'></span>
+<span hidden class="order-updaters"
+  data-click-fetch="{{'../api/items/' + id}}" data-click-fetch-method="PUT"
+  data-click-data='{"displayOrder": {{prevOrder}}}'></span>
+```
+
+止めた場合は、呼び出し元のトースト・ダイアログ・リダイレクトも実行されません（片方だけ通ったのに「更新しました」と出ることがありません）。`data-click-if` が偽で実行されなかった対象は失敗として扱わず、次へ進みます。
 
 ### state の配列を追加・削除する（式 + `data-click-bind-merge`）
 
@@ -3055,7 +3073,7 @@ state に持った配列（編集中のルール一覧など）への要素追�
 11. `data-click-reset` - リセット
 12. `data-click-copy` / `data-click-copy-params` - 別要素へ値をコピー
 13. `data-click-refetch` - 再フェッチ
-14. `data-click-click` - 別要素のクリック
+14. `data-click-click` - 別要素のクリック（`data-click-click-await` で完了待ち）
 15. `data-click-open` / `data-click-close` - ダイアログ操作
 16. `data-click-dialog` / `data-click-toast` - メッセージ表示
 17. `data-click-history` - 履歴への pushState
