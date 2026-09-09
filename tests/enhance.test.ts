@@ -19,7 +19,7 @@ import Dev from '../src/dev';
 import Enhance from '../src/enhance';
 import EventDispatcher from '../src/event_dispatcher';
 import Haori from '../src/haori';
-import {waitForDomSettled} from './helpers/async';
+import {waitForDomSettled, waitForIdle} from './helpers/async';
 
 /** 連携の呼び出し記録 */
 interface Calls {
@@ -192,6 +192,105 @@ describe('外部ライブラリ連携', () => {
       await waitForDomSettled(10);
 
       expect(calls.destroy.length).toBe(1);
+    });
+  });
+
+  describe('リセットの再同期', () => {
+    it('data-{event}-reset で refresh が呼ばれる', async () => {
+      // 仕様「`data-enhance`」の契機の表の「フォームのリセット（`data-{event}-reset`
+      // とネイティブの `form.reset()` の両方）」。外部ウィジェットはフォームの
+      // リセットで内部の状態ごとクリアされるものがあり、再同期しないと候補も
+      // 選択も戻らない。
+      const name = registerRecorder('reset-action');
+      container.innerHTML = `
+        <form id="search">
+          <select data-enhance="${name}" multiple>
+            <option value="a" selected>a</option>
+          </select>
+        </form>
+        <button id="clear" data-click-reset="#search">クリア</button>`;
+      await Core.scan(container);
+      await waitForIdle();
+      expect(calls.init.length).toBe(1);
+      const before = calls.refresh.length;
+
+      (container.querySelector('#clear') as HTMLElement).click();
+      await waitForIdle();
+
+      // 値の復元が終わってから 1 度だけ呼ぶ（同節「リセットの再同期は、値の復元が
+      // 終わってから 1 度だけ呼びます」）。内部で起こすネイティブのリセットと
+      // 二重にならない。
+      expect(calls.refresh.length - before).toBe(1);
+      expect(calls.refresh[calls.refresh.length - 1]).toBe(
+        container.querySelector('select'),
+      );
+    });
+
+    it('ネイティブの form.reset() でも refresh が呼ばれる', async () => {
+      // 同節の「ネイティブの `form.reset()` の両方」。画面側の JavaScript や
+      // `<button type="reset">` からのリセットも同じ契機になる。
+      const name = registerRecorder('reset-native');
+      container.innerHTML = `
+        <form id="search">
+          <select data-enhance="${name}" multiple>
+            <option value="a" selected>a</option>
+          </select>
+        </form>`;
+      await Core.scan(container);
+      await waitForIdle();
+      const before = calls.refresh.length;
+
+      (container.querySelector('#search') as HTMLFormElement).reset();
+      await waitForIdle();
+
+      expect(calls.refresh.length - before).toBe(1);
+    });
+
+    it('値が戻った後に呼ぶ', async () => {
+      // 同節の「`reset` イベントは値が戻る**前**に発火するため、そのまま再同期
+      // すると戻る前の値を読みます」。発火の時点で読むと、リセット前の値のまま
+      // 外部ウィジェットを組み直してしまう。
+      const observed: string[] = [];
+      sequence += 1;
+      const name = `reset-order-${sequence}`;
+      Haori.enhancers.register(name, {
+        init: () => ({}),
+        refresh: element => {
+          observed.push((element as HTMLInputElement).value);
+        },
+      });
+      container.innerHTML = `
+        <form id="search">
+          <input id="keyword" data-enhance="${name}" name="keyword" value="">
+        </form>`;
+      await Core.scan(container);
+      await waitForIdle();
+
+      const input = container.querySelector('#keyword') as HTMLInputElement;
+      input.value = '編集した値';
+      (container.querySelector('#search') as HTMLFormElement).reset();
+      await waitForIdle();
+
+      expect(observed).toEqual(['']);
+    });
+
+    it('既定動作が止められたリセットでは呼ばない', async () => {
+      // 値が戻らないので、再同期する理由が無い。
+      const name = registerRecorder('reset-prevented');
+      container.innerHTML = `
+        <form id="search">
+          <input data-enhance="${name}" name="keyword" value="初期">
+        </form>`;
+      await Core.scan(container);
+      await waitForIdle();
+      const before = calls.refresh.length;
+
+      const form = container.querySelector('#search') as HTMLFormElement;
+      form.addEventListener('reset', event => event.preventDefault());
+      form.reset();
+      await waitForIdle();
+
+      expect(calls.refresh.length - before).toBe(0);
     });
   });
 

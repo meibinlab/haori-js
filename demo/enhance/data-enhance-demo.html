@@ -158,11 +158,43 @@
       }
     }
 
+    // 選択の見た目を自分で持つスタブ。外部ウィジェットは選択の表示を内部に
+    // 抱えるため、フォームをリセットしても再同期しなければ古い選択が残る
+    // （Choices.js も同じ形で、リセットで内部の状態ごとクリアされる）。
+    class FakeSelectionWidget {
+      constructor(select) {
+        this.select = select;
+        this.view = document.querySelector('#selection-view');
+        this.onChange = () => this.render();
+        select.addEventListener('change', this.onChange);
+        this.render();
+      }
+
+      render() {
+        const option = this.select.options[this.select.selectedIndex];
+        this.view.textContent = `選択: ${option ? option.textContent : 'なし'}`;
+      }
+
+      refresh() {
+        this.render();
+      }
+
+      destroy() {
+        this.select.removeEventListener('change', this.onChange);
+      }
+    }
+
     window.FakeLib = {TagWidget: FakeTagWidget, AddressHelper: FakeAddressHelper};
 
     // 登録は 1 回だけ。以降は HTML の宣言だけで適用・再同期・破棄される。
     Haori.enhancers.register('tags', {
       init: element => new FakeTagWidget(element),
+      refresh: (element, instance) => instance.refresh(),
+      destroy: (element, instance) => instance.destroy(),
+    });
+
+    Haori.enhancers.register('selection', {
+      init: element => new FakeSelectionWidget(element),
       refresh: (element, instance) => instance.refresh(),
       destroy: (element, instance) => instance.destroy(),
     });
@@ -211,6 +243,24 @@
         <button type="button" data-click-row-remove>削除</button>
       </div>
     </div>
+
+    <h2>リセットで再同期する</h2>
+    <p>
+      外部ウィジェットは選択の表示を内部に抱えるため、フォームをリセットしても
+      作り直さなければ古い選択が残ります。<code>data-{event}-reset</code> と
+      ネイティブのリセットの両方が <code>refresh</code> の契機になります。
+    </p>
+    <form id="search-form">
+      <select id="search-plan" name="plan" data-enhance="selection">
+        <option value="p1" selected>標準プラン</option>
+        <option value="p2">夜間プラン</option>
+      </select>
+      <button type="button" id="clear-declared" data-click-reset="#search-form">
+        クリア（data-click-reset）
+      </button>
+      <button type="reset" id="clear-native">クリア（ネイティブ）</button>
+      <div class="log" id="selection-view"></div>
+    </form>
 
     <h2>登録なしで使う簡易形</h2>
     <p>

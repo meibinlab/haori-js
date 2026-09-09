@@ -58,4 +58,24 @@ test.describe('外部ライブラリ連携（実ブラウザ）', () => {
       '収集値: 郵便番号「1000001」/ 都道府県「東京都」/ 市区町村「千代田区」',
     );
   });
+
+  test('リセットで外部ウィジェットが再同期される', async ({page}) => {
+    test.setTimeout(60000);
+    await page.goto('/demo/enhance/data-enhance-demo.html');
+    await page.waitForSelector('body[data-haori-ready]');
+
+    await expect(page.locator('#selection-view')).toHaveText('選択: 標準プラン');
+
+    // 宣言のリセット: 選び直してからクリアすると、表示も初期の選択へ戻る。
+    await page.locator('#search-plan').selectOption('p2');
+    await expect(page.locator('#selection-view')).toHaveText('選択: 夜間プラン');
+    await page.locator('#clear-declared').click();
+    await expect(page.locator('#selection-view')).toHaveText('選択: 標準プラン');
+
+    // ネイティブのリセットでも同じ契機になる。
+    await page.locator('#search-plan').selectOption('p2');
+    await expect(page.locator('#selection-view')).toHaveText('選択: 夜間プラン');
+    await page.locator('#clear-native').click();
+    await expect(page.locator('#selection-view')).toHaveText('選択: 標準プラン');
+  });
 });

@@ -6,6 +6,7 @@
 
 import Core from './core';
 import Dev from './dev';
+import Enhance from './enhance';
 import Env from './env';
 import Expression from './expression';
 import Fragment, {ElementFragment} from './fragment';
@@ -876,6 +877,24 @@ export default class Form {
     if (path !== '') {
       paths.add(path);
     }
+  }
+
+  /**
+   * `Form.reset()` が起こしたネイティブのリセットかどうかの印。
+   *
+   * `data-{event}-reset` は内部で `form.reset()` を呼ぶため、ネイティブの
+   * `reset` を監視する側と両方が再同期すると 2 度呼ばれます。こちらの経路では
+   * すべての段が終わった時点で `Form.reset()` が呼ぶため、監視側は見送ります。
+   */
+  private static internalResetDepth = 0;
+
+  /**
+   * `Form.reset()` が起こしたリセットの最中かどうかを返します。
+   *
+   * @returns 最中なら true
+   */
+  public static isResettingInternally(): boolean {
+    return Form.internalResetDepth > 0;
   }
 
   /**
@@ -3062,19 +3081,27 @@ export default class Form {
         operationSequence,
       );
       const element = fragment.getTarget();
-      if (element instanceof HTMLFormElement) {
-        element.reset();
-      } else {
-        // 配下のフォームは個別にリセットする（`reset` イベントも従来どおり発火する）。
-        element.querySelectorAll('form').forEach(form => form.reset());
-        // フォームに属さない入力欄は、既定値へ戻す処理を自分で行う。**対象の要素を
-        // DOM から外してはいけない**（以前は一時的な `<form>` へ移して `form.reset()`
-        // を呼んでいた）。要素を外すとフラグメントが破棄され、実行時のバインドデータも
-        // 失われる。同じ操作の後段の書き込み（`data-{event}-bind` など）は空のバインド
-        // データを土台にするため、`data-fetch-bind` で寄せたキーが `data-bind` 属性から
-        // 消え、URL が同じ `data-fetch` は再取得されないので復帰しない
-        // （仕様「`data-{event}-reset`」）。
-        Form.restoreDefaultValues(element);
+      // ここで起こすネイティブのリセットは、監視側の再同期の対象外にする
+      // （再同期はこの手続きの最後に 1 度だけ行う。仕様「`data-enhance`」の
+      // 「再同期はどちらか一方だけが行います」）。
+      Form.internalResetDepth += 1;
+      try {
+        if (element instanceof HTMLFormElement) {
+          element.reset();
+        } else {
+          // 配下のフォームは個別にリセットする（`reset` イベントも従来どおり発火する）。
+          element.querySelectorAll('form').forEach(form => form.reset());
+          // フォームに属さない入力欄は、既定値へ戻す処理を自分で行う。**対象の要素を
+          // DOM から外してはいけない**（以前は一時的な `<form>` へ移して `form.reset()`
+          // を呼んでいた）。要素を外すとフラグメントが破棄され、実行時のバインドデータも
+          // 失われる。同じ操作の後段の書き込み（`data-{event}-bind` など）は空のバインド
+          // データを土台にするため、`data-fetch-bind` で寄せたキーが `data-bind` 属性から
+          // 消え、URL が同じ `data-fetch` は再取得されないので復帰しない
+          // （仕様「`data-{event}-reset`」）。
+          Form.restoreDefaultValues(element);
+        }
+      } finally {
+        Form.internalResetDepth -= 1;
       }
       // `form.reset()` は `value` / `checked` / `selected` 属性を既定値として復元する。
       // 宣言バインドは評価結果をこれらの属性へ書くため、そのままでは「前回の評価
@@ -3184,6 +3211,12 @@ export default class Form {
         sequence: operationSequence,
       });
     }
+
+    // 外部ライブラリ連携を再同期する。値の復元だけでなく、バインドデータの更新と
+    // 再評価（`data-each` の候補の描き直し）まで終わってから呼ぶ（仕様
+    // 「`data-enhance`」の「リセットの再同期は、値の復元が終わってから 1 度だけ
+    // 呼びます」）。
+    Enhance.refreshSubtree(fragment.getTarget());
   }
 
   /**

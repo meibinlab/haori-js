@@ -4,6 +4,8 @@
  * クリック/変更/ロード/ポップステートイベントを検出し Procedure に委譲します。
  */
 
+import Enhance from './enhance';
+import Form from './form';
 import Fragment, {ElementFragment} from './fragment';
 import Procedure from './procedure';
 import Log from './log';
@@ -58,6 +60,34 @@ export default class EventDispatcher {
 
   /** クリックデリゲータ */
   private readonly onClick = (event: Event) => this.delegate(event, 'click');
+
+  /**
+   * ネイティブのリセットを受けて、外部ライブラリ連携を再同期します。
+   *
+   * `reset` イベントは値が戻る**前**に発火するため、そのまま再同期すると戻る前の
+   * 値を読みます。次のタスクで呼ぶことで、値の復元の後になります（仕様
+   * 「`data-enhance`」の「リセットの再同期は、値の復元が終わってから 1 度だけ
+   * 呼びます」）。
+   */
+  private readonly onReset = (event: Event) => {
+    if (event.defaultPrevented) {
+      // 既定動作が止められた場合は値が戻らないので、再同期する理由が無い。
+      return;
+    }
+    if (Form.isResettingInternally()) {
+      // `data-{event}-reset` の経路。全段が終わった時点で `Form.reset()` が呼ぶ。
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    // マイクロタスクでは早すぎる。ブラウザは `reset` の既定動作（値の復元）を
+    // リスナーの後に行い、マイクロタスクはその手前で走るため、復元前の値を読む
+    // （jsdom では既定動作が同期に走るので、この違いは単体テストでは出ない。
+    // 実ブラウザの E2E で計測した）。
+    setTimeout(() => Enhance.refreshSubtree(target), 0);
+  };
 
   /** 変更デリゲータ */
   private readonly onChange = (event: Event) => this.delegate(event, 'change');
@@ -189,6 +219,9 @@ export default class EventDispatcher {
     this.root.addEventListener('click', this.onClick);
     this.root.addEventListener('change', this.onChange);
     this.root.addEventListener('input', this.onInput);
+    // reset はバブルする。捕捉ではなくバブルで受けることで、内側のハンドラが
+    // `preventDefault()` した場合を見分けられる。
+    this.root.addEventListener('reset', this.onReset);
     // load は非バブルなのでキャプチャで拾う
     this.root.addEventListener('load', this.onLoadCapture, true);
     // ページ全体のロード
@@ -204,6 +237,7 @@ export default class EventDispatcher {
     this.root.removeEventListener('click', this.onClick);
     this.root.removeEventListener('change', this.onChange);
     this.root.removeEventListener('input', this.onInput);
+    this.root.removeEventListener('reset', this.onReset);
     this.root.removeEventListener('load', this.onLoadCapture, true);
     window.removeEventListener('load', this.onWindowLoad);
     window.removeEventListener('popstate', this.onPopstate);
