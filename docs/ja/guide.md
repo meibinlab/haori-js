@@ -2285,6 +2285,16 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 ></div>
 ```
 
+#### `data-fetch-download`: 応答をファイルとして保存
+
+```html
+<!-- 表示ではなく保存する。失敗は通常のフェッチと同じエラー表示に載る -->
+<div
+  data-fetch="/api/reports/summary.pdf"
+  data-fetch-download="summary.pdf"
+></div>
+```
+
 #### `data-fetch-data`: 送信データを指定
 
 ```html
@@ -3269,6 +3279,26 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
   アップロード
 </button>
 ```
+
+#### `data-click-fetch-download`: 応答をファイルとして保存
+
+CSV のエクスポートや PDF のダウンロードを、宣言だけで書けます。ブラウザのダウンロード（`type="submit"` と `formaction`）に委ねると失敗が画面に出ませんが、この宣言なら **2xx 以外は保存せず、通常のフェッチと同じエラー表示**に載ります。
+
+```html
+<!-- 検索条件をそのままエクスポートへ渡す。失敗はフォームのメッセージになる -->
+<button
+  data-click-fetch="/api/customers.csv"
+  data-click-form="#search-form"
+  data-click-fetch-download="customers.csv"
+  data-click-fetch-state="#export-state"
+>
+  エクスポート
+</button>
+```
+
+ファイル名は、応答の `Content-Disposition` → 属性値 → URL の末尾の順で決まります。別オリジンから取得する場合は、サーバ側で `Access-Control-Expose-Headers: Content-Disposition` を返さないとファイル名を読めません（属性値へ落ちます）。
+
+詳細は仕様書の[`data-fetch-download` / `data-{event}-fetch-download`](specs.md#data-fetch-download--data-event-fetch-download)を参照してください。
 
 #### `data-click-bind`: データのバインド先
 

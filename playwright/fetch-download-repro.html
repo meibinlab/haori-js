@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>応答をファイルとして保存する</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 検索条件をそのままエクスポートへ渡す。失敗はこのフォームのメッセージになる -->
+  <form id="search-form">
+    <input name="keyword" value="鈴木">
+    <input name="status" value="active">
+  </form>
+
+  <button id="export"
+    data-click-fetch="/api/customers.csv"
+    data-click-form="#search-form"
+    data-click-fetch-download="fallback.csv">エクスポート</button>
+
+  <button id="export-error"
+    data-click-fetch="/api/customers-error.csv"
+    data-click-form="#search-form"
+    data-click-fetch-download="fallback.csv">エクスポート（失敗）</button>
+</body>
+</html>

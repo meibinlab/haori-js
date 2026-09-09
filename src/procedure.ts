@@ -45,6 +45,13 @@ const PROCEDURE_HISTORY_STATE_KEY = '__haoriHistoryState__';
 const PROCEDURE_CLICK_LOCK_MARKER = 'data-haori-click-lock';
 
 /**
+ * 保存に失敗したときに表示する全体エラーメッセージ。
+ * 仕様「`data-fetch-download` / `data-{event}-fetch-download`」の
+ * 「`ファイルを保存できませんでした` を全体エラーとして表示し」。
+ */
+const DOWNLOAD_FAILURE_MESSAGE = 'ファイルを保存できませんでした';
+
+/**
  * Procedure から利用する Haori API を解決します。
  * window.Haori が差し替えられている場合はそちらを優先します。
  *
@@ -720,6 +727,18 @@ export interface ProcedureOptions {
    * 自要素を対象とし、CSS セレクタ指定時は該当要素群を対象とする。
    */
   fetchStateFragments?: ElementFragment[] | null;
+
+  /**
+   * 応答本文をファイルとして保存するかどうか。
+   * `data-fetch-download` / `data-{event}-fetch-download` の宣言で立てる。
+   */
+  download?: boolean;
+
+  /**
+   * ダウンロード時のファイル名の既定値（属性値の評価結果）。
+   * 応答の `Content-Disposition` が優先で、こちらはその次に使う。
+   */
+  downloadFileName?: string | null;
 
   /** レスポンスデータをバインドする際のキー名 */
   bindArg?: string | null;
@@ -1663,6 +1682,33 @@ ${body}
     if (Object.keys(fetchOptions).length > 0) {
       options.fetchOptions = fetchOptions;
     }
+    // fetch-download（イベントあり/なし）
+    // event: data-{event}-fetch-download, non-event: data-fetch-download
+    const fetchDownloadAttr = event
+      ? Procedure.attrName(event, 'fetch-download')
+      : Procedure.attrName(null, 'download', true);
+    if (fragment.hasAttribute(fetchDownloadAttr) && !hasFetchAttr) {
+      // 保存する応答が無い。収集値をそのままファイルにするのは宣言の意図と違う
+      // ため無視する（仕様「`data-fetch-download` /
+      // `data-{event}-fetch-download`」の「`data-{event}-fetch` と併せて宣言して
+      // ください」）。宣言の誤りなので常に記録する。
+      Log.warn(
+        'Haori',
+        `${fetchDownloadAttr} は ${fetchAttrName} と併せて指定してください` +
+          '（保存する応答が無いため、この宣言は無視します）。',
+      );
+    } else if (fragment.hasAttribute(fetchDownloadAttr)) {
+      options.download = true;
+      const downloadEvaluation =
+        fragment.getAttributeEvaluation(fetchDownloadAttr);
+      // 未解決参照でもダウンロードは行う。ファイル名の指定が無いものとして扱い、
+      // 応答のヘッダーと URL の末尾で決める（仕様「`data-fetch-download` /
+      // `data-{event}-fetch-download`」の「ファイル名の決定」）。名前が決まらない
+      // ことは保存できない理由にならない。
+      options.downloadFileName = downloadEvaluation?.hasUnresolvedReference
+        ? null
+        : Procedure.normalizeAttributeText(downloadEvaluation?.value);
+    }
     // bind（イベントあり/なし: 非イベントは data-fetch-bind）
     const bindAttr = event
       ? Procedure.attrName(event, 'bind')
@@ -2127,13 +2173,32 @@ ${body}
     }
 
     // fetch が指定されているのにバインド先が無い場合、デフォルトで自要素にバインド
+    // （ダウンロードを宣言した場合は補わない。本文は 1 度しか読めないため、保存と
+    // バインドは両立しない。仕様「`data-fetch-download` /
+    // `data-{event}-fetch-download`」の「応答をバインドしません」）
     if (
       hasFetchAttr &&
+      !options.download &&
       (!options.bindFragments || options.bindFragments.length === 0)
     ) {
       options.bindFragments = [fragment];
       // 明示指定ではなく既定で補った self-bind であることを記録する。
       options.defaultSelfBind = true;
+    }
+    if (
+      options.download &&
+      options.bindFragments &&
+      options.bindFragments.length > 0
+    ) {
+      // 明示したバインド先は保存と両立しない。宣言の誤りなので常に記録する
+      // （仕様「`data-fetch-download` / `data-{event}-fetch-download`」の
+      // 「バインド先を明示している場合は警告を記録し、保存を優先します」）。
+      Log.warn(
+        'Haori',
+        `${fetchDownloadAttr} と同時にバインド先が指定されています` +
+          '（応答はファイルとして保存し、バインドは行いません）。',
+      );
+      options.bindFragments = null;
     }
     Procedure.recordRowWriteTargets(options);
     return options;
@@ -2792,6 +2857,181 @@ ${body}
   }
 
   /**
+   * 応答本文をファイルとして保存します。
+   *
+   * 保存は `<a download>` の生成で行います。ダウンロードはブラウザの機能なので、
+   * 失敗しても手続きは続けます（後続のアクションを止めない）。
+   *
+   * @param response 成功応答
+   * @param url フェッチ URL（ファイル名の最後の手掛かりに使う）
+   * @returns 保存の完了 Promise
+   */
+  private async saveResponseAsFile(
+    response: Response,
+    url?: string,
+  ): Promise<boolean> {
+    let blob: Blob;
+    try {
+      blob = await response.blob();
+    } catch (error) {
+      Log.error('Haori', `応答をファイルとして読み取れませんでした: ${error}`);
+      return false;
+    }
+    const fileName = Procedure.resolveDownloadFileName(
+      response,
+      this.options.downloadFileName ?? null,
+      url ?? this.options.fetchUrl ?? null,
+    );
+    if (
+      typeof URL === 'undefined' ||
+      typeof URL.createObjectURL !== 'function'
+    ) {
+      // 仕様「`data-fetch-download` / `data-{event}-fetch-download`」の
+      // 「`Blob` の URL を生成できない環境では実行できません」。
+      Log.error(
+        'Haori',
+        'この環境では Blob の URL を生成できないため、ファイルを保存できません。',
+      );
+      return false;
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    // 文書へ入れてから押す。文書の外の `<a>` はクリックがどこへも伝わらず、
+    // 保存が始まらないブラウザがある（`rel` と `display` は押した直後に取り除く
+    // ため観測できる差が無く、置いていない）。
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    // 解放は次のタスクで行う（仕様「`data-fetch-download` /
+    // `data-{event}-fetch-download`」の「生成した URL は次のタスクで解放します」）。
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    return true;
+  }
+
+  /**
+   * 保存に失敗したことを画面へ表示します。
+   *
+   * 表示先は失敗した応答の振り分けと同じ（フォーム、無ければ対象要素、
+   * それも無ければ `document.body`）です。
+   *
+   * @returns 表示の完了 Promise
+   */
+  private async showDownloadFailure(): Promise<void> {
+    const baseFragment =
+      this.options.formFragment ??
+      (this.options.targetFragment
+        ? Form.getFormFragment(this.options.targetFragment) ||
+          this.options.targetFragment
+        : null);
+    const target = baseFragment ? baseFragment.getTarget() : document.body;
+    const activeHaori = resolveProcedureHaoriApi();
+    // 失敗の表示は 1 応答分へ置き換える（`handleFetchError()` と同じ規則）。
+    await activeHaori.clearMessages(target);
+    await activeHaori.addErrorMessage(target, DOWNLOAD_FAILURE_MESSAGE);
+  }
+
+  /**
+   * 保存するファイル名を決めます。
+   *
+   * 仕様「`data-fetch-download` / `data-{event}-fetch-download`」の
+   * 「ファイル名の決定」の順（`Content-Disposition` > 属性値 > URL の末尾）です。
+   *
+   * @param response 成功応答
+   * @param declared 属性値で指定された既定のファイル名（無ければ null）
+   * @param url フェッチ URL（無ければ null）
+   * @returns 保存に使うファイル名
+   */
+  private static resolveDownloadFileName(
+    response: Response,
+    declared: string | null,
+    url: string | null,
+  ): string {
+    const fromHeader = Procedure.readContentDispositionFileName(
+      response.headers.get('Content-Disposition'),
+    );
+    const candidates = [fromHeader, declared, Procedure.readUrlFileName(url)];
+    for (const candidate of candidates) {
+      const sanitized = Procedure.sanitizeFileName(candidate);
+      if (sanitized !== null) {
+        return sanitized;
+      }
+    }
+    return 'download';
+  }
+
+  /**
+   * `Content-Disposition` からファイル名を読み取ります。
+   *
+   * RFC 5987 形式（`filename*=UTF-8''...`）を `filename` より優先します。
+   * 文字集合を宣言できるのはこちらだけで、非 ASCII のファイル名はこちらにしか
+   * 入らないためです。
+   *
+   * @param header ヘッダーの値（無ければ null）
+   * @returns 読み取ったファイル名。読み取れない場合は null
+   */
+  private static readContentDispositionFileName(
+    header: string | null,
+  ): string | null {
+    if (!header) {
+      return null;
+    }
+    const extended = /filename\*\s*=\s*([^;]+)/i.exec(header);
+    if (extended) {
+      const value = extended[1].trim();
+      const parts = value.split("'");
+      const encoded = parts.length >= 3 ? parts.slice(2).join("'") : value;
+      try {
+        return decodeURIComponent(encoded);
+      } catch (error) {
+        // 壊れたパーセント符号化。`filename` の方へ落とす。
+        Log.warn('Haori', `Content-Disposition を解釈できません: ${error}`);
+      }
+    }
+    const quoted = /filename\s*=\s*"((?:[^"\\]|\\.)*)"/i.exec(header);
+    if (quoted) {
+      return quoted[1].replace(/\\(.)/g, '$1');
+    }
+    const bare = /filename\s*=\s*([^;]+)/i.exec(header);
+    return bare ? bare[1].trim() : null;
+  }
+
+  /**
+   * URL の末尾のセグメントをファイル名として読み取ります。
+   *
+   * @param url フェッチ URL（無ければ null）
+   * @returns 末尾のセグメント。取り出せない場合は null
+   */
+  private static readUrlFileName(url: string | null): string | null {
+    if (!url) {
+      return null;
+    }
+    const path = url.split('#')[0].split('?')[0];
+    const segments = path.split('/');
+    const last = segments[segments.length - 1];
+    return last === '' ? null : last;
+  }
+
+  /**
+   * ファイル名から、保存先を移動させうる文字を取り除きます。
+   *
+   * 仕様「`data-fetch-download` / `data-{event}-fetch-download`」の「パス区切り
+   * （`/` `\`）と制御文字は、保存先を移動させないため取り除きます」。
+   *
+   * @param name 元のファイル名（無ければ null）
+   * @returns 使えるファイル名。残らない場合は null
+   */
+  private static sanitizeFileName(name: string | null): string | null {
+    if (name === null) {
+      return null;
+    }
+    // eslint-disable-next-line no-control-regex
+    const stripped = name.replace(/[\u0000-\u001f\u007f/\\]/g, '').trim();
+    return stripped === '' ? null : stripped;
+  }
+
+  /**
    * フェッチ後の処理を実行します。
    */
   private async handleFetchResult(
@@ -2847,6 +3087,25 @@ ${body}
             'response' in result ? result.response : response
           ) as Response;
         }
+      }
+    }
+    if (this.options.download) {
+      // 保存はバインドの位置で行う（仕様「処理順序」の 9）。バインド先は宣言の
+      // 読み取りで空にしてあるため、この後の `bindResult()` は何もしない。
+      const saved = await this.saveResponseAsFile(response, url);
+      if (!saved) {
+        // 保存の失敗を画面へ出す（仕様「`data-fetch-download` /
+        // `data-{event}-fetch-download`」の「保存そのものに失敗した場合は、画面へ
+        // 失敗として出します」）。ダウンロードの失敗が画面に出ないことが、この
+        // 属性を設けた理由である。通信は成功しているため `haori:fetcherror` は
+        // 発火せず、`statusCode` も応答のステータスのままにする。
+        await this.showDownloadFailure();
+        await this.injectFetchState(
+          'error',
+          response.status,
+          DOWNLOAD_FAILURE_MESSAGE,
+        );
+        return false;
       }
     }
     const promises: Promise<unknown>[] = [];

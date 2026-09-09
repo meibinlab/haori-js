@@ -2546,6 +2546,7 @@ data-fetch="url"
 - `data-fetch-bind-append`: 配列を追記するキー（[`data-fetch-bind-append` / `data-{event}-bind-append` / `data-intersect-bind-append`](#data-fetch-bind-append--data-event-bind-append--data-intersect-bind-append)）
 - `data-fetch-bind-transform`: 応答の変換（[`data-{event}-bind-transform`（非イベント: `data-fetch-bind-transform`）](#data-event-bind-transform非イベント-data-fetch-bind-transform)）
 - `data-fetch-state`: フェッチ状態 `_fetch` の注入先セレクタ（省略時は自要素）
+- `data-fetch-download`: 応答をファイルとして保存する（[`data-fetch-download` / `data-{event}-fetch-download`](#data-fetch-download--data-event-fetch-download)）
 
 **バインドキー名の指定**:
 
@@ -3237,13 +3238,13 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 6. `data-{event}-before-run`: フェッチ前スクリプト実行
 7. `data-{event}-fetch`: HTTP通信実行
 8. `data-{event}-after-run`: フェッチ後スクリプト実行
-9. `data-{event}-bind`: データバインド実行
+9. `data-{event}-bind`: データバインド実行（`data-{event}-fetch-download` を宣言した場合は、バインドの代わりに応答をファイルとして保存）
 10. `data-{event}-adjust`: 値調整実行
 11. `data-{event}-row-add` / `data-{event}-row-remove`（`data-{event}-row-remove-empty`）/ `data-{event}-row-prev` / `data-{event}-row-next`: 行データの変更
 12. `data-{event}-reset`: リセット処理実行
 13. `data-{event}-copy` / `data-{event}-copy-params`: 別要素へバインディング値をコピー
 14. `data-{event}-refetch`: 再フェッチ実行
-15. `data-{event}-click`: クリック実行
+15. `data-{event}-click`: クリック実行（`data-{event}-click-await` を宣言した場合は、対象の手続きの完了を待ってから次へ進む）
 16. `data-{event}-open` / `data-{event}-close`: ダイアログ操作
 17. `data-{event}-dialog` / `data-{event}-toast`: メッセージ表示
 18. `data-{event}-store-clear`: ストレージレコードの破棄
@@ -3869,6 +3870,54 @@ Content-Typeを指定します。
 **優先順位**: `data-{event}-fetch-content-type` の明示 > `data-{event}-fetch-headers` の指定 > デフォルト値。デフォルト値は宣言を補うものなので、`data-{event}-fetch-headers` で `Content-Type` を指定している場合は入れません。**メソッドを宣言していても同じです**（メソッドで扱いを分けると、同じ宣言がメソッドによって残ったり消えたりします）。ヘッダー名の**大小は区別しません**（HTTP のヘッダー名は大小を区別しないため。区別すると `content-type` と書いた指定にデフォルト値が加わり、両方を結合した `text/plain, application/json` のような値を送ります）。
 
 ボディを作る経路では、この優先順位で決めた値のあとに、**作ったボディの形式へ合わせて決め直します**。`multipart/form-data` は境界を付けるためヘッダーを外し、`multipart/form-data` でも `application/x-www-form-urlencoded` でもない指定で本体を作る場合は JSON にするため `application/json` にします。ボディの形式と食い違う `Content-Type` は送りません。
+
+##### `data-fetch-download` / `data-{event}-fetch-download`
+
+応答本文を**ファイルとして保存**します。CSV のエクスポートや PDF のダウンロードを、画面個別の JavaScript を書かずに宣言だけで済ませるための属性です。
+
+**構文**:
+```html
+data-fetch-download                        <!-- 非イベント data-fetch 用 -->
+data-click-fetch-download                  <!-- イベント起点の場合は data-{event}-fetch-download -->
+data-click-fetch-download="customers.csv"  <!-- ファイル名の既定値を指定する -->
+```
+
+```html
+<!-- 検索条件をそのままエクスポートへ渡す。失敗は画面のエラーとして表示される -->
+<button
+  data-click-fetch="/api/customers.csv"
+  data-click-form="#search-form"
+  data-click-fetch-download="customers.csv"
+  data-click-fetch-state="#export-state"
+>エクスポート</button>
+```
+
+**`data-{event}-fetch` と併せて宣言してください。** フェッチ URL が無い場合、この宣言は無視して警告を記録します（送信データを組み立てるだけの手続きには保存する応答が無く、収集値をそのままファイルにするのは宣言の意図と違うためです）。
+
+**ファイル名の決定**: 次の順で、最初に決まったものを使います。
+
+1. 応答の `Content-Disposition` のファイル名（`filename*` の RFC 5987 形式を `filename` より優先します）
+2. 属性値（`{{式}}` を書けます）
+3. フェッチ URL の末尾のセグメント（クエリと断片を除きます）
+
+いずれも決まらない場合は `download` という名前で保存します。属性値の式が[未解決参照](#未解決参照の診断)になった場合は、指定が無いものとして 1・3 で決めます（ダウンロード自体は行います）。ファイル名に含まれるパス区切り（`/` `\`）と制御文字は、保存先を移動させないため取り除きます。
+
+**挙動**:
+
+- 保存するのは**成功応答（2xx）だけ**です。2xx 以外は保存せず、通常のフェッチと同じエラーの振り分け（フィールドエラー・全体エラー）に載せます（[エラーハンドリング](#エラーハンドリング)）。**ダウンロードの失敗を画面のメッセージとして表示できます。**
+- 送信内容の組み立ては通常のフェッチと同じです。`data-{event}-form` / `data-{event}-data` / `data-{event}-fetch-method` / `data-{event}-fetch-headers` がそのまま使えます。
+- 進行状況は [`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state) で参照できます。`success` は保存をブラウザへ渡した後に注入します。
+- **応答をバインドしません。** 本文は 1 度しか読めないため、この宣言があるときは[既定 self-bind](#data-fetch) を行いません。バインド先を明示している場合は警告を記録し、保存を優先します。
+- **本文が空でも、応答のとおりに保存します。** 0 件のエクスポートで 0 バイトの CSV が返る構成があり、握りつぶすと「押しても何も起きない」状態になるためです（`204 No Content` では 0 バイトのファイルを保存します）。
+- **保存そのものに失敗した場合は、画面へ失敗として出します。** 応答本文を読めない場合（通信が途中で切れたなど）と、`Blob` の URL を生成できない環境がこれにあたります。`_fetch` へ `error` を注入し、`ファイルを保存できませんでした` を全体エラーとして表示し、**以降のアクション（ダイアログ・トースト・リダイレクトなど）は実行しません**。ダウンロードの失敗が画面に出ないことが、この属性を設けた理由だからです。通信そのものは成功しているため、`_fetch.statusCode` は応答のステータス（2xx）のままで、[`haori:fetcherror`](#haorifetcherror) は発火しません。
+- 保存に使う一時的な URL は、保存を始めた**次のタスクで解放します**（同じタスクで解放すると、保存が始まる前に中身を読めなくなるブラウザがあるため）。
+- 保存の後も、後続のアクション（`data-{event}-toast` / `-close` / `-reset` など）は通常どおり実行されます。処理順序では[バインド](#処理順序)（9）の位置で、バインドの代わりに保存します。
+
+**制約**:
+
+- **別オリジンの応答では、`Access-Control-Expose-Headers: Content-Disposition` が無いとファイル名を読めません。** 読めない場合は上の 2・3 で決めます。
+- 応答本文をいったんメモリへ載せます。巨大な出力ではブラウザのダウンロード（直接リンクやフォーム送信）のほうが有利です。
+- 保存は `<a download>` の生成で行うため、`Blob` の URL を生成できない環境では実行できません（上の「保存そのものに失敗した場合」として扱います）。
 
 #### バインド
 
