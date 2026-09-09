@@ -17,7 +17,13 @@ import Haori from '../src/haori';
 import Log from '../src/log';
 import {waitForCondition, waitForIdle} from './helpers/async';
 
-/** 記録した通信の順序（開始と終了を並べる） */
+/**
+ * 記録した通信の順序（開始と終了を並べる）。
+ *
+ * テストごとに作り直し、スタブは**作られた時点の配列**へ書きます。遅れて届いた
+ * 応答は前のテストの配列へ入るため、次のテストの観測へ混ざりません（実際に CI で
+ * 遅れた `end` が次のテストへ混ざって落ちました）。
+ */
 let log: string[] = [];
 
 describe('data-{event}-click-await', () => {
@@ -46,15 +52,17 @@ describe('data-{event}-click-await', () => {
    */
   const stubFetch = (
     plan: Record<string, {status: number; delay: number}>,
-  ): ReturnType<typeof vi.spyOn> =>
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input: unknown) => {
+  ): ReturnType<typeof vi.spyOn> => {
+    // このテストの配列を捕まえる（後で `log` が差し替わっても書き先は変わらない）。
+    const sink = log;
+    return vi.spyOn(globalThis, 'fetch').mockImplementation((input: unknown) => {
       const url = String(input);
       const key = Object.keys(plan).find(part => url.includes(part)) as string;
       const {status, delay} = plan[key];
-      log.push(`start:${key}`);
+      sink.push(`start:${key}`);
       return new Promise(resolve => {
         setTimeout(() => {
-          log.push(`end:${key}`);
+          sink.push(`end:${key}`);
           resolve(
             new Response(JSON.stringify({}), {
               status,
@@ -64,6 +72,7 @@ describe('data-{event}-click-await', () => {
         }, delay);
       }) as Promise<Response>;
     }) as ReturnType<typeof vi.spyOn>;
+  };
 
   /**
    * HTML をマウントして走査します。
@@ -130,7 +139,8 @@ describe('data-{event}-click-await', () => {
     // 混ざる）。
     await waitForCondition(() => log.includes('end:/api/first'), {
       description: '遅い方の更新が終わる',
-      maxAttempts: 40,
+      maxAttempts: 60,
+      delayMs: 20,
     });
   });
 
@@ -233,7 +243,8 @@ describe('data-{event}-click-await', () => {
     // 遅れて届いた記録が次のテストの観測へ混ざる）。
     await waitForCondition(() => log.includes('end:/api/first'), {
       description: '先行した更新が終わる',
-      maxAttempts: 40,
+      maxAttempts: 60,
+      delayMs: 20,
     });
     await waitForIdle();
 
