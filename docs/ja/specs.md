@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.48.0
+バージョン: 0.48.1
 最終更新: 2026-09-02
 
 ## 目次
@@ -4986,7 +4986,7 @@ document.addEventListener('haori:ready', (event) => {
 
 **detail**:
 ```typescript
-{ version: string }  // ライブラリのバージョン（例: '0.48.0'）
+{ version: string }  // ライブラリのバージョン（例: '0.48.1'）
 ```
 
 > **補足**: `data-each` の描画完了を検知したい場合は、専用の完了マーカー
@@ -5399,7 +5399,7 @@ Haori.enhancers.register('choices', {init, refresh, destroy})
 
 ```javascript
 Haori.Core.dumpScope(element)
-Haori.version // '0.48.0'
+Haori.version // '0.48.1'
 ```
 
 `Haori.Haori` と `Haori.default` はグローバル自身への自己参照です
