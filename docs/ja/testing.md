@@ -193,6 +193,21 @@ await waitForDomSettled(12);
 
 過去に `ElementFragment.setBindingData()` を直接呼んで割り込みを模したテストがあり、そのために**生きた不具合を隠していました**。実イベント（`change`）へ書き換えた途端に落ちました。
 
+### jsdom で初期表示を再現する
+
+`src/observer.ts` は**読み込まれた時点で `Observer.init()` を呼びます**（jsdom の `document.readyState` は `complete`）。そのため、`document.body.innerHTML` を差し替えてから `Observer.init()` を呼び直しても、`<body>` の断片は最初の走査のものがキャッシュに残り、**ブラウザの初期表示とは別の木**になります。2026-09-11 の課題 #42・#43 では、これに気づかず jsdom の実測をいったん誤読しました。
+
+初期表示（`<head>` / `<body>` 内の登録、初期スキャン中の連携の呼び出し）を検証するときは、ブラウザと同じ順を再現してください。
+
+1. `vi.resetModules()` でモジュールを読み込み直す
+2. `document.readyState` を `loading` に見せてから `src/index` を読み込む（初期化は `DOMContentLoaded` を待つ）
+3. `<head>` 内の登録なら「登録 → `<body>` のマークアップ」、`<body>` 内の登録なら「マークアップ → 登録」の順に用意する
+4. `DOMContentLoaded` を発火し、`haori:ready` を待つ
+
+読み込み直したモジュールは、`tests/helpers/async.ts` が読み込んだ `Queue` とは別のインスタンスです。**`waitForIdle()` などの待機は使えず、不変条件の自動検査も走りません。** 待機は読み込み直した `Queue` で行い、後始末で読み込み直した `Observer` の監視を止めてください。実例は [tests/external-subtree-lifecycle.test.ts](../../tests/external-subtree-lifecycle.test.ts) です。
+
+E2E で `data-haori-ready` を待つときは、`page.waitForSelector()` が既定で**表示されていること**も待つ点に注意してください。`<body>` の中身が消えて見えない状態を調べるなら `{state: 'attached'}` を付けます。
+
 ## 不変条件の常時検査
 
 [tests/helpers/invariants.ts](../../tests/helpers/invariants.ts) が、仕様から取った不変条件を持っています。`waitForDomSettled()` の終わりで自動的に検査されるため、**個々のテストへ検査を書き足す必要はありません**。
