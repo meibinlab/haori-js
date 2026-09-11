@@ -1754,12 +1754,13 @@ export default class Core {
    *
    * @param parentElement 親エレメント
    * @param node 追加するノード
+   * @returns 追加したノードの走査（評価）の Promise。走査しない場合は解決済みの Promise
    */
-  public static addNode(parentElement: HTMLElement, node: Node) {
+  public static addNode(parentElement: HTMLElement, node: Node): Promise<void> {
     const parent = Fragment.get(parentElement);
     // skipMutationNodesが設定されている場合は処理をスキップ
     if (parent.isSkipMutationNodes()) {
-      return;
+      return Promise.resolve();
     }
     const next = Fragment.get(node.nextSibling);
     const fragment = Fragment.get(node);
@@ -1768,17 +1769,19 @@ export default class Core {
         // すでに親の子としてフラグメント木へ繋がっているノードは、Haori 自身が
         // 差し込んで走査まで済ませたもの（`data-import` の断片）である。挿入し
         // 直すと走査が二重になるため、ここでは何もしない。
-        return;
+        return Promise.resolve();
       }
       parent.insertBefore(fragment, next);
       if (fragment instanceof ElementFragment) {
         // 新規追加ノードは属性評価（bind/if/each/import など含む）のフルスキャンを行う。
         // これにより、取り込まれた断片内の data-import の入れ子や data-bind も正しく処理される。
-        Core.scan(fragment.getTarget());
-      } else if (fragment instanceof TextFragment) {
-        Core.evaluateText(fragment);
+        return Core.scan(fragment.getTarget());
+      }
+      if (fragment instanceof TextFragment) {
+        return Core.evaluateText(fragment);
       }
     }
+    return Promise.resolve();
   }
 
   /**

@@ -78,10 +78,31 @@ export default class Enhance {
   private static readonly warnedMissingGlobals = new Set<string>();
 
   /**
+   * Haori 自身の適用処理（`applySubtree()`）が通った要素。
+   *
+   * `register()` の遡りの適用は、この要素（適用を保留した要素）だけを対象にします。
+   * まだ通っていない要素（`<body>` 内のスクリプトで登録した時点で、初期スキャンの
+   * 前にある要素など）へその場で `init` を呼ぶと、描画前の DOM に対して走るうえ、
+   * 連携が生成した DOM が走査でフラグメント木へ載り、`data-external` の配下でも
+   * フォーム値の収集に載ります（仕様「`data-enhance`」、課題 #42）。
+   */
+  private static readonly visited = new WeakSet<HTMLElement>();
+
+  /**
+   * 連携の呼び出しを包み、呼び出しが起こした DOM 変更を取り込む処理。
+   *
+   * `Observer` が登録します（`Observer` を直接参照すると循環参照になるため、
+   * フックとして受け取ります）。未登録の場合はそのまま呼び出します。
+   */
+  private static mutationCapture: ((callback: () => void) => void) | null =
+    null;
+
+  /**
    * 外部ライブラリ連携を登録します。
    *
-   * 登録前に描画された要素へも遡って適用するため、スクリプトの読み込み順に
-   * 依存しません（登録の時点で `document.body` 配下を走査します）。
+   * 適用を保留していた要素（Haori の適用処理が一度通った要素）へ遡って適用する
+   * ため、スクリプトの読み込み順に依存しません（登録の時点で `document.body` 配下を
+   * 走査します）。まだ Haori が走査していない要素には、走査の最後に適用します。
    *
    * @param name `data-enhance` に書く名前
    * @param enhancer 連携の定義
@@ -100,9 +121,28 @@ export default class Enhance {
     Enhance.enhancers.set(key, enhancer);
     Enhance.warnedUnknownNames.delete(key);
     if (typeof document !== 'undefined' && document.body) {
-      // 登録より前に描画された要素へ遡って適用する。
-      Enhance.applySubtree(document.body);
+      // 適用を保留していた要素へ遡って適用する。Haori の適用処理がまだ通って
+      // いない要素は飛ばす（走査の最後に適用される）。ここで init を呼ぶと、描画前の
+      // DOM に対して走り、生成された DOM が走査でフラグメント木へ載る。
+      Enhance.forEachTarget(document.body, element => {
+        if (Enhance.visited.has(element)) {
+          Enhance.applyElement(element);
+        }
+      });
     }
+  }
+
+  /**
+   * 連携の呼び出しが起こした DOM 変更を取り込む処理を登録します。
+   *
+   * @internal `Observer` が、監視の開始前の取り込みに使います。
+   * @param capture 呼び出しを包んで実行する処理。解除する場合は `null`
+   * @returns 戻り値はありません。
+   */
+  public static setMutationCapture(
+    capture: ((callback: () => void) => void) | null,
+  ): void {
+    Enhance.mutationCapture = capture;
   }
 
   /**
@@ -125,6 +165,11 @@ export default class Enhance {
    */
   public static applySubtree(root: HTMLElement): void {
     Enhance.forEachTarget(root, element => {
+      // 遡りの適用の対象として控える（`visited` を参照）。`refreshSubtree()` では
+      // 控えない。再同期の対象（描画確定・再表示・リセットの配下）は、走査や行の
+      // 追加でこの処理を先に通っているため（`refreshSubtree()` で控える行を外しても
+      // 結果が変わらないことを確認済み）。
+      Enhance.visited.add(element);
       Enhance.applyElement(element);
     });
   }
@@ -377,16 +422,24 @@ export default class Enhance {
    * 連携の呼び出しを例外から保護して実行します。
    *
    * 1 つの連携の失敗で他の要素の適用や描画を止めないため、例外は記録して続行します。
+   * 取り込みの処理（`setMutationCapture()`）が登録されていれば、それで包んで呼び出します。
    *
    * @param label ログに出す処理名
    * @param callback 実行する処理
    * @returns 戻り値はありません。
    */
   private static run(label: string, callback: () => void): void {
-    try {
-      callback();
-    } catch (error) {
-      Log.error('[Haori]', `${label} failed:`, error);
+    const invoke = (): void => {
+      try {
+        callback();
+      } catch (error) {
+        Log.error('[Haori]', `${label} failed:`, error);
+      }
+    };
+    if (Enhance.mutationCapture) {
+      Enhance.mutationCapture(invoke);
+    } else {
+      invoke();
     }
   }
 }

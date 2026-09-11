@@ -748,6 +748,20 @@ export default abstract class Fragment {
     return fragment;
   }
 
+  /**
+   * キャッシュ済みのフラグメントを返します。無ければ作成せず `null` を返します。
+   *
+   * `get()` はフラグメントを作成するため、「Haori が既に知っているノードか」の
+   * 判定には使えません。
+   *
+   * @internal 監視と木の組み立てで、既知のノードかを判定するために使います。
+   * @param node 対象ノード
+   * @returns キャッシュ済みのフラグメント。無ければ `null`
+   */
+  public static peek(node: Node): Fragment | null {
+    return Fragment.FRAGMENT_CACHE.get(node) ?? null;
+  }
+
   /** 親フラグメント */
   protected parent: ElementFragment | null = null;
 
@@ -1188,10 +1202,38 @@ export class ElementFragment extends Fragment {
       }
     });
     target.childNodes.forEach(node => {
+      if (ElementFragment.isOwnedWithinExternal(node)) {
+        return;
+      }
       const childFragment = Fragment.get(node);
       childFragment!.setParent(this);
       this.children.push(childFragment!);
     });
+  }
+
+  /**
+   * ノードの断片が、同じ `data-external` の要素の内側で既に別の親に属しているかを返します。
+   *
+   * 外部ライブラリが `data-external` の配下に生成したコンテナの断片が、内部の走査
+   * （全要素に `Fragment.get()` を呼ぶ処理など）で作られると、そのコンストラクタが
+   * 既知の子（書いた `<select>` など）の断片を奪い、元の親の子の一覧と親の指す先が
+   * 食い違います。その後の移動で、書いた入力が収集から落ちます（仕様「`data-external`」、
+   * 課題 #43）。`data-external` の外では従来どおり奪います（移動の処理がこの付け替えに
+   * 依存しているため）。親がその子を一覧に載せているかは確かめません（`data-external`
+   * の内側で断片の親が古くなる経路は無く、確かめる行を外しても結果が変わらないことを
+   * 確認済み）。
+   *
+   * @param node 子ノード
+   * @returns 取り込まない場合 true
+   */
+  private static isOwnedWithinExternal(node: Node): boolean {
+    const owned = Fragment.peek(node);
+    const owner = owned?.getParent() ?? null;
+    if (owner === null) {
+      return false;
+    }
+    const externalRoot = owner.getTarget().closest(`[${Env.prefix}external]`);
+    return externalRoot !== null && externalRoot.contains(node);
   }
 
   /**
@@ -1358,6 +1400,9 @@ export class ElementFragment extends Fragment {
       // 子の再帰呼び出し（unmount=false）では、起点の走査でまとめて破棄済み。
       Enhance.destroySubtree(this.getTarget());
     }
+    if (this.getTarget().hasAttribute(`${Env.prefix}external`)) {
+      return this.detachPreservingSubtree(unmount);
+    }
     this.children.forEach(child => {
       promises.push(child.remove(false));
     });
@@ -1378,6 +1423,28 @@ export class ElementFragment extends Fragment {
     this.clearUnappliedValueWrite();
     promises.push(super.remove(unmount));
     return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * `data-external` の要素を、内部のフラグメント木を保ったまま親から外します。
+   *
+   * 外した木を捨てると、付け直し（移動を含む）で DOM から組み立て直すことになり、
+   * 外部ライブラリが配下に生成した DOM ごと取り込んでフォーム値の収集に載せます
+   * （仕様「`data-external`」の「付け直した場合も、配下は走査した時点の構成のまま
+   * 扱う」、課題 #42）。子の断片・属性・キャッシュ登録は保ち、付け直しでは
+   * `Core.addNode()` がこの断片をそのまま挿入して走査します。バインドデータの
+   * キャッシュは、付け直しで親を設定するとき（`setParent()`）に部分木ごと捨てられる
+   * ため、ここでは捨てません（捨てる行を外しても結果が変わらないことを確認済み）。
+   *
+   * @param unmount DOM からの除去を行うかどうか
+   * @returns 除去の Promise
+   */
+  private detachPreservingSubtree(unmount: boolean): Promise<void> {
+    const parent = this.getParent();
+    if (parent) {
+      parent.removeChild(this);
+    }
+    return unmount ? this.unmount() : Promise.resolve();
   }
 
   /**

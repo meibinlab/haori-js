@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-external なしで要素を動かすライブラリの初期表示</title>
+  <script src="/dist/haori.iife.js"></script>
+  <script>
+    // Choices.js のように、元の要素を生成コンテナの内側へ移し、destroy で元へ戻す
+    // ライブラリの代役。仕様では data-external の併用が必須の構成だが、併用しない
+    // ページでも初期表示で書いた要素を失わないことを確かめる。<head> 内で登録する。
+    window.__counts = {init: 0, destroy: 0};
+    Haori.enhancers.register('mover', {
+      init: function (element) {
+        window.__counts.init++;
+        var outer = document.createElement('div');
+        outer.className = 'choices';
+        element.parentNode.insertBefore(outer, element);
+        outer.appendChild(element);
+        return {};
+      },
+      destroy: function (element) {
+        window.__counts.destroy++;
+        var outer = element.closest('.choices');
+        if (outer) {
+          outer.parentNode.insertBefore(element, outer);
+          outer.remove();
+        }
+      },
+    });
+  </script>
+</head>
+<body>
+  <form id="f1">
+    <div id="box">
+      <select name="plan" data-enhance="mover"><option value="p1" selected>p1</option></select>
+    </div>
+  </form>
+</body>
+</html>

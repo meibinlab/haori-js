@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-external の配下の生成 DOM（登録の置き場所・移動・付け直し）</title>
+  <script>
+    // 仕様「haori:ready」: 購読はライブラリの読み込みより前に登録する。
+    // 初期化の完了時点で、連携が生成した宣言が処理済みかを控える。
+    window.__declAtReady = null;
+    document.addEventListener('haori:ready', function () {
+      var decl = document.querySelector('#decl-host .gen-decl');
+      window.__declAtReady = decl ? decl.textContent : null;
+    });
+  </script>
+  <script src="/dist/haori.iife.js"></script>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      // 連携の呼び出しの記録（init / destroy の順）。
+      window.__events = [];
+
+      // Choices.js と同じ形の代役。元の select を生成コンテナの内側へ移し、
+      // 名前付きの絞り込み入力（Choices.js の search_terms）を足す。
+      window.__choicesLike = {
+        init: function (element) {
+          window.__events.push('init');
+          var outer = document.createElement('div');
+          outer.className = 'choices';
+          var inner = document.createElement('div');
+          inner.className = 'choices__inner';
+          element.parentNode.insertBefore(outer, element);
+          outer.appendChild(inner);
+          inner.appendChild(element);
+          var search = document.createElement('input');
+          search.type = 'search';
+          search.name = 'search_terms';
+          inner.appendChild(search);
+          return {};
+        },
+      };
+      if (params.get('destroy') === 'restore') {
+        // Choices.js の destroy と同じく、元の要素を戻して生成 DOM を取り除く。
+        window.__choicesLike.destroy = function (element) {
+          window.__events.push('destroy');
+          var outer = element.closest('.choices');
+          if (outer) {
+            outer.parentNode.insertBefore(element, outer);
+            outer.remove();
+          }
+        };
+      }
+
+      // data-external の外へ Haori の宣言を生成する連携の代役。
+      window.__declGenerator = {
+        init: function (element) {
+          var span = document.createElement('span');
+          span.className = 'gen-decl';
+          span.textContent = '{{ 1 + 1 }}';
+          element.appendChild(span);
+          return {};
+        },
+      };
+
+      window.__registerAll = function () {
+        Haori.enhancers.register('choices-like', window.__choicesLike);
+        Haori.enhancers.register('decl-generator', window.__declGenerator);
+      };
+
+      // <head> 内の登録: この時点では <body> が無い。
+      if (params.get('reg') === 'head') {
+        window.__registerAll();
+      }
+
+      // 空白のテキストノードを持たないマークアップを再現する（初期化より前に除く）。
+      // capture で登録するため、Haori の DOMContentLoaded の処理より先に走る。
+      if (params.get('compact') === '1') {
+        document.addEventListener('DOMContentLoaded', function () {
+          var strip = function (node) {
+            Array.prototype.slice.call(node.childNodes).forEach(function (child) {
+              if (child.nodeType === 3 && !child.textContent.trim()) {
+                child.remove();
+              } else if (child.nodeType === 1) {
+                strip(child);
+              }
+            });
+          };
+          strip(document.body);
+        }, {capture: true});
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div id="park"></div>
+  <form id="f1">
+    <input name="keep" value="1">
+    <div id="ext" data-external>
+      <select name="plan" data-enhance="choices-like"><option value="p1" selected>p1</option></select>
+    </div>
+    <div id="slot"></div>
+  </form>
+  <button id="send1" type="button" data-click-fetch="/api/f1.json" data-click-form="#f1">送信 1</button>
+
+  <form id="f2" data-bind='{"rows":[{"id":1},{"id":2}]}'>
+    <div id="rows" data-each="rows" data-each-key="id" data-each-arg="r">
+      <div class="row" data-external><select name="rowplan" data-enhance="choices-like"><option value="x" selected>x</option></select></div>
+    </div>
+  </form>
+  <button id="send2" type="button" data-click-fetch="/api/f2.json" data-click-form="#f2">送信 2</button>
+
+  <div id="decl-host" data-enhance="decl-generator"></div>
+
+  <script>
+    // <body> 内の登録: 初期スキャンより前に登録が済む。
+    if (new URLSearchParams(location.search).get('reg') === 'body') {
+      window.__registerAll();
+    }
+  </script>
+</body>
+</html>

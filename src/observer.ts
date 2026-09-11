@@ -5,6 +5,7 @@
  * MutationObserverを使用して、属性の変更、ノードの追加・削除、テキストノードの変更を監視します。
  */
 import Core from './core';
+import Enhance from './enhance';
 import Env from './env';
 import HaoriEvent from './event';
 import EventDispatcher from './event_dispatcher';
@@ -27,6 +28,16 @@ export class Observer {
 
   /** 稼働中の EventDispatcher（初期化中モードの解除に使用） */
   private static _dispatcher: EventDispatcher | null = null;
+
+  /**
+   * 初期化の途中で取り込んだ DOM 変更の処理（要素の追加の走査と、属性の反映）。
+   * `init()` の完了待ちに含めます。テキストの変更の評価は、初期化の最後の
+   * `Queue.wait()` が待つため控えません（控える行を外しても結果が変わらないことを
+   * 確認済み）。
+   *
+   * 初期化の間だけ配列で、それ以外は `null` です。
+   */
+  private static _initialIntakes: Promise<void>[] | null = null;
 
   /**
    * 既存の MutationObserver をすべて停止します。
@@ -63,6 +74,8 @@ export class Observer {
     const dispatcher = new EventDispatcher();
     Observer._dispatcher = dispatcher;
     dispatcher.startDeferred();
+    // 初期スキャン中の取り込みで始まった処理を控える（`waitInitialIntakes()` を参照）。
+    Observer._initialIntakes = [];
     // 初期化のどこで失敗しても保留モードを必ず解除する。解除し損ねると以降
     // すべてのイベントで手続きが実行されなくなり（data-{event}-prevent は
     // 同期段で効くため）「押しても何も起きない」状態になる。
@@ -86,6 +99,7 @@ export class Observer {
           bodyResult.reason,
         );
       }
+      await Observer.waitInitialIntakes();
       await Queue.wait();
       document.body.setAttribute('data-haori-ready', '');
       Observer.observe(document.head);
@@ -94,6 +108,7 @@ export class Observer {
       PollObserver.syncTree(document.body);
       VisibleRangeObserver.syncTree(document.body);
     } finally {
+      Observer._initialIntakes = null;
       // 監視と表示範囲の同期をすべて整えてから、保留していた手続きを実行する。
       dispatcher.release();
     }
@@ -111,6 +126,145 @@ export class Observer {
    */
   public static getDispatcher(): EventDispatcher | null {
     return Observer._dispatcher;
+  }
+
+  /**
+   * 初期化の途中で取り込んだ DOM 変更の処理を、すべて待ちます。
+   *
+   * 初期スキャン中の連携の呼び出しが起こした変更は、`captureMutations()` が取り込んで
+   * 処理（要素の追加の走査、属性の反映など）を始めています。仕様
+   * 「data-haori-ready 属性」の「すべての DOM 操作の完了後」を保つため、それらの完了を
+   * 待ってから付与へ進みます。待っている間の取り込みで増えた分も待ちます。
+   *
+   * @returns 待機完了の Promise
+   */
+  private static async waitInitialIntakes(): Promise<void> {
+    const pending = Observer._initialIntakes;
+    while (pending !== null && pending.length > 0) {
+      await Promise.allSettled(pending.splice(0));
+    }
+  }
+
+  /**
+   * 連携の呼び出しを実行し、呼び出しが起こした DOM 変更を取り込みます。
+   *
+   * DOM の監視は初期スキャンの後に始まるため、初期スキャン中の連携の呼び出しが
+   * 起こした変更（要素の生成、`{{式}}` を含む宣言の追加など）は、そのままでは
+   * 取り込まれません。仕様「`data-enhance`」の「初期スキャンの途中でも、後から追加
+   * されたノードと同じく取り込みます」のため、監視の開始前に限り一時的な
+   * `MutationObserver` で包み、呼び出しの直後に引き取った記録から既にある要素の
+   * 取り外しと、既にある要素を包む追加を除いて（`toCapturedRecord()`）、通常の監視と
+   * 同じ処理へ渡します。監視の開始後は、通常の監視が受け取るため何もしません。
+   *
+   * @internal `Enhance` の連携の呼び出しから使います（`Enhance.setMutationCapture()`）。
+   * @param callback 連携の呼び出し
+   * @returns 戻り値はありません。
+   */
+  public static captureMutations(callback: () => void): void {
+    // 監視の開始後は通常の監視に任せる。ここで同期的に取り込むと、通常の監視も同じ
+    // 変更を後から処理する（二重の処理）うえ、描画の処理の内側から呼ばれた連携の変更を
+    // その場で取り込み、実行中の処理へ再入する（`flushPendingMutations()` を参照）。
+    // この条件を外して落ちるテストは無いが、上の理由で残す（人間の判断、2026-09-11）。
+    if (Observer._mutationObservers.length > 0) {
+      callback();
+      return;
+    }
+    const capture = new MutationObserver(() => undefined);
+    capture.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    });
+    try {
+      callback();
+    } finally {
+      const records = capture
+        .takeRecords()
+        .map(record => Observer.toCapturedRecord(record));
+      capture.disconnect();
+      Observer.processMutations(records);
+    }
+  }
+
+  /**
+   * 監視の開始前に引き取った記録から、既にある要素の取り外しと、既にある要素を包む
+   * 追加を除きます。
+   *
+   * 連携の呼び出しが新しく生成した要素の追加と、属性・テキストの変更は取り込みます
+   * （仕様「`data-enhance`」の「初期スキャンの途中でも、後から追加されたノードと同じく
+   * 取り込みます」）。既にある要素の取り外しと、既にある要素を生成した要素で包むことは
+   * 取り込みません（同じ節の「既にある要素の取り外しと、既にある要素を生成した要素で
+   * 包むことは、初期スキャンの途中では取り込みません」）。取り外しを取り込むと、DOM を
+   * 動かすライブラリを `data-external` なしで使ったとき、移動に伴う取り外しで `init` の
+   * 直後に `destroy` と取り外しが走り、書いた要素が初期表示で DOM から消えます。既にある
+   * 要素を包む追加を取り込むと、生成した要素の断片がその要素を子にする一方で元の親の子の
+   * 一覧にも残り、値が二重に収集されます。
+   *
+   * @param record 引き取った記録
+   * @returns 処理する記録
+   */
+  private static toCapturedRecord(record: MutationRecord): MutationRecord {
+    if (record.type !== 'childList') {
+      return record;
+    }
+    // `processMutations()` が読むのは種別・対象・追加・取り外しだけなので、追加を絞り、
+    // 取り外しを空にした記録を作って渡す。
+    return {
+      type: record.type,
+      target: record.target,
+      addedNodes: Array.from(record.addedNodes).filter(
+        node => !Observer.hasKnownDescendant(node),
+      ),
+      removedNodes: [],
+    } as unknown as MutationRecord;
+  }
+
+  /**
+   * ノードの子孫の要素に、Haori が既に知っているものがあるかを返します。
+   *
+   * ノード自身が既に知っている要素かは確かめません。既にある要素そのものの追加は、
+   * 取り外しを除いていれば断片の付け替えになるだけで、`destroy` も二重の収集も起こさない
+   * ためです（確かめる行を外しても、既存のテストと、移した要素の `data-fetch` の回数に
+   * 差が出ないことを確認済み）。
+   *
+   * @param node 対象ノード
+   * @returns 既に知っている要素を子孫に含む場合 true
+   */
+  private static hasKnownDescendant(node: Node): boolean {
+    return (
+      node instanceof Element &&
+      Array.from(node.querySelectorAll('*')).some(
+        element => ElementFragment.peek(element) !== null,
+      )
+    );
+  }
+
+  /**
+   * 取り除いた記録が、`data-external` の内側の断片に対する古い記録かどうかを返します。
+   *
+   * `data-external` の配下で起きた変更は `isExternallyManaged()` で読み飛ばしますが、
+   * その判定は処理の時点の祖先で行います。外部ライブラリの `destroy` が生成コンテナを
+   * 取り除くと、コンテナの中で起きた変更（元の要素を戻したことなど）の記録は、処理の
+   * 時点で対象が切り離されていて配下と判定できません。そのまま処理すると、
+   * `data-external` の要素が保っている断片が木から外れ、書いた入力が収集から落ちます
+   * （課題 #43）。記録の親と、ノードの断片の親が食い違い、かつその親が
+   * `data-external` の要素かその配下なら、古い記録として捨てます。`data-external` の
+   * 外では、移動の処理で断片の親が先に付け替わることがあるため適用しません。
+   *
+   * @param mutation 取り除いた記録
+   * @param node 取り除かれたノード
+   * @returns 捨てる場合 true
+   */
+  private static isStaleExternalRemoval(
+    mutation: MutationRecord,
+    node: Node,
+  ): boolean {
+    const parent = ElementFragment.peek(node)?.getParent() ?? null;
+    if (parent === null || parent.getTarget() === mutation.target) {
+      return false;
+    }
+    return parent.getTarget().closest(`[${Env.prefix}external]`) !== null;
   }
 
   /**
@@ -282,13 +436,15 @@ export class Observer {
             ) {
               break;
             }
-            Core.setAttribute(
+            const applied = Core.setAttribute(
               element,
               mutation.attributeName!,
               element.getAttribute(mutation.attributeName!),
               true,
               originSequence,
             );
+            // 初期化の途中で取り込んだ変更は、初期化の完了待ちに含める。
+            Observer._initialIntakes?.push(applied);
             IntersectObserver.syncElement(element);
             PollObserver.syncElement(element);
             VisibleRangeObserver.syncElement(element);
@@ -296,6 +452,9 @@ export class Observer {
           }
           case 'childList': {
             Array.from(mutation.removedNodes).forEach(node => {
+              if (Observer.isStaleExternalRemoval(mutation, node)) {
+                return;
+              }
               IntersectObserver.cleanupTree(node);
               PollObserver.cleanupTree(node);
               VisibleRangeObserver.cleanupTree(node);
@@ -305,7 +464,9 @@ export class Observer {
               if (!(node.parentElement instanceof Element)) {
                 return;
               }
-              Core.addNode(node.parentElement, node);
+              const scanned = Core.addNode(node.parentElement, node);
+              // 初期化の途中で取り込んだ変更は、初期化の完了待ちに含める。
+              Observer._initialIntakes?.push(scanned);
               IntersectObserver.syncTree(node);
               PollObserver.syncTree(node);
               VisibleRangeObserver.syncTree(node);
@@ -342,6 +503,9 @@ export class Observer {
     }
   }
 }
+
+// 連携の呼び出しが監視の開始前に起こした DOM 変更を取り込む（`captureMutations()`）。
+Enhance.setMutationCapture(callback => Observer.captureMutations(callback));
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', Observer.init);

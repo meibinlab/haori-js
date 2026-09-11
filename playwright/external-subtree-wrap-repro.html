@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-external なしで既存の入力欄を包む連携と data-form-list</title>
+  <script src="/dist/haori.iife.js"></script>
+  <script>
+    // 入力欄を生成コンテナで包むだけの連携の代役（data-external なし、<head> 内で登録）。
+    // 初期スキャン中に包んでも、data-form-list の値が二重に収集されないことを確かめる。
+    Haori.enhancers.register('wrapper', {
+      init: function (element) {
+        var outer = document.createElement('div');
+        outer.className = 'wrapper';
+        element.parentNode.insertBefore(outer, element);
+        outer.appendChild(element);
+        return {};
+      },
+    });
+  </script>
+</head>
+<body>
+  <form id="f">
+    <div id="box">
+      <input name="tags" data-form-list value="x" data-enhance="wrapper">
+      <input name="tags" data-form-list value="y">
+    </div>
+  </form>
+  <button id="send" type="button" data-click-fetch="/api/wrap.json" data-click-form="#f">送信</button>
+</body>
+</html>

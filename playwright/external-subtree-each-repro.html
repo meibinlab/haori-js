@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-external の中で data-each が描く select の移動</title>
+  <script src="/dist/haori.iife.js"></script>
+  <script>
+    // 仕様「data-external」の最小例と同じ構成（data-external の中に、data-each で選択肢を
+    // 描く select）に、Choices.js と同じ形の連携の代役を当てる。<head> 内で登録する。
+    window.__events = [];
+    Haori.enhancers.register('choices-like', {
+      init: function (element) {
+        window.__events.push('init');
+        var outer = document.createElement('div');
+        outer.className = 'choices';
+        var inner = document.createElement('div');
+        inner.className = 'choices__inner';
+        element.parentNode.insertBefore(outer, element);
+        outer.appendChild(inner);
+        inner.appendChild(element);
+        var search = document.createElement('input');
+        search.type = 'search';
+        search.name = 'search_terms';
+        inner.appendChild(search);
+        return {};
+      },
+      destroy: function (element) {
+        window.__events.push('destroy');
+        var outer = element.closest('.choices');
+        if (outer) {
+          outer.parentNode.insertBefore(element, outer);
+          outer.remove();
+        }
+      },
+    });
+  </script>
+</head>
+<body>
+  <form id="f1" data-bind='{"plans":[{"id":"a","name":"A"},{"id":"b","name":"B"}]}'>
+    <div id="ext" data-external>
+      <select name="plan" multiple data-enhance="choices-like" data-each="plans" data-each-key="id" data-each-arg="p">
+        <option value="{{p.id}}">{{p.name}}</option>
+      </select>
+    </div>
+    <div id="slot"></div>
+  </form>
+  <button id="send" type="button" data-click-fetch="/api/each.json" data-click-form="#f1">送信</button>
+</body>
+</html>
