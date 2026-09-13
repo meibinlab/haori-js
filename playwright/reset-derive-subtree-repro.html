@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>リセットと data-derive の配下の再評価</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 編集欄を data-if で開き、その内側で data-derive がフォームを包む構成 -->
+  <div id="state" data-bind='{"editingIndex": -1, "editing": null}'>
+    <!-- 表示する前にリセットする（処理順 4 の reset-before → 9 のバインドで表示） -->
+    <button id="openBefore" type="button"
+      data-click-reset-before="#rule-form"
+      data-click-data='{"editingIndex": 0, "editing": {"name": "A", "kind": "k2"}}'
+      data-click-bind="#state" data-click-bind-merge>開く（reset-before）</button>
+
+    <!-- 対照: リセットしない -->
+    <button id="openPlain" type="button"
+      data-click-data='{"editingIndex": 0, "editing": {"name": "A", "kind": "k2"}}'
+      data-click-bind="#state" data-click-bind-merge>開く（リセットなし）</button>
+
+    <button id="close" type="button"
+      data-click-data='{"editingIndex": -1}'
+      data-click-bind="#state" data-click-bind-merge>閉じる</button>
+
+    <div id="panel" data-if="editingIndex >= 0">
+      <div data-derive="({locked: editing?.kind === 'k1'})" data-derive-name="lock">
+        <form id="rule-form">
+          <!-- 表示条件のキーを参照する式 -->
+          <input id="name" name="name"
+            data-attr-value="{{editingIndex>=0&&editing?(editing.name||''):''}}">
+          <select id="kind" name="kind">
+            <option value="k1"
+              data-attr-selected="{{editingIndex>=0&&editing?.kind==='k1'?'selected':null}}">k1</option>
+            <option value="k2"
+              data-attr-selected="{{editingIndex>=0&&editing?.kind==='k2'?'selected':null}}">k2</option>
+          </select>
+          <!-- 対照: 表示条件のキーを参照しない式 -->
+          <input id="nameCopy" name="nameCopy" data-attr-value="{{editing?.name||''}}">
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 収集値（送信データに相当）を写して確かめる -->
+  <button id="collect" type="button" data-click-form="#rule-form" data-click-bind="#out">収集値を写す</button>
+  <div id="out" data-bind='{}'><span id="outName">{{name}}</span>/<span id="outKind">{{kind}}</span></div>
+</body>
+</html>

@@ -1329,6 +1329,7 @@ async handleError(response: Response): Promise<void> {
 ```
 
 - **`data-bind` に含まれないキーの入力欄は、HTML の `value` 属性で与えた初期値がそのまま保たれます**（「未指定のキーは既存の入力値を維持する」規則）。
+- **マークアップに書いた `selected` / `checked` は既定値であり、供給された値を打ち消しません。** `<input>` の `value` 属性と同じ扱いです（`data-bind` からの復元、`data-url-param` で取り込んだ値、フェッチ応答の反映などが優先します）。既定値は [`data-{event}-reset`](#data-event-reset) とネイティブの `form.reset()` の戻り先として使われます。選択・チェックの状態を式で決める場合は `data-attr-selected` / `data-attr-checked`（または `selected="{{式}}"` / `checked="{{式}}"`）を使ってください。
 - **チェック状態は送信値との一致で決まります。** checkbox / radio へ値を反映するときは、その要素の送信値（`value`）と与えられた値（配列の場合は要素のいずれか）が一致すればチェックし、しなければ外します。送信値は `value` 属性を宣言していればその評価値、宣言が無ければ DOM の `value` を使います。したがって `data-each` の行ごとに `data-attr-value` で送信値を与える構成（同名チェックボックス群で複数選択する画面など）でも解決できます。`value` 属性も `data-attr-value` も無い checkbox の送信値は、HTML の既定どおり `"on"` です。
 - 復元は「そのフォームを初めてスキャンしたとき」だけです。`data-if` の表示切替などで再スキャンされても繰り返しません（利用者の編集を初期値へ巻き戻さないため）。
 - 対象は `<form>` 要素です。`data-form` 属性によるフォームコンテナは、`Core.setBindingData()` の逆方向同期と同様に対象外です。
@@ -2008,6 +2009,8 @@ data-attr-{attributeName}="template string"
 - `value`（テキスト系 input / `type="hidden"` / textarea / select）: `input.value` を同期します。`type="hidden"` は利用者が編集できず、送信される値を持つため常に同期対象です（`value` 属性の反映だけでは、値収集や式評価が参照する内部値が更新されません）。`<textarea>` と `<select>` は `value` 属性を持たないため、属性の反映だけでは値が変わりません。
 - `checked`（radio / checkbox）・`selected`（option）: それぞれ `element.checked` / `option.selected` を同期します。
 
+**DOM property を同期するのは、宣言が式（`{{...}}`）を含むときだけです。** 式を含まない静的な値（マークアップの `value` / `checked` / `selected` や、`data-attr-selected="selected"` のような定数）は既定値とみなし、属性（`defaultValue` / `defaultChecked` / `defaultSelected`）だけを更新します（[初期 `data-bind` からの入力欄復元](#初期-data-bind-からの入力欄復元)）。
+
 いずれも**操作中（フォーカス中）の要素には再適用しません**。別要素起因の再評価や `data-fetch` 完了で、ユーザーの未コミット入力・選択が巻き戻るのを防ぐためです。`value` は対象入力自身、`checked` はその input 自身、`selected` は所属する `<select>` がフォーカス中かで判定します。
 
 これは `value="{{式}}"` のように属性へ直接 `{{...}}` を書いた場合も同様です。
@@ -2072,7 +2075,7 @@ data-attr-{attributeName}="template string"
 次の更新は「値の供給」ではないため、印を解除しません（解除すると編集値が評価結果へ巻き戻ります）。
 
 - `change` / `input` による双方向バインディングのコミット。フェッチを伴わない `data-{event}-bind` でバインド先を明示した場合も含みます（バインドされるデータは入力欄から収集した編集値そのものなので、権威を譲る相手がいません）。**コミットが `data-each` の行の要素データを書き換える場合も同じです**（`data-form-list` の行の入力欄はこの形になります）
-- `data-url-param` の再評価（再評価ごとに走るため）
+- `data-url-param` の読み直し（URL の変更を契機に走るため）
 - `data-poll` の応答反映。利用者が要求していない自動取得なので、これまでの編集をすべて応答の上へ載せ直します（**編集が残ります**。数秒ごとの自動取得で、入力してしばらく置いた値が静かに消えるのを防ぐためです）
 - `_poll` / `_fetch` / 可視範囲などエンジン管理変数の更新
 
@@ -2771,6 +2774,18 @@ Haori の fetch 応答が認証エラーのとき、指定 URL へ遷移する�
 URLクエリパラメータをバインディングデータに設定します。
 
 同一要素に `data-fetch`、`data-import`、通常属性、テキストノード評価が共存する場合でも、`data-url-param` はそれらより先に反映される前提とします。
+
+**取り込みの契機**は次の 3 つです。
+
+| 契機 | 動作 |
+| ---- | ---- |
+| 要素を走査（初期化）したとき | 読み込みます。`data-if` の非表示分岐の配下や `data-each` の行など、走査が遅れる要素は、走査した時点の URL を読みます |
+| `data-{event}-history` で URL を書き換えたとき（[`data-{event}-history`](#data-event-history) 参照） | 宣言した要素すべてで読み直します |
+| 戻る・進む操作（`popstate`）のうち、ページを再読み込みしないとき | 宣言した要素すべてで読み直します |
+
+**再評価では読み直しません。** `data-url-arg` を省いた宣言は要素のバインディングデータを全置換するため、再評価のたびに読み直すと、その要素へ書いた値が毎回 URL の内容へ戻ってしまいます。
+
+**他のスクリプトが直接 `history.pushState()` / `history.replaceState()` を呼んだ場合は検知しません。** Haori は History API を差し替えません。URL を書き換えたうえで取り込み直したい場合は `data-{event}-history` を使ってください。
 
 **構文**:
 ```html
@@ -3815,6 +3830,8 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 この属性は `button` 以外の要素にも付与されるため、CSS で実行中スタイルを切り替えられます。
 （他ライブラリと併用して `disabled` 付与が問題になる場合は `data-click-no-disabled` を参照。）
 
+**手続きが終わると、エンジンが付けた `disabled` はその時点の宣言の評価結果へ揃えます。** 起点要素が `data-attr-disabled`（または `disabled="{{式}}"`）を持つ場合、評価結果が真なら手続きの後も `disabled` が残り、偽・`null`・未解決参照なら外れます。宣言を持たない起点要素は、手続きの後に活性へ戻ります。非表示分岐で付けた `disabled` が「利用者が指定した `disabled`（`data-attr-disabled` の評価結果を含む）」を維持するのと同じ扱いです（[`data-if-false` 分岐とフォーム送信](#data-if-false-分岐とフォーム送信) 参照）。
+
 ```html
 <button data-click-fetch="/api/user">取得</button>
 ```
@@ -4638,6 +4655,13 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 - `data-{event}-history-form` は明示指定した場合のみフォーム値を追記する。`data-{event}-form` からの自動補完は行わない
 - `data-{event}-history-data` と `data-{event}-history-form` は独立して動作し、`data-{event}-fetch-form` / `data-{event}-data` とは別に指定する
 
+**`data-url-param` との関係**:
+- `pushState()` の直後に、`data-url-param` を宣言した要素すべてで URL パラメータを読み直す（[`data-url-param`](#data-url-param) 参照）。ページの再読み込みは行わない
+
+**戻る・進む操作（`popstate`）の扱い**:
+- 本属性が積んだ履歴項目（Haori の印が付いた項目）へ戻ったときは、**ページを再読み込み**する。読み込み直した時点の URL で画面全体を組み立て直す
+- 印が付いていない履歴項目（ページを開いた最初の状態など）へ戻ったときは再読み込みせず、`data-url-param` の読み直しだけを行う
+
 **エラー時の挙動**:
 - 不正 URL / 異なるオリジン / `pushState` 例外（SecurityError 等）は `Log.error('Haori', ...)` でログ出力してスキップし、後続処理（`redirect` 等）は継続する
 
@@ -4764,7 +4788,7 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 
 `click` 手続きの実行中、起点要素に `disabled` 属性を**付与しない**ようにします。
 
-通常、`click` 手続きの実行中は起点要素に `disabled` 属性が付与され、二重実行を防ぎます。しかし Bootstrap など他ライブラリの click ハンドラや CSS は `disabled` 要素を無視するため、トグル系の機能が動かなくなることがあります。本属性を付けると `disabled` を付与せず、Haori 内部のマーカーで多重実行のみを防止します（CSS による実行中スタイルの切り替えは行えません）。
+通常、`click` 手続きの実行中は起点要素に `disabled` 属性が付与され、二重実行を防ぎます。しかし Bootstrap など他ライブラリの click ハンドラや CSS は `disabled` 要素を無視するため、トグル系の機能が動かなくなることがあります。本属性を付けると `disabled` を付与せず、Haori 内部のマーカーで多重実行のみを防止します（CSS による実行中スタイルの切り替えは行えません）。エンジンが `disabled` を付けないため、手続きの終了時の揃え直しも行いません（宣言の評価結果がそのまま残ります）。
 
 **「実行中」は手続きが終わるまでです。** フェッチを伴う手続きでは**応答が返り、その反映（バインド・メッセージ表示など）が終わるまで**ロックを保持します。したがって保存ボタンを素早く 2 回押しても POST は 1 回だけです。フェッチを伴わない手続き（`data-click-reset` / `data-click-copy` など）も、反映が複数のタスクにまたがるため、その完了までロックを保持します。
 

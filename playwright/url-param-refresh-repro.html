@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>URL の変更と data-url-param の読み直し</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <form id="f"><input id="q" name="q" value=""></form>
+
+  <div id="state" data-bind='{"tick": 0}'>
+    <!-- URL を書き換える（pushState） -->
+    <button id="search" type="button" data-click-history-form="#f">URL を書き換える</button>
+    <!-- 祖先の別のキーを更新して、配下を再評価させる -->
+    <button id="tick" type="button"
+      data-click-data='{"tick": {{tick + 1}}}'
+      data-click-bind="#state" data-click-bind-merge>別のキーを更新</button>
+
+    <!-- data-url-arg あり（既存のバインドデータへマージ） -->
+    <div id="withArg" data-bind='{"selfTick": 0}' data-url-param data-url-arg="urlParams">
+      <span id="argV">{{urlParams.q}}</span>
+      <span id="argSelfTick">{{selfTick}}</span>
+      <button id="tickSelf" type="button"
+        data-click-data='{"selfTick": {{selfTick + 1}}}'
+        data-click-bind="#withArg" data-click-bind-merge>自身のキーを更新</button>
+    </div>
+
+    <!-- data-url-arg なし（全置換） -->
+    <div id="noArg" data-url-param>
+      <span id="noArgV">{{q}}</span>
+    </div>
+  </div>
+</body>
+</html>

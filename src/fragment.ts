@@ -3535,12 +3535,18 @@ export class ElementFragment extends Fragment {
         this.hasPendingCheckableUserEdit(isSelectedTarget));
     // 真偽属性の有無（= stringResult が null でない）が望ましいチェック状態。
     const checkableDesiredState = stringResult !== null;
+    // マークアップに書いた `checked` / `selected`（式を含まない宣言）は既定値であり、
+    // 供給された値を打ち消さない。属性（`defaultChecked` / `defaultSelected`）は
+    // 従来どおり設定し、DOM プロパティへの同期は式のときだけ行う（`value` 属性と
+    // 同じ扱い。仕様「初期 `data-bind` からの入力欄復元」）。
     const requiresCheckedPropertyWrite =
       isCheckedTarget &&
+      contents.isEvaluate &&
       !skipCheckableReapply &&
       (element as HTMLInputElement).checked !== checkableDesiredState;
     const requiresSelectedPropertyWrite =
       isSelectedTarget &&
+      contents.isEvaluate &&
       !skipCheckableReapply &&
       (element as HTMLOptionElement).selected !== checkableDesiredState;
     if (

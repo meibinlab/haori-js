@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>クリックのロック解除と data-attr-disabled</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 編集欄を開いているあいだ自身を非活性にするボタン。押下の手続きがその条件を真にする -->
+  <div id="state" data-bind='{"editing": false, "count": 0}'>
+    <button id="btnA" type="button"
+      data-attr-disabled="{{editing && 'disabled'}}"
+      data-click-data='{"editing": true, "count": {{count + 1}}}'
+      data-click-bind="#state" data-click-bind-merge>追加</button>
+
+    <!-- 対照。式は同じで、押していない -->
+    <button id="btnB" type="button"
+      data-attr-disabled="{{editing && 'disabled'}}"
+      data-click-data='{"editing": true}'
+      data-click-bind="#state" data-click-bind-merge>追加（対照）</button>
+
+    <button id="close" type="button"
+      data-click-data='{"editing": false}'
+      data-click-bind="#state" data-click-bind-merge>閉じる</button>
+
+    <p id="out">count={{count}}</p>
+  </div>
+</body>
+</html>

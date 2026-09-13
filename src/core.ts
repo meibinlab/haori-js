@@ -1027,10 +1027,10 @@ export default class Core {
               `（${Env.prefix}url-arg を指定してください）。`,
           );
         }
-        // data-url-param の再評価は evaluateAll（= setBindingData の work）内から
+        // data-url-param の読み直しは evaluateAll（= setBindingData の work）内から
         // 同一フラグメントへ再帰し得るため reentrant=true で即時実行する。
-        // 再評価ごとに走る経路なので、値の供給ではない更新として扱う（権威を持たず、
-        // ユーザー編集の印も解除しない）。
+        // URL の変更を契機に走る経路なので、値の供給ではない更新として扱う
+        // （権威を持たず、ユーザー編集の印も解除しない）。
         const urlParamOptions: SetBindingDataOptions = {
           reentrant: true,
           kind: 'nonSupply',
@@ -3078,6 +3078,74 @@ export default class Core {
       name: normalizedName,
       scope: fragment.getBindingData(),
     });
+  }
+
+  /**
+   * URL が変わったときに `data-url-param` の取り込みをやり直します。
+   *
+   * 対象は、宣言を持つ要素のうち**すでに走査済み**のものだけです。未走査の要素は
+   * 走査したときに読むため、ここで触ると宣言を持たないフラグメントを作ってしまい
+   * ます。再評価では呼びません（仕様「`data-url-param`」の「取り込みの契機」）。
+   *
+   * @returns 読み直しの完了 Promise
+   */
+  public static refreshUrlParams(): Promise<void> {
+    const name = `${Env.prefix}url-param`;
+    const elements = Array.from(
+      document.querySelectorAll<HTMLElement>(`[${name}]`),
+    );
+    const promises = elements.map(element => {
+      const fragment = Fragment.peek(element);
+      if (!(fragment instanceof ElementFragment)) {
+        return Promise.resolve();
+      }
+      return Core.setAttribute(
+        element,
+        name,
+        fragment.getRawAttribute(name) ?? '',
+      );
+    });
+    return Promise.all(promises)
+      .then(() => undefined)
+      .catch(error => {
+        // 読み直しの失敗で呼び出し側（`pushState` の直後や `popstate`）を
+        // 止めない。記録だけ残す。
+        Log.error('Haori', `${name} を読み直せませんでした: ${error}`);
+      });
+  }
+
+  /**
+   * `data-derive` の「配下の再評価を省く」記録を破棄します。
+   *
+   * この記録は「配下へ公開するデータが前回と同じなら、配下の DOM も前回の評価結果
+   * のまま」という前提に立ちます。リセットのように DOM を直接書き換えた場合は前提が
+   * 崩れるため、書き換えた側が破棄します。破棄しないと、入れ直しの再評価が配下へ
+   * 届かず、空へ揃えた入力欄がそのまま残ります（仕様「`data-{event}-reset`」）。
+   *
+   * 破棄の範囲は、書き換えた範囲の配下と、その範囲を覆う祖先です。
+   *
+   * @param root 書き換えた範囲の根フラグメント
+   * @returns 戻り値はありません。
+   */
+  public static invalidateDerivedSubtreeSignatures(
+    root: ElementFragment,
+  ): void {
+    for (
+      let ancestor = root.getParent();
+      ancestor !== null;
+      ancestor = ancestor.getParent()
+    ) {
+      ancestor.setDeriveSubtreeSignature(null);
+    }
+    const clear = (fragment: ElementFragment): void => {
+      fragment.setDeriveSubtreeSignature(null);
+      fragment.getChildren().forEach(child => {
+        if (child instanceof ElementFragment) {
+          clear(child);
+        }
+      });
+    };
+    clear(root);
   }
 
   /**

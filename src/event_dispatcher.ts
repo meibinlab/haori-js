@@ -4,6 +4,7 @@
  * クリック/変更/ロード/ポップステートイベントを検出し Procedure に委譲します。
  */
 
+import Core from './core';
 import Enhance from './enhance';
 import Form from './form';
 import Fragment, {ElementFragment} from './fragment';
@@ -132,6 +133,10 @@ export default class EventDispatcher {
   private readonly onPopstate = (event: PopStateEvent) => {
     const state = event.state as Record<string, unknown> | null;
     if (!state || state[EventDispatcher.HISTORY_STATE_KEY] !== true) {
+      // Haori が積んでいない履歴項目。再読み込みはしないが URL は変わっているため、
+      // 取り込み済みのクエリパラメータを読み直す（仕様「`data-{event}-history`」の
+      // 「戻る・進む操作（`popstate`）の扱い」）。
+      void Core.refreshUrlParams();
       return;
     }
     location.reload();

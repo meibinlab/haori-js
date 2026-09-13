@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>マークアップの既定と供給された値</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 検索条件を URL から取り込み、そのフォームで一覧を取得する構成 -->
+  <form id="f" data-url-param>
+    <input id="customerId" name="customerId">
+    <!-- 初期スキャンの後に値が入り、再評価（＝2 回目の取得）を起こす -->
+    <input id="issueDateTo" name="issueDateTo" type="date"
+      data-attr-value="{{issueDateTo ?? haori.today()}}">
+    <select id="statuses" name="statuses" multiple>
+      <option value="PENDING" selected>発行待ち</option>
+      <option value="ISSUED" selected>発行済</option>
+      <option value="PAID" selected>支払済</option>
+      <option value="CANCELLED" selected>取消済</option>
+    </select>
+  </form>
+
+  <section data-fetch="/api/dunnings.json" data-fetch-form="#f" data-fetch-arg="view">
+    <span id="total">{{view.total}}</span>
+  </section>
+</body>
+</html>

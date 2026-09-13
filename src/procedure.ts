@@ -928,6 +928,9 @@ interface ExecutionLockState {
   /** 実行中として扱う対象要素 */
   target: HTMLElement;
 
+  /** 対象要素のフラグメント（解除時に宣言を読むために保持する） */
+  fragment: ElementFragment;
+
   /** 今回の処理で disabled 属性を付与したかどうか */
   appliedDisabledAttribute: boolean;
 }
@@ -2923,12 +2926,47 @@ ${body}
     }
     return {
       target,
+      fragment: targetFragment,
       appliedDisabledAttribute: !skipDisabled,
     };
   }
 
   /**
+   * 起点要素が持つ `disabled` の宣言を探します。
+   *
+   * `data-attr-disabled` は値によらず宣言です。素の `disabled` は、生値に式を含む
+   * ときだけ宣言として扱います（静的な `disabled` を持つ要素は、そもそもロックを
+   * 取得しません）。
+   *
+   * 宣言はロックを取得した時点のフラグメントから読みます。要素から引き直すと、
+   * 走査対象から外れていた場合にロックが付けた `disabled` を宣言として取り込んだ
+   * 新しいフラグメントができてしまいます。
+   *
+   * @param fragment 起点要素のフラグメント
+   * @returns 宣言の属性名と生値。宣言が無ければ null
+   */
+  private static findDisabledDeclaration(
+    fragment: ElementFragment,
+  ): {name: string; value: string} | null {
+    const aliasName = `${Env.prefix}attr-disabled`;
+    const aliasValue = fragment.getRawAttribute(aliasName);
+    if (aliasValue !== null) {
+      return {name: aliasName, value: aliasValue};
+    }
+    const rawValue = fragment.getRawAttribute('disabled');
+    if (rawValue !== null && rawValue.includes('{{')) {
+      return {name: 'disabled', value: rawValue};
+    }
+    return null;
+  }
+
+  /**
    * 取得済みの実行ロックを解放します。
+   *
+   * ロックが付けた `disabled` は、その時点の宣言の評価結果へ揃えます（仕様
+   * 「`data-{event}-fetch`」）。無条件に外すと、押下の手続きが書いた
+   * `data-attr-disabled` の評価結果まで消え、押したボタンだけが「条件は真なのに
+   * 活性」という状態で残ります。
    *
    * @param executionLock 解放対象のロック情報。
    * @returns 戻り値はありません。
@@ -2940,12 +2978,30 @@ ${body}
       return;
     }
 
-    Procedure.RUNNING_CLICK_TARGETS.delete(executionLock.target);
+    const target = executionLock.target;
+    Procedure.RUNNING_CLICK_TARGETS.delete(target);
     // マーカーは常に解除する（解除し損ねると再クリックできなくなるため）。
-    executionLock.target.removeAttribute(PROCEDURE_CLICK_LOCK_MARKER);
-    if (executionLock.appliedDisabledAttribute) {
-      executionLock.target.removeAttribute('disabled');
+    target.removeAttribute(PROCEDURE_CLICK_LOCK_MARKER);
+    if (!executionLock.appliedDisabledAttribute) {
+      return;
     }
+    const declaration = Procedure.findDisabledDeclaration(
+      executionLock.fragment,
+    );
+    if (declaration === null) {
+      target.removeAttribute('disabled');
+      return;
+    }
+    // 宣言の評価結果が真なら `disabled` は残り、偽・null・未解決参照なら属性評価の
+    // 経路が外す。再適用の失敗で解除そのものを止めないよう、結果は待たない。
+    void Core.setAttribute(target, declaration.name, declaration.value).catch(
+      error => {
+        Log.error(
+          'Haori',
+          `ロックの解除で ${declaration.name} を適用し直せませんでした: ${error}`,
+        );
+      },
+    );
   }
 
   /**
@@ -3520,6 +3576,9 @@ ${body}
         '',
         url.toString(),
       );
+      // URL が変わったので、取り込み済みのクエリパラメータを読み直す
+      // （仕様「`data-{event}-history`」の「`data-url-param` との関係」）。
+      void Core.refreshUrlParams();
     } catch (e) {
       Log.error('Haori', `history.pushState failed: ${e}`);
     }

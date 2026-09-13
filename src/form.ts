@@ -3110,6 +3110,9 @@ export default class Form {
       // 状態が決まる入力は DOM 側も空へ揃え、この後の再評価で現在の評価結果を
       // 入れ直す。
       Form.clearDeclarativeStateFromDom(fragment);
+      // 空へ揃えた DOM は、この後の再評価で入れ直す。`data-derive` は公開するデータ
+      // が同じなら配下の再評価を省くため、記録を破棄しないと空のまま残る。
+      Core.invalidateDerivedSubtreeSignatures(fragment);
       // 保護対象の欄を戻す。内部値は戻さない（内部値はバインドデータへ載っている値を
       // 表すため、まだコミットされていない編集で先へ進めてはいけない。仕様「収集は
       // DOM を真とする」）。戻した値は、この後の「リセット後の値でバインドデータを

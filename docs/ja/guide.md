@@ -280,7 +280,7 @@ Haori.js の初期化（スキャンと初期フェッチ）がすべて完了�
 <input type="number" data-attr-value="{{count}}" readonly>
 ```
 
-`data-attr-*` は対応する属性を更新します。加えて、入力欄の状態と DOM の食い違いを防ぐため、`value`（テキスト系入力）・`checked`（radio / checkbox）・`selected`（option）は DOM property（`input.value` / `element.checked` / `option.selected`）も同期します。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` でチェック・選択状態を宣言バインドできます。ただし**フォーカス中（編集中）の入力**と、**`change` / `input` で確定した編集を抱えている入力**には再適用しません（別要素起因の再評価で利用者の入力が失われるのを防ぐため）。確定した編集の印は明示的な値の供給（フェッチ応答の反映、`data-{event}-reset`、`data-{event}-copy`、`Core.setBindingData()`）で解除されます。印は**打鍵ごと**（`input`）に付くため、`change` が発火する前に打った文字も保護されます（`data-input-*` の宣言は要りません）。
+`data-attr-*` は対応する属性を更新します。加えて、入力欄の状態と DOM の食い違いを防ぐため、`value`（テキスト系入力）・`checked`（radio / checkbox）・`selected`（option）は DOM property（`input.value` / `element.checked` / `option.selected`）も同期します。同期するのは式（`{{...}}`）を書いた宣言のときだけで、マークアップに書いた静的な `value` / `checked` / `selected` は既定値として扱い、供給された値を打ち消しません。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` でチェック・選択状態を宣言バインドできます。ただし**フォーカス中（編集中）の入力**と、**`change` / `input` で確定した編集を抱えている入力**には再適用しません（別要素起因の再評価で利用者の入力が失われるのを防ぐため）。確定した編集の印は明示的な値の供給（フェッチ応答の反映、`data-{event}-reset`、`data-{event}-copy`、`Core.setBindingData()`）で解除されます。印は**打鍵ごと**（`input`）に付くため、`change` が発火する前に打った文字も保護されます（`data-input-*` の宣言は要りません）。
 
 ### グローバル関数を使った値の整形
 
@@ -1617,6 +1617,8 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 ### URLパラメータをバインドする
 
 `data-url-param`属性を使うと、URLのクエリパラメータをバインディングデータに設定できます。
+
+読み込むのは、要素を走査したときと、`data-{event}-history` で URL を書き換えたとき、そして戻る・進む操作で再読み込みが起きないときの 3 つです。検索条件を URL へ載せる画面（`data-click-history-form`）では、書き換えた直後の値が取り込まれます。他のスクリプトが直接 `history.pushState()` を呼んだ場合は検知しません。
 
 #### 基本的な使い方
 
@@ -3081,7 +3083,7 @@ state に持った配列（編集中のルール一覧など）への要素追�
 
 ### 他ライブラリとの共存（`data-click-no-disabled`）
 
-Haori は `data-click-*` のクリック手続き実行中、多重クリックを防ぐためにボタンへ一時的に native の `disabled` 属性を付与します（手続き完了で解除）。Haori はクリックイベントの伝播を止めません（`stopPropagation` / `preventDefault` は呼びません）が、Bootstrap などの他ライブラリや CSS は `disabled` 要素のクリックを無視するため、**同じボタンに `data-bs-toggle="collapse"` のような他ライブラリのハンドラを併用すると、それらの動作が阻害される**ことがあります。
+Haori は `data-click-*` のクリック手続き実行中、多重クリックを防ぐためにボタンへ一時的に native の `disabled` 属性を付与します（手続きが終わると、その時点の `data-attr-disabled` の評価結果へ揃えます。宣言が無ければ活性へ戻ります）。Haori はクリックイベントの伝播を止めません（`stopPropagation` / `preventDefault` は呼びません）が、Bootstrap などの他ライブラリや CSS は `disabled` 要素のクリックを無視するため、**同じボタンに `data-bs-toggle="collapse"` のような他ライブラリのハンドラを併用すると、それらの動作が阻害される**ことがあります。
 
 このような場合は `data-click-no-disabled` を付けると、クリック手続き中に native の `disabled` を付与しなくなります。Haori 内部の多重実行ガードは引き続き有効なので、Haori 自身の処理が二重に走ることはありません。
 
