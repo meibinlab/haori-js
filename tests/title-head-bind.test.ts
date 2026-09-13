@@ -31,23 +31,22 @@ describe('<head> / <title> への実行時バインド', () => {
   });
 
   it('data-bind を付けた <title> 自身のテキストが {{}} 補間される', async () => {
-    document.head.innerHTML =
-      `<title data-bind='{"company":"明文堂"}'>{{company}} - ログイン</title>`;
+    document.head.innerHTML = `<title data-bind='{"company":"明文堂"}'>{{company}} - ログイン</title>`;
     await Core.scan(document.head);
     await waitForDomSettled();
     expect(document.title).toBe('明文堂 - ログイン');
   });
 
   it('data-fetch を付けた <title> は応答を self-bind してテキストへ反映する', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
-      Promise.resolve(
-        new Response('{"company":"明文堂株式会社"}', {
-          headers: {'Content-Type': 'application/json'},
-        }),
-      ) as unknown as Promise<Response>,
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response('{"company":"明文堂株式会社"}', {
+            headers: {'Content-Type': 'application/json'},
+          }),
+        ) as unknown as Promise<Response>,
     );
-    document.head.innerHTML =
-      `<title data-bind='{"company":""}' data-fetch="http://api.test/site">{{company}} - ログイン</title>`;
+    document.head.innerHTML = `<title data-bind='{"company":""}' data-fetch="http://api.test/site">{{company}} - ログイン</title>`;
     // 実際の初期化（Observer.init）と同じ Core.scan(document.head) 経路。
     await Core.scan(document.head);
     await waitForCondition(() => document.title.includes('明文堂株式会社'), {
@@ -57,15 +56,15 @@ describe('<head> / <title> への実行時バインド', () => {
   });
 
   it('data-fetch-arg でネストキーに受けてテキストへ反映する', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
-      Promise.resolve(
-        new Response('{"company":"明文堂","unit":"出版部"}', {
-          headers: {'Content-Type': 'application/json'},
-        }),
-      ) as unknown as Promise<Response>,
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response('{"company":"明文堂","unit":"出版部"}', {
+            headers: {'Content-Type': 'application/json'},
+          }),
+        ) as unknown as Promise<Response>,
     );
-    document.head.innerHTML =
-      `<title data-bind='{"site":{}}' data-fetch="http://api.test/site" data-fetch-arg="site">{{site.company}} / {{site.unit}}</title>`;
+    document.head.innerHTML = `<title data-bind='{"site":{}}' data-fetch="http://api.test/site" data-fetch-arg="site">{{site.company}} / {{site.unit}}</title>`;
     await Core.scan(document.head);
     await waitForCondition(() => document.title.includes('明文堂'), {
       description: 'title reflects nested company',
@@ -79,25 +78,27 @@ describe('<head> / <title> への実行時バインド', () => {
       `<title>{{company}} - サイト</title>`;
     await Core.scan(document.head);
     await waitForDomSettled();
-    // 兄弟のスコープは届かないため未解決のまま（補間されない）。
-    expect(document.title).toContain('{{company}}');
+    // 兄弟のスコープは届かないため未解決参照になる。未解決参照の表示は空
+    // （仕様「バインドに無い識別子の扱い」の「表示は空、`data-attr-*` は属性削除」）。
+    expect(document.title).not.toContain('継承元');
+    expect(document.title).toBe('- サイト');
   });
 
   it('data-fetch-bind で <head> 内の <title> はバインド先に指定できない', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
-      Promise.resolve(
-        new Response('{"company":"明文堂株式会社"}', {
-          headers: {'Content-Type': 'application/json'},
-        }),
-      ) as unknown as Promise<Response>,
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response('{"company":"明文堂株式会社"}', {
+            headers: {'Content-Type': 'application/json'},
+          }),
+        ) as unknown as Promise<Response>,
     );
     // バインド先解決エラーのログを握りつぶし、出力有無で検証する。
     const errorSpy = vi
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
 
-    document.head.innerHTML =
-      `<title id="page-title" data-bind='{"company":""}'>{{company}} - ログイン</title>`;
+    document.head.innerHTML = `<title id="page-title" data-bind='{"company":""}'>{{company}} - ログイン</title>`;
     const fetcher = document.createElement('div');
     fetcher.setAttribute('data-fetch', 'http://api.test/site');
     fetcher.setAttribute('data-fetch-bind', '#page-title');
@@ -116,7 +117,8 @@ describe('<head> / <title> への実行時バインド', () => {
     expect(
       errorSpy.mock.calls.some(args =>
         args.some(
-          arg => typeof arg === 'string' && arg.includes('Bind element not found'),
+          arg =>
+            typeof arg === 'string' && arg.includes('Bind element not found'),
         ),
       ),
     ).toBe(true);

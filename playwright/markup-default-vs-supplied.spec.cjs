@@ -34,17 +34,17 @@ test.describe('マークアップの既定と供給された値（実ブラウ�
   test('URL で供給した選択が、どの取得でも送られる', async ({page}) => {
     const queries = await open(page, '?customerId=3&statuses=PAID');
 
-    // 再評価による 2 回目の取得まで待つ。
+    // 取得が走り、再評価による追加の取得があればそれも終わるまで待つ。
     await expect(page.locator('#total')).not.toHaveText('');
-    await expect.poll(() => queries.length).toBeGreaterThanOrEqual(2);
+    await page.waitForLoadState('networkidle');
 
-    // URL の値がフォームへ載った後の取得だけを見る（載る前の初回は対象外）。
-    const applied = queries.filter(
-      query => new URLSearchParams(query).get('customerId') === '3',
-    );
-    expect(applied.length).toBeGreaterThan(0);
-    for (const query of applied) {
-      expect(new URLSearchParams(query).getAll('statuses')).toEqual(['PAID']);
+    // どの取得でも URL の値が送られる（課題 52 の修正で、初期値の反映より前に
+    // 走る空の取得は無くなった）。
+    expect(queries.length).toBeGreaterThan(0);
+    for (const query of queries) {
+      const params = new URLSearchParams(query);
+      expect(params.get('customerId')).toBe('3');
+      expect(params.getAll('statuses')).toEqual(['PAID']);
     }
     await expect(page.locator('#statuses')).toHaveValues(['PAID']);
   });
@@ -55,7 +55,7 @@ test.describe('マークアップの既定と供給された値（実ブラウ�
     const queries = await open(page, '?customerId=3');
 
     await expect(page.locator('#total')).not.toHaveText('');
-    await expect.poll(() => queries.length).toBeGreaterThanOrEqual(2);
+    await page.waitForLoadState('networkidle');
 
     expect(queries.length).toBeGreaterThan(0);
     for (const query of queries) {

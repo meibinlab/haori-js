@@ -107,6 +107,25 @@ async function load(options: {
 }
 
 /**
+ * 既存の入力欄を生成コンテナで包むだけの連携を作ります。
+ *
+ * `data-external` を併用しない補助ライブラリ（入力欄を包むだけのもの）と同じ形です。
+ *
+ * @returns 連携の定義
+ */
+function wrapperEnhancer(): {init: (element: HTMLElement) => unknown} {
+  return {
+    init(element: HTMLElement) {
+      const outer = document.createElement('div');
+      outer.className = 'wrapper';
+      element.parentNode!.insertBefore(outer, element);
+      outer.appendChild(element);
+      return {};
+    },
+  };
+}
+
+/**
  * フォームの収集値を返します。
  *
  * @param page 初期化を済ませたページ
@@ -579,6 +598,65 @@ describe('data-external なしで既存の入力欄を包む連携', () => {
     // 仕様「`data-form-list`」の「入力要素に付与した場合は値の配列になります」。
     // 包んだことで、同じ入力欄が二重に収集されない。
     expect(collect(page, '#f1')).toEqual({tags: ['x', 'y']});
+  });
+
+  it('包まれた入力欄の変更が、フォームのバインドデータへ反映される', async () => {
+    const page = await load({
+      placement: 'head',
+      markup: `
+        <form id="f1" data-bind='{"title":"a"}'>
+          <div id="box">
+            <input name="title" data-enhance="wrapper">
+          </div>
+        </form>`,
+      register: mod => {
+        mod.enhancers.register('wrapper', wrapperEnhancer());
+      },
+    });
+
+    const input = document.querySelector<HTMLInputElement>(
+      'input[name="title"]',
+    )!;
+    // 包んだ結果、生成コンテナの内側に入っている。
+    expect(input.parentElement?.className).toBe('wrapper');
+    input.value = 'edited';
+    input.dispatchEvent(new Event('change', {bubbles: true}));
+    await settle(page.mod);
+
+    // 仕様「双方向バインディングの自動更新」の「`change` で収集した値を
+    // バインドデータへ書き込みます」。
+    expect(
+      JSON.parse(
+        document.querySelector('#f1')!.getAttribute('data-bind') as string,
+      ),
+    ).toEqual({title: 'edited'});
+  });
+
+  it('包まれた入力欄の宣言が、バインドデータの更新で再評価される', async () => {
+    const page = await load({
+      placement: 'head',
+      markup: `
+        <form id="f1" data-bind='{"hint":"a"}'>
+          <div id="box">
+            <input name="note" data-attr-placeholder="{{hint}}" data-enhance="wrapper">
+          </div>
+        </form>`,
+      register: mod => {
+        mod.enhancers.register('wrapper', wrapperEnhancer());
+      },
+    });
+
+    const input =
+      document.querySelector<HTMLInputElement>('input[name="note"]')!;
+    expect(input.getAttribute('placeholder')).toBe('a');
+
+    await page.mod.Core.setBindingData(document.querySelector('#f1')!, {
+      hint: 'b',
+    });
+    await settle(page.mod);
+
+    // 仕様「`data-attr-*`」の再評価。包まれても祖先のバインドデータが見える。
+    expect(input.getAttribute('placeholder')).toBe('b');
   });
 });
 

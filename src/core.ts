@@ -147,6 +147,15 @@ export default class Core {
   /** 遅延処理する属性のサフィックス */
   private static readonly DEFERRED_ATTRIBUTE_SUFFIXES = ['fetch'];
 
+  /**
+   * 走査中の「初期値の反映が終わるまで」を表す Promise。
+   *
+   * フォームを収集する取得（`data-{event}-fetch-form`）は、初期値が入力欄へ載る
+   * 前に走ると空の条件で送ってしまうため、これを待ってから起動します（課題 52）。
+   * 走査が終わると `null` に戻り、後から追加した要素は待ちません。
+   */
+  private static initialValueRestore: Promise<void> | null = null;
+
   /** evaluateAll で再評価対象から除外する特殊属性のサフィックス */
   private static readonly EVALUATE_ALL_EXCLUDED_ATTRIBUTE_SUFFIXES = [
     'bind',
@@ -491,8 +500,28 @@ export default class Core {
    * @param fragment 対象フラグメント
    * @returns 実行完了の Promise
    */
-  private static executeManagedFetch(fragment: ElementFragment): Promise<void> {
+  private static executeManagedFetch(
+    fragment: ElementFragment,
+    afterInitialValues = false,
+  ): Promise<void> {
     const target = fragment.getTarget();
+    const pendingRestore = Core.initialValueRestore;
+    if (
+      !afterInitialValues &&
+      pendingRestore !== null &&
+      fragment.hasAttribute(`${Env.prefix}fetch-form`)
+    ) {
+      // フォームを収集する取得は、初期値が入力欄へ載ってから走らせる。待ち合わせを
+      // 初期化の連鎖へ載せると、初期化 → 属性 → 取得 → 初期値の反映 → 初期化と
+      // 循環して止まるため、起動だけを後ろへ回す（課題 52）。待ち終えた呼び出しは
+      // `afterInitialValues` で区別する（同じ待ちで何度も回らないようにする）。
+      void pendingRestore
+        .then(() => Core.executeManagedFetch(fragment, true))
+        .catch(error => {
+          Log.error('Haori', `初期表示の取得に失敗しました: ${error}`);
+        });
+      return Promise.resolve();
+    }
     const state = Core.getReactiveFetchState(target);
     const resolved = Procedure.resolveAutoFetchSignature(fragment);
 
@@ -666,13 +695,17 @@ export default class Core {
     }
     // 初期化（data-each の行生成を含む）が完了してから、初期 data-bind の値を
     // 入力欄へ反映する。行が生成される前に反映しても新規行には値が入らない。
-    return Core.initializeElementFragment(fragment, false)
-      .then(() => Form.restoreInitialValues(element))
-      .then(() => {
-        // 外部ライブラリ連携（`data-enhance` / `data-enhance-new`）は、内容の描画と
-        // 初期値の反映が済んだ状態で適用する。
-        Enhance.applySubtree(element);
-      });
+    const restored = Core.initializeElementFragment(fragment, false).then(() =>
+      Form.restoreInitialValues(element),
+    );
+    const previousRestore = Core.initialValueRestore;
+    Core.initialValueRestore = restored;
+    return restored.then(() => {
+      Core.initialValueRestore = previousRestore;
+      // 外部ライブラリ連携（`data-enhance` / `data-enhance-new`）は、内容の描画と
+      // 初期値の反映が済んだ状態で適用する。
+      Enhance.applySubtree(element);
+    });
   }
 
   /**
@@ -1758,8 +1791,9 @@ export default class Core {
    */
   public static addNode(parentElement: HTMLElement, node: Node): Promise<void> {
     const parent = Fragment.get(parentElement);
-    // skipMutationNodesが設定されている場合は処理をスキップ
-    if (parent.isSkipMutationNodes()) {
+    // エンジン自身が差し込んでいる最中のノードだけを対象外にする。親ごと止めると、
+    // 同じ操作でまとめて追加された 2 つめ以降のノードまで落ちる（課題 47）。
+    if (parent.isSkipMutationNode(node)) {
       return Promise.resolve();
     }
     const next = Fragment.get(node.nextSibling);
@@ -1793,8 +1827,8 @@ export default class Core {
     const fragment = Fragment.get(node);
     if (fragment) {
       const parent = fragment.getParent();
-      // skipMutationNodesが設定されている場合は処理をスキップ
-      if (parent && parent.isSkipMutationNodes()) {
+      // 取り外しも、エンジン自身が外している最中のノードだけを対象外にする。
+      if (parent && parent.isSkipMutationNode(node)) {
         return;
       }
       fragment.remove();

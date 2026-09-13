@@ -774,6 +774,9 @@ export default abstract class Fragment {
   /** ノード更新スキップフラグ（オブザーバーによる無限ループ対応） */
   protected skipMutationNodes = false;
 
+  /** エンジン自身が出し入れしている最中の子ノード（観測の取り込み対象外） */
+  private readonly skipMutationNodeSet = new Set<Node>();
+
   /**
    * フラグメントのコンストラクタ。
    *
@@ -785,12 +788,33 @@ export default abstract class Fragment {
   }
 
   /**
-   * skipMutationNodesフラグの値を取得します。
+   * 指定した子ノードを、エンジン自身が出し入れしている最中かどうかを返します。
    *
-   * @returns skipMutationNodesの値
+   * @param node 判定する子ノード
+   * @returns エンジンが出し入れ中なら true
    */
-  public isSkipMutationNodes(): boolean {
-    return this.skipMutationNodes;
+  public isSkipMutationNode(node: Node): boolean {
+    return this.skipMutationNodeSet.has(node);
+  }
+
+  /**
+   * 子ノードを「エンジンが出し入れ中」として登録します。
+   *
+   * @param node 対象の子ノード
+   * @returns 戻り値はありません。
+   */
+  protected holdSkipMutationNode(node: Node): void {
+    this.skipMutationNodeSet.add(node);
+  }
+
+  /**
+   * 子ノードの「エンジンが出し入れ中」の登録を外します。
+   *
+   * @param node 対象の子ノード
+   * @returns 戻り値はありません。
+   */
+  protected releaseSkipMutationNode(node: Node): void {
+    this.skipMutationNodeSet.delete(node);
   }
 
   /**
@@ -805,6 +829,7 @@ export default abstract class Fragment {
     if (this.parent) {
       const parent = this.parent;
       const prevSkip = parent.skipMutationNodes;
+      parent.holdSkipMutationNode(this.target);
       return Queue.enqueue(() => {
         parent.skipMutationNodes = true;
         if (this.target.parentNode === parent.getTarget()) {
@@ -813,6 +838,7 @@ export default abstract class Fragment {
         this.mounted = false;
       }).finally(() => {
         parent.skipMutationNodes = prevSkip;
+        parent.releaseSkipMutationNode(this.target);
       }) as Promise<void>;
     } else {
       // 親フラグメント情報が無くても、DOM 上に親ノードが存在する場合は安全に除去する。
@@ -842,6 +868,7 @@ export default abstract class Fragment {
     if (this.parent) {
       const parent = this.parent;
       const prevSkip = parent.skipMutationNodes;
+      parent.holdSkipMutationNode(this.target);
       return Queue.enqueue(() => {
         parent.skipMutationNodes = true;
         if (this.target.parentNode !== parent.getTarget()) {
@@ -851,6 +878,7 @@ export default abstract class Fragment {
         this.mounted = true;
       }).finally(() => {
         parent.skipMutationNodes = prevSkip;
+        parent.releaseSkipMutationNode(this.target);
       }) as Promise<void>;
     }
     return Promise.resolve();
@@ -1201,14 +1229,64 @@ export class ElementFragment extends Fragment {
         this.attributeMap.set(name, contents);
       }
     });
+    let previousParent: ElementFragment | null = null;
+    const adopted: Fragment[] = [];
     target.childNodes.forEach(node => {
       if (ElementFragment.isOwnedWithinExternal(node)) {
         return;
       }
+      // 断片を作る前に、既に別の親へ属しているかを見る（`Fragment.get()` は
+      // 作ったうえで親を付け替えるため、後からでは分からない）。
+      const owner = Fragment.peek(node)?.getParent() ?? null;
       const childFragment = Fragment.get(node);
+      if (owner !== null && owner !== this) {
+        // 既に別の親に属していた子を取り込んだ（外部ライブラリが包んだ場合など）。
+        previousParent = previousParent ?? owner;
+        if (owner === previousParent) {
+          adopted.push(childFragment!);
+        }
+      }
       childFragment!.setParent(this);
       this.children.push(childFragment!);
     });
+    if (previousParent !== null) {
+      this.takeOverPlaceOf(previousParent, adopted);
+    }
+  }
+
+  /**
+   * 取り込んだ子が元の親で占めていた位置を、この断片が引き継ぎます。
+   *
+   * 外部ライブラリが既存の要素を生成コンテナで包むと、その生成コンテナの断片が
+   * 作られたときに、既知の子（包まれた入力欄）の断片を取り込みます。元の親の子の
+   * 一覧を直さないと、入力欄の親はどの木にも繋がらない生成コンテナになり、祖先の
+   * バインドデータが見えなくなります（双方向バインディングと属性の再評価が働かな
+   * くなる。課題 46）。元の親の一覧では、取り込んだ子をこの断片で置き換えます。
+   *
+   * @param previousParent 取り込んだ子が属していた親
+   * @param adopted 取り込んだ子
+   * @returns 戻り値はありません。
+   */
+  private takeOverPlaceOf(
+    previousParent: ElementFragment,
+    adopted: Fragment[],
+  ): void {
+    const siblings = previousParent.children;
+    const positions = adopted
+      .map(child => siblings.indexOf(child))
+      .filter(index => index >= 0)
+      .sort((left, right) => left - right);
+    if (positions.length === 0) {
+      return;
+    }
+    const index = positions[0];
+    // 後ろから外すと、前に残る位置がずれない。
+    positions
+      .slice()
+      .reverse()
+      .forEach(at => siblings.splice(at, 1));
+    siblings.splice(index, 0, this);
+    this.setParent(previousParent);
   }
 
   /**
@@ -1403,7 +1481,9 @@ export class ElementFragment extends Fragment {
     if (this.getTarget().hasAttribute(`${Env.prefix}external`)) {
       return this.detachPreservingSubtree(unmount);
     }
-    this.children.forEach(child => {
+    // 子の `remove()` は親の `children` から自分を取り除くため、配列をそのまま
+    // たどると 1 つおきにしか外れない（課題 45）。複製をたどる。
+    this.children.slice().forEach(child => {
       promises.push(child.remove(false));
     });
     this.children.length = 0;
@@ -2150,9 +2230,13 @@ export class ElementFragment extends Fragment {
       if (origin && !this.canApplyValue(origin)) {
         return;
       }
+      const previous = element.value;
       element.value = domValue;
       // 書き込んだ値を DOM が受け付けたかを記録する（`valueWriteUnapplied` 参照）。
       this.recordValueWriteResult(element.value === domValue);
+      if (element.value !== previous) {
+        ElementFragment.notifyValueToEnhancers(element);
+      }
       if (dispatchEvents) {
         if (
           (element instanceof HTMLInputElement &&
@@ -2208,6 +2292,9 @@ export class ElementFragment extends Fragment {
       this.recordValueWriteResult(
         selectedValues.every(selected => applied.has(selected)),
       );
+      if (changed) {
+        ElementFragment.notifyValueToEnhancers(element);
+      }
       if (changed && dispatchEvents) {
         element.dispatchEvent(new Event('change', {bubbles: true}));
       }
@@ -2328,6 +2415,26 @@ export class ElementFragment extends Fragment {
       this.value as string | number | boolean | null,
       false,
     );
+  }
+
+  /**
+   * Haori が値を書いた入力欄を、適用済みの外部ライブラリ連携へ知らせます。
+   *
+   * `data-each` で選択肢を描画する `<select>` では、フォームの初期値の反映が
+   * `init` より後になります（`init` は描画の確定で呼ばれるため）。`init` の時点の
+   * 選択を自分の管理へ取り込む連携（`<option>` を移すものなど）は、後から入った値を
+   * 知る手段がありません（仕様「`data-enhance`」の契機の表、課題 44）。
+   *
+   * 未適用の要素では何もしません（適用は走査の側が行い、その時点の値を読むため）。
+   *
+   * @param element 値を書いた入力エレメント
+   * @returns 戻り値はありません。
+   */
+  private static notifyValueToEnhancers(element: HTMLElement): void {
+    if (!Enhance.isApplied(element)) {
+      return;
+    }
+    Enhance.refreshSubtree(element);
   }
 
   /**
@@ -3800,7 +3907,7 @@ export class ElementFragment extends Fragment {
     referenceChild: Fragment | null,
     referenceNodeOverride?: Node | null,
   ): Promise<void> {
-    if (this.skipMutationNodes) {
+    if (this.isSkipMutationNode(newChild.getTarget())) {
       return Promise.resolve();
     }
 
@@ -3887,10 +3994,12 @@ export class ElementFragment extends Fragment {
 
     const prevSkip = this.skipMutationNodes;
     this.skipMutationNodes = true;
+    this.holdSkipMutationNode(newChild.getTarget());
     return Queue.enqueue(() => {
       this.target.insertBefore(newChild.getTarget(), referenceNode);
     }).finally(() => {
       this.skipMutationNodes = prevSkip;
+      this.releaseSkipMutationNode(newChild.getTarget());
     }) as Promise<void>;
   }
 

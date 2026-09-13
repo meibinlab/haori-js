@@ -175,6 +175,16 @@ export default class Enhance {
   }
 
   /**
+   * 要素へ連携を適用済みかどうかを返します。
+   *
+   * @param element 対象要素
+   * @returns 1 つでも適用済みの連携があれば true
+   */
+  public static isApplied(element: HTMLElement): boolean {
+    return (Enhance.instances.get(element)?.size ?? 0) > 0;
+  }
+
+  /**
    * 対象要素とその子孫の連携を再同期します。
    *
    * 適用済みの要素では `refresh`、未適用の要素では `init` を呼びます。
