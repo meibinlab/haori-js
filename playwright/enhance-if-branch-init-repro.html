@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-if の分岐の中の連携と初期値</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 初期表示で閉じている編集欄。開くと中の select が描画され、フォームの初期値が入る -->
+  <div id="state" data-bind='{"open": false, "opts": ["X", "Y", "Z"]}'>
+    <button id="open" type="button"
+      data-click-data='{"open": true}'
+      data-click-bind="#state" data-click-bind-merge>開く</button>
+    <div data-if="open">
+      <form data-bind='{"sel": ["Y"]}'>
+        <div data-external>
+          <select id="closed" name="sel" multiple data-enhance="grabber"
+            data-each="opts" data-each-arg="o">
+            <option value="{{o}}">{{o}}</option>
+          </select>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 初期表示で開いている分岐。初期値は分岐の外のフォームが与える -->
+  <form data-bind='{"show": true, "sel2": ["Z"], "opts": ["X", "Y", "Z"]}'>
+    <div data-if="show">
+      <div data-external>
+        <select id="opened" name="sel2" multiple data-enhance="grabber"
+          data-each="opts" data-each-arg="o">
+          <option value="{{o}}">{{o}}</option>
+        </select>
+      </div>
+    </div>
+  </form>
+
+  <script>
+    // Choices.js と同じく、init の時点の選択を自分の管理へ取り込み、選択中の
+    // <option> だけを <select> に残す連携。選んだ値はタグとして表示する。
+    window.__initSeen = {};
+    Haori.enhancers.register('grabber', {
+      init: function (element) {
+        window.__initSeen[element.id] = Array.prototype.map.call(element.options, function (option) {
+          return option.value + (option.selected ? ':selected' : '');
+        });
+        var tags = document.createElement('div');
+        tags.id = 'tags-' + element.id;
+        Array.prototype.slice.call(element.options).forEach(function (option) {
+          if (option.selected) {
+            var tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.textContent = option.value;
+            tags.appendChild(tag);
+          } else {
+            option.remove();
+          }
+        });
+        element.parentNode.appendChild(tags);
+        return {};
+      },
+    });
+  </script>
+</body>
+</html>

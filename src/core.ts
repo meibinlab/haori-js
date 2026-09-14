@@ -689,6 +689,24 @@ export default class Core {
    * @returns Promise (スキャンが完了したときに解決される)
    */
   public static scan(element: HTMLElement): Promise<void> {
+    return Core.scanElement(element, true);
+  }
+
+  /**
+   * 指定された要素と、その子要素をスキャンします。
+   *
+   * `applyEnhancers` が false のときは、走査の最後に外部ライブラリ連携を適用しません。
+   * `data-if` の分岐の子を走査するときに使います。適用は、分岐の外の初期値の反映
+   * （外側の走査の最後）や、揃った選択肢への値の載せ直しの後に行います（課題 55）。
+   *
+   * @param element スキャン対象の要素
+   * @param applyEnhancers 走査の最後に外部ライブラリ連携を適用するかどうか
+   * @returns Promise (スキャンが完了したときに解決される)
+   */
+  private static scanElement(
+    element: HTMLElement,
+    applyEnhancers: boolean,
+  ): Promise<void> {
     const fragment = Fragment.get(element);
     if (!fragment) {
       return Promise.resolve();
@@ -704,8 +722,36 @@ export default class Core {
       Core.initialValueRestore = previousRestore;
       // 外部ライブラリ連携（`data-enhance` / `data-enhance-new`）は、内容の描画と
       // 初期値の反映が済んだ状態で適用する。
-      Enhance.applySubtree(element);
+      if (applyEnhancers) {
+        Enhance.applySubtree(element);
+      }
     });
+  }
+
+  /**
+   * 非表示から表示へ切り替わった分岐へ、外部ライブラリ連携を適用します。
+   *
+   * 表示と同じ更新で与えた値は、`data-each` の行が揃った後に載せ直されます
+   * （`Core.setBindingData()` の載せ直しの段）。その前に `init` を呼ぶと、`<option>` を
+   * 引き取る連携が値を受け取れないため、分岐の中の載せ直しを先に行います（仕様
+   * 「`data-enhance`」の「表示と同じ更新で与えた値も、`data-each` が描いた選択肢へ
+   * 載ってから呼びます」、課題 55）。
+   *
+   * @param fragment 表示へ切り替わった `data-if` のフラグメント
+   * @param sequence 表示の評価を始めた時点の初期化の通番。これより後に初期化された
+   *     入力欄へは載せ直しません
+   * @returns 適用の完了 Promise
+   */
+  private static applyEnhancersOnShow(
+    fragment: ElementFragment,
+    sequence: number,
+  ): Promise<void> {
+    const target = fragment.getTarget();
+    return ElementFragment.retryUnappliedValueWrites(target, sequence).then(
+      () => {
+        Enhance.applySubtree(target);
+      },
+    );
   }
 
   /**
@@ -1990,16 +2036,35 @@ export default class Core {
         });
       }
     }
+    // `data-if` と `data-each` を同じ要素へ宣言した場合、表示へ切り替わった要素への
+    // 外部ライブラリ連携の適用は、行を描いた後に行う（`evaluateIf()` の時点では行が
+    // まだ無い。課題 55）。そのため表示への切り替わりと、その時点の通番を控える。
+    let shownFromHidden = false;
+    let sequence = 0;
     if (hasIf) {
-      chain = chain.then(() => Core.evaluateIf(fragment));
+      chain = chain.then(() => {
+        const wasVisible = fragment.isVisible();
+        sequence = ElementFragment.currentSequence();
+        return Core.evaluateIf(fragment).then(() => {
+          shownFromHidden = !wasVisible && fragment.isVisible();
+        });
+      });
     }
     if (hasEach) {
       if (fragment.getDeriveSubtreeSignature() !== null) {
         fragment.setDeriveSubtreeSignature(null);
       }
+      // `data-if` の無い要素だけこの段を省く分岐は置かない。外しても落ちるテストが
+      // 無く、規則どおり削っている（`docs/ja/testing.md` の規則 3）。
       return chain
         .then(() => Core.evaluateEachFixedChildren(fragment))
-        .then(() => Core.evaluateEach(fragment));
+        .then(() => Core.evaluateEach(fragment))
+        .then(() => {
+          if (!shownFromHidden) {
+            return undefined;
+          }
+          return Core.applyEnhancersOnShow(fragment, sequence);
+        });
     }
     if (hasIf) {
       if (fragment.getDeriveSubtreeSignature() !== null) {
@@ -2298,6 +2363,9 @@ export default class Core {
       fragment.restoreFormControlsDisabledByIf();
       // 非表示→表示への遷移を検出するため、show() 前の表示状態を退避する。
       const wasVisible = fragment.isVisible();
+      // 表示へ切り替わった分岐へ連携を適用するときの、載せ直しの基準
+      // （`applyEnhancersOnShow()`）。
+      const sequence = ElementFragment.currentSequence();
       const childPromises: Promise<void>[] = [];
       // `data-each` を宣言した要素では、行テンプレートと行は `data-each` が管理する
       // （仕様「`data-if` と `data-each` の同一要素への宣言」）。ここで評価すると、
@@ -2314,10 +2382,13 @@ export default class Core {
             return;
           }
           // 未スキャンの子は scan で初期化し、既に表示済みの子は再評価だけ行う。
+          // 子の走査の最後には外部ライブラリ連携を適用しない。表示へ切り替わった
+          // 分岐では、下の載せ直しの後に適用する。初期表示から真の分岐では、外側の
+          // 走査の最後（分岐の外のフォームの初期値の反映の後）に適用する（課題 55）。
           childPromises.push(
             child.isMounted()
               ? Core.evaluateAll(child)
-              : Core.scan(child.getTarget()),
+              : Core.scanElement(child.getTarget(), false),
           );
         } else if (child instanceof TextFragment) {
           childPromises.push(Core.evaluateText(child));
@@ -2332,12 +2403,25 @@ export default class Core {
           // 毎回の再評価で発火させると無限ループや過剰実行を招くため、遷移時に限定する。
           if (!wasVisible) {
             Core.triggerLoadOnShow(fragment);
-            // 再表示された分岐の中の外部ライブラリ連携を再同期する（未適用なら適用）。
-            Enhance.refreshSubtree(fragment.getTarget());
+            // 表示された分岐の中の、適用済みの外部ライブラリ連携を再同期する。
+            // 未適用の要素へは、ここでは `init` を呼ばない。子の走査がまだ終わって
+            // おらず、描画と初期値の反映の前になる（課題 55）。下の子の評価の後に適用する。
+            Enhance.refreshSubtree(fragment.getTarget(), false);
           }
         }),
       );
-      promises.push(Promise.all(childPromises).then(() => undefined));
+      promises.push(
+        Promise.all(childPromises).then(() => {
+          // 表示へ切り替わったときだけ、子の走査の後に連携を適用する。表示のままの
+          // 再評価では適用しない（初期表示の走査では、外側の走査の最後に適用する）。
+          // `data-each` を同じ要素へ宣言した場合は、行を描く `evaluateAll()` の側で
+          // 適用する。
+          if (wasVisible || hasEach) {
+            return undefined;
+          }
+          return Core.applyEnhancersOnShow(fragment, sequence);
+        }),
+      );
     }
     return Promise.all(promises).then(() => undefined);
   }
@@ -2504,7 +2588,7 @@ export default class Core {
         // 未適用の要素へは `init` を呼ばない。描画の確定は、フォームの初期値が
         // `<option>` へ載る前に来る（候補を描いてから値を載せ直すため）。ここで
         // `init` を呼ぶと、`<option>` を引き取る連携が初期値を受け取れない（課題 54）。
-        // `init` は走査の最後（`Core.scan()`）と行の追加で呼ぶ。
+        // `init` は走査の最後（`Core.scan()`）、行の追加、`data-if` の表示で呼ぶ。
         Enhance.refreshSubtree(target, false);
         // data-each-rendered-run: 描画確定ごとに一度、任意 JS を実行する。
         // 外部の select 拡張ライブラリ（Choices.js 等）の再同期フックに使える。

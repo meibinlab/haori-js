@@ -85,6 +85,10 @@ export default class Enhance {
    * 前にある要素など）へその場で `init` を呼ぶと、描画前の DOM に対して走るうえ、
    * 連携が生成した DOM が走査でフラグメント木へ載り、`data-external` の配下でも
    * フォーム値の収集に載ります（仕様「`data-enhance`」、課題 #42）。
+   *
+   * 非表示の分岐（`data-if` が偽）の中の要素も、走査の最後にこの集合へ入りますが、
+   * 描画と初期値の反映はまだ済んでいません。`applyElement()` が非表示の分岐の中では
+   * 適用を止めるため、遡りの適用でも表示の前に `init` は呼ばれません（課題 55）。
    */
   private static readonly visited = new WeakSet<HTMLElement>();
 
@@ -158,7 +162,8 @@ export default class Enhance {
   /**
    * 対象要素とその子孫へ、まだ適用していない連携を適用します。
    *
-   * 初期スキャン・新規ノードの追加・`data-each` の新規行から呼び出します。
+   * 初期スキャン・新規ノードの追加・`data-each` の新規行・`data-if` の表示から
+   * 呼び出します。非表示の分岐の中の要素には適用しません（`applyElement()`）。
    *
    * @param root 走査の起点となる要素
    * @returns 戻り値はありません。
@@ -188,8 +193,9 @@ export default class Enhance {
    * 対象要素とその子孫の連携を再同期します。
    *
    * 適用済みの要素では `refresh` を呼びます。未適用の要素では、`applyPending` が
-   * true なら `init` を呼びます。`data-each` の描画確定、`data-if` の再表示、
-   * フォームのリセット、Haori が値を書いた入力欄の通知から呼び出します。
+   * true なら `init` を呼びます（非表示の分岐の中は除きます）。`data-each` の描画
+   * 確定、`data-if` の再表示、フォームのリセット、Haori が値を書いた入力欄の通知から
+   * 呼び出します。
    *
    * @param root 走査の起点となる要素
    * @param applyPending 未適用の要素へ `init` を呼ぶかどうか
@@ -245,6 +251,14 @@ export default class Enhance {
    * @returns 戻り値はありません。
    */
   private static applyElement(element: HTMLElement): void {
+    // 非表示の分岐（`data-if` が偽。宣言した要素自身を含む）の中では呼ばない。分岐の
+    // 中は表示するまで描画も初期値の反映も行わないため、ここで呼ぶと `data-each` の
+    // 雛形や初期値が入る前の選択を連携が取り込む。走査の最後・`register()` の遡り・
+    // リセットのどれから呼ばれても同じで、表示の後に `Core.evaluateIf()` などが
+    // 適用する（仕様「`data-enhance`」、課題 55）。
+    if (element.closest(`[${Env.prefix}if-false]`)) {
+      return;
+    }
     const applied = Enhance.instances.get(element) ?? null;
     Enhance.names(element, `${Env.prefix}enhance`).forEach(name => {
       if (applied?.has(name)) {
