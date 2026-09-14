@@ -116,7 +116,7 @@ describe('Url', () => {
       });
     });
 
-    it('同じキーの複数パラメータは後の値が優先される', () => {
+    it('同じキーの複数パラメータは出現順の配列になる', () => {
       Object.defineProperty(window, 'location', {
         value: {...originalLocation, search: '?name=tanaka&name=suzuki'},
         writable: true,
@@ -124,9 +124,9 @@ describe('Url', () => {
 
       const params = Url.readParams();
 
-      // URLSearchParams.forEachは同じキーを複数回呼ぶが、
-      // 最後の値で上書きされる
-      expect(params.name).toBe('suzuki');
+      // 仕様「`data-url-param`」の「同じ名前が複数あれば出現順の配列として
+      // 取り込みます」（課題 53 までは最後の値で上書きしていた）。
+      expect(params.name).toEqual(['tanaka', 'suzuki']);
     });
 
     it('特殊文字を含むパラメータを処理する', () => {

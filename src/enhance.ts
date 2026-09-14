@@ -187,15 +187,17 @@ export default class Enhance {
   /**
    * 対象要素とその子孫の連携を再同期します。
    *
-   * 適用済みの要素では `refresh`、未適用の要素では `init` を呼びます。
-   * `data-each` の描画確定と `data-if` の再表示から呼び出します。
+   * 適用済みの要素では `refresh` を呼びます。未適用の要素では、`applyPending` が
+   * true なら `init` を呼びます。`data-each` の描画確定、`data-if` の再表示、
+   * フォームのリセット、Haori が値を書いた入力欄の通知から呼び出します。
    *
    * @param root 走査の起点となる要素
+   * @param applyPending 未適用の要素へ `init` を呼ぶかどうか
    * @returns 戻り値はありません。
    */
-  public static refreshSubtree(root: HTMLElement): void {
+  public static refreshSubtree(root: HTMLElement, applyPending = true): void {
     Enhance.forEachTarget(root, element => {
-      Enhance.refreshElement(element);
+      Enhance.refreshElement(element, applyPending);
     });
   }
 
@@ -278,12 +280,16 @@ export default class Enhance {
   }
 
   /**
-   * 1 要素の連携を再同期します（未適用なら適用します）。
+   * 1 要素の連携を再同期します（`applyPending` が true なら、未適用の連携も適用します）。
    *
    * @param element 対象要素
+   * @param applyPending 未適用の連携へ `init` を呼ぶかどうか
    * @returns 戻り値はありません。
    */
-  private static refreshElement(element: HTMLElement): void {
+  private static refreshElement(
+    element: HTMLElement,
+    applyPending: boolean,
+  ): void {
     const applied = Enhance.instances.get(element);
     Enhance.names(element, `${Env.prefix}enhance`).forEach(name => {
       if (!applied || !applied.has(name)) {
@@ -298,7 +304,9 @@ export default class Enhance {
       });
     });
     // 未適用の宣言（新しく描画された要素や、登録が後になった連携）を適用する。
-    Enhance.applyElement(element);
+    if (applyPending) {
+      Enhance.applyElement(element);
+    }
   }
 
   /**

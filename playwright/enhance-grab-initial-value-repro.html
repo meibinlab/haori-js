@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>option を引き取る連携と data-each の初期値</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <div data-bind='{"opts":["X","Y","Z"]}'>
+    <form id="f" data-url-param>
+      <div data-external>
+        <select id="sel" name="sel" multiple data-enhance="grabber"
+          data-each="opts" data-each-arg="o">
+          <option value="{{o}}">{{o}}</option>
+        </select>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    // Choices.js と同じく、init の時点の選択を自分の管理へ取り込み、選択中の
+    // <option> だけを <select> に残す連携。選んだ値はタグとして表示する。
+    window.__initSeen = null;
+    Haori.enhancers.register('grabber', {
+      init: function (element) {
+        window.__initSeen = Array.prototype.map.call(element.options, function (option) {
+          return option.value + (option.selected ? ':selected' : '');
+        });
+        var tags = document.createElement('div');
+        tags.id = 'tags';
+        Array.prototype.slice.call(element.options).forEach(function (option) {
+          if (option.selected) {
+            var tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.textContent = option.value;
+            tags.appendChild(tag);
+          } else {
+            option.remove();
+          }
+        });
+        element.parentNode.appendChild(tags);
+        return {};
+      },
+    });
+  </script>
+</body>
+</html>

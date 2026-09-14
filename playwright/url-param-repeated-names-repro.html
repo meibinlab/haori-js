@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>同じ名前の URL パラメータと data-url-param</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 複数選択の既定は P・Q（「初期値はすべて選択」の検索条件に相当） -->
+  <form id="f" data-url-param>
+    <input id="txt" name="txt">
+    <select id="msel" name="msel" multiple>
+      <option value="P" selected>P</option>
+      <option value="Q" selected>Q</option>
+      <option value="R">R</option>
+    </select>
+  </form>
+
+  <!-- 検索条件を URL へ載せる（pushState の直後に data-url-param を読み直す） -->
+  <button id="search" type="button" data-click-history-form="#f">検索</button>
+
+  <!-- 収集値（送信データに相当）を #out へ写す -->
+  <button id="collect" type="button" data-click-form="#f" data-click-bind="#out">収集値を写す</button>
+  <div id="out" data-bind='{}'></div>
+
+  <!-- data-url-arg で取り込んだ値 -->
+  <div id="u" data-url-param data-url-arg="u"></div>
+</body>
+</html>

@@ -204,10 +204,9 @@ describe('初期スキャンより前に登録した連携', () => {
     registerSelectRecorder(name, seen);
     await scan();
 
-    // 仕様「`data-enhance`」の「`init` は、置き場所によらず描画 … の後に呼ばれます」。
-    // 選択肢は data-each で 2 つ描画されている。フォームの初期値は、同じ節の「`data-each`
-    // で選択肢を描画する `<select>` では、フォームの初期値が `init` の後に反映される
-    // ことがあります」のとおり、ここでは確かめない。
-    expect(seen.map(entry => entry.options)).toEqual([2]);
+    // 仕様「`data-enhance`」の「`init` は、置き場所によらず描画と初期値の反映の後に
+    // 呼ばれます。`data-each` で選択肢を描画する `<select>` も同じです」。選択肢は
+    // data-each で 2 つ描画され、初期 data-bind の値が選ばれている（課題 54）。
+    expect(seen).toEqual([{options: 2, value: 'b'}]);
   });
 });

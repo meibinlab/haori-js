@@ -8,15 +8,23 @@ export default class Url {
   /**
    * URLのクエリパラメータを取得します。
    *
+   * 名前が 1 つなら文字列、同じ名前が複数あれば出現順の配列にします。
+   * `data-{event}-history` は配列を同じ名前の繰り返しで書くため、書いた URL を
+   * 読み直すと同じ配列に戻ります（仕様「`data-url-param`」、課題 53）。
+   *
    * @returns URLのクエリパラメータのキーと値のマップ
    */
-  public static readParams(): Record<string, string> {
-    const params: Record<string, string> = {};
-    const queryString = window.location.search;
-    const urlParams = new URLSearchParams(queryString);
-    urlParams.forEach((value, key) => {
-      params[key] = value;
-    });
+  public static readParams(): Record<string, string | string[]> {
+    const params: Record<string, string | string[]> = {};
+    const urlParams = new URLSearchParams(window.location.search);
+    for (const key of new Set(urlParams.keys())) {
+      if (key === '__proto__') {
+        // 配列を代入すると、このオブジェクトのプロトタイプが差し替わる。
+        continue;
+      }
+      const values = urlParams.getAll(key);
+      params[key] = values.length === 1 ? values[0] : values;
+    }
     return params;
   }
 

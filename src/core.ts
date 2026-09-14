@@ -2501,7 +2501,11 @@ export default class Core {
         // 外部ライブラリ連携（`data-enhance`）を描画確定ごとに再同期する。
         // 宣言だけで Choices.js 等の `refresh()` を呼べるようにするため、
         // `data-each-rendered-run` より前に実行する。
-        Enhance.refreshSubtree(target);
+        // 未適用の要素へは `init` を呼ばない。描画の確定は、フォームの初期値が
+        // `<option>` へ載る前に来る（候補を描いてから値を載せ直すため）。ここで
+        // `init` を呼ぶと、`<option>` を引き取る連携が初期値を受け取れない（課題 54）。
+        // `init` は走査の最後（`Core.scan()`）と行の追加で呼ぶ。
+        Enhance.refreshSubtree(target, false);
         // data-each-rendered-run: 描画確定ごとに一度、任意 JS を実行する。
         // 外部の select 拡張ライブラリ（Choices.js 等）の再同期フックに使える。
         Core.runEachRenderedScript(target);

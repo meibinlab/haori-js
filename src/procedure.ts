@@ -3555,6 +3555,9 @@ ${body}
             continue;
           }
           if (Array.isArray(v)) {
+            // 同じ名前の既存のパラメータ（ベース URL や history-data の値）を置き換える。
+            // 残すと、読み直したときに書いた配列へ戻らない（課題 53）。
+            url.searchParams.delete(k);
             v.forEach(item => url.searchParams.append(k, String(item)));
           } else if (typeof v === 'object') {
             url.searchParams.set(k, JSON.stringify(v));
