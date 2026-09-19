@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>交差トリガーの取りこぼしの拾い直し</title>
+  <script>
+    // 一覧取得を保留できるようにした fetch。呼ばれた回数を経路ごとに数え、
+    // `/api/posts` は `__release()` を呼ぶまで応答を返さない。これで「前回の
+    // 手続きが実行中」の状態を保ったまま交差を起こせる。
+    window.__calls = {posts: 0, guarded: 0};
+    let releaseGate = () => undefined;
+    const gate = new Promise(resolve => {
+      releaseGate = resolve;
+    });
+    window.__release = () => releaseGate();
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = String(typeof input === 'string' ? input : input.url);
+      if (url.includes('/api/posts')) {
+        window.__calls.posts += 1;
+        await gate;
+        return new Response(JSON.stringify({items: []}), {
+          headers: {'Content-Type': 'application/json'},
+        });
+      }
+      if (url.includes('/api/guarded')) {
+        window.__calls.guarded += 1;
+        return new Response(JSON.stringify({items: []}), {
+          headers: {'Content-Type': 'application/json'},
+        });
+      }
+      return originalFetch(input, init);
+    };
+  </script>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <div id="state" data-bind='{"last": false, "busy": true}'>
+    <button id="hide" type="button"
+      data-click-data='{"last": true}'
+      data-click-bind="#state" data-click-bind-merge>番兵を隠す</button>
+    <button id="show" type="button"
+      data-click-data='{"last": false}'
+      data-click-bind="#state" data-click-bind-merge>番兵を出す</button>
+    <button id="enable" type="button"
+      data-click-data='{"busy": false}'
+      data-click-bind="#state" data-click-bind-merge>抑止を解く</button>
+
+    <!-- 実行中に隠して出し直す番兵。縦スクロールが無いため、出ている間は
+         ずっと交差したままになる -->
+    <div id="sentinel" data-if="!last" data-intersect-fetch="/api/posts">番兵</div>
+
+    <!-- 抑止したまま交差し続ける番兵 -->
+    <div id="guarded"
+      data-intersect-fetch="/api/guarded"
+      data-intersect-disabled="{{busy}}">抑止つきの番兵</div>
+  </div>
+</body>
+</html>

@@ -3425,7 +3425,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 
 ##### `data-intersect-disabled`
 
-真と評価された間は、交差しても Procedure を開始しません。`loading` 中の多重実行抑止や `hasMore === false` の停止に使用します。
+真と評価された間は、交差しても Procedure を開始しません。`loading` 中の多重実行抑止や `hasMore === false` の停止に使用します。抑止している間に起きた交差は捨てずに覚えておき、偽へ変わった時点でまだ交差していれば Procedure を開始します（[抑止の間に来た交差](#抑止の間に来た交差)）。
 
 ```html
 <div
@@ -3441,6 +3441,18 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 ```html
 <div data-intersect-fetch="/api/hero" data-intersect-once></div>
 ```
+
+##### 抑止の間に来た交差
+
+同じ要素の Procedure は多重に実行しません。前回の実行が終わるまでの間に起きた交差と、[`data-intersect-disabled`](#data-intersect-disabled) が真の間に起きた交差は、その場では開始しませんが、**捨てずに覚えておきます**。抑止が解けた時点で、監視対象がまだ交差していれば、あらためて Procedure を開始します。
+
+- 実行中に起きた交差は、その実行が完了した時点で拾い直します。成否は問いません。
+- `data-intersect-disabled` が真の間に起きた交差は、偽へ変わった時点で拾い直します。
+- 拾い直すのは、覚えている交差 1 回につき 1 回だけです。抑止が解けた時点で交差していない場合は開始しません。
+- [`data-intersect-once`](#data-intersect-once) で監視を解除した後は拾い直しません。
+- `data-intersect-root` / `data-intersect-root-margin` / `data-intersect-threshold` / `data-intersect-once` の設定が変わって監視を作り直したときは、覚えている交差を破棄します。作り直した監視が現在の交差状態をあらためて通知するためです。実行中かどうかは引き継ぐため、作り直しても手続きは重なりません。設定が変わらない再評価では監視を作り直さず、覚えている交差も保ちます。
+
+`IntersectionObserver` は交差状態が**変化した**ときにしか通知しないため、覚えておかないと、交差したまま変化しない要素では次の機会が来ません。短い一覧の末尾に置いた番兵のように、表示され続ける要素で取りこぼすと以後まったく実行されなくなります。
 
 #### 定期取得トリガー (`data-poll-*`)
 
