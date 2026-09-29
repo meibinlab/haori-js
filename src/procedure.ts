@@ -59,6 +59,23 @@ const DOWNLOAD_FAILURE_MESSAGE = 'ファイルを保存できませんでした'
 const DOWNLOAD_PROGRESS_INTERVAL_MS = 100;
 
 /**
+ * このページで選ばれた保存先のフォルダ。選ばれていなければ null です。
+ *
+ * 仕様「`data-fetch-download-folder` / `data-{event}-fetch-download-folder`」の
+ * 「選んだフォルダは、そのページが開いている間だけ覚えます」。
+ */
+let rememberedDownloadFolder: FileSystemDirectoryHandle | null = null;
+
+/**
+ * 保存の結果。
+ *
+ * `cancelled` は利用者が上書きを取り消した場合で、失敗としては扱いません
+ * （仕様「`data-fetch-download-folder` / `data-{event}-fetch-download-folder`」の
+ * 「取り消したときは保存せずに手続きを終えます」）。
+ */
+type DownloadOutcome = 'saved' | 'cancelled' | 'failed';
+
+/**
  * Procedure から利用する Haori API を解決します。
  * window.Haori が差し替えられている場合はそちらを優先します。
  *
@@ -755,6 +772,14 @@ export interface ProcedureOptions {
    * 応答の `Content-Disposition` が優先で、こちらはその次に使う。
    */
   downloadFileName?: string | null;
+
+  /**
+   * 保存先のフォルダを選ばせ、受け取りながら書き出すかどうか。
+   *
+   * `data-fetch-download-folder` / `data-{event}-fetch-download-folder` の宣言で
+   * 立てる。
+   */
+  downloadFolder?: boolean;
 
   /** レスポンスデータをバインドする際のキー名 */
   bindArg?: string | null;
@@ -1779,6 +1804,28 @@ ${body}
         ? null
         : Procedure.normalizeAttributeText(downloadEvaluation?.value);
     }
+    // fetch-download-folder（イベントあり/なし）
+    // event: data-{event}-fetch-download-folder,
+    // non-event: data-fetch-download-folder
+    const fetchDownloadFolderAttr = event
+      ? Procedure.attrName(event, 'fetch-download-folder')
+      : Procedure.attrName(null, 'download-folder', true);
+    if (fragment.hasAttribute(fetchDownloadFolderAttr)) {
+      if (options.download) {
+        // 属性値は取らない（仕様「`data-fetch-download-folder` /
+        // `data-{event}-fetch-download-folder`」の「属性値は取りません」）。
+        options.downloadFolder = true;
+      } else {
+        // 書き出す応答が無い（仕様「`data-fetch-download-folder` /
+        // `data-{event}-fetch-download-folder`」の「保存の宣言が無い場合、この
+        // 宣言は無視して警告を記録します」）。宣言の誤りなので常に記録する。
+        Log.warn(
+          'Haori',
+          `${fetchDownloadFolderAttr} は ${fetchDownloadAttr} と併せて指定して` +
+            'ください（書き出す応答が無いため、この宣言は無視します）。',
+        );
+      }
+    }
     // bind（イベントあり/なし: 非イベントは data-fetch-bind）
     const bindAttr = event
       ? Procedure.attrName(event, 'bind')
@@ -2416,6 +2463,14 @@ ${body}
   private downloadTotalBytes: number | null = null;
 
   /**
+   * この手続きで使う保存先のフォルダ。使わない場合は null です。
+   *
+   * 仕様「`data-fetch-download-folder` / `data-{event}-fetch-download-folder`」の
+   * 「保存先のフォルダを、手続きの始めに利用者へ選ばせます」。
+   */
+  private downloadFolder: FileSystemDirectoryHandle | null = null;
+
+  /**
    * この手続きを起こした操作の通番。
    *
    * コンストラクタはイベントのハンドラ内で同期的に走るため、ここでの発番が
@@ -2636,6 +2691,16 @@ ${body}
       const confirmed = await this.confirm();
       if (!confirmed) {
         return false;
+      }
+      if (this.options.downloadFolder) {
+        // 保存先はブラウザが「利用者の操作の直後」にしか選ばせてくれない（仕様
+        // 「`data-fetch-download-folder` / `data-{event}-fetch-download-folder`」
+        // の「選ばせる位置は `data-{event}-confirm` の後、フェッチを始める前
+        // です」）。
+        const prepared = await this.prepareDownloadFolder();
+        if (prepared === 'cancelled') {
+          return false;
+        }
       }
       if (
         this.options.resetBeforeFragments &&
@@ -3028,6 +3093,71 @@ ${body}
   }
 
   /**
+   * 覚えている保存先のフォルダを忘れます。
+   *
+   * 次のダウンロードでは、利用者へ保存先をあらためて選ばせます（仕様
+   * 「`data-fetch-download-folder` / `data-{event}-fetch-download-folder`」の
+   * 「選んだフォルダは、そのページが開いている間だけ覚えます」）。
+   */
+  public static forgetDownloadFolder(): void {
+    rememberedDownloadFolder = null;
+  }
+
+  /**
+   * 保存先のフォルダを用意します。
+   *
+   * 仕様「`data-fetch-download-folder` / `data-{event}-fetch-download-folder`」の
+   * 「保存先のフォルダを、手続きの始めに利用者へ選ばせます」。
+   *
+   * @returns 用意できた場合は `ready`、利用者が取り消した場合は `cancelled`、
+   *     今までどおりの保存へ落とす場合は `fallback`
+   */
+  private async prepareDownloadFolder(): Promise<
+    'ready' | 'cancelled' | 'fallback'
+  > {
+    if (rememberedDownloadFolder) {
+      // 2 回目以降は選択を求めない（仕様「`data-fetch-download-folder` /
+      // `data-{event}-fetch-download-folder`」の「選んだフォルダは、そのページが
+      // 開いている間だけ覚えます」）。
+      this.downloadFolder = rememberedDownloadFolder;
+      return 'ready';
+    }
+    const picker = (
+      globalThis as {
+        showDirectoryPicker?: (options?: {
+          mode?: 'read' | 'readwrite';
+        }) => Promise<FileSystemDirectoryHandle>;
+      }
+    ).showDirectoryPicker;
+    if (typeof picker !== 'function') {
+      Log.info(
+        'Haori',
+        'この環境では保存先のフォルダを選ばせられないため、今までどおり保存します。',
+      );
+      return 'fallback';
+    }
+    try {
+      const folder = await picker.call(globalThis, {mode: 'readwrite'});
+      rememberedDownloadFolder = folder;
+      this.downloadFolder = folder;
+      return 'ready';
+    } catch (error) {
+      if ((error as {name?: string} | null)?.name === 'AbortError') {
+        // 利用者が選択を取り消した（仕様「`data-fetch-download-folder` /
+        // `data-{event}-fetch-download-folder`」の「保存先の選択を取り消した
+        // ときは、取得を始めずに手続きを終えます」）。
+        return 'cancelled';
+      }
+      // 操作の直後ではないと断られた場合など。保存そのものは今までどおり行う。
+      Log.info(
+        'Haori',
+        `保存先のフォルダを選ばせられなかったため、今までどおり保存します: ${error}`,
+      );
+      return 'fallback';
+    }
+  }
+
+  /**
    * 応答本文を読み取り、受け取った量を `_fetch` へ入れながら `Blob` にします。
    *
    * 仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
@@ -3037,7 +3167,6 @@ ${body}
    * @returns 読み取った本文。読み取れなかった場合は null
    */
   private async readResponseBody(response: Response): Promise<Blob | null> {
-    this.downloadTotalBytes = Procedure.resolveDownloadTotalBytes(response);
     const type = response.headers.get('Content-Type') ?? '';
     const body = response.body;
     if (!body || typeof body.getReader !== 'function') {
@@ -3059,11 +3188,41 @@ ${body}
         return null;
       }
     }
+    const parts: BlobPart[] = [];
+    const read = await this.pumpResponseBody(body, chunk => {
+      // 受け取ったそばから `Blob` へ移す。JavaScript 側へ積み上げると巨大な
+      // 出力で利用者のメモリを圧迫する（`Blob` どうしの結合は中身を写さない）。
+      // 仕様「`data-fetch-download` / `data-{event}-fetch-download`」の
+      // 「受け取ったそばから `Blob` へ移すため」。
+      parts.push(new Blob([chunk]));
+    });
+    if (!read) {
+      return null;
+    }
+    // 最終値は、この後に走る `success`（保存に失敗したときは `error`）の注入が
+    // 運ぶ（仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
+    // 「受け取りの完了時には必ず最終値を入れます」）。
+    return new Blob(parts, type !== '' ? {type} : undefined);
+  }
+
+  /**
+   * 応答本文を読み進め、受け取った量を `_fetch` へ入れながら受け皿へ渡します。
+   *
+   * 仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
+   * 「更新は 100 ミリ秒を下限に間引きます」。
+   *
+   * @param body 応答本文
+   * @param write 受け取ったチャンクの受け皿
+   * @returns 最後まで読めた場合は true、読めなかった場合は false
+   */
+  private async pumpResponseBody(
+    body: ReadableStream<Uint8Array>,
+    write: (chunk: Uint8Array) => Promise<void> | void,
+  ): Promise<boolean> {
     // 全体の量が決まった時点で一度入れる。受け取りに数分かかる出力でも、
     // 始めから「何バイト中」を出せる。
     await this.injectFetchState('loading');
     let lastInjectedAt = Date.now();
-    const parts: BlobPart[] = [];
     const reader = body.getReader();
     try {
       for (;;) {
@@ -3071,11 +3230,7 @@ ${body}
         if (done) {
           break;
         }
-        // 受け取ったそばから `Blob` へ移す。JavaScript 側へ積み上げると巨大な
-        // 出力で利用者のメモリを圧迫する（`Blob` どうしの結合は中身を写さない）。
-        // 仕様「`data-fetch-download` / `data-{event}-fetch-download`」の
-        // 「受け取ったそばから `Blob` へ移すため」。
-        parts.push(new Blob([value]));
+        await write(value);
         this.downloadReceivedBytes += value.byteLength;
         this.dropTotalBytesIfExceeded();
         const now = Date.now();
@@ -3086,12 +3241,9 @@ ${body}
       }
     } catch (error) {
       Log.error('Haori', `応答をファイルとして読み取れませんでした: ${error}`);
-      return null;
+      return false;
     }
-    // 最終値は、この後に走る `success`（保存に失敗したときは `error`）の注入が
-    // 運ぶ（仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
-    // 「受け取りの完了時には必ず最終値を入れます」）。
-    return new Blob(parts, type !== '' ? {type} : undefined);
+    return true;
   }
 
   /**
@@ -3146,6 +3298,106 @@ ${body}
   }
 
   /**
+   * 応答本文を、選んだフォルダのファイルへ受け取りながら書き出します。
+   *
+   * 仕様「`data-fetch-download-folder` / `data-{event}-fetch-download-folder`」の
+   * 「応答本文をメモリへ載せずに、受け取りながらファイルへ書き出します」。
+   *
+   * @param folder 保存先のフォルダ
+   * @param response 成功応答
+   * @param url フェッチ URL（ファイル名の最後の手掛かりに使う）
+   * @returns 保存の結果。今までどおりの保存へ落とす場合は `fallback`
+   */
+  private async saveResponseToFolder(
+    folder: FileSystemDirectoryHandle,
+    response: Response,
+    url?: string,
+  ): Promise<DownloadOutcome | 'fallback'> {
+    const body = response.body;
+    if (!body || typeof body.getReader !== 'function') {
+      // ストリームとして読めないなら書き出す意味が無い。
+      return 'fallback';
+    }
+    // 名前は応答を受け取ってから決める。フォルダだけを先に選ばせるのはこのため
+    // （仕様「`data-fetch-download-folder` /
+    // `data-{event}-fetch-download-folder`」の「ファイル名は今までどおりに
+    // 決めます」）。
+    const fileName = Procedure.resolveDownloadFileName(
+      response,
+      this.options.downloadFileName ?? null,
+      url ?? this.options.fetchUrl ?? null,
+    );
+    let existed = true;
+    try {
+      await folder.getFileHandle(fileName);
+    } catch (error) {
+      if ((error as {name?: string} | null)?.name === 'NotFoundError') {
+        existed = false;
+      } else {
+        // 許可が取り消されたなど。まだ本文を読んでいないので落とせる。
+        Log.info(
+          'Haori',
+          `保存先のフォルダを確かめられなかったため、今までどおり保存します: ${error}`,
+        );
+        return 'fallback';
+      }
+    }
+    if (existed) {
+      // 仕様「`data-fetch-download-folder` /
+      // `data-{event}-fetch-download-folder`」の「同じ名前のファイルが既にある
+      // 場合は、上書きしてよいかを確認します」。
+      const overwrite = await resolveProcedureHaoriApi().confirm(
+        `${fileName} は既にあります。上書きしますか?`,
+      );
+      if (!overwrite) {
+        return 'cancelled';
+      }
+    }
+    let writable: FileSystemWritableFileStream;
+    try {
+      const file = await folder.getFileHandle(fileName, {create: true});
+      writable = await file.createWritable();
+    } catch (error) {
+      Log.info(
+        'Haori',
+        `保存先のファイルを作れなかったため、今までどおり保存します: ${error}`,
+      );
+      return 'fallback';
+    }
+    const read = await this.pumpResponseBody(body, chunk =>
+      writable.write(chunk),
+    );
+    if (read) {
+      try {
+        // ここまで書けた内容が、この時点で保存先のファイルになる。
+        await writable.close();
+        return 'saved';
+      } catch (error) {
+        Log.error('Haori', `ファイルを書き終えられませんでした: ${error}`);
+      }
+    }
+    // 仕様「`data-fetch-download-folder` / `data-{event}-fetch-download-folder`」の
+    // 「保存に失敗したときは、書きかけを残しません」。既にあったファイルへ
+    // 上書きしていた場合、書き込みは別の場所で行われるため元の内容が残る。
+    try {
+      await writable.abort();
+    } catch (error) {
+      Log.error('Haori', `書きかけを取り消せませんでした: ${error}`);
+    }
+    if (!existed) {
+      try {
+        await folder.removeEntry(fileName);
+      } catch (error) {
+        Log.error(
+          'Haori',
+          `作りかけのファイルを取り除けませんでした: ${error}`,
+        );
+      }
+    }
+    return 'failed';
+  }
+
+  /**
    * 応答本文をファイルとして保存します。
    *
    * 保存は `<a download>` の生成で行います。ダウンロードはブラウザの機能なので、
@@ -3153,15 +3405,32 @@ ${body}
    *
    * @param response 成功応答
    * @param url フェッチ URL（ファイル名の最後の手掛かりに使う）
-   * @returns 保存の完了 Promise
+   * @returns 保存の結果
    */
   private async saveResponseAsFile(
     response: Response,
     url?: string,
-  ): Promise<boolean> {
+  ): Promise<DownloadOutcome> {
+    this.downloadTotalBytes = Procedure.resolveDownloadTotalBytes(response);
+    if (this.downloadFolder) {
+      const outcome = await this.saveResponseToFolder(
+        this.downloadFolder,
+        response,
+        url,
+      );
+      if (outcome !== 'fallback') {
+        return outcome;
+      }
+      // 覚えていたフォルダへ書けなくなっていた。応答本文はまだ読んでいないので
+      // 今までどおりの保存へ落とせる（仕様「`data-fetch-download-folder` /
+      // `data-{event}-fetch-download-folder`」の「覚えていたフォルダへ書き込め
+      // なくなっていた」）。
+      this.downloadFolder = null;
+      rememberedDownloadFolder = null;
+    }
     const blob = await this.readResponseBody(response);
     if (blob === null) {
-      return false;
+      return 'failed';
     }
     const fileName = Procedure.resolveDownloadFileName(
       response,
@@ -3178,7 +3447,7 @@ ${body}
         'Haori',
         'この環境では Blob の URL を生成できないため、ファイルを保存できません。',
       );
-      return false;
+      return 'failed';
     }
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -3193,7 +3462,7 @@ ${body}
     // 解放は次のタスクで行う（仕様「`data-fetch-download` /
     // `data-{event}-fetch-download`」の「生成した URL は次のタスクで解放します」）。
     setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-    return true;
+    return 'saved';
   }
 
   /**
@@ -3378,8 +3647,16 @@ ${body}
     if (this.options.download) {
       // 保存はバインドの位置で行う（仕様「処理順序」の 9）。バインド先は宣言の
       // 読み取りで空にしてあるため、この後の `bindResult()` は何もしない。
-      const saved = await this.saveResponseAsFile(response, url);
-      if (!saved) {
+      const outcome = await this.saveResponseAsFile(response, url);
+      if (outcome === 'cancelled') {
+        // 上書きを取り消した（仕様「`data-fetch-download-folder` /
+        // `data-{event}-fetch-download-folder`」の「取り消したときは保存せずに
+        // 手続きを終えます」）。失敗ではないので画面へは出さず、通信そのものは
+        // 成功しているため `success` を入れる。
+        await this.injectFetchState('success', response.status, null);
+        return false;
+      }
+      if (outcome === 'failed') {
         // 保存の失敗を画面へ出す（仕様「`data-fetch-download` /
         // `data-{event}-fetch-download`」の「保存そのものに失敗した場合は、画面へ
         // 失敗として出します」）。ダウンロードの失敗が画面に出ないことが、この

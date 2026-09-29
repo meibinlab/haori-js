@@ -2564,6 +2564,7 @@ data-fetch="url"
 - `data-fetch-bind-transform`: 応答の変換（[`data-{event}-bind-transform`（非イベント: `data-fetch-bind-transform`）](#data-event-bind-transform非イベント-data-fetch-bind-transform)）
 - `data-fetch-state`: フェッチ状態 `_fetch` の注入先セレクタ（省略時は自要素）
 - `data-fetch-download`: 応答をファイルとして保存する（[`data-fetch-download` / `data-{event}-fetch-download`](#data-fetch-download--data-event-fetch-download)）
+- `data-fetch-download-folder`: 保存先のフォルダを選ばせ、受け取りながら書き出す（[`data-fetch-download-folder` / `data-{event}-fetch-download-folder`](#data-fetch-download-folder--data-event-fetch-download-folder)）
 
 **バインドキー名の指定**:
 
@@ -3281,7 +3282,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 
 1. `data-{event}-validate`: バリデーション実行（`data-validity` の同期評価を含む）
 2. `data-{event}-if`: 手続きの実行条件の判定（偽なら以降を実行しない）
-3. `data-{event}-confirm`: 確認ダイアログ表示
+3. `data-{event}-confirm`: 確認ダイアログ表示（`data-{event}-fetch-download-folder` を宣言した場合は、この直後に保存先のフォルダを選ばせる。[`data-fetch-download-folder` / `data-{event}-fetch-download-folder`](#data-fetch-download-folder--data-event-fetch-download-folder)）
 4. `data-{event}-reset-before`: 送信前のリセット処理実行
 5. `data-{event}-data` / `data-{event}-form`: データ取得
 6. `data-{event}-before-run`: フェッチ前スクリプト実行
@@ -3985,6 +3986,58 @@ data-click-fetch-download="customers.csv"  <!-- ファイル名の既定値を�
 - **別オリジンの応答では、`Access-Control-Expose-Headers: Content-Disposition` が無いとファイル名を読めません。** 読めない場合は上の 2・3 で決めます。
 - 応答本文をいったんメモリへ載せます。受け取ったそばから `Blob` へ移すため JavaScript が全量を抱えることはありませんが、保存を始めるまで応答の全体はメモリの上にあります。巨大な出力ではブラウザのダウンロード（直接リンクやフォーム送信）のほうが有利です。
 - 保存は `<a download>` の生成で行うため、`Blob` の URL を生成できない環境では実行できません（上の「保存そのものに失敗した場合」として扱います）。
+
+##### `data-fetch-download-folder` / `data-{event}-fetch-download-folder`
+
+応答本文をメモリへ載せずに、**受け取りながらファイルへ書き出します**。数百 MB のエクスポートで、利用者の PC のメモリを圧迫しないための宣言です。
+
+**構文**:
+```html
+data-fetch-download-folder              <!-- 非イベント data-fetch 用 -->
+data-click-fetch-download-folder        <!-- イベント起点の場合は data-{event}-fetch-download-folder -->
+```
+
+```html
+<!-- 数百 MB のエクスポート。メモリへ載せずに、選んだフォルダへ書き出す -->
+<button
+  data-click-fetch="/api/customers.csv"
+  data-click-form="#search-form"
+  data-click-fetch-download="customers.csv"
+  data-click-fetch-download-folder
+  data-click-fetch-state="#export-state"
+>エクスポート</button>
+```
+
+**属性値は取りません。** 宣言するだけで有効です（`data-click-fetch-download-folder="true"` のように値を書いても同じ扱いです）。
+
+**[`data-fetch-download`](#data-fetch-download--data-event-fetch-download) と併せて宣言してください。** 保存の宣言が無い場合、この宣言は無視して警告を記録します（書き出す応答が無いためです）。
+
+**挙動**:
+
+- **保存先のフォルダを、手続きの始めに利用者へ選ばせます。** 選ばせる位置は [`data-{event}-confirm`](#data-event-confirm) の後、フェッチを始める前です。ブラウザは保存先を選ばせる求めを**利用者の操作の直後にしか受け付けない**ため、応答を待ってからでは間に合いません。
+- **選んだフォルダは、そのページが開いている間だけ覚えます。** 2 回目以降のダウンロードでは選択を求めません。覚えるのはページごとに 1 つで、宣言した要素ごとではありません。
+- **ファイル名は今までどおりに決めます。** ファイルではなくフォルダを選ばせるのは、応答の `Content-Disposition` を受け取ってから名前を決めるためです（[`data-fetch-download`](#data-fetch-download--data-event-fetch-download) の「ファイル名の決定」）。ファイル 1 つを選ばせる方式では名前を先に確定させることになり、サーバが決めた名前を使えません。
+- **同じ名前のファイルが既にある場合は、上書きしてよいかを確認します。** `<名前> は既にあります。上書きしますか?` と尋ね、取り消したときは保存せずに手続きを終えます。失敗としては扱わないので画面にエラーは出ませんが、**以降のアクション（ダイアログ・トースト・リダイレクトなど）は実行しません**。`_fetch` には `success` を入れます（通信そのものは成功しているためです）。
+- 受け取った量は今までと同じく `_fetch.receivedBytes` で参照できます（[`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state)）。
+- **保存に失敗したときは、書きかけを残しません。** 書き込みを取り消し、この宣言で新しく作ったファイルは取り除きます。**既にあったファイルへ上書きしていた場合は、元の内容が残ります**（書き込みは別の場所で行われ、最後まで書けたときにだけ差し替わるためです）。画面表示は今までどおり `ファイルを保存できませんでした` です。
+- 2xx 以外の応答では保存しません。フォルダは先に選ばせていますが、ファイルは作りません。
+- **保存先の選択を取り消したときは、取得を始めずに手続きを終えます。** 失敗としては扱わず、画面にもエラーも出しません（[`data-{event}-confirm`](#data-event-confirm) の取り消しと同じ扱いです）。フェッチを始める前なので `_fetch` も注入しません。
+
+**今までどおりの保存へ落とす場合**:
+
+次のいずれかにあたるときは、**この宣言が無かったものとして今までどおり保存します**（応答本文をメモリへ載せて `<a download>` で保存します）。落ちたことは開発モードのログ（`Log.info`）へ記録します。保存されるファイルと画面の見え方は変わりません。
+
+- ブラウザが保存先の選択に対応していない（Chromium 系以外、`http:` で開いている、別オリジンの `<iframe>` の中など）
+- 利用者の操作の直後ではないとして、ブラウザが求めを断った
+- 覚えていたフォルダへ書き込めなくなっていた（利用者が許可を取り消したなど）
+
+**とくに [`data-{event}-confirm`](#data-event-confirm) を挟むと断られることがあります。** 確認ダイアログを閉じるまでに時間がかかると、ブラウザから見て「操作の直後」ではなくなるためです。2 回目以降は覚えたフォルダを使うので、この問題は起きません。定期取得トリガー（`data-poll-*`）のように利用者の操作を起点としない手続きでも同じで、初回は必ず今までどおりの保存になります。
+
+**制約**:
+
+- **対応しているのは Chromium 系のブラウザだけです。** Firefox と Safari には保存先のフォルダを選ばせる仕組みが無いため、今までどおりの保存になります。
+- **`https:`（または `localhost`）で開いている必要があります。**
+- フォルダを選ばせる求めは、そのフォルダの中のファイルを**読み書きする許可**を求めるものです。ファイル 1 つだけを選ばせるよりも広い許可になります。
 
 #### バインド
 

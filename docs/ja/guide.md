@@ -2314,6 +2314,22 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 
 全体の量は応答の `Content-Length` から取ります。分からない場合（チャンク転送や圧縮された転送）は `_fetch.totalBytes` が `null` になります。
 
+#### `data-fetch-download-folder`: メモリへ載せずに書き出す
+
+数百 MB のエクスポートでは、`data-fetch-download-folder` を併せて宣言すると、応答をメモリへ載せずに**受け取りながらファイルへ書き出せます**。保存先のフォルダを一度だけ選んでもらう形になります（2 回目以降は選択を求めません）。
+
+```html
+<button
+  data-click-fetch="/api/customers.csv"
+  data-click-fetch-download="customers.csv"
+  data-click-fetch-download-folder
+>エクスポート</button>
+```
+
+ファイル名は今までどおり応答の `Content-Disposition` から決まります。同じ名前のファイルが既にある場合は、上書きしてよいかを確認します。
+
+対応しているのは Chromium 系のブラウザで、`https:`（または `localhost`）で開いている必要があります。対応していない場合は、この宣言が無いときと同じ保存になります。
+
 #### `data-fetch-data`: 送信データを指定
 
 ```html

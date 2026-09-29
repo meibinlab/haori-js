@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>保存先のフォルダへ書き出す</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 保存先のフォルダを選ばせ、受け取りながら書き出す -->
+  <button id="export"
+    data-click-fetch="/api/large.csv"
+    data-click-fetch-download="fallback.csv"
+    data-click-fetch-download-folder
+    data-click-fetch-state="#progress">エクスポート</button>
+
+  <div id="progress">
+    <span id="done" data-if="_fetch.success">完了 {{_fetch.receivedBytes}}</span>
+  </div>
+</body>
+</html>
