@@ -2299,6 +2299,21 @@ HTML 仕様上 `<table>` の中に `<form>` を直接置けないため、テー
 ></div>
 ```
 
+受け取った量は `data-fetch-state` で注入される `_fetch` から参照できます。数百 MB のエクスポートは受け取りに数分かかるため、「止まっているのか進んでいるのか」を画面へ出すために使います。
+
+```html
+<button
+  data-click-fetch="/api/customers.csv"
+  data-click-fetch-download="customers.csv"
+  data-click-fetch-state="#export-state"
+>エクスポート</button>
+<span id="export-state" data-if="_fetch.loading">
+  受信中 {{_fetch.receivedBytes}} / {{_fetch.totalBytes ?? '?'}} バイト
+</span>
+```
+
+全体の量は応答の `Content-Length` から取ります。分からない場合（チャンク転送や圧縮された転送）は `_fetch.totalBytes` が `null` になります。
+
 #### `data-fetch-data`: 送信データを指定
 
 ```html

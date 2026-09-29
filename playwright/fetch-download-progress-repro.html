@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ダウンロードの受信の進み具合</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 受信中と完了後の両方で、受け取った量を画面から参照する -->
+  <button id="export"
+    data-click-fetch="/api/large.csv"
+    data-click-fetch-download="large.csv"
+    data-click-fetch-state="#progress">エクスポート</button>
+
+  <div id="progress">
+    <span id="loading" data-if="_fetch.loading">受信中 {{_fetch.receivedBytes}} / {{_fetch.totalBytes ?? '?'}}</span>
+    <span id="done" data-if="_fetch.success">完了 {{_fetch.receivedBytes}} / {{_fetch.totalBytes ?? '?'}}</span>
+  </div>
+</body>
+</html>

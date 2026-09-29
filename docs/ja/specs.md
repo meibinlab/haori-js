@@ -3972,7 +3972,9 @@ data-click-fetch-download="customers.csv"  <!-- ファイル名の既定値を�
 - 保存するのは**成功応答（2xx）だけ**です。2xx 以外は保存せず、通常のフェッチと同じエラーの振り分け（フィールドエラー・全体エラー）に載せます（[エラーハンドリング](#エラーハンドリング)）。**ダウンロードの失敗を画面のメッセージとして表示できます。**
 - 送信内容の組み立ては通常のフェッチと同じです。`data-{event}-form` / `data-{event}-data` / `data-{event}-fetch-method` / `data-{event}-fetch-headers` がそのまま使えます。
 - 進行状況は [`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state) で参照できます。`success` は保存をブラウザへ渡した後に注入します。
+- **受け取ったバイト数を `_fetch` へ入れます。** 数百 MB のエクスポートでは受け取りに数分かかることがあり、`loading` だけでは止まっているのか進んでいるのかが利用者に分かりません。値の意味と更新の間隔は [`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state) の「ダウンロードの進み具合」を参照してください。
 - **応答をバインドしません。** 本文は 1 度しか読めないため、この宣言があるときは[既定 self-bind](#data-fetch) を行いません。バインド先を明示している場合は警告を記録し、保存を優先します。
+- 保存する `Blob` には応答の `Content-Type` を持たせます。
 - **本文が空でも、応答のとおりに保存します。** 0 件のエクスポートで 0 バイトの CSV が返る構成があり、握りつぶすと「押しても何も起きない」状態になるためです（`204 No Content` では 0 バイトのファイルを保存します）。
 - **保存そのものに失敗した場合は、画面へ失敗として出します。** 応答本文を読めない場合（通信が途中で切れたなど）と、`Blob` の URL を生成できない環境がこれにあたります。`_fetch` へ `error` を注入し、`ファイルを保存できませんでした` を全体エラーとして表示し、**以降のアクション（ダイアログ・トースト・リダイレクトなど）は実行しません**。ダウンロードの失敗が画面に出ないことが、この属性を設けた理由だからです。通信そのものは成功しているため、`_fetch.statusCode` は応答のステータス（2xx）のままで、[`haori:fetcherror`](#haorifetcherror) は発火しません。
 - 保存に使う一時的な URL は、保存を始めた**次のタスクで解放します**（同じタスクで解放すると、保存が始まる前に中身を読めなくなるブラウザがあるため）。
@@ -3981,7 +3983,7 @@ data-click-fetch-download="customers.csv"  <!-- ファイル名の既定値を�
 **制約**:
 
 - **別オリジンの応答では、`Access-Control-Expose-Headers: Content-Disposition` が無いとファイル名を読めません。** 読めない場合は上の 2・3 で決めます。
-- 応答本文をいったんメモリへ載せます。巨大な出力ではブラウザのダウンロード（直接リンクやフォーム送信）のほうが有利です。
+- 応答本文をいったんメモリへ載せます。受け取ったそばから `Blob` へ移すため JavaScript が全量を抱えることはありませんが、保存を始めるまで応答の全体はメモリの上にあります。巨大な出力ではブラウザのダウンロード（直接リンクやフォーム送信）のほうが有利です。
 - 保存は `<a download>` の生成で行うため、`Blob` の URL を生成できない環境では実行できません（上の「保存そのものに失敗した場合」として扱います）。
 
 #### バインド
@@ -4078,12 +4080,32 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 | `error` | boolean | 失敗なら `true` |
 | `statusCode` | number \| null | HTTP ステータスコード。取得できない場合は `null` |
 | `message` | string \| null | エラーメッセージ。HTTP エラー時は `statusText`、ネットワーク断時は例外メッセージ。無い場合は `null` |
+| `receivedBytes` | number | 受け取ったバイト数。ダウンロードのときだけ入ります（下記） |
+| `totalBytes` | number \| null | 応答全体のバイト数。分からない場合は `null`。ダウンロードのときだけ入ります（下記） |
 
 **注入タイミング**:
 - フェッチ開始直前に `status="loading"`
 - HTTP エラー応答（4xx/5xx）で `status="error"`（`statusCode` に HTTP ステータス、`message` に `statusText`）
 - ネットワーク断・タイムアウト等の例外で `status="error"`（`statusCode` は `null`、`message` に例外メッセージ）
 - バインド反映後に `status="success"`（`statusCode` に HTTP ステータス）
+- ダウンロード（[`data-fetch-download`](#data-fetch-download--data-event-fetch-download)）では、応答本文を受け取っている間も `status="loading"` のまま `receivedBytes` を更新
+
+**ダウンロードの進み具合（`receivedBytes` / `totalBytes`）**:
+
+[`data-fetch-download` / `data-{event}-fetch-download`](#data-fetch-download--data-event-fetch-download) を宣言したときだけ、この 2 つのキーが入ります。数百 MB のエクスポートでは受け取りに数分かかることがあり、`loading` だけでは止まっているのか進んでいるのかが利用者に分からないためです。
+
+```html
+<span data-if="_fetch.loading">
+  受信中 {{_fetch.receivedBytes}} / {{_fetch.totalBytes ?? '?'}} バイト
+</span>
+```
+
+- **ダウンロード以外のフェッチには入りません。** 進み具合を数えるには応答本文を読み進める必要があり、読み進めた本文はバインドのために読み直せないためです。
+- `receivedBytes` はフェッチを始めた時点で `0` です。以後、応答本文を受け取るたびに増えます。保存が終わったあと（`status="success"`）と、保存に失敗したとき（`status="error"`）も、最後に受け取った量が残ります。
+- `totalBytes` は応答の `Content-Length` から決めます。**応答のヘッダーを受け取った時点で入ります**ので、受け取りが始まる前から「何バイト中」を出せます。ヘッダーが無い場合（チャンク転送）と、値が 0 以上の整数として読めない場合は `null` のままです。
+- **圧縮された転送では `totalBytes` を入れません。** `Content-Encoding` が付いている応答の `Content-Length` は圧縮後のバイト数で、受け取れるのは展開後のバイト数なので、そのまま並べると進み具合が全体量を超えます。別オリジンの応答では `Content-Encoding` を読めないため事前に判断できません。この場合は `receivedBytes` が `totalBytes` を追い越した時点で `totalBytes` を `null` へ落とします。
+- **更新は 100 ミリ秒を下限に間引きます。** 注入のたびに `data-if` や `data-each` の再評価が走るため、受け取るたびに入れると描画が追いつきません。**受け取りの完了時には必ず最終値を入れます**ので、間引きで最後の値を落とすことはありません。
+- 応答本文をストリームとして読めない環境では、受け取り終えた時点で `receivedBytes` に全体のバイト数が一度だけ入ります（途中の値は出ません）。
 
 **仕様**:
 - 値を省略した場合は自要素、CSS セレクタを指定した場合は該当要素群を注入先とします。

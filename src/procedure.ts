@@ -52,6 +52,13 @@ const PROCEDURE_CLICK_LOCK_MARKER = 'data-haori-click-lock';
 const DOWNLOAD_FAILURE_MESSAGE = 'ファイルを保存できませんでした';
 
 /**
+ * 受信の進み具合を注入する最短の間隔（ミリ秒）。
+ * 仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
+ * 「更新は 100 ミリ秒を下限に間引きます」。
+ */
+const DOWNLOAD_PROGRESS_INTERVAL_MS = 100;
+
+/**
  * Procedure から利用する Haori API を解決します。
  * window.Haori が差し替えられている場合はそちらを優先します。
  *
@@ -2393,6 +2400,22 @@ ${body}
   private requestUserEditSequence: number | null = null;
 
   /**
+   * 応答本文から受け取ったバイト数。
+   *
+   * 仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
+   * 「`receivedBytes` はフェッチを始めた時点で `0` です」。
+   */
+  private downloadReceivedBytes = 0;
+
+  /**
+   * 応答全体のバイト数。決められない場合は null です。
+   *
+   * 仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
+   * 「`totalBytes` は応答の `Content-Length` から決めます」。
+   */
+  private downloadTotalBytes: number | null = null;
+
+  /**
    * この手続きを起こした操作の通番。
    *
    * コンストラクタはイベントのハンドラ内で同期的に走るため、ここでの発番が
@@ -3005,6 +3028,124 @@ ${body}
   }
 
   /**
+   * 応答本文を読み取り、受け取った量を `_fetch` へ入れながら `Blob` にします。
+   *
+   * 仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
+   * 「`receivedBytes` はフェッチを始めた時点で `0` です」。
+   *
+   * @param response 成功応答
+   * @returns 読み取った本文。読み取れなかった場合は null
+   */
+  private async readResponseBody(response: Response): Promise<Blob | null> {
+    this.downloadTotalBytes = Procedure.resolveDownloadTotalBytes(response);
+    const type = response.headers.get('Content-Type') ?? '';
+    const body = response.body;
+    if (!body || typeof body.getReader !== 'function') {
+      // ストリームとして読めない環境（仕様「`data-fetch-state` /
+      // `data-{event}-fetch-state`」の「応答本文をストリームとして読めない環境
+      // では、受け取り終えた時点で `receivedBytes` に全体のバイト数が一度だけ
+      // 入ります」）。
+      try {
+        const whole = await response.blob();
+        this.downloadReceivedBytes = whole.size;
+        this.dropTotalBytesIfExceeded();
+        await this.injectFetchState('loading');
+        return whole;
+      } catch (error) {
+        Log.error(
+          'Haori',
+          `応答をファイルとして読み取れませんでした: ${error}`,
+        );
+        return null;
+      }
+    }
+    // 全体の量が決まった時点で一度入れる。受け取りに数分かかる出力でも、
+    // 始めから「何バイト中」を出せる。
+    await this.injectFetchState('loading');
+    let lastInjectedAt = Date.now();
+    const parts: BlobPart[] = [];
+    const reader = body.getReader();
+    try {
+      for (;;) {
+        const {done, value} = await reader.read();
+        if (done) {
+          break;
+        }
+        // 受け取ったそばから `Blob` へ移す。JavaScript 側へ積み上げると巨大な
+        // 出力で利用者のメモリを圧迫する（`Blob` どうしの結合は中身を写さない）。
+        // 仕様「`data-fetch-download` / `data-{event}-fetch-download`」の
+        // 「受け取ったそばから `Blob` へ移すため」。
+        parts.push(new Blob([value]));
+        this.downloadReceivedBytes += value.byteLength;
+        this.dropTotalBytesIfExceeded();
+        const now = Date.now();
+        if (now - lastInjectedAt >= DOWNLOAD_PROGRESS_INTERVAL_MS) {
+          lastInjectedAt = now;
+          await this.injectFetchState('loading');
+        }
+      }
+    } catch (error) {
+      Log.error('Haori', `応答をファイルとして読み取れませんでした: ${error}`);
+      return null;
+    }
+    // 最終値は、この後に走る `success`（保存に失敗したときは `error`）の注入が
+    // 運ぶ（仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
+    // 「受け取りの完了時には必ず最終値を入れます」）。
+    return new Blob(parts, type !== '' ? {type} : undefined);
+  }
+
+  /**
+   * 受け取った量が全体の量を超えた場合に、全体の量を捨てます。
+   *
+   * 仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
+   * 「`receivedBytes` が `totalBytes` を追い越した時点で `totalBytes` を
+   * `null` へ落とします」。
+   */
+  private dropTotalBytesIfExceeded(): void {
+    if (
+      this.downloadTotalBytes !== null &&
+      this.downloadReceivedBytes > this.downloadTotalBytes
+    ) {
+      this.downloadTotalBytes = null;
+    }
+  }
+
+  /**
+   * 応答全体のバイト数を決めます。
+   *
+   * 仕様「`data-fetch-state` / `data-{event}-fetch-state`」の
+   * 「`totalBytes` は応答の `Content-Length` から決めます」。
+   *
+   * @param response 成功応答
+   * @returns 全体のバイト数。決められない場合は null
+   */
+  private static resolveDownloadTotalBytes(response: Response): number | null {
+    const encoding = response.headers.get('Content-Encoding');
+    if (encoding !== null) {
+      const normalized = encoding.trim().toLowerCase();
+      if (normalized !== '' && normalized !== 'identity') {
+        // 圧縮された転送では突き合わせられない（仕様「`data-fetch-state` /
+        // `data-{event}-fetch-state`」の「圧縮された転送では `totalBytes` を
+        // 入れません」）。
+        return null;
+      }
+    }
+    const raw = response.headers.get('Content-Length');
+    if (raw === null) {
+      return null;
+    }
+    const text = raw.trim();
+    if (text === '') {
+      return null;
+    }
+    const value = Number(text);
+    if (!Number.isSafeInteger(value) || value < 0) {
+      return null;
+    }
+    return value;
+  }
+
+  /**
    * 応答本文をファイルとして保存します。
    *
    * 保存は `<a download>` の生成で行います。ダウンロードはブラウザの機能なので、
@@ -3018,11 +3159,8 @@ ${body}
     response: Response,
     url?: string,
   ): Promise<boolean> {
-    let blob: Blob;
-    try {
-      blob = await response.blob();
-    } catch (error) {
-      Log.error('Haori', `応答をファイルとして読み取れませんでした: ${error}`);
+    const blob = await this.readResponseBody(response);
+    if (blob === null) {
       return false;
     }
     const fileName = Procedure.resolveDownloadFileName(
@@ -5896,7 +6034,16 @@ ${body}
     if (!targets || targets.length === 0) {
       return;
     }
-    const state = {
+    const state: {
+      status: 'loading' | 'success' | 'error';
+      loading: boolean;
+      success: boolean;
+      error: boolean;
+      statusCode: number | null;
+      message: string | null;
+      receivedBytes?: number;
+      totalBytes?: number | null;
+    } = {
       status,
       loading: status === 'loading',
       success: status === 'success',
@@ -5904,6 +6051,13 @@ ${body}
       statusCode,
       message,
     };
+    if (this.options.download) {
+      // 進み具合はダウンロードのときだけ入れる（仕様「`data-fetch-state` /
+      // `data-{event}-fetch-state`」の「ダウンロード以外のフェッチには
+      // 入りません」）。
+      state.receivedBytes = this.downloadReceivedBytes;
+      state.totalBytes = this.downloadTotalBytes;
+    }
     await Promise.all(
       targets.map(fragment => {
         const element = fragment.getTarget();
