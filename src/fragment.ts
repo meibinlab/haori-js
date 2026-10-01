@@ -1119,6 +1119,15 @@ export class ElementFragment extends Fragment {
   /** fresh clone 初期化を subtree ごと省略できるかどうか */
   private freshInitializationSkippable = false;
 
+  /**
+   * 走査（初期化）を済ませたかどうか。
+   *
+   * 優先属性（`data-bind` / `data-url-param` など）を反映した時点で立てます。
+   * バインド更新に伴う `data-fetch` / `data-import` の再評価は、これが立った要素
+   * だけを対象にします。複製では引き継ぎません（複製は自分の初期化で立てます）。
+   */
+  private initialized = false;
+
   /** valueプロパティの値（複数選択 select は文字列配列を保持する） */
   private value: string | number | boolean | string[] | null = null;
 
@@ -2013,6 +2022,22 @@ export class ElementFragment extends Fragment {
    */
   public setFreshInitializationSkippable(skippable: boolean): void {
     this.freshInitializationSkippable = skippable;
+  }
+
+  /**
+   * 走査（初期化）を済ませたかどうかを返します。
+   *
+   * @returns 優先属性の反映を済ませていれば true
+   */
+  public isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * 走査（初期化）を済ませたことを記録します。
+   */
+  public markInitialized(): void {
+    this.initialized = true;
   }
 
   /**

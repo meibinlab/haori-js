@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>祖先の取得と data-url-param</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- 祖先の取得の応答は、配下を走査する前に届く -->
+  <div data-fetch="/api/auth.json" data-fetch-arg="auth">
+    <main data-url-param data-url-arg="params">
+      <span data-fetch="/api/list.json?name={{encodeURIComponent(params.name ?? '')}}" data-fetch-bind="#list"></span>
+      <div id="list">{{label}}</div>
+    </main>
+  </div>
+</body>
+</html>

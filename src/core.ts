@@ -469,7 +469,10 @@ export default class Core {
     fragment: ElementFragment,
     skipFragments: ReadonlySet<ElementFragment> = new Set(),
   ): Promise<void> {
-    if (skipFragments.has(fragment)) {
+    if (skipFragments.has(fragment) || !fragment.isInitialized()) {
+      // まだ走査していない要素とその配下は、その要素の走査で実行する。祖先の取得の
+      // 応答は子孫の走査より先に届くため、ここで実行すると子孫の `data-url-param` や
+      // `data-bind` が反映される前の条件で 1 回余分に取得する（仕様「`data-fetch`」）。
       return Promise.resolve();
     }
     const promises: Promise<void>[] = [];
@@ -483,6 +486,11 @@ export default class Core {
     }
     if (fragment.hasAttribute(`${Env.prefix}import`)) {
       promises.push(Core.executeManagedImport(fragment));
+    }
+    if (!fragment.isVisible()) {
+      // `data-if` の非表示分岐の配下へは降りない。要素自身は上で評価する。表示へ
+      // 戻った時点で `evaluateIf()` が再評価する（仕様「data-if の動作」）。
+      return Promise.all(promises).then(() => undefined);
     }
     fragment.getChildren().forEach(child => {
       if (child instanceof ElementFragment) {
@@ -853,6 +861,12 @@ export default class Core {
         processedAttributes.add(name);
       }
     }
+    // 優先属性を反映し終えた時点で、走査を済ませた要素として印を付ける。バインド
+    // 更新に伴う `data-fetch` / `data-import` の再評価は、印の付いた要素だけを対象に
+    // する（`reevaluateReactiveSpecialAttributes()`）。属性の反映が終わるまで待つと、
+    // 自分の取得や取り込みの応答を待つあいだに祖先の値が変わった場合に再評価から
+    // 漏れ、変わった条件で取り直さない。印を付けるための段は足さない。初期化の
+    // 非同期の段数を変えると、`<title>` の補間などが描かれなくなる。
     for (const name of fragment.getAttributeNames()) {
       if (processedAttributes.has(name) || Core.isDeferredAttributeName(name)) {
         // すでに処理済みもしくは遅延処理の属性はスキップ
@@ -860,22 +874,24 @@ export default class Core {
       }
       const value = fragment.getRawAttribute(name);
       if (value !== null) {
-        attributeChain = attributeChain.then(() =>
-          Core.setAttribute(fragment.getTarget(), name, value),
-        );
+        attributeChain = attributeChain.then(() => {
+          fragment.markInitialized();
+          return Core.setAttribute(fragment.getTarget(), name, value);
+        });
       }
     }
     for (const suffix of Core.DEFERRED_ATTRIBUTE_SUFFIXES) {
       // 遅延属性の処理
       const name = Env.prefix + suffix;
       if (fragment.hasAttribute(name)) {
-        attributeChain = attributeChain.then(() =>
-          Core.setAttribute(
+        attributeChain = attributeChain.then(() => {
+          fragment.markInitialized();
+          return Core.setAttribute(
             fragment.getTarget(),
             name,
             fragment.getRawAttribute(name),
-          ),
-        );
+          );
+        });
         processedAttributes.add(name);
       }
     }
@@ -883,7 +899,11 @@ export default class Core {
     // `name` の生成）を行う。属性の反映後に行うのは、`data-form-name` にテンプレート
     // 式を書いた場合の評価結果を収集キーとして使うため。対象外の要素では Promise を
     // 返さないため、初期化の非同期段数は従来（末尾で undefined へ畳む分）と変わらない。
-    return attributeChain.then(() => Form.prepareFormName(fragment));
+    return attributeChain.then(() => {
+      // 優先属性だけを持つ要素（通常属性も遅延属性も無い要素）の印。
+      fragment.markInitialized();
+      return Form.prepareFormName(fragment);
+    });
   }
 
   /**
@@ -2385,11 +2405,22 @@ export default class Core {
           // 子の走査の最後には外部ライブラリ連携を適用しない。表示へ切り替わった
           // 分岐では、下の載せ直しの後に適用する。初期表示から真の分岐では、外側の
           // 走査の最後（分岐の外のフォームの初期値の反映の後）に適用する（課題 55）。
-          childPromises.push(
-            child.isMounted()
-              ? Core.evaluateAll(child)
-              : Core.scanElement(child.getTarget(), false),
-          );
+          if (!child.isMounted()) {
+            childPromises.push(Core.scanElement(child.getTarget(), false));
+          } else if (wasVisible) {
+            childPromises.push(Core.evaluateAll(child));
+          } else {
+            // 非表示のあいだは `data-fetch` / `data-import` の再評価が配下へ降りない
+            // （`reevaluateReactiveSpecialAttributes()`）。表示へ戻った時点で、非表示の
+            // あいだに条件が変わった取得や取り込みを実行する（仕様「data-if の動作」の
+            // 「表示へ戻った時点でまとめて再評価する」）。`data-if` の書き換えで表示へ
+            // 戻した場合は、この後にバインド更新の再評価が続かない。
+            childPromises.push(
+              Core.evaluateAll(child).then(() =>
+                Core.reevaluateReactiveSpecialAttributes(child),
+              ),
+            );
+          }
         } else if (child instanceof TextFragment) {
           childPromises.push(Core.evaluateText(child));
         }
