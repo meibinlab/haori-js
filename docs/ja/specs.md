@@ -3308,6 +3308,8 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 
 17 以降（および 19 の後のスクロール）の属性値は、手続きの開始時ではなく**使用する直前**に評価します（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。
 
+7 の取得が失敗した場合は、8 以降へ進みません。[`haori:fetcherror`](#haorifetcherror) の発火、応答本文の表示（[エラーハンドリング](#エラーハンドリング)）、`_fetch` への `error` の注入を行い、[失敗時のアクション](#失敗時のアクション)（`data-{event}-error-click` → `data-{event}-error-close` → `data-{event}-error-toast`）を宣言していれば実行して、手続きを失敗として終えます。
+
 なお `data-{event}-run`（フェッチを伴わない任意 JS 実行）は、`event.preventDefault()` を有効にするため、上記 3（confirm）より前の**同期タイミング**で実行されます。ただし 2（`data-{event}-if`）より後なので、条件が偽のときは `run` も実行されません。`data-{event}-fetch` と併用した場合は run → fetch の順になります。
 
 また `data-{event}-prevent` は上記の手続き順序とは独立に、イベントの委譲（`EventDispatcher.delegate`）の**最初の同期段**で `event.preventDefault()` を呼びます。手続き本体（fetch 等）の成否や `await` に依存せずネイティブのデフォルト動作を抑止するためで、`data-{event}-defer` で手続きを遅延させても抑止は確実に効きます。
@@ -3321,6 +3323,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 | 属性 | 処理順 | 評価する時点 |
 |---|---|---|
 | `data-{event}-dialog` / `data-{event}-toast` | 17 | 表示直前 |
+| `data-{event}-error-toast` | 取得の失敗の後 | 表示直前 |
 | `data-{event}-history` | 19 | `history.pushState()` 直前 |
 | `data-{event}-scroll` | 19 の後 | スクロール直前 |
 | `data-{event}-redirect` / `data-{event}-redirect-replace` / `data-{event}-redirect-return-param` | 20 | 遷移直前 |
@@ -3612,6 +3615,8 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 - `data-poll-scroll` / `data-poll-scroll-error`: 間隔ごとにスクロールします
 
 `data-poll-redirect`（条件成立時の遷移）は、`data-poll-until` と組み合わせれば意図どおり動作します。
+
+[失敗時のアクション](#失敗時のアクション)（`data-poll-error-click` / `-error-close` / `-error-toast` / `-error-status`）は読みません。失敗のたびに繰り返されるためです。失敗の扱いは `data-poll-error-limit` と `data-poll-state` で行ってください。
 
 #### バリデーションと確認
 
@@ -4728,6 +4733,73 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 
 **評価結果の扱い**: 評価結果が falsy（`null` / `undefined` / `false` / 空文字 / `0`）または未解決参照のときは**表示しません**。それ以外は文字列にして表示します（falsy と文字列化の扱いは [`data-{event}-dialog`](#data-event-dialog) と同じです）。ただし `
 ` 表記は改行へ復元しません（復元するのは `data-{event}-dialog` と `data-{event}-confirm` です）。
+
+##### 失敗時のアクション
+
+`data-{event}-error-click` / `-error-click-await` / `-error-close` / `-error-toast` / `-error-toast-level` / `-error-status` の 6 属性です。
+
+取得（`data-{event}-fetch`）が失敗したときにだけ実行するアクションを宣言します。操作の結果として取得先が無くなる画面で、「取り直しが 404 なら、ダイアログを閉じ、一覧を検索し直し、トーストで知らせる」を JavaScript なしで書けます。
+
+| 属性 | 動作 |
+|---|---|
+| `data-{event}-error-click` | 指定した要素をクリックします（CSS セレクタ）。値は必須です |
+| `data-{event}-error-click-await` | `-error-click` でクリックした対象の手続きの完了を待ちます。値は取りません |
+| `data-{event}-error-close` | 対象ダイアログを閉じます（CSS セレクタ）。値を省略すると、自要素の祖先方向で最も近い `<dialog>` を閉じます |
+| `data-{event}-error-toast` | トーストメッセージを表示します |
+| `data-{event}-error-toast-level` | トーストのレベル（`info` / `warning` / `error` / `success`）。省略時は `info` です |
+| `data-{event}-error-status` | 実行するステータスを `&` 区切りで絞ります（例: `404&410`） |
+
+```html
+<dialog id="reward-dialog" open>
+  <div id="reward-state" data-bind='{"reward": {}}'>
+    <!-- 取り直しが 404 なら、ダイアログを閉じて検索し直し、トーストで知らせる -->
+    <button id="reward-reload" type="button" hidden
+      data-click-fetch="/api/rewards/{{reward.id}}.json"
+      data-click-bind="#reward-state" data-click-bind-arg="reward"
+      data-click-error-status="404"
+      data-click-error-click="#search-button"
+      data-click-error-close
+      data-click-error-toast="この報酬は一覧から外れました。">取り直し</button>
+  </div>
+  <button type="button" data-click-click="#reward-reload" data-click-click-await>保存の後の取り直し</button>
+</dialog>
+<button id="search-button" type="button" data-click-fetch="/api/rewards.json">検索</button>
+```
+
+**失敗として扱う場合**:
+
+- HTTP 応答が 2xx 以外のとき。ただし [認証ガード](#認証ガードdata-unauthorized-redirect--data-forbidden-redirect) で遷移する 401 / 403 では実行しません（遷移が優先され、以降の処理を行いません）。認証ガードを宣言していない 401 / 403 は失敗として扱います。
+- 通信の例外（ネットワーク断・タイムアウトなど）のとき。ただし `-error-status` を宣言した場合は実行しません（例外にはステータスが無いためです）。
+- 次の場合は実行しません。取得が失敗したわけではないためです。
+  - 検証エラー（`data-{event}-validate`）、確認ダイアログのキャンセル（`data-{event}-confirm`）、`data-{event}-if` が偽
+  - `data-{event}-after-run` による中断
+  - [`data-{event}-fetch-download`](#data-fetch-download--data-event-fetch-download) の保存の失敗（応答は 2xx です）
+  - [`data-{event}-click-await`](#data-event-click-await) で後続を止めた呼び出し元。呼び出し元の取得は成功しています。失敗した手続き自身が `-error-*` を宣言していれば、その手続きで実行します。
+
+**`data-{event}-error-status`**:
+
+- 3 桁の HTTP ステータスを `&` で区切って列挙します。前後の空白は無視します。式は使えない生値です。
+- 宣言すると、列挙したステータスで失敗した場合だけ実行します。省略すると、上の「失敗として扱う場合」のすべてで実行します。
+- 3 桁の数字でない項目は無視し、警告を記録します。有効な項目が 1 つも無い場合は、どの失敗でも実行しません。
+
+**実行の順序**: 取得が失敗したら、次の順に処理します。
+
+1. [`haori:fetcherror`](#haorifetcherror) を発火します。
+2. 応答本文を表示します（HTTP 応答の場合。[エラーハンドリング](#エラーハンドリング)）。`-error-*` を宣言しても表示します。
+3. `_fetch` へ `error` を注入します（[`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state)）。
+4. `-error-click`: 対象を宣言した順にクリックします。クリックの前に対象を再評価する点は [`data-{event}-click`](#data-event-click) と同じです。
+5. `-error-close`: 対象ダイアログを閉じます。
+6. `-error-toast`: トーストを表示します。
+
+**手続きは失敗のまま終わります。** 上のアクションを実行しても、処理順 8 以降（バインド・ダイアログ・トースト・リダイレクトなど）へは進みません。[`data-{event}-click-await`](#data-event-click-await) で待っている呼び出し元からも失敗に見え、呼び出し元は後続を止めます。通信の例外は、今までどおり手続きの例外として記録します。
+
+**`data-{event}-error-click-await`**: 規則は [`data-{event}-click-await`](#data-event-click-await) と同じです。宣言した順に 1 件ずつ完了を待ち、待った対象が失敗したら、後続の対象をクリックせず、`-error-close` と `-error-toast` も実行しません。
+
+**`-error-click` の値は必須です。** 省略するとエラーを記録し、クリックしません。`data-{event}-click` のように自要素を対象にすると、失敗した手続きを再び起動し、失敗を繰り返すためです。
+
+**評価のタイミング**: `-error-toast` は表示直前に評価します（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。`_fetch.statusCode` などを文言に使う場合は、`data-{event}-fetch-state` の注入先を自要素か祖先にしてください。評価結果の扱いは [`data-{event}-toast`](#data-event-toast) と同じです。`-error-click` / `-error-close` の対象は、`data-{event}-click` / `-close` と同じく手続きの開始時に解決します。
+
+**対象の手続き**: イベントの手続き（`data-click-*` / `data-change-*` / `data-input-*` / `data-load-*`、`data-on` の手続き、`data-intersect-*`）です。非イベントの `data-fetch` と、`data-poll-*`（[定期実行と相性の悪い修飾子](#定期実行と相性の悪い修飾子)）では読みません。
 
 ##### `data-{event}-store-clear`
 

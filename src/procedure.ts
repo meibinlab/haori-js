@@ -833,6 +833,30 @@ export interface ProcedureOptions {
    */
   clickAwait?: boolean;
 
+  /** 取得の失敗時にクリックするフラグメント（`data-{event}-error-click`） */
+  errorClickFragments?: ElementFragment[] | null;
+
+  /**
+   * `data-{event}-error-click` でクリックした対象の手続きの完了を待つかどうか。
+   * `data-{event}-error-click-await` の宣言で立てる。
+   */
+  errorClickAwait?: boolean;
+
+  /** 取得の失敗時に閉じるダイアログ（`data-{event}-error-close`） */
+  errorCloseFragments?: ElementFragment[] | null;
+
+  /** 取得の失敗時のトーストメッセージ（`data-{event}-error-toast`） */
+  errorToastMessage?: string | null;
+
+  /** 取得の失敗時のトーストレベル（`data-{event}-error-toast-level`） */
+  errorToastLevel?: 'info' | 'warning' | 'error' | 'success' | null;
+
+  /**
+   * 失敗時のアクションを実行するステータス（`data-{event}-error-status`）。
+   * 宣言が無い場合は undefined で、通信の例外を含むすべての失敗で実行する。
+   */
+  errorStatuses?: number[];
+
   /** ダイアログを開くフラグメント */
   openFragments?: ElementFragment[] | null;
 
@@ -1132,6 +1156,56 @@ export default class Procedure {
     return hasFetchFallback
       ? `${Env.prefix}fetch-${key}`
       : `${Env.prefix}${key}`;
+  }
+
+  /**
+   * トーストのレベル（`data-{event}-toast-level` など）を読み取ります。
+   * 式は使えない生値です。
+   *
+   * @param fragment 対象フラグメント
+   * @param attributeName 属性名
+   * @returns レベル。属性が無いか値が不正な場合は null（`info` で表示する）
+   */
+  private static readToastLevel(
+    fragment: ElementFragment,
+    attributeName: string,
+  ): 'info' | 'warning' | 'error' | 'success' | null {
+    const rawLevel = fragment.getRawAttribute(attributeName);
+    const validLevels = ['info', 'warning', 'error', 'success'] as const;
+    type ToastLevel = (typeof validLevels)[number];
+    return validLevels.includes(rawLevel as ToastLevel)
+      ? (rawLevel as ToastLevel)
+      : null;
+  }
+
+  /**
+   * `data-{event}-error-status` の値を、ステータスの一覧へ変換します。
+   *
+   * `&` で区切った 3 桁の数字を受け付けます。それ以外の項目は無視し、警告を
+   * 記録します（仕様「失敗時のアクション」の「3 桁の数字でない項目は無視し、
+   * 警告を記録します」）。
+   *
+   * @param raw 属性の生値
+   * @param attributeName 属性名（警告に使う）
+   * @returns 有効なステータスの一覧（空のときはどの失敗でも実行しない）
+   */
+  private static parseErrorStatuses(
+    raw: string | null,
+    attributeName: string,
+  ): number[] {
+    const statuses: number[] = [];
+    for (const item of (raw ?? '').split('&')) {
+      const token = item.trim();
+      if (/^\d{3}$/.test(token)) {
+        statuses.push(Number(token));
+      } else {
+        Log.warn(
+          'Haori',
+          `${attributeName} の "${token}" は 3 桁のステータスではないため無視します。`,
+        );
+      }
+    }
+    return statuses;
   }
 
   /**
@@ -1999,13 +2073,34 @@ ${body}
           'toast',
           Procedure.attrName(event, 'toast'),
         );
-        const rawLevel = fragment.getRawAttribute(
+        options.toastLevel = Procedure.readToastLevel(
+          fragment,
           Procedure.attrName(event, 'toast-level'),
         );
-        const validLevels = ['info', 'warning', 'error', 'success'] as const;
-        type ToastLevel = (typeof validLevels)[number];
-        const isValidLevel = validLevels.includes(rawLevel as ToastLevel);
-        options.toastLevel = isValidLevel ? (rawLevel as ToastLevel) : null;
+      }
+      // 仕様「失敗時のアクション」。`data-poll-*` では失敗のたびに繰り返される
+      // ため読まない。
+      if (event !== 'poll') {
+        const errorToastAttr = Procedure.attrName(event, 'error-toast');
+        if (fragment.hasAttribute(errorToastAttr)) {
+          options.errorToastMessage = Procedure.readLateAttribute(
+            fragment,
+            options,
+            'error-toast',
+            errorToastAttr,
+          );
+          options.errorToastLevel = Procedure.readToastLevel(
+            fragment,
+            Procedure.attrName(event, 'error-toast-level'),
+          );
+        }
+        const errorStatusAttr = Procedure.attrName(event, 'error-status');
+        if (fragment.hasAttribute(errorStatusAttr)) {
+          options.errorStatuses = Procedure.parseErrorStatuses(
+            fragment.getRawAttribute(errorStatusAttr),
+            errorStatusAttr,
+          );
+        }
       }
       const redirectAttr = Procedure.attrName(event, 'redirect');
       const redirectReplaceAttr = Procedure.attrName(event, 'redirect-replace');
@@ -2091,7 +2186,7 @@ ${body}
         }
       }
 
-      // reset/refetch/click/open/close（イベント、CSSセレクタ）
+      // reset/refetch/click/open/close/error-click/error-close（イベント、CSSセレクタ）
       const selectorAttrs = [
         'reset-before',
         'reset',
@@ -2100,8 +2195,14 @@ ${body}
         'copy',
         'open',
         'close',
+        'error-click',
+        'error-close',
       ] as const;
       selectorAttrs.forEach(attrKey => {
+        if (attrKey.startsWith('error-') && event === 'poll') {
+          // 失敗時のアクションは `data-poll-*` では読まない（上の error-toast と同じ）。
+          return;
+        }
         const attrName = Procedure.attrName(event, attrKey);
         if (!fragment.hasAttribute(attrName)) {
           return;
@@ -2119,7 +2220,19 @@ ${body}
           if (list.length === 0) {
             Log.error('Haori', `Element not found: ${selector} (${attrName})`);
           }
-        } else if (attrKey === 'open' || attrKey === 'close') {
+        } else if (attrKey === 'error-click') {
+          // 自要素を押すと失敗した手続きを再び起動し、失敗を繰り返すため、
+          // 値の省略を認めない（仕様「失敗時のアクション」の「`-error-click` の
+          // 値は必須です」）。
+          Log.error(
+            'Haori',
+            `${attrName} にはクリックする要素のセレクタが必要です。`,
+          );
+        } else if (
+          attrKey === 'open' ||
+          attrKey === 'close' ||
+          attrKey === 'error-close'
+        ) {
           // open/close で値が省略されている場合は、自要素ではなく自要素の
           // 祖先方向で最も近い <dialog> を対象にする。ダイアログ内の閉じる
           // ボタンに data-click-close を値なしで付与しても、ボタン自身では
@@ -2158,6 +2271,15 @@ ${body}
               break;
             case 'close':
               options.closeFragments = list;
+              break;
+            case 'error-click':
+              options.errorClickFragments = list;
+              options.errorClickAwait = fragment.hasAttribute(
+                `${attrName}-await`,
+              );
+              break;
+            case 'error-close':
+              options.errorCloseFragments = list;
               break;
           }
         }
@@ -2859,6 +2981,7 @@ ${body}
                 null,
                 error instanceof Error ? error.message : String(error),
               );
+              await this.runErrorActions(null);
               throw error;
             });
         }
@@ -3618,6 +3741,7 @@ ${body}
         response.status,
         response.statusText || null,
       );
+      await this.runErrorActions(response.status);
       return false;
     }
 
@@ -3704,53 +3828,11 @@ ${body}
       });
     }
     // `data-{event}-click-await` の待ち合わせで失敗を受け取ったかどうか。
-    let stoppedByClickAwait = false;
-    if (this.options.clickFragments && this.options.clickFragments.length > 0) {
-      // bind 後の最新 DOM を参照させるため click 前に再評価する。
-      // 複数フラグメントは直列実行：各 click が前の evaluateAll 完了後に発火する。
-      for (const fragment of this.options.clickFragments) {
-        await Core.evaluateAll(fragment);
-        const target = fragment.getTarget();
-        if (this.options.clickAwait) {
-          // 前のクリックの結果が残っていると、今回のクリックが手続きを起こさな
-          // かったとき（`disabled` などで発火しない）に古い結果を拾ってしまう。
-          // 押す前に捨てる。
-          Procedure.takeClickOutcome(target);
-        }
-        if (typeof target.click === 'function') {
-          target.click();
-        } else {
-          target.dispatchEvent(
-            new MouseEvent('click', {bubbles: true, cancelable: true}),
-          );
-        }
-        if (!this.options.clickAwait) {
-          continue;
-        }
-        // 完了待ち（仕様「`data-{event}-click-await`」）。`click()` は同期に
-        // 委譲されるため、起動された手続きの結果はこの時点で控えられている。
-        const outcome = Procedure.takeClickOutcome(target);
-        if (outcome === null) {
-          // 起動が次フレームへ回された（`data-click-defer`）、または `disabled`
-          // でクリックが発火しない。待たずに次の対象へ進む。宣言どおりに直列化
-          // できていないため、開発モードに限らず記録する（仕様
-          // 「`data-{event}-click-await`」の「警告を記録し」）。
-          Log.warn(
-            'Haori',
-            `${Env.prefix}${this.eventType ?? 'fetch'}-click-await は` +
-              'この対象の完了を待てません（手続きが同期に起動していません）。',
-          );
-          continue;
-        }
-        if ((await outcome) === 'failure') {
-          // 失敗したら後続の対象をクリックせず、呼び出し元の手続きも止める
-          // （同節「失敗で止めた場合、呼び出し元の手続きも以降のアクションを
-          // 実行しません」）。エラーの表示は失敗した手続き自身が行う。
-          stoppedByClickAwait = true;
-          break;
-        }
-      }
-    }
+    const stoppedByClickAwait = await this.clickTargets(
+      this.options.clickFragments,
+      this.options.clickAwait === true,
+      'click-await',
+    );
     if (
       !stoppedByClickAwait &&
       this.options.openFragments &&
@@ -3881,6 +3963,122 @@ ${body}
       return;
     }
     Store.clear(key, this.options.storeClearKind ?? 'session');
+  }
+
+  /**
+   * 対象を宣言した順にクリックします（`data-{event}-click` /
+   * `data-{event}-error-click`）。
+   *
+   * 完了待ちを宣言した場合は、起動した手続きの完了を 1 件ずつ待ち、失敗したら
+   * 後続の対象をクリックせずに止めます（仕様「`data-{event}-click-await`」）。
+   *
+   * @param fragments クリックする対象
+   * @param awaitOutcome 起動した手続きの完了を待つかどうか
+   * @param awaitKey 完了待ちの属性名から `data-{event}-` を除いた部分（警告に使う）
+   * @returns 待った対象が失敗して止めた場合は true
+   */
+  private async clickTargets(
+    fragments: ElementFragment[] | null | undefined,
+    awaitOutcome: boolean,
+    awaitKey: string,
+  ): Promise<boolean> {
+    if (!fragments || fragments.length === 0) {
+      return false;
+    }
+    // bind 後の最新 DOM を参照させるため click 前に再評価する。
+    // 複数フラグメントは直列実行：各 click が前の evaluateAll 完了後に発火する。
+    for (const fragment of fragments) {
+      await Core.evaluateAll(fragment);
+      const target = fragment.getTarget();
+      if (awaitOutcome) {
+        // 前のクリックの結果が残っていると、今回のクリックが手続きを起こさな
+        // かったとき（`disabled` などで発火しない）に古い結果を拾ってしまう。
+        // 押す前に捨てる。
+        Procedure.takeClickOutcome(target);
+      }
+      if (typeof target.click === 'function') {
+        target.click();
+      } else {
+        target.dispatchEvent(
+          new MouseEvent('click', {bubbles: true, cancelable: true}),
+        );
+      }
+      if (!awaitOutcome) {
+        continue;
+      }
+      // 完了待ち（仕様「`data-{event}-click-await`」）。`click()` は同期に
+      // 委譲されるため、起動された手続きの結果はこの時点で控えられている。
+      const outcome = Procedure.takeClickOutcome(target);
+      if (outcome === null) {
+        // 起動が次フレームへ回された（`data-click-defer`）、または `disabled`
+        // でクリックが発火しない。待たずに次の対象へ進む。宣言どおりに直列化
+        // できていないため、開発モードに限らず記録する（仕様
+        // 「`data-{event}-click-await`」の「警告を記録し」）。
+        Log.warn(
+          'Haori',
+          `${Env.prefix}${this.eventType ?? 'fetch'}-${awaitKey} は` +
+            'この対象の完了を待てません（手続きが同期に起動していません）。',
+        );
+        continue;
+      }
+      if ((await outcome) === 'failure') {
+        // 失敗したら後続の対象をクリックせず、呼び出し元の手続きも止める
+        // （同節「失敗で止めた場合、呼び出し元の手続きも以降のアクションを
+        // 実行しません」）。エラーの表示は失敗した手続き自身が行う。
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 取得が失敗したときのアクション（`data-{event}-error-*`）を実行します。
+   *
+   * 仕様「失敗時のアクション」の「実行の順序」の 4〜6（クリック → 閉じる →
+   * トースト）です。手続きは呼び出し側で失敗として終えます。
+   *
+   * @param status HTTP ステータス。通信の例外では null
+   * @returns 実行完了の Promise
+   */
+  private async runErrorActions(status: number | null): Promise<void> {
+    const statuses = this.options.errorStatuses;
+    if (
+      statuses !== undefined &&
+      (status === null || !statuses.includes(status))
+    ) {
+      // 宣言したステータスに当たらない。通信の例外にはステータスが無いため、
+      // 宣言がある限り対象外になる。
+      return;
+    }
+    const stopped = await this.clickTargets(
+      this.options.errorClickFragments,
+      this.options.errorClickAwait === true,
+      'error-click-await',
+    );
+    if (stopped) {
+      return;
+    }
+    const activeHaori = resolveProcedureHaoriApi();
+    const closing: Promise<void>[] = [];
+    this.options.errorCloseFragments?.forEach(fragment => {
+      const target = fragment.getTarget();
+      if (target instanceof HTMLElement) {
+        closing.push(activeHaori.closeDialog(target));
+      } else {
+        Log.error('Haori', 'Element is not an HTML element: ', target);
+      }
+    });
+    await Promise.all(closing);
+    // 使用直前に評価し直す（`_fetch` の注入を反映するため）。
+    const toastMessage = Procedure.normalizeAttributeText(
+      this.resolveLateAttribute('error-toast', this.options.errorToastMessage),
+    );
+    if (toastMessage) {
+      await activeHaori.toast(
+        toastMessage,
+        this.options.errorToastLevel ?? 'info',
+      );
+    }
   }
 
   /**

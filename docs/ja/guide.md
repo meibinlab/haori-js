@@ -2749,6 +2749,31 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 
 止めた場合は、呼び出し元のトースト・ダイアログ・リダイレクトも実行されません（片方だけ通ったのに「更新しました」と出ることがありません）。`data-click-if` が偽で実行されなかった対象は失敗として扱わず、次へ進みます。
 
+### 取り直しが失敗したらダイアログを閉じる（`data-click-error-*`）
+
+操作の結果として取得先が無くなる画面では、続けて取り直す取得が 404 になります。`data-click-error-*` を使うと、取得が失敗したときにだけ「ダイアログを閉じる・別のボタンを押す・トーストを出す」を宣言できます。
+
+```html
+<dialog id="reward-dialog" open>
+  <div id="reward-state" data-bind='{"reward": {}}'>
+    <button id="reward-reload" type="button" hidden
+      data-click-fetch="../api/rewards/{{reward.id}}.json"
+      data-click-bind="#reward-state" data-click-bind-arg="reward"
+      data-click-error-status="404"
+      data-click-error-click="#search-button"
+      data-click-error-close
+      data-click-error-toast="この報酬は一覧から外れました。">取り直し</button>
+  </div>
+  <button type="button" data-click-click="#reward-reload" data-click-click-await>保存の後の取り直し</button>
+</dialog>
+<button id="search-button" type="button" data-click-fetch="../api/rewards.json">検索</button>
+```
+
+- 実行の順序は、クリック（`-error-click`）→ ダイアログを閉じる（`-error-close`。値を省略すると囲んでいる `<dialog>`）→ トースト（`-error-toast` / `-error-toast-level`）です。`-error-click-await` を足すと、押した先の完了を待ちます。
+- `-error-status` を省略すると、2xx 以外の応答と通信の例外のすべてで実行します。認証ガードで遷移する 401 / 403 では実行しません。
+- 実行しても手続きは失敗のままです。応答本文のエラー表示も今までどおり行い、`data-click-click-await` で待っている呼び出し元は後続を止めます。
+- `data-poll-*` と、イベントを伴わない `data-fetch` では使えません。
+
 ### state の配列を追加・削除する（式 + `data-click-bind-merge`）
 
 state に持った配列（編集中のルール一覧など）への要素追加・削除は、専用属性なしで**式と `data-click-bind-merge` の組み合わせ**で書けます。式はスプレッド `[...arr, x]` や `filter` を評価でき、`data-click-data` を **JSON 形式**で書けば配列値をそのまま渡せます（パラメータ形式だと配列が文字列化するため、配列・オブジェクト値は JSON 形式を使ってください）。`data-click-bind-merge` で対象キーだけをパッチするため、`editingIndex` など他の state は保持されます。
@@ -3119,6 +3144,8 @@ state に持った配列（編集中のルール一覧など）への要素追�
 16. `data-click-dialog` / `data-click-toast` - メッセージ表示
 17. `data-click-history` - 履歴への pushState
 18. `data-click-redirect` / `data-click-redirect-replace` - リダイレクト（後者は履歴を置き換える）
+
+6 の通信が失敗した場合は 7 以降へ進まず、エラーを表示したうえで、`data-click-error-click` → `data-click-error-close` → `data-click-error-toast` を宣言していれば実行します（[取り直しが失敗したらダイアログを閉じる](#取り直しが失敗したらダイアログを閉じるdata-click-error-)）。
 
 ### 他ライブラリとの共存（`data-click-no-disabled`）
 
