@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>data-if の書き換えで表示へ戻す一覧</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <div id="root" data-bind='{"rows":[{"id":1}],"q":"1"}'>
+    <ul id="list" data-if="true" data-each="rows" data-each-arg="r" data-each-key="id">
+      <li><span class="t">{{r.id}}-{{q}}</span></li>
+    </ul>
+  </div>
+  <!-- 外部のスクリプトが data-if 属性を直接書き換える -->
+  <button id="hide" onclick="document.getElementById('list').setAttribute('data-if', 'false')">隠す</button>
+  <button id="show" onclick="document.getElementById('list').setAttribute('data-if', 'true')">表示</button>
+</body>
+</html>

@@ -1064,7 +1064,7 @@ export default class Core {
         //
         // 走査経路だけ従来どおり並べて実行する形は採らない。外しても落ちるテストが
         // 無く、規則どおり分岐を削っている（`docs/ja/testing.md` の規則 3）。
-        afterAttributeWrite = () => Core.evaluateIf(fragment);
+        afterAttributeWrite = () => Core.evaluateIfOnAttributeWrite(fragment);
         break;
       case `${Env.prefix}each`:
         // `data-if` と同じ理由で属性マップの更新より後に評価する。並べて実行すると、
@@ -2346,6 +2346,48 @@ export default class Core {
     // 空のときの早期 return は置かない。外しても落ちるテストが無く（`Promise.all([])`
     // との観測差が無い）、規則どおり削っている（`docs/ja/testing.md` の規則 3）。
     return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * `data-if` 属性の書き込みに続けて、`data-if` を評価します。
+   *
+   * 同じ要素へ `data-each` を宣言していて、非表示から表示へ切り替わった場合は、
+   * 続けて行を描きます。バインド更新の経路（`evaluateAll()`）では `data-if` の評価に
+   * `data-each` の描画が続きますが、属性を書き換える経路では続かないため、非表示の
+   * あいだに変わった配列や値が行へ反映されません（仕様「`data-if` と `data-each` の
+   * 同一要素への宣言」の「続けて走る `data-each` の描画に任せます」）。
+   *
+   * @param fragment 対象フラグメント
+   * @returns 評価完了の Promise
+   */
+  private static evaluateIfOnAttributeWrite(
+    fragment: ElementFragment,
+  ): Promise<void> {
+    if (!fragment.hasAttribute(`${Env.prefix}each`)) {
+      // `data-each` の無い要素では行を描かない。描こうとすると、最初の子要素を行
+      // テンプレートとして取り外して中身が消える（子要素が無ければエラーになる）。
+      return Core.evaluateIf(fragment);
+    }
+    const wasVisible = fragment.isVisible();
+    const sequence = ElementFragment.currentSequence();
+    return Core.evaluateIf(fragment).then(() => {
+      // 表示のままの書き換えでは描き直さない（走査の時点では `data-each` の宣言の
+      // 処理と二重に描く）。非表示のままの書き換えを除く判定は置かない。描画と連携の
+      // 適用は非表示の要素では何もせず、外しても落ちるテストが無いため、規則どおり
+      // 削っている（`docs/ja/testing.md` の規則 3）。
+      if (wasVisible) {
+        return undefined;
+      }
+      return (
+        Core.evaluateEach(fragment)
+          // 行の中の `data-fetch` / `data-import` は、非表示のあいだ再評価されて
+          // いない（`reevaluateReactiveSpecialAttributes()`）。行を描き終えてから
+          // 再評価する。描く前に行うと、この更新で消える古い行の取得が走る。
+          .then(() => Core.reevaluateReactiveSpecialAttributes(fragment))
+          // 連携の `init` は行を描いた後に呼ぶ（`evaluateAll()` と同じ。課題 55）。
+          .then(() => Core.applyEnhancersOnShow(fragment, sequence))
+      );
+    });
   }
 
   /**
