@@ -2663,6 +2663,7 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 | `_fetch.error` | 失敗（HTTP エラー・ネットワーク断・タイムアウト）なら `true` |
 | `_fetch.statusCode` | HTTP ステータスコード（取得できない場合は `null`） |
 | `_fetch.message` | エラーメッセージ（HTTP の場合は `statusText`、ネットワーク断の場合は例外メッセージ。無い場合は `null`） |
+| `_fetch.responseMessage` | HTTP エラー応答の本文に書かれたメッセージ（JSON の `message`・`messages`・`errors` などは改行で連結。取り出せない場合とネットワーク断の場合は `null`） |
 
 ```html
 <!-- 取得先の領域自身に状態を注入する（値を省略すると自要素が対象） -->
@@ -2771,8 +2772,27 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 
 - 実行の順序は、クリック（`-error-click`）→ ダイアログを閉じる（`-error-close`。値を省略すると囲んでいる `<dialog>`）→ トースト（`-error-toast` / `-error-toast-level`）です。`-error-click-await` を足すと、押した先の完了を待ちます。
 - `-error-status` を省略すると、2xx 以外の応答と通信の例外のすべてで実行します。認証ガードで遷移する 401 / 403 では実行しません。
-- 実行しても手続きは失敗のままです。応答本文のエラー表示も今までどおり行い、`data-click-click-await` で待っている呼び出し元は後続を止めます。
+- 実行しても手続きは失敗のままです。応答本文のエラー表示も今までどおり行い（止める場合は下の `-error-no-message`）、`data-click-click-await` で待っている呼び出し元は後続を止めます。
 - `data-poll-*` と、イベントを伴わない `data-fetch` では使えません。
+
+#### 一覧の行の操作が失敗した理由をトーストで伝える
+
+一覧の行のボタンのようにフォームの外にある要素では、応答本文のエラー表示がボタンの中に出ます。`data-click-error-no-message` で自動表示を止め、サーバのメッセージ（`_fetch.responseMessage`）をトーストで出せます。
+
+```html
+<button type="button"
+  data-click-fetch="../api/alerts/{{id}}.json" data-click-fetch-method="PUT"
+  data-click-data='{"status": "未対応"}'
+  data-click-fetch-state
+  data-click-error-status="409"
+  data-click-error-no-message
+  data-click-error-toast="{{_fetch.responseMessage ?? '差し戻せませんでした。'}}"
+  data-click-error-toast-level="warning">差し戻す</button>
+```
+
+- `_fetch.responseMessage` を読むため、`data-click-fetch-state` の注入先を自要素か祖先にします。
+- 本文から文言を取り出せない場合（空の本文など）は `null` です。`??` で代わりの文言を書いておきます。
+- `-error-status` を宣言すると、列挙したステータスのときだけ表示を止めます。上の例では 500 などの想定外の失敗は、今までどおりボタンの中に表示されます。
 
 ### state の配列を追加・削除する（式 + `data-click-bind-merge`）
 
@@ -3145,7 +3165,7 @@ state に持った配列（編集中のルール一覧など）への要素追�
 17. `data-click-history` - 履歴への pushState
 18. `data-click-redirect` / `data-click-redirect-replace` - リダイレクト（後者は履歴を置き換える）
 
-6 の通信が失敗した場合は 7 以降へ進まず、エラーを表示したうえで、`data-click-error-click` → `data-click-error-close` → `data-click-error-toast` を宣言していれば実行します（[取り直しが失敗したらダイアログを閉じる](#取り直しが失敗したらダイアログを閉じるdata-click-error-)）。
+6 の通信が失敗した場合は 7 以降へ進まず、エラーを表示したうえで（`data-click-error-no-message` で表示を止められます）、`data-click-error-click` → `data-click-error-close` → `data-click-error-toast` を宣言していれば実行します（[取り直しが失敗したらダイアログを閉じる](#取り直しが失敗したらダイアログを閉じるdata-click-error-)）。
 
 ### 他ライブラリとの共存（`data-click-no-disabled`）
 

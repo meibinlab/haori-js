@@ -857,6 +857,12 @@ export interface ProcedureOptions {
    */
   errorStatuses?: number[];
 
+  /**
+   * 失敗時のアクションを実行する失敗で、応答本文を表示しないかどうか。
+   * `data-{event}-error-no-message` の宣言で立てる。
+   */
+  errorNoMessage?: boolean;
+
   /** ダイアログを開くフラグメント */
   openFragments?: ElementFragment[] | null;
 
@@ -2101,6 +2107,9 @@ ${body}
             errorStatusAttr,
           );
         }
+        options.errorNoMessage = fragment.hasAttribute(
+          Procedure.attrName(event, 'error-no-message'),
+        );
       }
       const redirectAttr = Procedure.attrName(event, 'redirect');
       const redirectReplaceAttr = Procedure.attrName(event, 'redirect-replace');
@@ -3734,12 +3743,21 @@ ${body}
           startedAt,
         );
       }
-      await this.handleFetchError(response);
+      // 仕様「失敗時のアクション」の `data-{event}-error-no-message`。失敗時の
+      // アクションを実行しない失敗では、宣言があっても表示する。
+      const responseMessage = await this.handleFetchError(
+        response,
+        !(
+          this.options.errorNoMessage === true &&
+          this.appliesErrorActions(response.status)
+        ),
+      );
       // HTTP エラー応答（4xx/5xx）: error 状態を注入する。
       await this.injectFetchState(
         'error',
         response.status,
         response.statusText || null,
+        responseMessage,
       );
       await this.runErrorActions(response.status);
       return false;
@@ -4041,13 +4059,7 @@ ${body}
    * @returns 実行完了の Promise
    */
   private async runErrorActions(status: number | null): Promise<void> {
-    const statuses = this.options.errorStatuses;
-    if (
-      statuses !== undefined &&
-      (status === null || !statuses.includes(status))
-    ) {
-      // 宣言したステータスに当たらない。通信の例外にはステータスが無いため、
-      // 宣言がある限り対象外になる。
+    if (!this.appliesErrorActions(status)) {
       return;
     }
     const stopped = await this.clickTargets(
@@ -4079,6 +4091,20 @@ ${body}
         this.options.errorToastLevel ?? 'info',
       );
     }
+  }
+
+  /**
+   * 失敗時のアクションを実行する失敗かどうかを判定します。
+   *
+   * @param status HTTP ステータス。通信の例外では null
+   * @returns `data-{event}-error-status` の宣言に当たる場合（宣言が無い場合を含む）は true
+   */
+  private appliesErrorActions(status: number | null): boolean {
+    const statuses = this.options.errorStatuses;
+    // 通信の例外にはステータスが無いため、宣言がある限り対象外になる。
+    return (
+      statuses === undefined || (status !== null && statuses.includes(status))
+    );
   }
 
   /**
@@ -4202,8 +4228,18 @@ ${body}
 
   /**
    * フェッチエラー応答のメッセージを適切な要素へ伝播します。
+   *
+   * 表示しない場合も、既存メッセージのクリアと本文の解析は行います。
+   *
+   * @param response エラー応答
+   * @param showMessages 本文のメッセージを表示するかどうか
+   * @returns 本文から取り出した文言を、表示する順に改行で連結した文字列
+   *     （`_fetch.responseMessage`）。取り出せない場合は null
    */
-  private async handleFetchError(response: Response): Promise<boolean> {
+  private async handleFetchError(
+    response: Response,
+    showMessages: boolean,
+  ): Promise<string | null> {
     // ベースとなるフォーム/フラグメントを決定
     let baseFragment: ElementFragment | null = null;
     if (this.options.formFragment) {
@@ -4242,6 +4278,31 @@ ${body}
             ? root.parentElement
             : root.querySelector<HTMLElement>('[data-message-level="error"]');
       errorTarget?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    };
+
+    // 取り出した文言を表示し、`_fetch.responseMessage` の値を返す。文言が無い
+    // 場合はステータスを全体エラーとして表示するが、値には入れない（仕様
+    // 「`data-fetch-state` / `data-{event}-fetch-state`」の「`??` で代わりの
+    // 文言を書けるようにするため」）。
+    const finish = async (
+      entries: Array<{key?: string; message: string}>,
+    ): Promise<string | null> => {
+      if (showMessages) {
+        if (entries.length === 0) {
+          await addGeneralMessage(`${response.status} ${response.statusText}`);
+        }
+        for (const e of entries) {
+          if (e.key && baseFragment) {
+            await Form.addErrorMessage(baseFragment, e.key, e.message);
+          } else {
+            await addGeneralMessage(e.message);
+          }
+        }
+        scrollToFirstError();
+      }
+      return entries.length === 0
+        ? null
+        : entries.map(e => e.message).join('\n');
     };
 
     // コンテンツタイプに応じて解析
@@ -4327,39 +4388,19 @@ ${body}
             }
           }
         }
-        if (entries.length === 0) {
-          // 汎用メッセージ
-          await addGeneralMessage(`${response.status} ${response.statusText}`);
-          scrollToFirstError();
-          return false;
-        }
-        // メッセージを反映
-        for (const e of entries) {
-          if (e.key && baseFragment) {
-            await Form.addErrorMessage(baseFragment, e.key, e.message);
-          } else {
-            await addGeneralMessage(e.message);
-          }
-        }
-        scrollToFirstError();
-        return false;
+        return await finish(entries);
       } catch {
         // JSON 解析失敗時はテキストにフォールバック
       }
     }
     // テキストとして処理
+    let text = '';
     try {
-      const text = await response.text();
-      if (text && text.trim().length > 0) {
-        await addGeneralMessage(text.trim());
-      } else {
-        await addGeneralMessage(`${response.status} ${response.statusText}`);
-      }
+      text = (await response.text()).trim();
     } catch {
-      await addGeneralMessage(`${response.status} ${response.statusText}`);
+      // 本文を読めない場合は、文言が無いものとして扱う
     }
-    scrollToFirstError();
-    return false;
+    return await finish(text.length > 0 ? [{message: text}] : []);
   }
 
   /**
@@ -6498,12 +6539,14 @@ ${body}
    * @param status フェッチ状態（'loading' | 'success' | 'error'）
    * @param statusCode HTTP ステータスコード（無い場合は null）
    * @param message エラーメッセージ等（無い場合は null）
+   * @param responseMessage エラー応答の本文から取り出した文言（無い場合は null）
    * @returns 注入完了の Promise
    */
   private async injectFetchState(
     status: 'loading' | 'success' | 'error',
     statusCode: number | null = null,
     message: string | null = null,
+    responseMessage: string | null = null,
   ): Promise<void> {
     const targets = this.options.fetchStateFragments;
     if (!targets || targets.length === 0) {
@@ -6516,6 +6559,7 @@ ${body}
       error: boolean;
       statusCode: number | null;
       message: string | null;
+      responseMessage: string | null;
       receivedBytes?: number;
       totalBytes?: number | null;
     } = {
@@ -6525,6 +6569,7 @@ ${body}
       error: status === 'error',
       statusCode,
       message,
+      responseMessage,
     };
     if (this.options.download) {
       // 進み具合はダウンロードのときだけ入れる（仕様「`data-fetch-state` /
