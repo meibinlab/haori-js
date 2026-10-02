@@ -1207,7 +1207,7 @@ async handleError(response: Response): Promise<void> {
 
 エラーメッセージの描画を始める前に、**フェッチ単位で対象スコープの既存メッセージを 1 度だけクリア**します。これにより、同じボタンを複数回押してエラー応答が繰り返されても表示は**常に最新の 1 応答分へ置き換わり**、再試行のたびにメッセージが積み増される（累積する）ことはありません。1 応答内に複数のフィールドエラーや全体エラーが含まれる場合は、クリア後にまとめて追加されるため**同一応答内のメッセージは従来どおり並んで表示**されます。クリア対象は、フォーム／対象フラグメントが特定できる場合はそのスコープ、特定できない場合は `document.body`（ページ全体の管理メッセージ）です。`Haori.clearMessages(parent)` は対象配下のフォーム全体エラーとフィールド別フィードバックの双方を除去します。
 
-[`data-{event}-error-no-message`](#失敗時のアクション) を宣言した手続きでは、失敗時のアクションを実行する失敗に限り、上の表示を行いません。既存メッセージのクリアは行います。表示する文言は、表示を止めた場合も [`_fetch.responseMessage`](#data-fetch-state--data-event-fetch-state) で参照できます。
+[`data-{event}-error-no-message`](#失敗時のアクション) を宣言した手続きでは、失敗時のアクションを実行する失敗に限り、上の表示を行いません（ステータスごとの組を使う失敗では、その組の `-error-{ステータス}-no-message` に従います）。既存メッセージのクリアは行います。表示する文言は、表示を止めた場合も [`_fetch.responseMessage`](#data-fetch-state--data-event-fetch-state) で参照できます。
 
 ### 6. Form (form.ts)
 
@@ -3324,8 +3324,8 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 
 | 属性 | 処理順 | 評価する時点 |
 |---|---|---|
-| `data-{event}-dialog` / `data-{event}-toast` | 17 | 表示直前 |
-| `data-{event}-error-toast` | 取得の失敗の後 | 表示直前 |
+| `data-{event}-dialog` / `data-{event}-toast` / `data-{event}-toast-level` | 17 | 表示直前 |
+| `data-{event}-error-toast` / `data-{event}-error-toast-level`（ステータスごとの組の `-toast` / `-toast-level` を含む） | 取得の失敗の後 | 表示直前 |
 | `data-{event}-history` | 19 | `history.pushState()` 直前 |
 | `data-{event}-scroll` | 19 の後 | スクロール直前 |
 | `data-{event}-redirect` / `data-{event}-redirect-replace` / `data-{event}-redirect-return-param` | 20 | 遷移直前 |
@@ -3358,7 +3358,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 **対象外**:
 
 - `data-{event}-confirm` / `-fetch` / `-data` / `-form` など、バインドより前に使う属性は従来どおり手続きの開始時に評価します。
-- `data-{event}-store-clear` / `-store-clear-type` / `-toast-level` は式を使えない生値です。
+- `data-{event}-store-clear` / `-store-clear-type` は式を使えない生値です。
 - `data-{event}-scroll-error` は検証失敗時（前段）に使うため対象外です。
 - `data-{event}-history-data` / `-history-form` は従来どおり実行時に解決し、`data-{event}-reset-before` を指定した場合はそのリセット直後のスナップショットを使います。
 
@@ -3618,7 +3618,7 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 `data-poll-redirect`（条件成立時の遷移）は、`data-poll-until` と組み合わせれば意図どおり動作します。
 
-[失敗時のアクション](#失敗時のアクション)（`data-poll-error-click` / `-error-close` / `-error-toast` / `-error-status` / `-error-no-message`）は読みません。失敗のたびに繰り返されるためです。失敗の扱いは `data-poll-error-limit` と `data-poll-state` で行ってください。
+[失敗時のアクション](#失敗時のアクション)（`data-poll-error-click` / `-error-close` / `-error-toast` / `-error-status` / `-error-no-message` と、ステータスごとの組の `data-poll-error-{ステータス}-*`）は読みません。失敗のたびに繰り返されるためです。失敗の扱いは `data-poll-error-limit` と `data-poll-state` で行ってください。
 
 #### バリデーションと確認
 
@@ -4750,7 +4750,7 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 
 ##### `data-{event}-toast`
 
-トーストメッセージを表示します (3秒表示)。メッセージは**表示直前**に評価するため、応答の値を埋め込めます（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。`data-{event}-toast-level` は式を使えない生値です。
+トーストメッセージを表示します (3秒表示)。メッセージは**表示直前**に評価するため、応答の値を埋め込めます（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。
 
 ```html
 <button data-click-fetch="/api/save" data-click-toast="保存しました">
@@ -4758,12 +4758,26 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 </button>
 ```
 
-**評価結果の扱い**: 評価結果が falsy（`null` / `undefined` / `false` / 空文字 / `0`）または未解決参照のときは**表示しません**。それ以外は文字列にして表示します（falsy と文字列化の扱いは [`data-{event}-dialog`](#data-event-dialog) と同じです）。ただし `
-` 表記は改行へ復元しません（復元するのは `data-{event}-dialog` と `data-{event}-confirm` です）。
+**評価結果の扱い**: 評価結果が falsy（`null` / `undefined` / `false` / 空文字 / `0`）または未解決参照のときは**表示しません**。それ以外は文字列にして表示します（falsy と文字列化の扱いは [`data-{event}-dialog`](#data-event-dialog) と同じです）。ただし `\n` 表記は改行へ復元しません（復元するのは `data-{event}-dialog` と `data-{event}-confirm` です）。
+
+**`data-{event}-toast-level`**: トーストのレベルです。`info` / `warning` / `error` / `success` のどれかを書きます。省略時は `info` です。
+
+- メッセージと同じく**表示直前**に評価するため、式を書けます。
+- 評価結果がこの 4 つの文字列のどれとも一致しない場合は、`info` で表示します。
+
+```html
+<!-- 応答の warned で色を変える -->
+<div id="state">
+  <button type="button"
+    data-click-fetch="/api/save" data-click-bind="#state"
+    data-click-toast="{{notice}}"
+    data-click-toast-level="{{warned ? 'warning' : 'success'}}">保存</button>
+</div>
+```
 
 ##### 失敗時のアクション
 
-`data-{event}-error-click` / `-error-click-await` / `-error-close` / `-error-toast` / `-error-toast-level` / `-error-status` / `-error-no-message` の 7 属性です。
+`data-{event}-error-click` / `-error-click-await` / `-error-close` / `-error-toast` / `-error-toast-level` / `-error-status` / `-error-no-message` の 7 属性と、ステータスごとの組（`data-{event}-error-{ステータス}-*`）です。
 
 取得（`data-{event}-fetch`）が失敗したときにだけ実行するアクションを宣言します。操作の結果として取得先が無くなる画面で、「取り直しが 404 なら、ダイアログを閉じ、一覧を検索し直し、トーストで知らせる」を JavaScript なしで書けます。
 
@@ -4773,9 +4787,10 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 | `data-{event}-error-click-await` | `-error-click` でクリックした対象の手続きの完了を待ちます。値は取りません |
 | `data-{event}-error-close` | 対象ダイアログを閉じます（CSS セレクタ）。値を省略すると、自要素の祖先方向で最も近い `<dialog>` を閉じます |
 | `data-{event}-error-toast` | トーストメッセージを表示します |
-| `data-{event}-error-toast-level` | トーストのレベル（`info` / `warning` / `error` / `success`）。省略時は `info` です |
+| `data-{event}-error-toast-level` | トーストのレベル（`info` / `warning` / `error` / `success`）。省略時は `info` です。式を書けます |
 | `data-{event}-error-status` | 実行するステータスを `&` 区切りで絞ります（例: `404&410`） |
 | `data-{event}-error-no-message` | 応答本文の自動表示を止めます。値は取りません |
+| `data-{event}-error-{ステータス}-*` | 特定のステータスで失敗したときに、上の属性の代わりに使う組です（下記） |
 
 ```html
 <dialog id="reward-dialog" open>
@@ -4809,8 +4824,35 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 - 3 桁の HTTP ステータスを `&` で区切って列挙します。前後の空白は無視します。式は使えない生値です。
 - 宣言すると、列挙したステータスで失敗した場合だけ実行します。省略すると、上の「失敗として扱う場合」のすべてで実行します。
 - 3 桁の数字でない項目は無視し、警告を記録します。有効な項目が 1 つも無い場合は、どの失敗でも実行しません。
+- ステータスごとの組を使う失敗には効きません（下記）。
 
-**実行の順序**: 取得が失敗したら、次の順に処理します。
+**ステータスごとの組（`data-{event}-error-{ステータス}-*`）**:
+
+失敗したステータスによって、後続の動きを書き分けます。
+
+```html
+<!-- 404 なら閉じて検索し直す。それ以外（500・通信の例外など）は閉じずに、サーバのメッセージを出す -->
+<div id="reward-state" data-bind='{"reward": {}}'>
+  <button id="reward-reload" type="button" hidden
+    data-click-fetch="/api/rewards/{{reward.id}}.json"
+    data-click-fetch-state="#reward-state"
+    data-click-error-404-click="#search-button"
+    data-click-error-404-close="#reward-dialog"
+    data-click-error-404-toast="この報酬は一覧から外れました。"
+    data-click-error-404-no-message
+    data-click-error-no-message
+    data-click-error-toast="{{_fetch.responseMessage ?? '取得できませんでした。'}}"
+    data-click-error-toast-level="error">取り直し</button>
+</div>
+```
+
+- `{ステータス}` は 3 桁の HTTP ステータスです。後ろに付けられるのは `-click` / `-click-await` / `-close` / `-toast` / `-toast-level` / `-no-message` の 6 つで、意味はステータスの付かない属性と同じです（例: `data-click-error-404-close`）。
+- 取得が失敗したステータスの組を 1 つでも宣言していれば、**その組の属性だけを使います**。ステータスの付かない `-error-click` / `-error-click-await` / `-error-close` / `-error-toast` / `-error-toast-level` / `-error-no-message` は使いません。組に無い属性を、ステータスの付かない属性で補うこともしません。
+- ステータスごとの組には、`-error-status` が効きません。組を宣言したステータスでは、`-error-status` に列挙していなくても組を実行します。`-error-status` は、組の無い失敗でステータスの付かない属性を使うかどうかだけを決めます。
+- 通信の例外にはステータスが無いため、ステータスの付かない属性を使います。
+- ステータスごとの組を宣言しない手続きの挙動は変わりません。
+
+**実行の順序**: 取得が失敗したら、次の順に処理します。ステータスごとの組を使う失敗では、2・4〜6 の属性をその組の属性に読み替えます。
 
 1. [`haori:fetcherror`](#haorifetcherror) を発火します。
 2. 応答本文を表示します（HTTP 応答の場合。[エラーハンドリング](#エラーハンドリング)）。`-error-*` を宣言しても表示します。`-error-no-message` を宣言した場合は表示しません。
@@ -4826,13 +4868,14 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 **`data-{event}-error-no-message`**:
 
 - 失敗時のアクションを実行する失敗に限り、応答本文を画面へ表示しません（[エラーハンドリング](#エラーハンドリング)）。`-error-status` を宣言した場合は、列挙したステータスでだけ止め、ほかのステータスでは今までどおり表示します。想定していない失敗まで画面から消えるのを防ぐためです。
+- ステータスごとの組を使う失敗では、その組の `-error-{ステータス}-no-message` の宣言だけに従います。
 - 前回の失敗の表示は、今までどおり消します。
 - 本文の文言は、表示を止めても `_fetch.responseMessage` で参照できます（[`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state) の「応答本文の文言」）。`-error-toast` で利用者へ伝えてください。
 - 一覧の行のボタンのようにフォームの外にある要素では、応答本文はその要素の中に表示されます。行の操作の失敗をトーストで伝える場合に宣言します。
 
 **`-error-click` の値は必須です。** 省略するとエラーを記録し、クリックしません。`data-{event}-click` のように自要素を対象にすると、失敗した手続きを再び起動し、失敗を繰り返すためです。
 
-**評価のタイミング**: `-error-toast` は表示直前に評価します（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。`_fetch.statusCode` や `_fetch.responseMessage` を文言に使う場合は、`data-{event}-fetch-state` の注入先を自要素か祖先にしてください。評価結果の扱いは [`data-{event}-toast`](#data-event-toast) と同じです。`-error-click` / `-error-close` の対象は、`data-{event}-click` / `-close` と同じく手続きの開始時に解決します。
+**評価のタイミング**: `-error-toast` と `-error-toast-level`（ステータスごとの組の `-toast` / `-toast-level` を含む）は表示直前に評価します（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。`_fetch.statusCode` や `_fetch.responseMessage` を文言やレベルに使う場合は、`data-{event}-fetch-state` の注入先を自要素か祖先にしてください。評価結果の扱いは [`data-{event}-toast`](#data-event-toast) と同じです。`-error-click` / `-error-close`（ステータスごとの組を含む）の対象は、`data-{event}-click` / `-close` と同じく手続きの開始時に解決します。
 
 **対象の手続き**: イベントの手続き（`data-click-*` / `data-change-*` / `data-input-*` / `data-load-*`、`data-on` の手続き、`data-intersect-*`）です。非イベントの `data-fetch` と、`data-poll-*`（[定期実行と相性の悪い修飾子](#定期実行と相性の悪い修飾子)）では読みません。
 

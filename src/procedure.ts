@@ -75,6 +75,45 @@ let rememberedDownloadFolder: FileSystemDirectoryHandle | null = null;
  */
 type DownloadOutcome = 'saved' | 'cancelled' | 'failed';
 
+/** トーストのレベル（仕様「`data-{event}-toast`」） */
+const TOAST_LEVELS = ['info', 'warning', 'error', 'success'] as const;
+
+/** トーストのレベル */
+type ToastLevel = (typeof TOAST_LEVELS)[number];
+
+/**
+ * 失敗時のアクションの組（仕様「失敗時のアクション」）。
+ *
+ * ステータスの付かない `data-{event}-error-*` と、ステータスごとの組
+ * （`data-{event}-error-{ステータス}-*`）の両方をこの形で扱います。
+ */
+interface ErrorActionSet {
+  /** 遅延評価のキーと警告に使う接頭（`error` / `error-404` など） */
+  key: string;
+
+  /** クリックするフラグメント（`-click`） */
+  clickFragments: ElementFragment[] | null;
+
+  /** クリックした対象の完了を待つかどうか（`-click-await`） */
+  clickAwait: boolean;
+
+  /** 閉じるダイアログ（`-close`） */
+  closeFragments: ElementFragment[] | null;
+
+  /** 開始時に評価したトーストメッセージ（`-toast`） */
+  toastMessage: string | null;
+
+  /** 開始時に評価したトーストのレベル（`-toast-level`） */
+  toastLevel: ToastLevel | null;
+
+  /** 応答本文の表示を止めるかどうか（`-no-message`） */
+  noMessage: boolean;
+}
+
+/** ステータスごとの組の属性名のうち、ステータスより後ろの部分 */
+const ERROR_STATUS_ATTRIBUTE_PATTERN =
+  /^(\d{3})-(click|click-await|close|toast|toast-level|no-message)$/;
+
 /**
  * Procedure から利用する Haori API を解決します。
  * window.Haori が差し替えられている場合はそちらを優先します。
@@ -849,7 +888,7 @@ export interface ProcedureOptions {
   errorToastMessage?: string | null;
 
   /** 取得の失敗時のトーストレベル（`data-{event}-error-toast-level`） */
-  errorToastLevel?: 'info' | 'warning' | 'error' | 'success' | null;
+  errorToastLevel?: ToastLevel | null;
 
   /**
    * 失敗時のアクションを実行するステータス（`data-{event}-error-status`）。
@@ -862,6 +901,13 @@ export interface ProcedureOptions {
    * `data-{event}-error-no-message` の宣言で立てる。
    */
   errorNoMessage?: boolean;
+
+  /**
+   * ステータスごとの失敗時のアクション（`data-{event}-error-{ステータス}-*`）。
+   * キーは HTTP ステータス。そのステータスの失敗では、ステータスの付かない
+   * 組の代わりに使う。
+   */
+  errorStatusActions?: Map<number, ErrorActionSet>;
 
   /** ダイアログを開くフラグメント */
   openFragments?: ElementFragment[] | null;
@@ -885,7 +931,7 @@ export interface ProcedureOptions {
   toastMessage?: string | null;
 
   /** トーストレベル */
-  toastLevel?: 'info' | 'warning' | 'error' | 'success' | null;
+  toastLevel?: ToastLevel | null;
 
   /** history.pushState で追加する URL */
   historyUrl?: string | null;
@@ -1165,22 +1211,172 @@ export default class Procedure {
   }
 
   /**
+   * セレクタを値に取る属性（`data-{event}-click` / `-close` / `-error-click` など）
+   * の対象を解決します。
+   *
+   * 値を省略した場合の扱いは属性によって異なります。`-error-click` はエラーを
+   * 記録し、`-open` / `-close` / `-error-close` は祖先方向で最も近い `<dialog>`、
+   * それ以外は自要素を対象にします。
+   *
+   * @param fragment 属性を宣言したフラグメント
+   * @param attrName 属性名
+   * @param attrKey 属性名から `data-{event}-` を除いた部分。ステータスごとの組
+   *     （`-error-404-close` など）では、ステータスを除いた `error-close` などを渡す
+   * @returns 対象のフラグメント（見つからない場合は空）
+   */
+  private static resolveSelectorTargets(
+    fragment: ElementFragment,
+    attrName: string,
+    attrKey: string,
+  ): ElementFragment[] {
+    const selector = Selector.read(fragment, attrName);
+    const list: ElementFragment[] = [];
+    if (selector) {
+      const elements = Selector.queryAll(selector, attrName);
+      elements.forEach(el => {
+        const frag = Fragment.get(el);
+        if (frag) {
+          list.push(frag as ElementFragment);
+        }
+      });
+      if (list.length === 0) {
+        Log.error('Haori', `Element not found: ${selector} (${attrName})`);
+      }
+    } else if (attrKey === 'error-click') {
+      // 自要素を押すと失敗した手続きを再び起動し、失敗を繰り返すため、
+      // 値の省略を認めない（仕様「失敗時のアクション」の「`-error-click` の
+      // 値は必須です」）。
+      Log.error(
+        'Haori',
+        `${attrName} にはクリックする要素のセレクタが必要です。`,
+      );
+    } else if (
+      attrKey === 'open' ||
+      attrKey === 'close' ||
+      attrKey === 'error-close'
+    ) {
+      // open/close で値が省略されている場合は、自要素ではなく自要素の
+      // 祖先方向で最も近い <dialog> を対象にする。ダイアログ内の閉じる
+      // ボタンに data-click-close を値なしで付与しても、ボタン自身では
+      // なくダイアログ本体が閉じられるようにするため。
+      const dialog = fragment.getTarget().closest('dialog');
+      if (dialog) {
+        list.push(Fragment.get(dialog));
+      } else {
+        Log.error('Haori', `Ancestor <dialog> not found (${attrName})`);
+      }
+    } else {
+      // 値が省略されている場合は自要素を対象
+      list.push(fragment);
+    }
+    return list;
+  }
+
+  /**
    * トーストのレベル（`data-{event}-toast-level` など）を読み取ります。
-   * 式は使えない生値です。
+   *
+   * メッセージと同じく表示直前に評価し直すため、開始時の評価情報を記録します
+   * （仕様「`data-{event}-toast`」の「メッセージと同じく**表示直前**に評価する
+   * ため、式を書けます」）。
    *
    * @param fragment 対象フラグメント
+   * @param options 記録先のオプション
+   * @param key アクション名（`toast-level` / `error-toast-level` など）
    * @param attributeName 属性名
-   * @returns レベル。属性が無いか値が不正な場合は null（`info` で表示する）
+   * @returns 開始時のレベル。属性が無いか値が不正な場合は null（`info` で表示する）
    */
   private static readToastLevel(
     fragment: ElementFragment,
+    options: ProcedureOptions,
+    key: string,
     attributeName: string,
-  ): 'info' | 'warning' | 'error' | 'success' | null {
-    const rawLevel = fragment.getRawAttribute(attributeName);
-    const validLevels = ['info', 'warning', 'error', 'success'] as const;
-    type ToastLevel = (typeof validLevels)[number];
-    return validLevels.includes(rawLevel as ToastLevel)
-      ? (rawLevel as ToastLevel)
+  ): ToastLevel | null {
+    return Procedure.toToastLevel(
+      Procedure.readLateAttribute(fragment, options, key, attributeName),
+    );
+  }
+
+  /**
+   * ステータスごとの失敗時のアクション（`data-{event}-error-{ステータス}-*`）を
+   * 読み取ります。
+   *
+   * 属性名からステータスを集め、ステータスごとに組を作ります。各属性の意味は
+   * ステータスの付かない属性と同じです（仕様「失敗時のアクション」の「意味は
+   * ステータスの付かない属性と同じです」）。
+   *
+   * @param fragment 対象フラグメント
+   * @param options 遅延評価の記録先のオプション
+   * @param event イベント名
+   * @returns ステータスと組の対応（宣言が無い場合は空）
+   */
+  private static readErrorStatusActions(
+    fragment: ElementFragment,
+    options: ProcedureOptions,
+    event: string,
+  ): Map<number, ErrorActionSet> {
+    const head = Procedure.attrName(event, 'error-');
+    const statuses = new Set<string>();
+    for (const name of fragment.getAttributeNames()) {
+      if (!name.startsWith(head)) {
+        continue;
+      }
+      const match = ERROR_STATUS_ATTRIBUTE_PATTERN.exec(
+        name.slice(head.length),
+      );
+      if (match) {
+        statuses.add(match[1]);
+      }
+    }
+    const groups = new Map<number, ErrorActionSet>();
+    statuses.forEach(status => {
+      const key = `error-${status}`;
+      const attr = (suffix: string): string =>
+        Procedure.attrName(event, `${key}-${suffix}`);
+      groups.set(Number(status), {
+        key,
+        clickFragments: fragment.hasAttribute(attr('click'))
+          ? Procedure.resolveSelectorTargets(
+              fragment,
+              attr('click'),
+              'error-click',
+            )
+          : null,
+        clickAwait: fragment.hasAttribute(attr('click-await')),
+        closeFragments: fragment.hasAttribute(attr('close'))
+          ? Procedure.resolveSelectorTargets(
+              fragment,
+              attr('close'),
+              'error-close',
+            )
+          : null,
+        // `-toast` / `-toast-level` が無い場合は、どちらも null になる。
+        toastMessage: Procedure.readLateAttribute(
+          fragment,
+          options,
+          `${key}-toast`,
+          attr('toast'),
+        ),
+        toastLevel: Procedure.readToastLevel(
+          fragment,
+          options,
+          `${key}-toast-level`,
+          attr('toast-level'),
+        ),
+        noMessage: fragment.hasAttribute(attr('no-message')),
+      });
+    });
+    return groups;
+  }
+
+  /**
+   * 評価値を、トーストのレベルへ変換します。
+   *
+   * @param value 評価値
+   * @returns レベル。4 つの値のどれとも一致しない場合は null（`info` で表示する）
+   */
+  private static toToastLevel(value: unknown): ToastLevel | null {
+    return TOAST_LEVELS.includes(value as ToastLevel)
+      ? (value as ToastLevel)
       : null;
   }
 
@@ -2081,6 +2277,8 @@ ${body}
         );
         options.toastLevel = Procedure.readToastLevel(
           fragment,
+          options,
+          'toast-level',
           Procedure.attrName(event, 'toast-level'),
         );
       }
@@ -2097,6 +2295,8 @@ ${body}
           );
           options.errorToastLevel = Procedure.readToastLevel(
             fragment,
+            options,
+            'error-toast-level',
             Procedure.attrName(event, 'error-toast-level'),
           );
         }
@@ -2216,46 +2416,11 @@ ${body}
         if (!fragment.hasAttribute(attrName)) {
           return;
         }
-        const selector = Selector.read(fragment, attrName);
-        const list: ElementFragment[] = [];
-        if (selector) {
-          const elements = Selector.queryAll(selector, attrName);
-          elements.forEach(el => {
-            const frag = Fragment.get(el);
-            if (frag) {
-              list.push(frag as ElementFragment);
-            }
-          });
-          if (list.length === 0) {
-            Log.error('Haori', `Element not found: ${selector} (${attrName})`);
-          }
-        } else if (attrKey === 'error-click') {
-          // 自要素を押すと失敗した手続きを再び起動し、失敗を繰り返すため、
-          // 値の省略を認めない（仕様「失敗時のアクション」の「`-error-click` の
-          // 値は必須です」）。
-          Log.error(
-            'Haori',
-            `${attrName} にはクリックする要素のセレクタが必要です。`,
-          );
-        } else if (
-          attrKey === 'open' ||
-          attrKey === 'close' ||
-          attrKey === 'error-close'
-        ) {
-          // open/close で値が省略されている場合は、自要素ではなく自要素の
-          // 祖先方向で最も近い <dialog> を対象にする。ダイアログ内の閉じる
-          // ボタンに data-click-close を値なしで付与しても、ボタン自身では
-          // なくダイアログ本体が閉じられるようにするため。
-          const dialog = fragment.getTarget().closest('dialog');
-          if (dialog) {
-            list.push(Fragment.get(dialog));
-          } else {
-            Log.error('Haori', `Ancestor <dialog> not found (${attrName})`);
-          }
-        } else {
-          // 値が省略されている場合は自要素を対象
-          list.push(fragment);
-        }
+        const list = Procedure.resolveSelectorTargets(
+          fragment,
+          attrName,
+          attrKey,
+        );
         if (list.length > 0) {
           switch (attrKey) {
             case 'reset-before':
@@ -2293,6 +2458,15 @@ ${body}
           }
         }
       });
+      // ステータスごとの組も、ステータスの付かない組と同じく `data-poll-*` では
+      // 読まない（仕様「定期実行と相性の悪い修飾子」）。
+      if (event !== 'poll') {
+        options.errorStatusActions = Procedure.readErrorStatusActions(
+          fragment,
+          options,
+          event,
+        );
+      }
 
       // copy-source（単一セレクタ）
       const copySourceAttrName = Procedure.attrName(event, 'copy-source');
@@ -3744,13 +3918,11 @@ ${body}
         );
       }
       // 仕様「失敗時のアクション」の `data-{event}-error-no-message`。失敗時の
-      // アクションを実行しない失敗では、宣言があっても表示する。
+      // アクションを実行しない失敗では、宣言があっても表示する。ステータスごとの
+      // 組を使う失敗では、その組の宣言に従う。
       const responseMessage = await this.handleFetchError(
         response,
-        !(
-          this.options.errorNoMessage === true &&
-          this.appliesErrorActions(response.status)
-        ),
+        this.selectErrorActions(response.status)?.noMessage !== true,
       );
       // HTTP エラー応答（4xx/5xx）: error 状態を注入する。
       await this.injectFetchState(
@@ -3899,7 +4071,10 @@ ${body}
       this.resolveLateAttribute('toast', this.options.toastMessage),
     );
     if (toastMessage) {
-      await activeHaori.toast(toastMessage, this.options.toastLevel ?? 'info');
+      const toastLevel = Procedure.toToastLevel(
+        this.resolveLateAttribute('toast-level', this.options.toastLevel),
+      );
+      await activeHaori.toast(toastMessage, toastLevel ?? 'info');
     }
     this.clearStore();
     this.pushHistory();
@@ -4059,20 +4234,21 @@ ${body}
    * @returns 実行完了の Promise
    */
   private async runErrorActions(status: number | null): Promise<void> {
-    if (!this.appliesErrorActions(status)) {
+    const actions = this.selectErrorActions(status);
+    if (!actions) {
       return;
     }
     const stopped = await this.clickTargets(
-      this.options.errorClickFragments,
-      this.options.errorClickAwait === true,
-      'error-click-await',
+      actions.clickFragments,
+      actions.clickAwait,
+      `${actions.key}-click-await`,
     );
     if (stopped) {
       return;
     }
     const activeHaori = resolveProcedureHaoriApi();
     const closing: Promise<void>[] = [];
-    this.options.errorCloseFragments?.forEach(fragment => {
+    actions.closeFragments?.forEach(fragment => {
       const target = fragment.getTarget();
       if (target instanceof HTMLElement) {
         closing.push(activeHaori.closeDialog(target));
@@ -4083,14 +4259,49 @@ ${body}
     await Promise.all(closing);
     // 使用直前に評価し直す（`_fetch` の注入を反映するため）。
     const toastMessage = Procedure.normalizeAttributeText(
-      this.resolveLateAttribute('error-toast', this.options.errorToastMessage),
+      this.resolveLateAttribute(`${actions.key}-toast`, actions.toastMessage),
     );
     if (toastMessage) {
-      await activeHaori.toast(
-        toastMessage,
-        this.options.errorToastLevel ?? 'info',
+      const toastLevel = Procedure.toToastLevel(
+        this.resolveLateAttribute(
+          `${actions.key}-toast-level`,
+          actions.toastLevel,
+        ),
       );
+      await activeHaori.toast(toastMessage, toastLevel ?? 'info');
     }
+  }
+
+  /**
+   * 失敗に使う失敗時のアクションの組を選びます。
+   *
+   * 失敗したステータスの組があればその組を、無ければ `data-{event}-error-status`
+   * の絞り込みに当たる場合に限りステータスの付かない組を返します（仕様「失敗時の
+   * アクション」の「ステータスごとの組には、`-error-status` が効きません」）。
+   *
+   * @param status HTTP ステータス。通信の例外では null
+   * @returns 使う組。実行しない場合は null
+   */
+  private selectErrorActions(status: number | null): ErrorActionSet | null {
+    const group =
+      status === null
+        ? undefined
+        : this.options.errorStatusActions?.get(status);
+    if (group) {
+      return group;
+    }
+    if (!this.appliesErrorActions(status)) {
+      return null;
+    }
+    return {
+      key: 'error',
+      clickFragments: this.options.errorClickFragments ?? null,
+      clickAwait: this.options.errorClickAwait === true,
+      closeFragments: this.options.errorCloseFragments ?? null,
+      toastMessage: this.options.errorToastMessage ?? null,
+      toastLevel: this.options.errorToastLevel ?? null,
+      noMessage: this.options.errorNoMessage === true,
+    };
   }
 
   /**

@@ -2794,6 +2794,43 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 - 本文から文言を取り出せない場合（空の本文など）は `null` です。`??` で代わりの文言を書いておきます。
 - `-error-status` を宣言すると、列挙したステータスのときだけ表示を止めます。上の例では 500 などの想定外の失敗は、今までどおりボタンの中に表示されます。
 
+#### 失敗のステータスで動きを書き分ける（`data-click-error-{ステータス}-*`）
+
+`data-click-error-404-close` のようにステータスを付けると、そのステータスで失敗したときだけ使う組になります。中継の隠しボタンを置かずに、「404 なら閉じて検索し直す」「それ以外は閉じずにサーバのメッセージを出す」を 1 つのボタンに書けます。
+
+```html
+<div id="reward-state" data-bind='{"reward": {}}'>
+  <button id="reward-reload" type="button" hidden
+    data-click-fetch="../api/rewards/{{reward.id}}.json"
+    data-click-fetch-state="#reward-state"
+    data-click-error-404-click="#search-button"
+    data-click-error-404-close="#reward-dialog"
+    data-click-error-404-toast="この報酬は一覧から外れました。"
+    data-click-error-404-no-message
+    data-click-error-no-message
+    data-click-error-toast="{{_fetch.responseMessage ?? '取得できませんでした。'}}"
+    data-click-error-toast-level="error">取り直し</button>
+</div>
+```
+
+- 付けられるのは `-click` / `-click-await` / `-close` / `-toast` / `-toast-level` / `-no-message` です。
+- 組のあるステータスでは、その組だけを使います。ステータスの付かない属性で足りない分を補うことはしません（上の例で 404 のときに本文の表示を止めるには、`-error-404-no-message` も書きます）。
+- 組の無いステータスと通信の例外では、ステータスの付かない属性を使います。`-error-status` が効くのはこちらだけです。
+
+トーストの色だけを変えたい場合は、組を使わずにレベルへ式を書けます。
+
+```html
+<button type="button"
+  data-click-fetch="../api/invoices/{{id}}.json" data-click-fetch-method="DELETE"
+  data-click-fetch-state
+  data-click-error-status="404&409"
+  data-click-error-no-message
+  data-click-error-toast="{{_fetch.responseMessage ?? '削除できませんでした。'}}"
+  data-click-error-toast-level="{{_fetch.statusCode === 409 ? 'warning' : 'error'}}">削除</button>
+```
+
+- `-toast-level` と `-error-toast-level` は、メッセージと同じく表示の直前に評価します。`info` / `warning` / `error` / `success` のどれでもない結果は `info` になります。
+
 ### state の配列を追加・削除する（式 + `data-click-bind-merge`）
 
 state に持った配列（編集中のルール一覧など）への要素追加・削除は、専用属性なしで**式と `data-click-bind-merge` の組み合わせ**で書けます。式はスプレッド `[...arr, x]` や `filter` を評価でき、`data-click-data` を **JSON 形式**で書けば配列値をそのまま渡せます（パラメータ形式だと配列が文字列化するため、配列・オブジェクト値は JSON 形式を使ってください）。`data-click-bind-merge` で対象キーだけをパッチするため、`editingIndex` など他の state は保持されます。
