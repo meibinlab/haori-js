@@ -491,6 +491,16 @@ export default class Expression {
   /** まだ報告していない未解決識別子名 */
   private static readonly pendingUnresolvedIdentifiers = new Set<string>();
 
+  /**
+   * 診断のために式の一部を評価している最中かどうか。
+   *
+   * 厳密比較の型の診断は、比較の各辺を改めて評価します。その評価は宣言した式では
+   * ないため、未解決参照や別スコープの診断に記録しません。記録すると、判定する式
+   * として結論が出た宣言（`state.loading === true`）が、宣言に無い式
+   * （`state.loading`）の未解決参照として警告されます。
+   */
+  private static evaluatingForDiagnosis = false;
+
   /** 未解決識別子の集約報告をスケジュール済みかどうか */
   private static unresolvedReportScheduled = false;
 
@@ -1017,7 +1027,7 @@ export default class Expression {
     names: string[],
     expression: string,
   ): void {
-    if (names.length === 0) {
+    if (names.length === 0 || this.evaluatingForDiagnosis) {
       return;
     }
     if (Env.strictBind) {
@@ -1137,6 +1147,9 @@ export default class Expression {
     names: string[],
     expression: string,
   ): void {
+    if (this.evaluatingForDiagnosis) {
+      return;
+    }
     if (names.length === 0) {
       this.pendingScopeMissingIdentifiers.delete(expression);
       return;
@@ -1890,8 +1903,16 @@ export default class Expression {
     if (split === null) {
       return null;
     }
-    const left = Expression.evaluateDetailed(split.left, bindedValues);
-    const right = Expression.evaluateDetailed(split.right, bindedValues);
+    // 各辺は宣言した式ではないため、未解決参照などの診断に記録しない。
+    Expression.evaluatingForDiagnosis = true;
+    let left: ExpressionEvaluationDetail;
+    let right: ExpressionEvaluationDetail;
+    try {
+      left = Expression.evaluateDetailed(split.left, bindedValues);
+      right = Expression.evaluateDetailed(split.right, bindedValues);
+    } finally {
+      Expression.evaluatingForDiagnosis = false;
+    }
     if (left.unresolvedReference || right.unresolvedReference) {
       return null;
     }
