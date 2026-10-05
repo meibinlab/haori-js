@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## [0.58.0] - 2026-10-05
+
+**要望 5 件（BM・BN・BO・BP・BW）に対応した版です。** `data-{event}-click` に複数の対象をカンマで区切って書いた場合の、**押す順序が変わります**。下の「Changed」を確認してください。
+
+### Added
+
+- **非イベントの `data-fetch` と `data-poll-*` でも、応答本文の自動表示を止められるようにした**（要望 BM、`src/procedure.ts`）。`data-fetch-error-no-message` / `data-poll-error-no-message` と、その `-error-status`、ステータスごとの `-error-{ステータス}-no-message` を読む。画面を開いたときの取得の失敗を `_fetch` で画面が出し分ける構成で、自動表示が重ならない。`data-{event}-refetch` で再実行した取得も、再実行される要素の宣言に従う。クリック・閉じる・トーストの `-error-*` は、今までどおり読まない。
+- **失敗した応答の本文をバインドする `data-{event}-error-bind` を足した**（要望 BN、`src/procedure.ts`）。本文は `data-{event}-bind` と同じ規則でバインドし、自動表示はしない。手続きは失敗のままで、`_fetch` への `error` の注入・`haori:fetcherror`・失敗時のアクションは従来どおり。ステータスごとの組の `-error-{ステータス}-bind` も使える。
+- **`data-on` に、発火元で絞り込む `data-on-target` を足した**（要望 BW、`src/event_dispatcher.ts`）。指定した要素（とその子孫）から発火したイベントでだけ手続きを実行する。Bootstrap の `hidden.bs.modal` で、特定のモーダルが閉じたときだけ状態を戻せる。
+
+### Fixed
+
+- **URL に式を含む `data-fetch` ＋ `data-fetch-form` が、初回の取得でフォームの初期値の反映を待たないことがあったのを直した**（要望 BO、`src/core.ts`）。初期化では `<head>` と `<body>` の走査が並行して走る。待ち合わせの相手を 1 つの変数で持っていたため、先に終わった `<head>` の走査が `<body>` の待ち合わせを消していた。式を含む取得は起動が 1 フレーム遅れるため、`<body>` の後続の要素が多く走査が長いページでは、`data-attr-value` の初期値が入る前の空の条件で 1 回目を送っていた。走っているすべての走査の反映を待つようにした。
+- **haori 単体で、フォームの外の要素への失敗の表示が、次の取得で消えなかったのを直した**（`src/haori.ts`）。`Haori.addMessage()` はフォーム以外の要素を渡すと親要素へ表示を付けるが、`Haori.clearMessages()` は渡した要素とその子孫だけを消していた。一覧の行のボタンや `data-fetch` の状態ホストで、`-error-no-message` で表示を止めた失敗や、ほかの文言の失敗の後も、前回の表示が残っていた。`Haori.clearMessages()` は、`Haori.addMessage()` が付ける位置（フォーム以外を渡した場合は親要素）の表示も消すようにした。haori-bootstrap は表示を要素の中に入れるため、影響を受けない。
+
+### Changed
+
+- **`data-{event}-click` と `-error-click` の複数の対象を、カンマ区切りの各セレクタを書いた順に押すようにした**（要望 BP、`src/procedure.ts`、`src/selector.ts`）。仕様書は「宣言した順」と定めていたが、実装は文書順に押していた。1 つのセレクタに一致した複数の要素は、その中で文書順。`data-click-click="#b, #a"` のように、書いた順と文書の順が違う宣言では押す順序が変わる。ほかのセレクタを取る属性（`-refetch`・`-close` など）は文書順のまま。
+
+### Internal
+
+- テストを 5 ファイル追加した（`tests/click-target-order.test.ts`・`tests/fetch-error-no-message-non-event.test.ts`・`tests/fetch-error-bind.test.ts`・`tests/custom-event-target.test.ts`・`tests/clear-messages-recipient.test.ts`）。修正前にそれぞれ 8 件・7 件・5 件・3 件・3 件が落ちる。要望 BO の回帰テスト（`tests/fetch-form-initial-values-concurrent-scan.test.ts` と、実ブラウザの `playwright/fetch-form-placeholder-initial-values.spec.cjs`）も、修正前に落ちることを確かめた。足した行は 1 つずつ外し、落ちるテストがあることを確かめた。
+- 「非イベントの `data-fetch` と `data-poll-*` では `-error-no-message` を読まない」ことを確かめていた 2 件を、仕様の変更に合わせて削り、新しいファイルへ移した。
+
 ## [0.57.1] - 2026-10-05
 
 **開発モードの診断の不具合を直し、注入前の `_fetch` を参照する書き方を文書にした版です。** 利用者が見る画面の動きは変わりません。
