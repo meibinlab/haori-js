@@ -18,7 +18,6 @@ import Env from '../src/env';
 import Fragment from '../src/fragment';
 import Haori from '../src/haori';
 import Log from '../src/log';
-import Procedure from '../src/procedure';
 import {waitForCondition, waitForIdle} from './helpers/async';
 
 /** 返す応答（`'network'` は通信の例外） */
@@ -387,36 +386,7 @@ describe('応答本文の文言と、自動表示を止める宣言', () => {
 
       expect(addErrorMessage.mock.calls.map(call => call[1])).toEqual(['障害']);
     });
-
-    it('data-poll-* では読まない', async () => {
-      // 仕様「定期実行と相性の悪い修飾子」の「`-error-no-message`）は読みません」。
-      const addErrorMessage = vi.spyOn(Haori, 'addErrorMessage');
-      stubFetch({status: 500, type: 'text/plain', body: '障害'});
-      await mount(
-        '<div id="poller" data-poll-fetch="/api/status"' +
-          ' data-poll-interval="600000" data-poll-error-no-message></div>',
-      );
-      const poller = container!.querySelector('#poller') as HTMLElement;
-
-      await new Procedure(Fragment.get(poller), 'poll').run();
-      await waitForIdle();
-
-      // 走査で始まる定期実行の分も表示されるため、回数は数えない。
-      expect(addErrorMessage.mock.calls.map(call => call[1])).toContain('障害');
-    });
-
-    it('非イベントの data-fetch では読まない', async () => {
-      // 仕様「失敗時のアクション」の「非イベントの `data-fetch` …では読みません」。
-      const addErrorMessage = vi.spyOn(Haori, 'addErrorMessage');
-      stubFetch({status: 500, type: 'text/plain', body: '障害'});
-      await mount(
-        '<div data-fetch="/api/auto" data-fetch-error-no-message></div>',
-      );
-      await waitForCondition(() => addErrorMessage.mock.calls.length > 0, {
-        description: '非イベントの取得の失敗の表示',
-      });
-
-      expect(addErrorMessage.mock.calls.map(call => call[1])).toEqual(['障害']);
-    });
+    // 非イベントの data-fetch と data-poll-* での宣言は
+    // tests/fetch-error-no-message-non-event.test.ts で確かめる。
   });
 });

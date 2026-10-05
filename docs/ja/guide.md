@@ -2751,6 +2751,8 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 
 止めた場合は、呼び出し元のトースト・ダイアログ・リダイレクトも実行されません（片方だけ通ったのに「更新しました」と出ることがありません）。`data-click-if` が偽で実行されなかった対象は失敗として扱わず、次へ進みます。
 
+`data-click-click="#load-detail, #open-tab, #init-form"` のようにカンマで区切って書くと、書いた順に押します。文書での並び順には左右されません。1 つのセレクタ（上の `.order-updaters` など）に一致した複数の要素は、その中で文書の順に押します。
+
 ### 取り直しが失敗したらダイアログを閉じる（`data-click-error-*`）
 
 操作の結果として取得先が無くなる画面では、続けて取り直す取得が 404 になります。`data-click-error-*` を使うと、取得が失敗したときにだけ「ダイアログを閉じる・別のボタンを押す・トーストを出す」を宣言できます。
@@ -2774,7 +2776,7 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 - 実行の順序は、クリック（`-error-click`）→ ダイアログを閉じる（`-error-close`。値を省略すると囲んでいる `<dialog>`）→ トースト（`-error-toast` / `-error-toast-level`）です。`-error-click-await` を足すと、押した先の完了を待ちます。
 - `-error-status` を省略すると、2xx 以外の応答と通信の例外のすべてで実行します。認証ガードで遷移する 401 / 403 では実行しません。
 - 実行しても手続きは失敗のままです。応答本文のエラー表示も今までどおり行い（止める場合は下の `-error-no-message`）、`data-click-click-await` で待っている呼び出し元は後続を止めます。
-- `data-poll-*` と、イベントを伴わない `data-fetch` では使えません。
+- `data-poll-*` と、イベントを伴わない `data-fetch` では使えません（応答本文の表示を止める `-error-no-message` だけは使えます。下の「画面を開いたときの取得の失敗を画面で出し分ける」）。
 
 #### 一覧の行の操作が失敗した理由をトーストで伝える
 
@@ -2814,7 +2816,7 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 </div>
 ```
 
-- 付けられるのは `-click` / `-click-await` / `-close` / `-toast` / `-toast-level` / `-no-message` です。
+- 付けられるのは `-click` / `-click-await` / `-close` / `-toast` / `-toast-level` / `-no-message` / `-bind` です。
 - 組のあるステータスでは、その組だけを使います。ステータスの付かない属性で足りない分を補うことはしません（上の例で 404 のときに本文の表示を止めるには、`-error-404-no-message` も書きます）。
 - 組の無いステータスと通信の例外では、ステータスの付かない属性を使います。`-error-status` が効くのはこちらだけです。
 
@@ -2831,6 +2833,44 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 ```
 
 - `-toast-level` と `-error-toast-level` は、メッセージと同じく表示の直前に評価します。`info` / `warning` / `error` / `success` のどれでもない結果は `info` になります。
+
+#### 画面を開いたときの取得の失敗を画面で出し分ける（`data-fetch-error-no-message`）
+
+イベントを伴わない `data-fetch` の失敗を `_fetch` で画面が扱う場合は、`data-fetch-error-no-message` で応答本文の自動表示を止めます。止めないと、画面の表示と自動表示が重なります。
+
+```html
+<!-- 取得に失敗したら、部品を何も表示しない -->
+<div id="chat-state" data-fetch="../api/chat/start.json"
+  data-fetch-bind-merge data-fetch-state
+  data-fetch-error-no-message>
+  <button type="button" data-if="available">問い合わせる</button>
+</div>
+```
+
+- `data-fetch-error-status="404&500"` で止めるステータスを絞れます。`data-fetch-error-404-no-message` のようにステータスごとにも書けます。
+- `data-click-refetch="#chat-state"` で取り直した場合も、`#chat-state` の宣言に従います。
+- 定期取得では `data-poll-error-no-message` です。
+- クリック・閉じる・トーストの `-error-*` は、ここでは使えません。
+
+#### 失敗した応答の本文を画面に出す（`data-click-error-bind`）
+
+一括登録 API がエラー行を含む検証結果を 400 で返す場合のように、2xx 以外の応答本文を画面の状態として使うときは、`data-click-error-bind` を宣言します。本文は `data-click-bind` / `data-click-bind-arg` と同じ規則でバインドされ、自動表示はされません。
+
+```html
+<div id="csv-state" data-bind="{}">
+  <button type="button"
+    data-click-fetch="../api/prices/bulk.json" data-click-fetch-method="POST"
+    data-click-form="#csv-form"
+    data-click-bind="#csv-state" data-click-bind-arg="validateResult"
+    data-click-error-status="400"
+    data-click-error-bind
+    data-click-toast="登録しました。">一括登録</button>
+  <p data-if="validateResult.errorCount > 0">エラーが {{validateResult.errorCount}} 件あります。</p>
+</div>
+```
+
+- 手続きは失敗のままです。成功時の `data-click-toast` は出ず、`-error-toast` などの失敗時のアクションは実行します。
+- `-error-status` を宣言すると、列挙したステータスのときだけバインドします。上の例で 500 などの想定外の失敗は、今までどおり表示されます。
 
 ### state の配列を追加・削除する（式 + `data-click-bind-merge`）
 

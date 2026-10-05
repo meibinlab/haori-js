@@ -233,10 +233,19 @@ export default class Haori {
   /**
    * 対象のエレメントおよびその子要素のメッセージをクリアします。
    *
+   * フォーム以外の要素を渡した場合は、{@link addMessage} がその要素について
+   * 付ける親要素の表示も消します。
+   *
    * @param parent メッセージをクリアする親要素
    */
   public static clearMessages(parent: HTMLElement): Promise<void> {
     return Queue.enqueue(() => {
+      // `addMessage()` はフォーム以外を渡すと親要素へ付けるため、同じ要素を
+      // 渡したクリアでその表示も消す（仕様「`data-message` / `data-message-level`」）。
+      if (!(parent instanceof HTMLFormElement) && parent.parentElement) {
+        parent.parentElement.removeAttribute('data-message');
+        parent.parentElement.removeAttribute('data-message-level');
+      }
       Haori.clearMessagesSync(parent);
     }, true) as Promise<void>;
   }

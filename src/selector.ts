@@ -62,6 +62,71 @@ export default class Selector {
   }
 
   /**
+   * セレクタに一致する要素を、カンマ区切りの各セレクタを書いた順に照会します。
+   *
+   * 仕様「`data-{event}-click`」の「カンマ区切りの各セレクタを書いた順に押します」。
+   * 1 つのセレクタに一致した複数の要素はその中で文書順に並べ、複数のセレクタに
+   * 一致した要素は最初に一致した位置にだけ置きます。
+   *
+   * @param selector CSS セレクタ（カンマ区切りのセレクタリストを含む）
+   * @param attributeName ログ出力に用いる属性名
+   * @returns 一致した要素の配列。セレクタが不正な場合は空配列
+   */
+  public static queryAllInListOrder<T extends Element = Element>(
+    selector: string,
+    attributeName: string,
+  ): T[] {
+    // 不正なセレクタは、従来どおり全体を不正として扱う（一部だけ押さない）。
+    if (Selector.queryAll<T>(selector, attributeName).length === 0) {
+      return [];
+    }
+    const ordered = new Set<T>();
+    Selector.splitList(selector).forEach(part => {
+      Selector.queryAll<T>(part, attributeName).forEach(element =>
+        ordered.add(element),
+      );
+    });
+    return Array.from(ordered);
+  }
+
+  /**
+   * セレクタリストを、最上位のカンマで各セレクタに分けます。
+   *
+   * 括弧（`:is(a, b)` など）・属性セレクタの角括弧・引用符の中のカンマと、
+   * バックスラッシュでエスケープしたカンマでは分けません。
+   *
+   * @param selector セレクタリスト
+   * @returns 各セレクタ
+   */
+  private static splitList(selector: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let quote: string | null = null;
+    let start = 0;
+    for (let i = 0; i < selector.length; i++) {
+      const ch = selector[i];
+      if (ch === '\\') {
+        i++;
+      } else if (quote !== null) {
+        if (ch === quote) {
+          quote = null;
+        }
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === '(' || ch === '[') {
+        depth++;
+      } else if (ch === ')' || ch === ']') {
+        depth--;
+      } else if (ch === ',' && depth === 0) {
+        parts.push(selector.slice(start, i));
+        start = i + 1;
+      }
+    }
+    parts.push(selector.slice(start));
+    return parts;
+  }
+
+  /**
    * セレクタに一致する最初の要素を照会します。
    *
    * @param selector CSS セレクタ

@@ -1209,9 +1209,9 @@ async handleError(response: Response): Promise<void> {
 
 これらの振り分けは**ステータスコードに依存しません**（`400` だけでなく、業務エラーの `409` などカスタムステータスでも同様に振り分けます）。応答ボディが `application/json` 以外（プレーンテキスト等）の場合は、ボディ全文をフォーム全体エラーとして表示します（空の場合は `${status} ${statusText}`）。
 
-エラーメッセージの描画を始める前に、**フェッチ単位で対象スコープの既存メッセージを 1 度だけクリア**します。これにより、同じボタンを複数回押してエラー応答が繰り返されても表示は**常に最新の 1 応答分へ置き換わり**、再試行のたびにメッセージが積み増される（累積する）ことはありません。1 応答内に複数のフィールドエラーや全体エラーが含まれる場合は、クリア後にまとめて追加されるため**同一応答内のメッセージは従来どおり並んで表示**されます。クリア対象は、フォーム／対象フラグメントが特定できる場合はそのスコープ、特定できない場合は `document.body`（ページ全体の管理メッセージ）です。`Haori.clearMessages(parent)` は対象配下のフォーム全体エラーとフィールド別フィードバックの双方を除去します。
+エラーメッセージの描画を始める前に、**フェッチ単位で対象スコープの既存メッセージを 1 度だけクリア**します。これにより、同じボタンを複数回押してエラー応答が繰り返されても表示は**常に最新の 1 応答分へ置き換わり**、再試行のたびにメッセージが積み増される（累積する）ことはありません。1 応答内に複数のフィールドエラーや全体エラーが含まれる場合は、クリア後にまとめて追加されるため**同一応答内のメッセージは従来どおり並んで表示**されます。クリア対象は、フォーム／対象フラグメントが特定できる場合はそのスコープ、特定できない場合は `document.body`（ページ全体の管理メッセージ）です。`Haori.clearMessages(parent)` は対象配下のフォーム全体エラーとフィールド別フィードバックの双方を除去します。フォームの外の要素が表示先の場合は、その要素への表示（haori 単体では親要素に付く）も除去します。
 
-[`data-{event}-error-no-message`](#失敗時のアクション) を宣言した手続きでは、失敗時のアクションを実行する失敗に限り、上の表示を行いません（ステータスごとの組を使う失敗では、その組の `-error-{ステータス}-no-message` に従います）。既存メッセージのクリアは行います。表示する文言は、表示を止めた場合も [`_fetch.responseMessage`](#data-fetch-state--data-event-fetch-state) で参照できます。
+[`data-{event}-error-no-message`](#失敗時のアクション) を宣言した手続きでは、失敗時のアクションを実行する失敗に限り、上の表示を行いません（ステータスごとの組を使う失敗では、その組の `-error-{ステータス}-no-message` に従います）。非イベントの `data-fetch` では `data-fetch-error-no-message`、定期取得では `data-poll-error-no-message` です。[`data-{event}-error-bind`](#失敗時のアクション) を宣言した手続きでは、表示する代わりに本文をバインドします。どちらの場合も、既存メッセージのクリアは行います。表示する文言は、表示を止めた場合も [`_fetch.responseMessage`](#data-fetch-state--data-event-fetch-state) で参照できます。
 
 ### 6. Form (form.ts)
 
@@ -1841,6 +1841,11 @@ static async addErrorMessage(target: HTMLElement | HTMLFormElement, message: str
 // メッセージクリア (再帰的。data-message-level も削除する)
 static async clearMessages(parent: HTMLElement): Promise<void> {
   return Queue.enqueue(() => {
+    // addMessage() がフォーム以外について付ける親要素の表示も消す
+    if (!(parent instanceof HTMLFormElement) && parent.parentElement) {
+      parent.parentElement.removeAttribute('data-message')
+      parent.parentElement.removeAttribute('data-message-level')
+    }
     Haori.clearMessagesSync(parent)
   })
 }
@@ -3178,7 +3183,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 メッセージの文字列を保持します。フェッチエラー時に自動設定されます。
 `data-message-level` でメッセージのレベルを表します（CSS でのスタイリングに使用）。
 
-ライブラリが行うのは属性の付け外しだけで、**表示はページの CSS が担います**（属性セレクタと `attr()` で組み立てます）。スクリプトからの付け外しは `Haori.addMessage()` / `Haori.addErrorMessage()` / `Haori.clearMessages()` です。入力要素を渡した場合は**その親要素**へ付きます（フォーム要素を渡した場合はその要素自身）。
+ライブラリが行うのは属性の付け外しだけで、**表示はページの CSS が担います**（属性セレクタと `attr()` で組み立てます）。スクリプトからの付け外しは `Haori.addMessage()` / `Haori.addErrorMessage()` / `Haori.clearMessages()` です。入力要素を渡した場合は**その親要素**へ付きます（フォーム要素を渡した場合はその要素自身）。`Haori.clearMessages()` は、渡した要素とその子孫の表示に加えて、`Haori.addMessage()` が付ける位置（入力要素を渡した場合は親要素）の表示も消します。フォームを渡した場合は、親要素の表示は消しません。
 
 ```css
 [data-message]::after { content: attr(data-message); display: block; }
@@ -3238,6 +3243,19 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
   data-on-fetch="/api/init.json" data-on-bind="#app"></body>
 ```
 
+**`data-on-target`**: 要素から発火してバブリングするイベント（Bootstrap の `hidden.bs.modal` など）を、発火元で絞り込みます。値は CSS セレクタで、指定した要素（とその子孫）から発火したイベントでだけ手続きを実行します。
+
+```html
+<!-- #sub-modal が閉じたときだけ、#sub-closed を押す。ほかのモーダルが閉じても走らない -->
+<div data-on="hidden.bs.modal" data-on-target="#sub-modal"
+  data-on-click="#sub-closed"></div>
+```
+
+- 発火元はイベントの `target` です。セレクタに一致した要素のどれか 1 つが、発火元自身かその祖先であれば実行します。
+- `window` / `document` へ dispatch されたイベントでは実行しません（発火元が要素ではないためです）。
+- セレクタにはテンプレート式を書けます（[セレクタを値に取る属性の解決](#セレクタを値に取る属性の解決)）。評価結果が文字列にならない場合と、一致する要素が無い場合は実行しません。
+- 宣言しない場合は、今までどおり発火元で絞り込みません。
+
 #### セレクタを値に取る属性の解決
 
 バインド先やコピー先を CSS セレクタで指定する属性は、**テンプレート式（`{{}}`）を評価した結果**をセレクタとして扱います。評価は手続きの実行時に、その要素のバインディングデータで行われます。これにより `data-each` の行の中から「その行の要素」を対象にできます（行ごとに一意な `id` を組み立てる）。
@@ -3250,7 +3268,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 | フォーム | `data-{event}-form` / `data-fetch-form` / `data-{event}-history-form` |
 | 要素操作 | `data-{event}-copy` / `data-{event}-copy-source` / `data-{event}-reset` / `data-{event}-reset-before` / `data-{event}-refetch` / `data-{event}-click` / `data-{event}-open` / `data-{event}-close` / `data-{event}-adjust` / `data-{event}-scroll` |
 | 行操作 | `data-{event}-row-add` / `data-{event}-row-remove` / `data-{event}-row-prev` / `data-{event}-row-next` |
-| トリガー | `data-intersect-root` / `data-each-visible-root` / `data-poll-state` |
+| トリガー | `data-intersect-root` / `data-each-visible-root` / `data-poll-state` / `data-on-target` |
 
 ```html
 <!-- 行ごとのバインド先・コピー先を指定する -->
@@ -3623,7 +3641,7 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 `data-poll-redirect`（条件成立時の遷移）は、`data-poll-until` と組み合わせれば意図どおり動作します。
 
-[失敗時のアクション](#失敗時のアクション)（`data-poll-error-click` / `-error-close` / `-error-toast` / `-error-status` / `-error-no-message` と、ステータスごとの組の `data-poll-error-{ステータス}-*`）は読みません。失敗のたびに繰り返されるためです。失敗の扱いは `data-poll-error-limit` と `data-poll-state` で行ってください。
+[失敗時のアクション](#失敗時のアクション)のうち、クリック・閉じる・トースト（`data-poll-error-click` / `-error-close` / `-error-toast` と、ステータスごとの組の `-click` / `-close` / `-toast`）は読みません。失敗のたびに繰り返されるためです。失敗の扱いは `data-poll-error-limit` と `data-poll-state` で行ってください。応答本文の表示を止める宣言（`data-poll-error-no-message` / `-error-status` / `data-poll-error-{ステータス}-no-message`）は読みます。
 
 #### バリデーションと確認
 
@@ -3739,7 +3757,7 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 フォーム要素を指定します。値が空の場合は自要素または先祖の `<form>` を使用します。
 
-**初期表示では、フォームの初期値の反映が終わってから取得します。** `data-bind` や [`data-url-param`](#data-url-param) が運ぶ値は、走査の最後に入力欄へ反映されます（[初期 `data-bind` からの入力欄復元](#初期-data-bind-からの入力欄復元)）。フォームを収集する取得（`data-fetch` に `data-fetch-form` を併記した宣言）は、その反映を待ってから走ります。待たないと、空の入力欄を収集した条件で 1 回目の取得が飛びます。走査の後に追加した宣言は、待つ相手がいないためそのまま走ります。
+**初期表示では、フォームの初期値の反映が終わってから取得します。** `data-bind` や [`data-url-param`](#data-url-param) が運ぶ値は、走査の最後に入力欄へ反映されます（[初期 `data-bind` からの入力欄復元](#初期-data-bind-からの入力欄復元)）。フォームを収集する取得（`data-fetch` に `data-fetch-form` を併記した宣言）は、その反映を待ってから走ります。待たないと、空の入力欄を収集した条件で 1 回目の取得が飛びます。URL にテンプレート式を含む `data-fetch`（`data-fetch="{{cond && '/api/list.json'}}"` など）も同じで、`data-attr-value` などの式で入力欄へ入る値も、反映を待ってから収集します。走査が並行して走る場合（初期化の `<head>` と `<body>` など）は、走っているすべての走査の反映を待ちます。走査の後に追加した宣言は、待つ相手がいないためそのまま走ります。
 
 ```html
 <form id="userForm">
@@ -4069,6 +4087,8 @@ data-click-fetch-download-folder        <!-- イベント起点の場合は data
 </div>
 ```
 
+2xx 以外の応答本文はバインドしません。[`data-{event}-error-bind`](#失敗時のアクション) を宣言した場合だけ、この属性と同じ規則でバインドします。
+
 `data-{event}-fetch` を指定しない場合、バインドの入力には `data-{event}-data`（インライン JSON）とフォーム値を統合した payload がそのまま使われます。これは内部的に payload から生成した擬似レスポンスを bind 処理へ流すためで（`Procedure` の fetch なし経路）、**フェッチを伴わずに任意の JSON を state（対象要素の `data-bind`）へ反映**できます。`data-{event}-bind-arg` でキー指定、`data-{event}-bind-merge` で既存 binding への浅いマージも併用できます。
 
 ```html
@@ -4183,7 +4203,9 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
   - JSON から文言を 1 つも取り出せない場合と、JSON として解析できない場合
   - 本文を読めない場合
 - HTTP エラー以外の状態（`loading` / `success`、ネットワーク断などの例外、[ダウンロード](#data-fetch-download--data-event-fetch-download)の保存の失敗）では `null` です。
-- [`data-{event}-error-no-message`](#失敗時のアクション) で自動表示を止めた場合も入ります。
+- [`data-{event}-error-no-message`](#失敗時のアクション) で自動表示を止めた場合も入ります（非イベントの `data-fetch-error-no-message`、`data-poll-error-no-message` も同じです）。
+
+画面が `_fetch` で失敗を出し分ける場合は、応答本文の自動表示と重ならないよう、表示を止める宣言を併記してください。イベントの手続きでは `data-{event}-error-no-message`、非イベントの `data-fetch` では `data-fetch-error-no-message` です（[失敗時のアクション](#失敗時のアクション)の「対象の手続き」）。
 
 **ダウンロードの進み具合（`receivedBytes` / `totalBytes`）**:
 
@@ -4656,9 +4678,18 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 <button data-click-refetch="#userList">再読み込み</button>
 ```
 
+再実行した取得は、対象要素に宣言した `data-fetch-*` に従います。失敗したときの応答本文の表示も、再実行される要素の `data-fetch-error-no-message` に従います（[失敗時のアクション](#失敗時のアクション)の「対象の手続き」）。
+
 ##### `data-{event}-click`
 
 対象要素をクリックします。セレクタは `document.body.querySelectorAll()` で解決するため、**複数要素**にもマッチできます。各対象に対して `Core.evaluateAll()`（最新バインドの反映）を行ってから実 `click()` を発火し、それが委譲経由で対象の `data-click-*` 手続きを起動します。複数対象は直列にクリックされますが、起動された手続き（fetch 等）は**非同期**で、呼び出し元はその完了を待ちません。
+
+**押す順序**: カンマ区切りの各セレクタを書いた順に押します。1 つのセレクタに一致した複数の要素は、その中で文書順に押します。複数のセレクタに一致した要素は、最初に一致した位置で 1 回だけ押します。括弧（`:is(#a, #b)` など）・属性セレクタ・引用符の中のカンマと、バックスラッシュでエスケープしたカンマでは区切りません。`data-{event}-error-click`（ステータスごとの組を含む）も同じ順序です。セレクタの一部でも不正な場合は、どの対象も押しません。順序を定めているのはこの 2 つだけで、ほかのセレクタを取る属性（`data-{event}-refetch`・`data-{event}-close` など）は文書順に処理します。
+
+```html
+<!-- 文書では #a が先にあっても、#b → #a の順に押す -->
+<button data-click-click="#b, #a" data-click-click-await>実行</button>
+```
 
 ```html
 <button id="submitBtn">送信</button>
@@ -4797,7 +4828,7 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 
 ##### 失敗時のアクション
 
-`data-{event}-error-click` / `-error-click-await` / `-error-close` / `-error-toast` / `-error-toast-level` / `-error-status` / `-error-no-message` の 7 属性と、ステータスごとの組（`data-{event}-error-{ステータス}-*`）です。
+`data-{event}-error-click` / `-error-click-await` / `-error-close` / `-error-toast` / `-error-toast-level` / `-error-status` / `-error-no-message` / `-error-bind` の 8 属性と、ステータスごとの組（`data-{event}-error-{ステータス}-*`）です。
 
 取得（`data-{event}-fetch`）が失敗したときにだけ実行するアクションを宣言します。操作の結果として取得先が無くなる画面で、「取り直しが 404 なら、ダイアログを閉じ、一覧を検索し直し、トーストで知らせる」を JavaScript なしで書けます。
 
@@ -4810,6 +4841,7 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 | `data-{event}-error-toast-level` | トーストのレベル（`info` / `warning` / `error` / `success`）。省略時は `info` です。式を書けます |
 | `data-{event}-error-status` | 実行するステータスを `&` 区切りで絞ります（例: `404&410`） |
 | `data-{event}-error-no-message` | 応答本文の自動表示を止めます。値は取りません |
+| `data-{event}-error-bind` | 応答本文を表示する代わりに、`data-{event}-bind` と同じ規則でバインドします。値は取りません |
 | `data-{event}-error-{ステータス}-*` | 特定のステータスで失敗したときに、上の属性の代わりに使う組です（下記） |
 
 ```html
@@ -4866,8 +4898,8 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 </div>
 ```
 
-- `{ステータス}` は 3 桁の HTTP ステータスです。後ろに付けられるのは `-click` / `-click-await` / `-close` / `-toast` / `-toast-level` / `-no-message` の 6 つで、意味はステータスの付かない属性と同じです（例: `data-click-error-404-close`）。
-- 取得が失敗したステータスの組を 1 つでも宣言していれば、**その組の属性だけを使います**。ステータスの付かない `-error-click` / `-error-click-await` / `-error-close` / `-error-toast` / `-error-toast-level` / `-error-no-message` は使いません。組に無い属性を、ステータスの付かない属性で補うこともしません。
+- `{ステータス}` は 3 桁の HTTP ステータスです。後ろに付けられるのは `-click` / `-click-await` / `-close` / `-toast` / `-toast-level` / `-no-message` / `-bind` の 7 つで、意味はステータスの付かない属性と同じです（例: `data-click-error-404-close`）。
+- 取得が失敗したステータスの組を 1 つでも宣言していれば、**その組の属性だけを使います**。ステータスの付かない `-error-click` / `-error-click-await` / `-error-close` / `-error-toast` / `-error-toast-level` / `-error-no-message` / `-error-bind` は使いません。組に無い属性を、ステータスの付かない属性で補うこともしません。
 - ステータスごとの組には、`-error-status` が効きません。組を宣言したステータスでは、`-error-status` に列挙していなくても組を実行します。`-error-status` は、組の無い失敗でステータスの付かない属性を使うかどうかだけを決めます。
 - 通信の例外にはステータスが無いため、ステータスの付かない属性を使います。
 - ステータスごとの組を宣言しない手続きの挙動は変わりません。
@@ -4875,7 +4907,7 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 **実行の順序**: 取得が失敗したら、次の順に処理します。ステータスごとの組を使う失敗では、2・4〜6 の属性をその組の属性に読み替えます。
 
 1. [`haori:fetcherror`](#haorifetcherror) を発火します。
-2. 応答本文を表示します（HTTP 応答の場合。[エラーハンドリング](#エラーハンドリング)）。`-error-*` を宣言しても表示します。`-error-no-message` を宣言した場合は表示しません。
+2. 応答本文を表示します（HTTP 応答の場合。[エラーハンドリング](#エラーハンドリング)）。`-error-*` を宣言しても表示します。`-error-no-message` を宣言した場合は表示しません。`-error-bind` を宣言した場合は、表示せずにバインドします。
 3. `_fetch` へ `error` を注入します（[`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state)）。応答本文の文言は `_fetch.responseMessage` に入ります。
 4. `-error-click`: 対象を宣言した順にクリックします。クリックの前に対象を再評価する点は [`data-{event}-click`](#data-event-click) と同じです。
 5. `-error-close`: 対象ダイアログを閉じます。
@@ -4893,11 +4925,51 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 - 本文の文言は、表示を止めても `_fetch.responseMessage` で参照できます（[`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state) の「応答本文の文言」）。`-error-toast` で利用者へ伝えてください。
 - 一覧の行のボタンのようにフォームの外にある要素では、応答本文はその要素の中に表示されます。行の操作の失敗をトーストで伝える場合に宣言します。
 
+**`data-{event}-error-bind`**:
+
+2xx 以外の応答本文を、画面の状態として使う場合に宣言します。一括登録 API がエラー行を含む検証結果を 400 で返す場合などです。
+
+```html
+<!-- /api/bulk.json は、エラー行があると 400 で {"errorCount": 1, "rows": [...]} を返す -->
+<div id="state" data-bind="{}">
+  <button data-click-fetch="/api/bulk.json" data-click-fetch-method="POST"
+    data-click-bind="#state" data-click-bind-arg="validateResult"
+    data-click-error-status="400"
+    data-click-error-bind>一括登録</button>
+  <div data-if="validateResult">エラー {{validateResult.errorCount}} 件</div>
+</div>
+```
+
+- 失敗時のアクションを実行する失敗で、応答本文を `data-{event}-bind` と同じ規則でバインドします。バインド先・キー・マージなどは、同じ手続きの `data-{event}-bind` / `-bind-arg` / `-bind-merge` などに従います（`data-{event}-bind` を省略した場合の自要素へのバインドも同じです）。
+- `-error-status` を宣言した場合は、列挙したステータスでだけバインドします。ほかのステータスでは今までどおり表示します。ステータスごとの組を使う失敗では、その組の `-error-{ステータス}-bind` の宣言だけに従います。
+- バインドした応答は画面へ表示しません。前回の失敗の表示は消します。本文の文言は `_fetch.responseMessage` にも入ります。
+- 本文をバインドできない場合（JSON として解析できないなど）は、エラーを記録して次へ進みます。
+- **手続きは失敗のまま終わります。** `_fetch` へ `error` を注入し、`-error-click` / `-error-close` / `-error-toast` を実行します。成功時のアクション（`data-{event}-toast` など）は実行しません。
+- 通信の例外には本文が無いため、バインドしません。
+
 **`-error-click` の値は必須です。** 省略するとエラーを記録し、クリックしません。`data-{event}-click` のように自要素を対象にすると、失敗した手続きを再び起動し、失敗を繰り返すためです。
 
 **評価のタイミング**: `-error-toast` と `-error-toast-level`（ステータスごとの組の `-toast` / `-toast-level` を含む）は表示直前に評価します（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。`_fetch.statusCode` や `_fetch.responseMessage` を文言やレベルに使う場合は、`data-{event}-fetch-state` の注入先を自要素か祖先にしてください。評価結果の扱いは [`data-{event}-toast`](#data-event-toast) と同じです。`-error-click` / `-error-close`（ステータスごとの組を含む）の対象は、`data-{event}-click` / `-close` と同じく手続きの開始時に解決します。
 
-**対象の手続き**: イベントの手続き（`data-click-*` / `data-change-*` / `data-input-*` / `data-load-*`、`data-on` の手続き、`data-intersect-*`）です。非イベントの `data-fetch` と、`data-poll-*`（[定期実行と相性の悪い修飾子](#定期実行と相性の悪い修飾子)）では読みません。
+**対象の手続き**: イベントの手続き（`data-click-*` / `data-change-*` / `data-input-*` / `data-load-*`、`data-on` の手続き、`data-intersect-*`）です。非イベントの `data-fetch` と `data-poll-*` では、応答本文の表示を止める宣言だけを読みます。ほかの属性は読みません（`data-poll-*` は[定期実行と相性の悪い修飾子](#定期実行と相性の悪い修飾子)）。
+
+| 手続き | 読む属性 |
+|---|---|
+| 非イベントの `data-fetch` | `data-fetch-error-no-message` / `data-fetch-error-status` / `data-fetch-error-{ステータス}-no-message` |
+| `data-poll-*` | `data-poll-error-no-message` / `data-poll-error-status` / `data-poll-error-{ステータス}-no-message` |
+
+- 規則はイベントの手続きと同じです。`-error-status` を宣言すると列挙したステータスでだけ止め、ステータスごとの組を使う失敗ではその組の `-no-message` に従います。前回の表示は消します。
+- ステータスごとの組は `-no-message` だけで作ります。読まない属性（`data-fetch-error-404-toast` など）だけを宣言したステータスには組ができず、ステータスの付かない宣言に従います。
+- [`data-{event}-refetch`](#data-event-refetch) で再実行した `data-fetch` は、再実行される要素に宣言した属性に従います。
+
+```html
+<!-- 開始 API の失敗は画面が _fetch で扱うため、応答本文を自動表示しない -->
+<div id="contact-chat-state" data-fetch="/api/chat/start.json"
+  data-fetch-bind-merge data-fetch-state
+  data-fetch-error-no-message>
+  <div data-if="available">…</div>
+</div>
+```
 
 ##### `data-{event}-store-clear`
 

@@ -108,11 +108,14 @@ interface ErrorActionSet {
 
   /** 応答本文の表示を止めるかどうか（`-no-message`） */
   noMessage: boolean;
+
+  /** 応答本文を表示する代わりにバインドするかどうか（`-bind`） */
+  bind: boolean;
 }
 
 /** ステータスごとの組の属性名のうち、ステータスより後ろの部分 */
 const ERROR_STATUS_ATTRIBUTE_PATTERN =
-  /^(\d{3})-(click|click-await|close|toast|toast-level|no-message)$/;
+  /^(\d{3})-(click|click-await|close|toast|toast-level|no-message|bind)$/;
 
 /**
  * Procedure から利用する Haori API を解決します。
@@ -903,6 +906,12 @@ export interface ProcedureOptions {
   errorNoMessage?: boolean;
 
   /**
+   * 失敗時のアクションを実行する失敗で、応答本文をバインドするかどうか。
+   * `data-{event}-error-bind` の宣言で立てる。
+   */
+  errorBind?: boolean;
+
+  /**
    * ステータスごとの失敗時のアクション（`data-{event}-error-{ステータス}-*`）。
    * キーは HTTP ステータス。そのステータスの失敗では、ステータスの付かない
    * 組の代わりに使う。
@@ -1232,7 +1241,12 @@ export default class Procedure {
     const selector = Selector.read(fragment, attrName);
     const list: ElementFragment[] = [];
     if (selector) {
-      const elements = Selector.queryAll(selector, attrName);
+      // 押す順序を定めるのは `-click` と `-error-click` だけ（仕様
+      // 「`data-{event}-click`」）。ほかの属性は従来どおり文書順。
+      const elements =
+        attrKey === 'click' || attrKey === 'error-click'
+          ? Selector.queryAllInListOrder(selector, attrName)
+          : Selector.queryAll(selector, attrName);
       elements.forEach(el => {
         const frag = Fragment.get(el);
         if (frag) {
@@ -1294,6 +1308,58 @@ export default class Procedure {
     return Procedure.toToastLevel(
       Procedure.readLateAttribute(fragment, options, key, attributeName),
     );
+  }
+
+  /**
+   * 非イベントの `data-fetch` と `data-poll-*` で、応答本文の表示を止める宣言
+   * （`-error-status` / `-error-no-message` / `-error-{ステータス}-no-message`）を
+   * 読み取ります。
+   *
+   * 仕様「失敗時のアクション」の「対象の手続き」。ほかの失敗時のアクションは
+   * 読みません。
+   *
+   * @param fragment 対象フラグメント
+   * @param options 読み取った宣言の記録先のオプション
+   * @param event 属性名の接頭辞にするイベント名（非イベントは `fetch`）
+   * @returns 戻り値はありません。
+   */
+  private static readNoMessageDeclarations(
+    fragment: ElementFragment,
+    options: ProcedureOptions,
+    event: string,
+  ): void {
+    const errorStatusAttr = Procedure.attrName(event, 'error-status');
+    if (fragment.hasAttribute(errorStatusAttr)) {
+      options.errorStatuses = Procedure.parseErrorStatuses(
+        fragment.getRawAttribute(errorStatusAttr),
+        errorStatusAttr,
+      );
+    }
+    options.errorNoMessage = fragment.hasAttribute(
+      Procedure.attrName(event, 'error-no-message'),
+    );
+    // ステータスごとの組は `-no-message` だけで作る。ほかの属性は読まないため、
+    // `-error-404-toast` だけを宣言したステータスに組はできない。
+    const head = Procedure.attrName(event, 'error-');
+    const groups = new Map<number, ErrorActionSet>();
+    for (const name of fragment.getAttributeNames()) {
+      const match = name.startsWith(head)
+        ? ERROR_STATUS_ATTRIBUTE_PATTERN.exec(name.slice(head.length))
+        : null;
+      if (match && match[2] === 'no-message') {
+        groups.set(Number(match[1]), {
+          key: `error-${match[1]}`,
+          clickFragments: null,
+          clickAwait: false,
+          closeFragments: null,
+          toastMessage: null,
+          toastLevel: null,
+          noMessage: true,
+          bind: false,
+        });
+      }
+    }
+    options.errorStatusActions = groups;
   }
 
   /**
@@ -1363,6 +1429,7 @@ export default class Procedure {
           attr('toast-level'),
         ),
         noMessage: fragment.hasAttribute(attr('no-message')),
+        bind: fragment.hasAttribute(attr('bind')),
       });
     });
     return groups;
@@ -2310,6 +2377,9 @@ ${body}
         options.errorNoMessage = fragment.hasAttribute(
           Procedure.attrName(event, 'error-no-message'),
         );
+        options.errorBind = fragment.hasAttribute(
+          Procedure.attrName(event, 'error-bind'),
+        );
       }
       const redirectAttr = Procedure.attrName(event, 'redirect');
       const redirectReplaceAttr = Procedure.attrName(event, 'redirect-replace');
@@ -2529,6 +2599,12 @@ ${body}
           options.formFragment = Form.getFormFragment(fragment);
         }
       }
+    }
+
+    // 仕様「失敗時のアクション」の「対象の手続き」。非イベントの `data-fetch` と
+    // `data-poll-*` では、応答本文の表示を止める宣言だけを読む。
+    if (!event || event === 'poll') {
+      Procedure.readNoMessageDeclarations(fragment, options, event ?? 'fetch');
     }
 
     // fetch-state（フェッチ状態 _fetch の注入先。イベント・非イベント双方で
@@ -3917,13 +3993,22 @@ ${body}
           startedAt,
         );
       }
-      // 仕様「失敗時のアクション」の `data-{event}-error-no-message`。失敗時の
-      // アクションを実行しない失敗では、宣言があっても表示する。ステータスごとの
-      // 組を使う失敗では、その組の宣言に従う。
+      // 仕様「失敗時のアクション」の `data-{event}-error-no-message` と
+      // `-error-bind`。失敗時のアクションを実行しない失敗では、宣言があっても
+      // 表示する。ステータスごとの組を使う失敗では、その組の宣言に従う。
+      const actions = this.selectErrorActions(response.status);
+      const bindsBody = actions?.bind === true;
       const responseMessage = await this.handleFetchError(
-        response,
-        this.selectErrorActions(response.status)?.noMessage !== true,
+        bindsBody ? response.clone() : response,
+        actions?.noMessage !== true && !bindsBody,
       );
+      if (bindsBody) {
+        // 本文を表示する代わりにバインドする。バインドに失敗しても、手続きは
+        // 失敗として後続へ進める。
+        await this.bindResult(response).catch(error => {
+          Log.error('Haori', 'Failed to bind the error response:', error);
+        });
+      }
       // HTTP エラー応答（4xx/5xx）: error 状態を注入する。
       await this.injectFetchState(
         'error',
@@ -4301,6 +4386,7 @@ ${body}
       toastMessage: this.options.errorToastMessage ?? null,
       toastLevel: this.options.errorToastLevel ?? null,
       noMessage: this.options.errorNoMessage === true,
+      bind: this.options.errorBind === true,
     };
   }
 

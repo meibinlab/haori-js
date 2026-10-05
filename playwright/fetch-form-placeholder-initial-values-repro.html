@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>プレースホルダ式の取得とフォームの初期値</title>
+</head>
+<body>
+  <form id="f" data-url-param>
+    <input type="month" name="rewardMonth" data-attr-value="{{rewardMonth ?? '2026-10'}}">
+    <input type="checkbox" name="active" value="true">
+  </form>
+  <div id="list" data-bind='{"view": {}}'
+    data-fetch="{{(view.page != null || view.totalElements == null) && '/api/list.json'}}"
+    data-fetch-form="#f" data-fetch-arg="view">{{view.totalElements}}</div>
+  <!-- 後続の要素があると、<body> の走査が <head> の走査より後に終わる -->
+  <p>1</p><p>2</p><p>3</p><p>4</p><p>5</p><p>6</p><p>7</p><p>8</p><p>9</p><p>10</p>
+  <script src="/dist/haori.iife.js"></script>
+</body>
+</html>

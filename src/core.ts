@@ -148,13 +148,16 @@ export default class Core {
   private static readonly DEFERRED_ATTRIBUTE_SUFFIXES = ['fetch'];
 
   /**
-   * 走査中の「初期値の反映が終わるまで」を表す Promise。
+   * 走査中の「初期値の反映が終わるまで」を表す Promise（走査ごとに 1 つ）。
    *
    * フォームを収集する取得（`data-{event}-fetch-form`）は、初期値が入力欄へ載る
    * 前に走ると空の条件で送ってしまうため、これを待ってから起動します（課題 52）。
-   * 走査が終わると `null` に戻り、後から追加した要素は待ちません。
+   * 走査が終わると取り除き、後から追加した要素は待ちません。
+   *
+   * 走査は並行して走る（初期化の `<head>` と `<body>` など）。1 つの変数で持つと、
+   * 先に終わった走査が、まだ終わっていない走査の待ち合わせを消してしまう（要望 BO）。
    */
-  private static initialValueRestore: Promise<void> | null = null;
+  private static readonly initialValueRestores = new Set<Promise<void>>();
 
   /** evaluateAll で再評価対象から除外する特殊属性のサフィックス */
   private static readonly EVALUATE_ALL_EXCLUDED_ATTRIBUTE_SUFFIXES = [
@@ -513,17 +516,16 @@ export default class Core {
     afterInitialValues = false,
   ): Promise<void> {
     const target = fragment.getTarget();
-    const pendingRestore = Core.initialValueRestore;
     if (
       !afterInitialValues &&
-      pendingRestore !== null &&
+      Core.initialValueRestores.size > 0 &&
       fragment.hasAttribute(`${Env.prefix}fetch-form`)
     ) {
       // フォームを収集する取得は、初期値が入力欄へ載ってから走らせる。待ち合わせを
       // 初期化の連鎖へ載せると、初期化 → 属性 → 取得 → 初期値の反映 → 初期化と
       // 循環して止まるため、起動だけを後ろへ回す（課題 52）。待ち終えた呼び出しは
       // `afterInitialValues` で区別する（同じ待ちで何度も回らないようにする）。
-      void pendingRestore
+      void Promise.all(Core.initialValueRestores)
         .then(() => Core.executeManagedFetch(fragment, true))
         .catch(error => {
           Log.error('Haori', `初期表示の取得に失敗しました: ${error}`);
@@ -724,10 +726,9 @@ export default class Core {
     const restored = Core.initializeElementFragment(fragment, false).then(() =>
       Form.restoreInitialValues(element),
     );
-    const previousRestore = Core.initialValueRestore;
-    Core.initialValueRestore = restored;
+    Core.initialValueRestores.add(restored);
     return restored.then(() => {
-      Core.initialValueRestore = previousRestore;
+      Core.initialValueRestores.delete(restored);
       // 外部ライブラリ連携（`data-enhance` / `data-enhance-new`）は、内容の描画と
       // 初期値の反映が済んだ状態で適用する。
       if (applyEnhancers) {

@@ -9,6 +9,7 @@ import Enhance from './enhance';
 import Form from './form';
 import Fragment, {ElementFragment} from './fragment';
 import Procedure, {ProcedureOutcome} from './procedure';
+import Selector from './selector';
 import Log from './log';
 import Env from './env';
 
@@ -336,12 +337,41 @@ export default class EventDispatcher {
         return;
       }
       const fragment = Fragment.get(element);
-      if (fragment instanceof ElementFragment) {
+      if (
+        fragment instanceof ElementFragment &&
+        this.isFromTarget(fragment, event)
+      ) {
         new Procedure(fragment, 'on', event).run().catch(error => {
           Log.error('[Haori]', 'Procedure execution error:', error);
         });
       }
     });
+  }
+
+  /**
+   * イベントが `data-on-target` で指定した要素（とその子孫）から発火したかを
+   * 判定します。
+   *
+   * 仕様「カスタムイベント `data-on`」の「`data-on-target`」。宣言が無い場合は
+   * 発火元で絞り込みません。
+   *
+   * @param fragment `data-on` を宣言したフラグメント
+   * @param event 発火したイベント
+   * @returns 手続きを実行する場合は true
+   */
+  private isFromTarget(fragment: ElementFragment, event: Event): boolean {
+    const attrName = `${this.onAttributeName}-target`;
+    if (!fragment.hasAttribute(attrName)) {
+      return true;
+    }
+    const selector = Selector.read(fragment, attrName);
+    const origin = event.target;
+    if (selector === null || !(origin instanceof Node)) {
+      return false;
+    }
+    return Selector.queryAll(selector, attrName).some(element =>
+      element.contains(origin),
+    );
   }
 
   /**
