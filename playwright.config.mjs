@@ -17,6 +17,10 @@ const config = {
   use: {
     headless: true,
     baseURL: 'http://localhost:4273',
+    // まれにしか落ちないテストの原因を追えるよう、失敗したときだけ記録を残す
+    // （`test-results/` に出る。成功した実行では残さない）。
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
 };
 export default config;
