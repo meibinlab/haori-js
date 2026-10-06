@@ -5114,7 +5114,7 @@ ${body}
           promises.push(
             Core.setBindingData(
               fragment.getTarget(),
-              this.reconcileUserEditsForBind(fragment, bindingData),
+              this.reconcileUserEditsForBind(fragment, bindingData, [bindArg]),
               {
                 // マネージド fetch の bind かつ、bind 先が実行中のバインドワークを
                 // 持つ（= 自分自身を await している）ときだけ reentrant（即時実行）に
@@ -5200,7 +5200,11 @@ ${body}
           promises.push(
             Core.setBindingData(
               fragment.getTarget(),
-              this.reconcileUserEditsForBind(fragment, finalData),
+              this.reconcileUserEditsForBind(
+                fragment,
+                finalData,
+                Object.keys(resolvedData),
+              ),
               {
                 // いずれも上の bindArg 分岐と同じ扱い。
                 reentrant:
@@ -5254,11 +5258,14 @@ ${body}
    *
    * @param fragment バインド先のフラグメント
    * @param data バインドする応答データ
+   * @param responseKeys 応答が持つキー。`-bind-merge` で既存データへ混ぜる前の
+   *     キーで、`-bind-arg` では指定したキーだけ
    * @return ユーザー編集分を上書きしたデータ
    */
   private reconcileUserEditsForBind(
     fragment: ElementFragment,
     data: Record<string, unknown>,
+    responseKeys: readonly string[],
   ): Record<string, unknown> {
     const baseline = this.requestUserEditSequence;
     if (baseline === null) {
@@ -5277,6 +5284,7 @@ ${body}
       return this.reconcileAncestorArgFormEdits(
         fragment,
         data,
+        responseKeys,
         isAutomaticPoll ? 0 : baseline,
       );
     }
@@ -5351,18 +5359,23 @@ ${body}
    *
    * @param fragment バインド先のフラグメント
    * @param data バインドする応答データ
+   * @param responseKeys 応答が持つキー（既存データへ混ぜる前）
    * @param baseline この通し番号より後の編集を保護する
    * @return ユーザー編集分を上書きしたデータ
    */
   private reconcileAncestorArgFormEdits(
     fragment: ElementFragment,
     data: Record<string, unknown>,
+    responseKeys: readonly string[],
     baseline: number,
   ): Record<string, unknown> {
     let result = data;
     for (const {form, key} of Form.collectArgForms(fragment)) {
-      if (!Object.prototype.hasOwnProperty.call(result, key)) {
-        // 応答が当該キーを含まない場合は流し込みが起きないため対象外。
+      if (!responseKeys.includes(key)) {
+        // 応答が当該キーを含まない場合は対象外。`data` は `-bind-merge` などで
+        // 既存データを混ぜた後のもので、応答に無いキーも持つため、混ぜる前の
+        // キーで判定する。編集を重ねると値が変わって流し込みが起き、通信より
+        // 前に確定した未保存の入力（フォームのコピー）が祖先の値で入れ直される。
         continue;
       }
       const edited = Form.getValuesEditedAfter(form, baseline);
