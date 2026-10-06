@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## [0.59.0] - 2026-10-06
+
+**ダウンロードの保存の失敗にも、表示を止める宣言と失敗時のアクションが効くようにした版です。** `data-{event}-fetch-download` に `-error-no-message` や `-error-toast` などを宣言している画面では、保存の失敗の扱いが変わります。何も宣言していない画面の動きは変わりません。
+
+### Changed
+
+- **`data-{event}-fetch-download` の保存の失敗を、失敗時のアクションではステータスの無い失敗として扱うようにした**（`src/procedure.ts`）。受信中に接続が切れたなどで保存に失敗すると、これまでは `-error-no-message` を宣言しても `ファイルを保存できませんでした` を必ず表示し、`-error-toast` なども実行しなかった。HTTP の失敗をトーストへ回した画面でも、保存の失敗だけが画面のエラー枠に出ていた。
+  - `-error-no-message` を宣言すると表示しない。前回の表示は消す。
+  - `-error-click` / `-error-close` / `-error-toast` を実行する。
+  - 通信の例外と同じく、`-error-status` を宣言した場合は表示を止めず、アクションも実行しない。ステータスごとの組（`-error-{ステータス}-*`）は使わない。
+  - `-error-bind` は、本文を読めないため使わず、表示する。
+  - `haori:fetcherror` は今までどおり発火しない。成功したときの後続のアクションも、今までどおり実行しない。
+
+### Docs
+
+- 仕様書に、保存の失敗で `_fetch.message` に `ファイルを保存できませんでした` が入ることを明記した（`_fetch.responseMessage` は `null`）。保存の失敗だけを書き分けるときに使える。
+- 利用ガイドの `data-click-fetch-download` に、HTTP の失敗と保存の失敗をトーストへ回す例を足した。
+
+### Internal
+
+- `tests/fetch-download-error-actions.test.ts` を追加した（9 件）。`tests/fetch-download.test.ts` の仕様の引用を、今の文言に合わせた。
+
 ## [0.58.0] - 2026-10-05
 
 **要望 5 件（BM・BN・BO・BP・BW）に対応した版です。** `data-{event}-click` に複数の対象をカンマで区切って書いた場合の、**押す順序が変わります**。下の「Changed」を確認してください。
