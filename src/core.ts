@@ -787,7 +787,8 @@ export default class Core {
    * ElementFragment とその子孫を初期化します。
    *
    * @param fragment 対象フラグメント
-   * @param stopAtEach true の場合、data-each 要素では通常再帰を止める
+   * @param stopAtEach true の場合、data-each 要素では行へ降りない（固定要素と
+   *     コンテナ直下のテキストノードは初期化する）
    * @returns 初期化完了の Promise
    */
   private static initializeElementFragment(
@@ -799,14 +800,25 @@ export default class Core {
       return Promise.resolve();
     }
     return Core.initializeElementAttributes(fragment).then(() => {
-      if (Core.shouldSkipChildInitialization(fragment, stopAtEach)) {
+      if (Core.shouldSkipChildInitialization(fragment)) {
         Core.refreshDerivedSubtreeSignature(fragment);
         return undefined;
       }
+      // 新規行の中の `data-each` コンテナでは、行と行テンプレートは `data-each` の
+      // 描画が扱うため降りない。固定要素とコンテナ直下のテキストノードは行ではなく、
+      // ここで初期化しないとテンプレートを複製したときの式のまま残る（仕様
+      // 「`data-each`」の「固定要素とコンテナ直下のテキストノードは行ではないため、
+      // コンテナのスコープで…再評価します」）。
+      const rowsManagedByEach =
+        stopAtEach && fragment.hasAttribute(`${Env.prefix}each`);
       const childPromises: Promise<void>[] = [];
       fragment.getChildren().forEach(child => {
         if (child instanceof ElementFragment) {
-          childPromises.push(Core.initializeElementFragment(child, stopAtEach));
+          if (!rowsManagedByEach || Core.isEachFixedChild(child)) {
+            childPromises.push(
+              Core.initializeElementFragment(child, stopAtEach),
+            );
+          }
         } else if (child instanceof TextFragment) {
           childPromises.push(Core.evaluateText(child));
         }
@@ -910,22 +922,21 @@ export default class Core {
   /**
    * 子孫初期化をスキップすべきかどうかを返します。
    *
+   * 新規行の中の `data-each` コンテナは、ここではスキップしません。行には降りず、
+   * 固定要素とコンテナ直下のテキストノードだけを初期化します
+   * （`initializeElementFragment()`）。
+   *
    * @param fragment 対象フラグメント
-   * @param stopAtEach true の場合、data-each 要素で通常再帰を止める
    * @returns 子孫初期化をスキップするなら true
    */
   private static shouldSkipChildInitialization(
     fragment: ElementFragment,
-    stopAtEach: boolean,
   ): boolean {
     const condition = fragment.getAttribute(`${Env.prefix}if`);
-    if (
+    return (
       fragment.hasAttribute(`${Env.prefix}if`) &&
       Core.isHiddenIfCondition(condition)
-    ) {
-      return true;
-    }
-    return stopAtEach && fragment.hasAttribute(`${Env.prefix}each`);
+    );
   }
 
   /**
