@@ -3853,9 +3853,11 @@ ${body}
    * 表示先は失敗した応答の振り分けと同じ（フォーム、無ければ対象要素、
    * それも無ければ `document.body`）です。
    *
+   * @param display 表示するか。`-error-no-message` で止めた場合は false で、
+   *     前回の表示を消すだけにする
    * @returns 表示の完了 Promise
    */
-  private async showDownloadFailure(): Promise<void> {
+  private async showDownloadFailure(display: boolean): Promise<void> {
     const baseFragment =
       this.options.formFragment ??
       (this.options.targetFragment
@@ -3866,7 +3868,9 @@ ${body}
     const activeHaori = resolveProcedureHaoriApi();
     // 失敗の表示は 1 応答分へ置き換える（`handleFetchError()` と同じ規則）。
     await activeHaori.clearMessages(target);
-    await activeHaori.addErrorMessage(target, DOWNLOAD_FAILURE_MESSAGE);
+    if (display) {
+      await activeHaori.addErrorMessage(target, DOWNLOAD_FAILURE_MESSAGE);
+    }
   }
 
   /**
@@ -4061,12 +4065,17 @@ ${body}
         // 失敗として出します」）。ダウンロードの失敗が画面に出ないことが、この
         // 属性を設けた理由である。通信は成功しているため `haori:fetcherror` は
         // 発火せず、`statusCode` も応答のステータスのままにする。
-        await this.showDownloadFailure();
+        // 失敗時のアクションでは、通信の例外と同じくステータスの無い失敗として
+        // 扱う（同節の「保存の失敗は、失敗時のアクションではステータスの無い
+        // 失敗として扱います」）。`-error-bind` は本文を読めないため使わない。
+        const actions = this.selectErrorActions(null);
+        await this.showDownloadFailure(actions?.noMessage !== true);
         await this.injectFetchState(
           'error',
           response.status,
           DOWNLOAD_FAILURE_MESSAGE,
         );
+        await this.runErrorActions(null);
         return false;
       }
     }

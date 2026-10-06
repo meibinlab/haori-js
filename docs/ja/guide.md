@@ -3482,6 +3482,21 @@ CSV のエクスポートや PDF のダウンロードを、宣言だけで書�
 
 ファイル名は、応答の `Content-Disposition` → 属性値 → URL の末尾の順で決まります。別オリジンから取得する場合は、サーバ側で `Access-Control-Expose-Headers: Content-Disposition` を返さないとファイル名を読めません（属性値へ落ちます）。
 
+受信中に接続が切れたなど、保存そのものに失敗した場合は `ファイルを保存できませんでした` を表示します。HTTP の失敗と同じく、`data-click-error-no-message` で表示を止め、`data-click-error-toast` でトーストへ回せます。保存の失敗では `_fetch.responseMessage` が `null` になり、`_fetch.message` が `ファイルを保存できませんでした` になります。
+
+```html
+<!-- HTTP の失敗はサーバの文言を、保存の失敗は代わりの文言をトーストに出す -->
+<button
+  data-click-fetch="/api/customers.csv"
+  data-click-fetch-download="customers.csv"
+  data-click-fetch-state
+  data-click-error-no-message
+  data-click-error-toast="{{_fetch.responseMessage ?? 'CSV を出力できませんでした。'}}"
+>
+  エクスポート
+</button>
+```
+
 詳細は仕様書の[`data-fetch-download` / `data-{event}-fetch-download`](specs.md#data-fetch-download--data-event-fetch-download)を参照してください。
 
 #### `data-click-bind`: データのバインド先

@@ -327,8 +327,8 @@ describe('data-{event}-fetch-download', () => {
 
   it('本文を読み取れない応答は保存の失敗として扱う', async () => {
     // 仕様「`data-fetch-download` / `data-{event}-fetch-download`」の
-    // 「**保存そのものに失敗した場合は、フェッチの失敗と同じ扱いにします。**
-    // 応答本文を読めない場合（通信が途中で切れたなど）」。
+    // 「**保存そのものに失敗した場合は、画面へ失敗として出します。** 応答本文を
+    // 読めない場合（通信が途中で切れたなど）」。
     const error = vi.spyOn(Log, 'error').mockImplementation(() => undefined);
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
       const failing = {
@@ -393,8 +393,8 @@ describe('data-{event}-fetch-download', () => {
     expect(container!.getAttribute('data-message')).toBe(
       'ファイルを保存できませんでした',
     );
-    // 同節の「**以降のアクション（ダイアログ・トースト・リダイレクトなど）は
-    // 実行しません**」。
+    // 同節の「**成功したときの後続のアクション（ダイアログ・トースト・
+    // リダイレクトなど）は実行しません**」。
     expect(document.querySelector('.haori-toast')).toBeNull();
   });
 

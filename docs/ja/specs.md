@@ -4012,7 +4012,8 @@ data-click-fetch-download="customers.csv"  <!-- ファイル名の既定値を�
 - **応答をバインドしません。** 本文は 1 度しか読めないため、この宣言があるときは[既定 self-bind](#data-fetch) を行いません。バインド先を明示している場合は警告を記録し、保存を優先します。
 - 保存する `Blob` には応答の `Content-Type` を持たせます。
 - **本文が空でも、応答のとおりに保存します。** 0 件のエクスポートで 0 バイトの CSV が返る構成があり、握りつぶすと「押しても何も起きない」状態になるためです（`204 No Content` では 0 バイトのファイルを保存します）。
-- **保存そのものに失敗した場合は、画面へ失敗として出します。** 応答本文を読めない場合（通信が途中で切れたなど）と、`Blob` の URL を生成できない環境がこれにあたります。`_fetch` へ `error` を注入し、`ファイルを保存できませんでした` を全体エラーとして表示し、**以降のアクション（ダイアログ・トースト・リダイレクトなど）は実行しません**。ダウンロードの失敗が画面に出ないことが、この属性を設けた理由だからです。通信そのものは成功しているため、`_fetch.statusCode` は応答のステータス（2xx）のままで、[`haori:fetcherror`](#haorifetcherror) は発火しません。
+- **保存そのものに失敗した場合は、画面へ失敗として出します。** 応答本文を読めない場合（通信が途中で切れたなど）と、`Blob` の URL を生成できない環境がこれにあたります。`_fetch` へ `error` を注入し（`_fetch.message` は `ファイルを保存できませんでした`）、`ファイルを保存できませんでした` を全体エラーとして表示し、**成功したときの後続のアクション（ダイアログ・トースト・リダイレクトなど）は実行しません**。ダウンロードの失敗が画面に出ないことが、この属性を設けた理由だからです。通信そのものは成功しているため、`_fetch.statusCode` は応答のステータス（2xx）のままで、[`haori:fetcherror`](#haorifetcherror) は発火しません。
+- **保存の失敗は、[失敗時のアクション](#失敗時のアクション)ではステータスの無い失敗として扱います。** 通信の例外と同じく、`-error-no-message` を宣言すれば上の表示を行わず、`-error-click` / `-error-close` / `-error-toast` を実行します。`-error-status` を宣言した場合は、どちらも行いません（保存の失敗にはステータスが無いためです）。`-error-bind` は、本文を読めないため使いません。
 - 保存に使う一時的な URL は、保存を始めた**次のタスクで解放します**（同じタスクで解放すると、保存が始まる前に中身を読めなくなるブラウザがあるため）。
 - 保存の後も、後続のアクション（`data-{event}-toast` / `-close` / `-reset` など）は通常どおり実行されます。処理順序では[バインド](#処理順序)（9）の位置で、バインドの代わりに保存します。
 
@@ -4169,7 +4170,7 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 | `success` | boolean | 成功なら `true` |
 | `error` | boolean | 失敗なら `true` |
 | `statusCode` | number \| null | HTTP ステータスコード。取得できない場合は `null` |
-| `message` | string \| null | エラーメッセージ。HTTP エラー時は `statusText`、ネットワーク断時は例外メッセージ。無い場合は `null` |
+| `message` | string \| null | エラーメッセージ。HTTP エラー時は `statusText`、ネットワーク断時は例外メッセージ、[ダウンロード](#data-fetch-download--data-event-fetch-download)の保存の失敗では `ファイルを保存できませんでした`。無い場合は `null` |
 | `responseMessage` | string \| null | HTTP エラー応答の本文から取り出した文言（下記）。取り出せない場合と、HTTP エラー以外の状態では `null` |
 | `receivedBytes` | number | 受け取ったバイト数。ダウンロードのときだけ入ります（下記） |
 | `totalBytes` | number \| null | 応答全体のバイト数。分からない場合は `null`。ダウンロードのときだけ入ります（下記） |
@@ -4178,6 +4179,7 @@ data-click-fetch-state      <!-- イベント起点の場合は data-{event}-fet
 - フェッチ開始直前に `status="loading"`
 - HTTP エラー応答（4xx/5xx）で `status="error"`（`statusCode` に HTTP ステータス、`message` に `statusText`、`responseMessage` に本文の文言）
 - ネットワーク断・タイムアウト等の例外で `status="error"`（`statusCode` は `null`、`message` に例外メッセージ）
+- [ダウンロード](#data-fetch-download--data-event-fetch-download)の保存の失敗で `status="error"`（`statusCode` は応答のステータス、`message` に `ファイルを保存できませんでした`）
 - バインド反映後に `status="success"`（`statusCode` に HTTP ステータス）
 - ダウンロード（[`data-fetch-download`](#data-fetch-download--data-event-fetch-download)）では、応答本文を受け取っている間も `status="loading"` のまま `receivedBytes` を更新
 
@@ -4865,10 +4867,10 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 
 - HTTP 応答が 2xx 以外のとき。ただし [認証ガード](#認証ガードdata-unauthorized-redirect--data-forbidden-redirect) で遷移する 401 / 403 では実行しません（遷移が優先され、以降の処理を行いません）。認証ガードを宣言していない 401 / 403 は失敗として扱います。
 - 通信の例外（ネットワーク断・タイムアウトなど）のとき。ただし `-error-status` を宣言した場合は実行しません（例外にはステータスが無いためです）。
+- [`data-{event}-fetch-download`](#data-fetch-download--data-event-fetch-download) の保存の失敗のとき。応答は 2xx ですが、通信の例外と同じくステータスの無い失敗として扱います。`-error-status` を宣言した場合は実行しません。
 - 次の場合は実行しません。取得が失敗したわけではないためです。
   - 検証エラー（`data-{event}-validate`）、確認ダイアログのキャンセル（`data-{event}-confirm`）、`data-{event}-if` が偽
   - `data-{event}-after-run` による中断
-  - [`data-{event}-fetch-download`](#data-fetch-download--data-event-fetch-download) の保存の失敗（応答は 2xx です）
   - [`data-{event}-click-await`](#data-event-click-await) で後続を止めた呼び出し元。呼び出し元の取得は成功しています。失敗した手続き自身が `-error-*` を宣言していれば、その手続きで実行します。
 
 **`data-{event}-error-status`**:
@@ -4901,13 +4903,13 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 - `{ステータス}` は 3 桁の HTTP ステータスです。後ろに付けられるのは `-click` / `-click-await` / `-close` / `-toast` / `-toast-level` / `-no-message` / `-bind` の 7 つで、意味はステータスの付かない属性と同じです（例: `data-click-error-404-close`）。
 - 取得が失敗したステータスの組を 1 つでも宣言していれば、**その組の属性だけを使います**。ステータスの付かない `-error-click` / `-error-click-await` / `-error-close` / `-error-toast` / `-error-toast-level` / `-error-no-message` / `-error-bind` は使いません。組に無い属性を、ステータスの付かない属性で補うこともしません。
 - ステータスごとの組には、`-error-status` が効きません。組を宣言したステータスでは、`-error-status` に列挙していなくても組を実行します。`-error-status` は、組の無い失敗でステータスの付かない属性を使うかどうかだけを決めます。
-- 通信の例外にはステータスが無いため、ステータスの付かない属性を使います。
+- 通信の例外と保存の失敗にはステータスが無いため、ステータスの付かない属性を使います。
 - ステータスごとの組を宣言しない手続きの挙動は変わりません。
 
 **実行の順序**: 取得が失敗したら、次の順に処理します。ステータスごとの組を使う失敗では、2・4〜6 の属性をその組の属性に読み替えます。
 
-1. [`haori:fetcherror`](#haorifetcherror) を発火します。
-2. 応答本文を表示します（HTTP 応答の場合。[エラーハンドリング](#エラーハンドリング)）。`-error-*` を宣言しても表示します。`-error-no-message` を宣言した場合は表示しません。`-error-bind` を宣言した場合は、表示せずにバインドします。
+1. [`haori:fetcherror`](#haorifetcherror) を発火します（保存の失敗では発火しません）。
+2. 応答本文を表示します（HTTP 応答の場合。[エラーハンドリング](#エラーハンドリング)）。`-error-*` を宣言しても表示します。`-error-no-message` を宣言した場合は表示しません。`-error-bind` を宣言した場合は、表示せずにバインドします。保存の失敗では、応答本文の代わりに `ファイルを保存できませんでした` を表示します（`-error-bind` は使いません）。
 3. `_fetch` へ `error` を注入します（[`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state)）。応答本文の文言は `_fetch.responseMessage` に入ります。
 4. `-error-click`: 対象を宣言した順にクリックします。クリックの前に対象を再評価する点は [`data-{event}-click`](#data-event-click) と同じです。
 5. `-error-close`: 対象ダイアログを閉じます。
@@ -4919,11 +4921,11 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 
 **`data-{event}-error-no-message`**:
 
-- 失敗時のアクションを実行する失敗に限り、応答本文を画面へ表示しません（[エラーハンドリング](#エラーハンドリング)）。`-error-status` を宣言した場合は、列挙したステータスでだけ止め、ほかのステータスでは今までどおり表示します。想定していない失敗まで画面から消えるのを防ぐためです。
+- 失敗時のアクションを実行する失敗に限り、応答本文を画面へ表示しません（[エラーハンドリング](#エラーハンドリング)）。保存の失敗では、`ファイルを保存できませんでした` を表示しません。`-error-status` を宣言した場合は、列挙したステータスでだけ止め、ほかのステータスでは今までどおり表示します。想定していない失敗まで画面から消えるのを防ぐためです。
 - ステータスごとの組を使う失敗では、その組の `-error-{ステータス}-no-message` の宣言だけに従います。
 - 前回の失敗の表示は、今までどおり消します。
 - 本文の文言は、表示を止めても `_fetch.responseMessage` で参照できます（[`data-fetch-state` / `data-{event}-fetch-state`](#data-fetch-state--data-event-fetch-state) の「応答本文の文言」）。`-error-toast` で利用者へ伝えてください。
-- 一覧の行のボタンのようにフォームの外にある要素では、応答本文はその要素の中に表示されます。行の操作の失敗をトーストで伝える場合に宣言します。
+- 一覧の行のボタンのようにフォームの外にある要素では、応答本文はその要素の近くに表示されます。行の操作の失敗をトーストで伝える場合に宣言します。
 
 **`data-{event}-error-bind`**:
 
