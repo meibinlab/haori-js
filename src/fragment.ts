@@ -2912,6 +2912,46 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * `<select>` の今の選択を控え、その状態へ戻す関数を返します。
+   *
+   * @param select 対象の `<select>`
+   * @returns 控えた選択へ戻す関数
+   */
+  private static captureSelection(select: HTMLSelectElement): () => void {
+    const options = Array.from(select.options);
+    const selected = options.map(option => option.selected);
+    return () => {
+      options.forEach((option, index) => {
+        option.selected = selected[index];
+      });
+    };
+  }
+
+  /**
+   * チェック状態の宣言バインドについて、利用者の操作を記録する入力欄の編集の
+   * 通し番号を返します。
+   *
+   * `option` の `selected` は所属する `<select>` の操作で変化するため、`<select>`
+   * 側の通し番号を返します（`hasPendingCheckableUserEdit()` と同じ対応）。
+   *
+   * @param forSelectedOption `option` の `selected` を反映する場合に true
+   * @returns 編集の通し番号。所属する `<select>` が無い場合は null
+   */
+  private getCheckableUserEditSequence(
+    forSelectedOption: boolean,
+  ): number | null {
+    if (!forSelectedOption) {
+      return this.userEditSequence;
+    }
+    const selectFragment = Fragment.get(
+      (this.getTarget() as HTMLOptionElement).closest('select'),
+    );
+    return selectFragment instanceof ElementFragment
+      ? selectFragment.userEditSequence
+      : null;
+  }
+
+  /**
    * 内部の値をクリアします。エレメントのvalue値は変化しません。
    *
    * 載せ直し待ちの書き込みも破棄します。クリアした値を後から載せ直すと、初期化
@@ -3616,6 +3656,9 @@ export class ElementFragment extends Fragment {
     // ただし `readonly` の欄は守るべき入力を持たないため対象外とする
     // （`isUserEditableValue()`）。
     const rootNode = element.getRootNode() as Document | ShadowRoot;
+    // 評価した時点の編集の通し番号。書き込みは描画キューで後から行うため、その間に
+    // 確定した入力を書き込みの時点で見分ける（仕様「反映待ちの間に起きた変化」）。
+    const requestedEditSequence = this.userEditSequence;
     const skipValueReapply =
       shouldSyncValueProperty &&
       ElementFragment.isUserEditableValue(element) &&
@@ -3666,6 +3709,8 @@ export class ElementFragment extends Fragment {
               activeElement))) ||
       ((isCheckedTarget || isSelectedTarget) &&
         this.hasPendingCheckableUserEdit(isSelectedTarget));
+    const requestedCheckableEditSequence =
+      this.getCheckableUserEditSequence(isSelectedTarget);
     // 真偽属性の有無（= stringResult が null でない）が望ましいチェック状態。
     const checkableDesiredState = stringResult !== null;
     // マークアップに書いた `checked` / `selected`（式を含まない宣言）は既定値であり、
@@ -3708,6 +3753,25 @@ export class ElementFragment extends Fragment {
     }
     const write = (
       Queue.enqueue(() => {
+        // 評価の後に操作されたチェック・選択は、評価の時点の判定と同じ理由で戻さない。
+        const checkableSuperseded =
+          this.getCheckableUserEditSequence(isSelectedTarget) !==
+          requestedCheckableEditSequence;
+        // `option` の `selected` 属性の付け外しは、利用者が選んでいない `option` では
+        // 選択そのものを変える（HTML 仕様の選択状態の「dirtiness」）。守るべき選択が
+        // ある間は、属性を書いた後に所属する `<select>` の選択を書く前の状態へ戻す
+        // （仕様「ユーザー編集と宣言バインドの権威」の「印がある間も属性の反映は
+        // 行われますが、DOM の値・チェック状態と内部値（収集値）は編集値のまま
+        // 保たれます」）。
+        const keptSelection =
+          isSelectedTarget && (skipCheckableReapply || checkableSuperseded)
+            ? ElementFragment.captureSelection(
+                // 守るべき選択があるのは所属する `<select>` があるときだけ。
+                (element as HTMLOptionElement).closest(
+                  'select',
+                ) as HTMLSelectElement,
+              )
+            : null;
         if (requiresRawAttributeWrite) {
           element.setAttribute(rawName, value);
         }
@@ -3732,11 +3796,20 @@ export class ElementFragment extends Fragment {
           // 外して全テストが緑だったため置いていない）。
           this.captureAndHideDisplay();
         }
+        keptSelection?.();
         // element.setAttribute('value', ...) は defaultValue のみ更新するため、
         // setValue と同じ対象には element.value も反映して DOM と内部状態を揃える。
         // 属性削除となる場合は空へ揃える（属性の有無と値の食い違いを残さない）。
         // フォーカス中（編集中）の入力は skipValueReapply で再適用しない。
-        if (shouldSyncValueProperty && !skipValueReapply) {
+        // 評価の後に確定した入力も、評価の時点の判定と同じ理由で上書きしない。
+        if (
+          shouldSyncValueProperty &&
+          !skipValueReapply &&
+          !(
+            ElementFragment.isUserEditableValue(element) &&
+            this.isSupersededByUserEdit(requestedEditSequence)
+          )
+        ) {
           // 内部値は type="number" のとき数値化し、DOM 表示は文字列のままにする
           this.value = this.normalizeValueForElement(
             element,
@@ -3748,12 +3821,16 @@ export class ElementFragment extends Fragment {
           // 書き込んだ値を DOM が受け付けたかを記録する（`valueWriteUnapplied` 参照）。
           this.recordValueWriteResult(element.value === desiredValueProperty);
         }
+        const writesChecked =
+          requiresCheckedPropertyWrite && !checkableSuperseded;
+        const writesSelected =
+          requiresSelectedPropertyWrite && !checkableSuperseded;
         // checked / selected の DOM プロパティを真偽属性の有無に合わせて同期する
         // （属性の付与・削除どちらの場合も反映する）。
-        if (requiresCheckedPropertyWrite) {
+        if (writesChecked) {
           (element as HTMLInputElement).checked = checkableDesiredState;
         }
-        if (requiresSelectedPropertyWrite) {
+        if (writesSelected) {
           (element as HTMLOptionElement).selected = checkableDesiredState;
         }
         // 内部値（値収集や式評価が参照する値）も DOM のチェック状態へ揃える。
