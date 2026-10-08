@@ -4721,9 +4721,14 @@ class TextContents {
    * コンストラクタ。
    *
    * @param text テキスト
+   * @param literal プレースホルダを解釈せず、文字のまま扱うかどうか
    */
-  constructor(text: string) {
+  constructor(text: string, literal = false) {
     this.value = text;
+    if (literal) {
+      this.contents.push({text, type: ExpressionType.TEXT});
+      return;
+    }
 
     const matches = [...text.matchAll(TextContents.PLACEHOLDER_REGEX)];
     let lastIndex = 0;
@@ -4945,8 +4950,21 @@ class AttributeContents extends TextContents {
    * @param text 属性値
    */
   constructor(name: string, value: string) {
-    super(value);
+    // `data-bind` の値は式として評価しない（仕様「`data-bind`」の「値は式として評価
+    // しません」）。評価すると、値に含まれる `{{ }}` が属性の上でだけ評価され、
+    // 利用者の入力が式として実行される。
+    super(value, AttributeContents.isLiteralAttribute(name));
     this.forceEvaluation = AttributeContents.needsForceEvaluation(name);
+  }
+
+  /**
+   * 値を文字のまま扱う属性（`data-bind`）かどうかを判定します。
+   *
+   * @param name 属性名
+   * @returns 文字のまま扱う属性なら true
+   */
+  private static isLiteralAttribute(name: string): boolean {
+    return name === `${Env.prefix}bind`;
   }
 
   /**
