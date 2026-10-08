@@ -3020,6 +3020,7 @@ ${body}
         this.options.formFragment &&
         this.validate(this.options.formFragment) === false
       ) {
+        await this.commitEditOnStop();
         return false;
       }
       if (!this.options.formFragment && this.options.targetFragment) {
@@ -3038,6 +3039,7 @@ ${body}
         // （仕様「`data-{event}-click-await`」の「`data-{event}-if` が偽で
         // 実行されなかった場合は失敗として扱いません」）。
         this.skipped = true;
+        await this.commitEditOnStop();
         return false;
       }
       // data-{event}-run: 任意 JS を同期実行する。await を挟む前に実行することで、
@@ -3071,6 +3073,7 @@ ${body}
       }
       const confirmed = await this.confirm();
       if (!confirmed) {
+        await this.commitEditOnStop();
         return false;
       }
       if (this.options.downloadFolder) {
@@ -3129,6 +3132,17 @@ ${body}
 
       const hasPayload = Object.keys(payload).length > 0;
       if (fetchUrl) {
+        // 入力欄の `change` / `input` では、取得を伴っても入力した値をフォームへ写す
+        // （仕様「双方向バインディングの自動更新」の「取得を伴う手続きでも、フォームへの
+        // コミットは行います」）。応答のバインド先は自要素か `-bind` の先なので、
+        // 写さないとフォームのバインドデータが古いまま残る。
+        if (this.isInputEditProcedure()) {
+          await this.commitFormValues(
+            this.options.formFragment!,
+            payload,
+            executionLock,
+          );
+        }
         // demo ランタイムの正規化は送信直前にもう一度適用する。
         // `data-{event}-before-run` の `fetchOptions` 上書きは prepareFetchRequest
         // の後に適用されるため、ここで再適用しないと上書きが正規化を打ち消し、
@@ -3261,80 +3275,11 @@ ${body}
         hasPayload
       ) {
         // 双方向バインディング: フォーム値を自動的にバインディングデータに反映
-        const formFragment = this.options.formFragment;
-        const formElement = formFragment.getTarget();
-        const skipFragments = new Set<ElementFragment>();
-        if (
-          executionLock &&
-          executionLock.appliedDisabledAttribute &&
-          this.options.targetFragment
-        ) {
-          skipFragments.add(this.options.targetFragment);
-        }
-
-        // 土台はフォーム自身のバインドデータに限る。`getBindingData()` は祖先との
-        // マージ結果（かつキャッシュそのもの）なので、それを書き込むと祖先のキーが
-        // フォームへ焼き付き、以降その祖先の更新がフォーム自身の古いコピーに
-        // シャドーされて届かなくなる。
-        const previous = formFragment.getRawBindingData();
-        // File / Blob はバインドデータへ入れると JSON 化で `{}` に潰れ
-        // `data-bind` 属性を壊すため、ファイル名へ正規化して反映する。
-        const formValues = sanitizeBinaryForBinding(payload);
-        // data-form-arg 指定時は、そのキー配下が入力欄と対応する（Core.changeValue
-        // と Form.reset の書き込み先に合わせる）。平坦に書くと参照キーと書込キーが
-        // 食い違い、宣言バインドの参照元が更新されない。
-        const formArg = formFragment.getAttribute(`${Env.prefix}form-arg`);
-        let bindingData: Record<string, unknown>;
-        if (formArg) {
-          bindingData = {...(previous ?? {})};
-          const key = String(formArg);
-          // 祖先が当該キーを所有する場合はその値を土台に収集値を重ねる。収集値だけで
-          // 置き換えると入力欄に無いフィールド（`id` など）が抜け落ち、このコピーが
-          // 祖先をシャドーするためフォーム内の式から参照できなくなる。祖先が当該キーを
-          // 更新したときはコピーを解除して入れ直すため（`Form.syncAncestorArgForms()`）、
-          // 古い値が残り続けることはない。
-          const ancestor = Form.resolveAncestorArgOwner(formFragment, key);
-          bindingData[key] = Form.mergeCollectedValues(
-            (ancestor
-              ? ancestor.value
-              : (bindingData[key] as Record<string, unknown> | undefined)) ??
-              null,
-            formValues,
-          );
-        } else {
-          // arg なしでも、収集キーを祖先が所有する場合は同じく祖先の値を土台にする
-          // （仕様「祖先が所有する値の反映（`data-form-arg` なし）」）。
-          bindingData = Form.mergeCollectedValues(
-            previous,
-            formValues,
-            Form.ancestorBaseResolver(formFragment),
-          );
-        }
-        // 双方向コミットは値の供給ではないため、ユーザー編集の印は解除しない。
-        // 解除すると、この再評価で宣言バインドが編集値を評価結果へ巻き戻す。
-        //
-        // 種別は「非供給更新」。運んでいるのはフォーム全体の収集値で、**編集して
-        // いない欄も含む**ため、全体を「編集」として扱うと未編集の欄まで編集の権威を
-        // 得て、後から届く応答を弾いてしまう。**実際に編集された経路だけ**を
-        // `editedPaths` で示し、その経路は「編集」として判定される。
-        //
-        // 通番はこの `change` / `input` を起こした操作のもの。呼び出し時点で発番すると、
-        // 操作の後に届いた供給より新しい番号を得て後勝ちが逆転する。
-        //
-        // ただし**編集された経路の判定にはその編集の通番を使う**。`change` はフォーカスを
-        // 外した時点で発火するため編集よりずっと後になり、コミットの通番で主張すると、
-        // 編集の後・コミットの前に要求された供給（クリアなど）が棄却される。
-        await Core.setBindingData(formElement, bindingData, {
-          skipFragments,
-          kind: 'nonSupply',
-          sequence: this.operationSequence,
-          editedPaths: Form.collectEditedPaths(
-            formFragment,
-            this.operationSequence,
-            formArg ? String(formArg) : '',
-            formValues,
-          ),
-        });
+        await this.commitFormValues(
+          this.options.formFragment,
+          payload,
+          executionLock,
+        );
       }
 
       // フォームコンテナを持たない change / input で収集値が空のまま bind すると、
@@ -3361,6 +3306,140 @@ ${body}
     } finally {
       this.releaseExecutionLock(executionLock);
     }
+  }
+
+  /**
+   * 途中で止まった `change` / `input` の手続きで、入力欄の値のコミットだけを行います。
+   *
+   * 検証の失敗・実行条件が偽・確認のキャンセルで止まるのは手続きのアクションだけで、
+   * 入力欄の値のコミットは止めません（仕様「双方向バインディングの自動更新」の
+   * 「手続きが途中で止まっても、入力欄の値のコミットは行います」）。止めると、
+   * 画面には入力した値が出ているのにバインドデータは古いまま残ります。
+   *
+   * 行うのは、止まらずに進んだ場合にフォームへ行うコミットと同じものだけです。
+   * `data-{event}-fetch` を伴わずに `data-{event}-bind` を宣言した手続きは、収集値を
+   * フォームではなくバインド先へ写す（その書き込みはアクション）ため、ここでも
+   * 写しません。
+   *
+   * @returns 反映の完了を待つ Promise
+   */
+  private async commitEditOnStop(): Promise<void> {
+    if (
+      !this.isInputEditProcedure() ||
+      (!this.options.fetchUrl &&
+        this.options.bindFragments &&
+        this.options.bindFragments.length > 0)
+    ) {
+      return;
+    }
+    await this.commitFormValues(
+      this.options.formFragment!,
+      this.buildPayloadResolution().payload,
+      null,
+    );
+  }
+
+  /**
+   * 入力欄の編集をフォームへ写す手続き（フォームを解決できた `change` / `input`）かを
+   * 返します。
+   *
+   * ボタンなど入力欄以外の手続きは、収集値を送るだけでフォームへは写しません。
+   *
+   * @returns 入力欄の編集をフォームへ写す手続きなら true
+   */
+  private isInputEditProcedure(): boolean {
+    return (
+      (this.eventType === 'change' || this.eventType === 'input') &&
+      Boolean(this.options.formFragment)
+    );
+  }
+
+  /**
+   * 収集した入力欄の値を、フォームのバインドデータへ写します（双方向コミット）。
+   *
+   * @param formFragment 書き込み先のフォーム
+   * @param payload 収集した値
+   * @param executionLock 実行ロック。ロックが起点要素へ付けた `disabled` は
+   *     書き戻しの対象から外す
+   * @returns 反映の完了を待つ Promise
+   */
+  private async commitFormValues(
+    formFragment: ElementFragment,
+    payload: Record<string, unknown>,
+    executionLock: ExecutionLockState | null,
+  ): Promise<void> {
+    const formElement = formFragment.getTarget();
+    const skipFragments = new Set<ElementFragment>();
+    if (
+      executionLock &&
+      executionLock.appliedDisabledAttribute &&
+      this.options.targetFragment
+    ) {
+      skipFragments.add(this.options.targetFragment);
+    }
+
+    // 土台はフォーム自身のバインドデータに限る。`getBindingData()` は祖先との
+    // マージ結果（かつキャッシュそのもの）なので、それを書き込むと祖先のキーが
+    // フォームへ焼き付き、以降その祖先の更新がフォーム自身の古いコピーに
+    // シャドーされて届かなくなる。
+    const previous = formFragment.getRawBindingData();
+    // File / Blob はバインドデータへ入れると JSON 化で `{}` に潰れ
+    // `data-bind` 属性を壊すため、ファイル名へ正規化して反映する。
+    const formValues = sanitizeBinaryForBinding(payload);
+    // data-form-arg 指定時は、そのキー配下が入力欄と対応する（Core.changeValue
+    // と Form.reset の書き込み先に合わせる）。平坦に書くと参照キーと書込キーが
+    // 食い違い、宣言バインドの参照元が更新されない。
+    const formArg = formFragment.getAttribute(`${Env.prefix}form-arg`);
+    let bindingData: Record<string, unknown>;
+    if (formArg) {
+      bindingData = {...(previous ?? {})};
+      const key = String(formArg);
+      // 祖先が当該キーを所有する場合はその値を土台に収集値を重ねる。収集値だけで
+      // 置き換えると入力欄に無いフィールド（`id` など）が抜け落ち、このコピーが
+      // 祖先をシャドーするためフォーム内の式から参照できなくなる。祖先が当該キーを
+      // 更新したときはコピーを解除して入れ直すため（`Form.syncAncestorArgForms()`）、
+      // 古い値が残り続けることはない。
+      const ancestor = Form.resolveAncestorArgOwner(formFragment, key);
+      bindingData[key] = Form.mergeCollectedValues(
+        (ancestor
+          ? ancestor.value
+          : (bindingData[key] as Record<string, unknown> | undefined)) ?? null,
+        formValues,
+      );
+    } else {
+      // arg なしでも、収集キーを祖先が所有する場合は同じく祖先の値を土台にする
+      // （仕様「祖先が所有する値の反映（`data-form-arg` なし）」）。
+      bindingData = Form.mergeCollectedValues(
+        previous,
+        formValues,
+        Form.ancestorBaseResolver(formFragment),
+      );
+    }
+    // 双方向コミットは値の供給ではないため、ユーザー編集の印は解除しない。
+    // 解除すると、この再評価で宣言バインドが編集値を評価結果へ巻き戻す。
+    //
+    // 種別は「非供給更新」。運んでいるのはフォーム全体の収集値で、**編集して
+    // いない欄も含む**ため、全体を「編集」として扱うと未編集の欄まで編集の権威を
+    // 得て、後から届く応答を弾いてしまう。**実際に編集された経路だけ**を
+    // `editedPaths` で示し、その経路は「編集」として判定される。
+    //
+    // 通番はこの `change` / `input` を起こした操作のもの。呼び出し時点で発番すると、
+    // 操作の後に届いた供給より新しい番号を得て後勝ちが逆転する。
+    //
+    // ただし**編集された経路の判定にはその編集の通番を使う**。`change` はフォーカスを
+    // 外した時点で発火するため編集よりずっと後になり、コミットの通番で主張すると、
+    // 編集の後・コミットの前に要求された供給（クリアなど）が棄却される。
+    await Core.setBindingData(formElement, bindingData, {
+      skipFragments,
+      kind: 'nonSupply',
+      sequence: this.operationSequence,
+      editedPaths: Form.collectEditedPaths(
+        formFragment,
+        this.operationSequence,
+        formArg ? String(formArg) : '',
+        formValues,
+      ),
+    });
   }
 
   /**
