@@ -3998,6 +3998,33 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 子ノードを HTML で置き換えます（`{{{ }}}` の描画）。
+   *
+   * 外す子ノードと挿入した子ノードは、監視の取り込みの対象外へ登録します。取り込むと、
+   * 式を持つテキストの断片が取り外しとして木から外れ、挿入した HTML が新しい子として
+   * 走査されます。以降のバインドの更新で式が評価されなくなり、挿入した HTML の中まで
+   * 評価されます（仕様「`{{{ expression }}}`」の「バインドの更新のたびに評価し直し」と
+   * 「挿入した HTML は走査の対象外です」）。
+   *
+   * 描画キューの中から呼びます。登録は、監視が書き込みを処理した後に、戻り値の関数で
+   * 解除します。
+   *
+   * @param html 挿入する HTML
+   * @returns 監視の除外の登録を解除する関数
+   */
+  public replaceChildNodesWithHtml(html: string): () => void {
+    const removed = Array.from(this.target.childNodes);
+    removed.forEach(node => this.holdSkipMutationNode(node));
+    (this.target as HTMLElement).innerHTML = html;
+    const added = Array.from(this.target.childNodes);
+    added.forEach(node => this.holdSkipMutationNode(node));
+    return () => {
+      removed.forEach(node => this.releaseSkipMutationNode(node));
+      added.forEach(node => this.releaseSkipMutationNode(node));
+    };
+  }
+
+  /**
    * 子ノードを参照ノードの前に挿入します。
    * 参照ノードがnullの場合、親の最後に追加されます。
    *
@@ -4521,17 +4548,15 @@ export class TextFragment extends Fragment {
         new Error('Parent fragment is required for raw evaluation'),
       );
     }
+    // `{{{ }}}` の書き込みで監視の除外に登録したノードの解除。監視が書き込みを処理した
+    // 後（描画キューの完了後）に解除する。
+    let releaseRawNodes: (() => void) | null = null;
     return Queue.enqueue(() => {
       this.skipMutation = true;
       let nextText = this.text;
-      if (this.contents.isRawEvaluate) {
-        nextText = this.contents.evaluate(this.parent!.getBindingData(), {
-          kind: 'text',
-          element: this.parent!.getTarget(),
-          childIndex: this.parent!.getChildren().indexOf(this),
-          template: this.text,
-        })[0] as string;
-      } else if (this.contents.isEvaluate) {
+      // `{{{ }}}` も `{{ }}` と同じ規則で文字列にする（仕様「`{{{ expression }}}`」の
+      // 「評価結果の扱いは `{{ }}` と同じです」）。
+      if (this.contents.isEvaluate) {
         nextText = TextContents.joinEvaluateResults(
           this.contents.evaluate(this.parent!.getBindingData(), {
             kind: 'text',
@@ -4548,13 +4573,14 @@ export class TextFragment extends Fragment {
         return;
       }
       if (this.contents.isRawEvaluate) {
-        this.parent!.getTarget().innerHTML = nextText;
+        releaseRawNodes = this.parent!.replaceChildNodesWithHtml(nextText);
       } else {
         this.target.textContent = nextText;
       }
       this.renderedText = nextText;
     }).finally(() => {
       this.skipMutation = false;
+      releaseRawNodes?.();
     }) as Promise<void>;
   }
 }
