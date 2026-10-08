@@ -1909,6 +1909,12 @@ export default class Core {
       if (parent && parent.isSkipMutationNode(node)) {
         return;
       }
+      if (fragment instanceof ElementFragment) {
+        // 要素は内部の木を保ったまま外す。移動や付け直しで DOM から作り直すと、
+        // 描画した結果を宣言として読み込む（`ElementFragment.detachObserved()`）。
+        fragment.detachObserved();
+        return;
+      }
       fragment.remove();
     }
   }

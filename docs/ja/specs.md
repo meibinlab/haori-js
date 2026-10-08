@@ -819,6 +819,7 @@ class Observer {
 - **attributes**: 属性の変更 → `Core.setAttribute()`
   - 宣言の属性（`data-if` / `data-each` など）が書き換えられた場合、その属性の処理は**更新後の宣言**で行います。取り込みと処理の順序が逆になると、1 つ前の宣言で判定した結果が反映され、**書き換えの反映が 1 手遅れます**（1 回だけ書き換えた場合は反映されません）
 - **childList**: ノードの追加・削除 → `Core.addNode()`, `Core.removeNode()`
+  - **走査した要素を外部のスクリプトが DOM の中で移したり、外して後で戻したりしても、宣言は保ちます。** 取り外しを観測しても内部の木（`{{ }}` の式、属性の宣言、`data-each` の行の雛形など）は捨てず、付け直しではその木をそのまま使います。DOM から作り直すと、描画した結果を宣言として読み込むため、`{{ }}` は更新に追従しなくなり、`data-each` は描画済みの行を雛形と余分な子として読み込んで行が増えます。移動は「取り外し → 追加」として観測されるため、外部ライブラリ連携は `destroy` の後に `init` が呼ばれます（[`data-enhance`](#data-enhance)）。
 - **characterData**: テキストノードの変更 → `Core.changeText()`
 
 属性変更とノードの追加・削除では、専用トリガーの登録状態も同期します（`IntersectObserver` / `PollObserver` / `VisibleRangeObserver` の `syncElement()` / `syncTree()` / `cleanupTree()`）。これによって `data-import` などで後から挿入された `data-intersect-*` / `data-poll-*` も監視対象になり、DOM から除去された要素の監視・タイマーは確実に破棄されます。

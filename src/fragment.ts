@@ -1515,6 +1515,29 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 監視が観測した取り外しを、内部の木を保ったまま反映します。
+   *
+   * 外部のスクリプトによる移動は「取り外し → 追加」として観測されます。木を捨てると、
+   * 付け直しで描画済みの DOM から作り直すことになり、描いた結果を宣言として読み込み
+   * ます（仕様「監視対象」の「走査した要素を外部のスクリプトが DOM の中で移したり、
+   * 外して後で戻したりしても、宣言は保ちます」）。付け直しでは `Core.addNode()` が
+   * この断片をそのまま挿入して走査します。
+   *
+   * DOM は既に動いているため、DOM からの除去は行いません（同じ親の中で順を変えた
+   * 場合、ノードはまだ親の下にあります）。外部ライブラリ連携は、DOM から外れる要素と
+   * 同じく破棄します。
+   *
+   * @returns 戻り値はありません。
+   */
+  public detachObserved(): void {
+    Enhance.destroySubtree(this.getTarget());
+    const parent = this.getParent();
+    if (parent) {
+      parent.removeChild(this);
+    }
+  }
+
+  /**
    * `data-external` の要素を、内部のフラグメント木を保ったまま親から外します。
    *
    * 外した木を捨てると、付け直し（移動を含む）で DOM から組み立て直すことになり、
