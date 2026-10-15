@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## [0.59.5] - 2026-10-15
+
+**外部のスクリプトが DOM に追加した要素を、監視の取り込みで外して付け直していたのを直した版です。`Haori.toast()` と `data-{event}-toast` のトーストが表示されるようになります。**
+
+### Fixed
+
+- **外部のスクリプトが DOM に追加した要素を、監視の取り込みのたびに DOM から外して同じ位置へ付け直していたのを直した**（`src/core.ts`、`src/fragment.ts`）。要素を DOM から外すと、追加の直後に開いた popover は閉じ、`showModal()` で開いた `<dialog>` はモーダルでなくなり、フォーカスは外れていた。
+  - `Haori.toast()`、`data-{event}-toast`、`data-{event}-error-toast` のトーストも、開いた直後に閉じて表示されていなかった。取り込みで付け直す処理は最初の版からあり、0.56.0 でも同じく起きることを確かめた。
+  - 取り込みでは内部の木へつなぐだけにし、DOM は動かさない。走査は今までどおり行う。
+
+### Docs
+
+- 仕様の「監視対象」に追記した。
+
+### Internal
+
+- `ElementFragment.insertBefore()` から、木へつなぐ処理を `linkChild()` へ切り出し、DOM を動かさない `attachObserved()` を足した。
+- `tests/observed-add-keeps-dom.test.ts`（4 件）と `playwright/observed-add-keeps-state.spec.cjs`（実ブラウザ 5 件）を追加した。回帰と付けたテストは、いずれも修正前の本体で落ちる。
+
 ## [0.59.4] - 2026-10-08
 
 **入力欄の手続きが止まったときの値のコミット、`{{{ }}}` の追従、`data-bind` の値の中の `{{ }}`、要素を動かしたときの宣言の扱いを直した版です。`data-bind` の修正はセキュリティにかかわります。**
