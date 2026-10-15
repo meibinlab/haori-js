@@ -628,10 +628,8 @@ export default class Core {
           target.removeAttribute(`${Env.prefix}importing`);
           HaoriEvent.importEnd(target, resolvedUrl, bytes, startedAt);
           // 差し込んだ断片を取り込み先の子としてフラグメント木へ繋いでから
-          // 走査する。初期化の前後で分けず、常にこの経路で評価する。監視へ
-          // 委ねると、同じ変更で追加された 2 つ目以降のノードが取りこぼされる
-          // （`insertBefore` が挿入のあいだ立てる抑止フラグに、同じ通知の後続の
-          // `addNode` が掛かるため）。繋いだ子は `addNode` 側で除外する。
+          // 走査する。初期化の前後で分けず、常にこの経路で評価する。繋いだ子は
+          // `addNode` 側で除外する。
           Core.adoptImportedChildren(fragment);
           const childPromises: Promise<void>[] = [];
           fragment.getChildren().forEach(child => {
@@ -1883,7 +1881,7 @@ export default class Core {
         // 直すと走査が二重になるため、ここでは何もしない。
         return Promise.resolve();
       }
-      parent.insertBefore(fragment, next);
+      parent.attachObserved(fragment, next);
       if (fragment instanceof ElementFragment) {
         // 新規追加ノードは属性評価（bind/if/each/import など含む）のフルスキャンを行う。
         // これにより、取り込まれた断片内の data-import の入れ子や data-bind も正しく処理される。

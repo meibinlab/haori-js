@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>外部から追加した要素の状態</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <div id="root" data-bind='{"s":"hello"}'>
+    <p id="text">{{s}}</p>
+    <div id="slot"></div>
+    <button id="save" data-click-toast="保存しました">保存</button>
+  </div>
+</body>
+</html>

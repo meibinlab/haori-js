@@ -1521,7 +1521,7 @@ export class ElementFragment extends Fragment {
    * 付け直しで描画済みの DOM から作り直すことになり、描いた結果を宣言として読み込み
    * ます（仕様「監視対象」の「走査した要素を外部のスクリプトが DOM の中で移したり、
    * 外して後で戻したりしても、宣言は保ちます」）。付け直しでは `Core.addNode()` が
-   * この断片をそのまま挿入して走査します。
+   * この断片をそのまま木へつなぎ直して走査します。
    *
    * DOM は既に動いているため、DOM からの除去は行いません（同じ親の中で順を変えた
    * 場合、ノードはまだ親の下にあります）。外部ライブラリ連携は、DOM から外れる要素と
@@ -1544,7 +1544,7 @@ export class ElementFragment extends Fragment {
    * 外部ライブラリが配下に生成した DOM ごと取り込んでフォーム値の収集に載せます
    * （仕様「`data-external`」の「付け直した場合も、配下は走査した時点の構成のまま
    * 扱う」、課題 #42）。子の断片・属性・キャッシュ登録は保ち、付け直しでは
-   * `Core.addNode()` がこの断片をそのまま挿入して走査します。バインドデータの
+   * `Core.addNode()` がこの断片をそのまま木へつなぎ直して走査します。バインドデータの
    * キャッシュは、付け直しで親を設定するとき（`setParent()`）に部分木ごと捨てられる
    * ため、ここでは捨てません（捨てる行を外しても結果が変わらないことを確認済み）。
    *
@@ -4082,6 +4082,55 @@ export class ElementFragment extends Fragment {
       return Promise.reject(new Error('Circular reference detected'));
     }
 
+    const referenceNode = this.linkChild(
+      newChild,
+      referenceChild,
+      referenceNodeOverride,
+    );
+
+    const prevSkip = this.skipMutationNodes;
+    this.skipMutationNodes = true;
+    this.holdSkipMutationNode(newChild.getTarget());
+    return Queue.enqueue(() => {
+      this.target.insertBefore(newChild.getTarget(), referenceNode);
+    }).finally(() => {
+      this.skipMutationNodes = prevSkip;
+      this.releaseSkipMutationNode(newChild.getTarget());
+    }) as Promise<void>;
+  }
+
+  /**
+   * 監視が観測した追加を、DOM を動かさずに内部の木へ反映します。
+   *
+   * ノードは既に DOM 上の追加された位置にあります。DOM から外して付け直すと、開いた
+   * popover・`showModal()` で開いた `<dialog>` のモーダル状態・フォーカスが失われます
+   * （仕様「監視対象」の「外部のスクリプトが DOM に追加したノードは、追加された位置の
+   * まま取り込み、DOM から外して付け直すことはしません」）。
+   *
+   * @param newChild 追加された子ノード
+   * @param referenceChild 追加された位置の次の子ノード（末尾の場合は null）
+   * @returns 戻り値はありません。
+   */
+  public attachObserved(
+    newChild: Fragment,
+    referenceChild: Fragment | null,
+  ): void {
+    this.linkChild(newChild, referenceChild);
+  }
+
+  /**
+   * 子ノードを内部の木の参照ノードの前へつなぎます。DOM は操作しません。
+   *
+   * @param newChild 新しい子ノード
+   * @param referenceChild 参照ノード（末尾の場合は null）
+   * @param referenceNodeOverride DOM で挿入する位置の次のノード（省略時は参照ノード）
+   * @returns DOM で挿入する位置の次のノード
+   */
+  private linkChild(
+    newChild: Fragment,
+    referenceChild: Fragment | null,
+    referenceNodeOverride?: Node | null,
+  ): Node | null {
     // 同じ親内での移動かどうかを確認
     const isSameParent = newChild.getParent() === this;
     let newChildIndex = -1;
@@ -4144,16 +4193,7 @@ export class ElementFragment extends Fragment {
 
     newChild.setParent(this);
     newChild.setMounted(this.mounted);
-
-    const prevSkip = this.skipMutationNodes;
-    this.skipMutationNodes = true;
-    this.holdSkipMutationNode(newChild.getTarget());
-    return Queue.enqueue(() => {
-      this.target.insertBefore(newChild.getTarget(), referenceNode);
-    }).finally(() => {
-      this.skipMutationNodes = prevSkip;
-      this.releaseSkipMutationNode(newChild.getTarget());
-    }) as Promise<void>;
+    return referenceNode;
   }
 
   /**
