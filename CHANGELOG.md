@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## [0.60.0] - 2026-10-17
+
+**改行区切りの値を配列で送る `data-value-type="lines"` と、成功の応答で前回の失敗の表示を消す `data-{event}-clear-messages` を足した版です。ラジオボタンへのエラーが同じ文で重なる不具合と、`data-{event}-scroll-error` が表示を差し替えたライブラリの枠へスクロールしない不具合も直しました。**
+
+### Added
+
+- **`data-value-type="lines"`**（`src/fragment.ts`、`src/form.ts`）。`<textarea>` の値を改行で分け、各行の前後の空白を除き、空の行を捨てた配列で収集する。GET のクエリでは同じ名前のキーの繰り返し（空の配列ではキーを送らない）、JSON の本文では配列になる。1 欄に書いた複数の値を、配列を受ける API へ送れる。
+  - バインドの配列は改行でつないで欄に書く。欄の内容が同じ配列を表している場合は書き換えないため、利用者が書いた空の行や空白は残る。
+  - `<textarea>` 以外へ宣言した場合は無視し、開発モードで警告する。
+- **`data-{event}-clear-messages`**（`src/procedure.ts`）。取得が成功したときに、前回の失敗の表示を消す。範囲は失敗の表示と同じ（フォーム、無ければ対象要素、それも無ければ `document.body`）で、入力欄の値とバインドデータには触れない。検索の条件を残したまま、前回の失敗の文言だけを消せる。
+  - 消すのはバインドの前。`data-{event}-fetch-download` では保存に成功した後。
+  - 宣言しない手続きは、今までどおり成功の応答では消さない。
+
+### Fixed
+
+- **同じ名前のラジオボタンへのサーバのエラーが、ラジオの数だけ同じ文で表示されていたのを直した**（`src/form.ts`）。キーに一致したラジオのそれぞれへメッセージを渡していたため、haori-bootstrap ではグループの 1 つの枠に同じ文が重なり、haori 単体ではラジオごとの親要素に同じ文が付いていた。
+  - ラジオは最初の 1 つにだけ渡す。haori 単体では最初のラジオの親要素に 1 回だけ付く。チェックボックスと、ほかの入力欄への振り分けは変わらない。
+- **`data-{event}-scroll-error` が、ボタンの直後に置かれたエラーの枠へスクロールしなかったのを直した**（`src/procedure.ts`）。スクロール先を表示先の要素自身・親要素・子孫からしか探していなかったため、ボタンなど中へ表示を入れられない要素の直後に枠を置く表示の実装（haori-bootstrap）では見つからなかった。直後の兄弟も探す。
+  - haori-bootstrap と併用する場合は、エラーの枠と赤枠の入力欄に `data-message-level="error"` を付ける版（0.5.64 以降）が必要。
+
+### Docs
+
+- 仕様の「エラーハンドリング」「`data-value-type`」に追記し、「`data-{event}-clear-messages`」を足した。ガイドと README（英日）にも追記した。
+
+### Internal
+
+- 失敗の表示先を解決する処理を `Procedure.resolveMessageScope()` へ切り出した。
+- `tests/value-type-lines.test.ts`（10 件）、`tests/clear-messages-on-success.test.ts`（3 件）、`tests/radio-message-once.test.ts`（5 件）、`tests/scroll-error-adjacent.test.ts`（2 件）を追加した。回帰と付けたテストは、いずれも修正前の本体で落ちる。
+
 ## [0.59.5] - 2026-10-15
 
 **外部のスクリプトが DOM に追加した要素を、監視の取り込みで外して付け直していたのを直した版です。`Haori.toast()` と `data-{event}-toast` のトーストが表示されるようになります。**
