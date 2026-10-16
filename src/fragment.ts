@@ -976,6 +976,7 @@ export class ElementFragment extends Fragment {
     'boolean',
     'number',
     'string',
+    'lines',
   ]);
 
   /** `data-value-type` の宣言について警告済みのキー（同じ宣言で繰り返さない） */
@@ -2227,6 +2228,8 @@ export class ElementFragment extends Fragment {
         Array.isArray(value) ? value : value === null ? [] : [value]
       ).map(String);
       return this.writeSelectedValues(selectedValues, dispatchEvents, origin);
+    } else if (this.collectsLines()) {
+      return this.writeLinesValue(value, dispatchEvents, origin);
     } else if (
       element instanceof HTMLInputElement ||
       element instanceof HTMLTextAreaElement ||
@@ -2246,6 +2249,54 @@ export class ElementFragment extends Fragment {
       );
       return Promise.resolve();
     }
+  }
+
+  /**
+   * 値を行の配列で収集する入力欄（`data-value-type="lines"` の textarea）かどうかを
+   * 判定します。
+   *
+   * @returns 行の配列で収集する場合 true
+   */
+  public collectsLines(): boolean {
+    const element = this.getTarget();
+    return (
+      element instanceof HTMLTextAreaElement &&
+      ElementFragment.resolveDeclaredValueType(element) === 'lines'
+    );
+  }
+
+  /**
+   * `data-value-type="lines"` の textarea へ、行の配列を反映します。
+   *
+   * 改行でつないで書きます。DOM の内容が同じ行の配列を表している場合は書き換え
+   * ません。利用者が書いた空の行や前後の空白を、コミットの書き戻しで消さない
+   * ためです（仕様「`data-value-type`」）。
+   *
+   * @param value 反映する値（配列、または改行区切りの文字列）
+   * @param dispatchEvents input/change イベントを発火するかどうか
+   * @param origin 値の由来（通番と種別）
+   * @returns 反映完了の Promise
+   */
+  private writeLinesValue(
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | Array<string | number | boolean | null>,
+    dispatchEvents: boolean,
+    origin: ValueChangeOrigin | null,
+  ): Promise<void> {
+    const element = this.getTarget() as HTMLTextAreaElement;
+    const lines = ElementFragment.normalizeLinesValue(value);
+    const text = lines.join('\n');
+    if (
+      ElementFragment.normalizeLinesValue(element.value).join('\n') === text
+    ) {
+      this.value = lines;
+      return Promise.resolve();
+    }
+    return this.writeScalarValue(text, dispatchEvents, origin);
   }
 
   /**
@@ -2996,8 +3047,8 @@ export class ElementFragment extends Fragment {
    *
    * `data-value-type` を宣言した入力欄では、宣言した型へ正規化します（仕様
    * 「`data-value-type`」）。宣言は `type` より優先するため、`type="number"` へ
-   * `string` を宣言した場合は文字列になります。それ以外の要素では値をそのまま
-   * 返します。
+   * `string` を宣言した場合は文字列になります。`lines` を宣言した textarea では、
+   * 行の配列になります。それ以外の要素では値をそのまま返します。
    *
    * @param element 対象の入力要素
    * @param value 正規化する値
@@ -3006,8 +3057,11 @@ export class ElementFragment extends Fragment {
   private normalizeValueForElement(
     element: HTMLElement,
     value: string | number | boolean | null,
-  ): string | number | boolean | null {
+  ): string | number | boolean | string[] | null {
     const declared = ElementFragment.resolveDeclaredValueType(element);
+    if (declared === 'lines') {
+      return ElementFragment.normalizeLinesValue(value);
+    }
     if (declared === 'boolean') {
       return ElementFragment.normalizeBooleanValue(value);
     }
@@ -3024,6 +3078,33 @@ export class ElementFragment extends Fragment {
       return ElementFragment.normalizeNumberValue(value);
     }
     return value;
+  }
+
+  /**
+   * 値を行の配列へ正規化します。
+   *
+   * 改行で分け、各行の前後の空白を除き、空の行は捨てます（`\r\n` の `\r` は
+   * 前後の空白として除かれます）。配列が渡された場合は、各要素を行として同じ規則を
+   * 適用します。`null` と、配列の `null` の要素は空として扱います（仕様
+   * 「`data-value-type`」）。
+   *
+   * @param value 正規化する値
+   * @returns 行の配列
+   */
+  private static normalizeLinesValue(
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | Array<string | number | boolean | null>,
+  ): string[] {
+    const items = Array.isArray(value)
+      ? value.filter(item => item !== null).map(String)
+      : value === null
+        ? []
+        : String(value).split('\n');
+    return items.map(line => line.trim()).filter(line => line !== '');
   }
 
   /**
@@ -3088,17 +3169,17 @@ export class ElementFragment extends Fragment {
    * 入力欄に宣言された収集値の型（`data-value-type`）を解決します。
    *
    * 宣言は静的なものとして扱い、DOM の属性から直接読みます。宣言できるのは
-   * `boolean` / `number` / `string` で、対象は値を持つ入力（`<input>` のうち
-   * `checkbox` / `radio` / `file` を除くもの、`<textarea>`、単一選択の `<select>`）
-   * です。対象外の要素や未知の型は宣言が無いものとして扱い、開発モードで警告します
-   * （仕様「`data-value-type`」）。
+   * `boolean` / `number` / `string` / `lines` で、対象は値を持つ入力（`<input>` の
+   * うち `checkbox` / `radio` / `file` を除くもの、`<textarea>`、単一選択の
+   * `<select>`）です。`lines` は `<textarea>` だけです。対象外の要素や未知の型は
+   * 宣言が無いものとして扱い、開発モードで警告します（仕様「`data-value-type`」）。
    *
    * @param element 対象の要素
    * @returns 宣言された型。宣言が無い場合と無視する場合は null
    */
   private static resolveDeclaredValueType(
     element: HTMLElement,
-  ): 'boolean' | 'number' | 'string' | null {
+  ): 'boolean' | 'number' | 'string' | 'lines' | null {
     const declared = element.getAttribute(`${Env.prefix}value-type`);
     if (declared === null) {
       return null;
@@ -3108,7 +3189,16 @@ export class ElementFragment extends Fragment {
       ElementFragment.warnValueTypeDeclaration(
         element,
         declared,
-        'boolean / number / string のいずれかを指定してください',
+        'boolean / number / string / lines のいずれかを指定してください',
+      );
+      return null;
+    }
+    if (name === 'lines' && !(element instanceof HTMLTextAreaElement)) {
+      // `<input>` は改行を持てないため、行に分ける宣言は textarea だけにする。
+      ElementFragment.warnValueTypeDeclaration(
+        element,
+        declared,
+        'lines は <textarea> にのみ指定できます',
       );
       return null;
     }
@@ -3121,7 +3211,7 @@ export class ElementFragment extends Fragment {
       );
       return null;
     }
-    return name as 'boolean' | 'number' | 'string';
+    return name as 'boolean' | 'number' | 'string' | 'lines';
   }
 
   /**

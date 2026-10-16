@@ -939,6 +939,7 @@ interface ProcedureOptions {
   redirectReplaceUrl?: string | null         // 履歴を置き換えるリダイレクトURL
   redirectReturnParam?: string | null        // 戻り先リダイレクトのクエリ名
   scrollOnError?: boolean | null             // エラー時に最初のエラー要素へスクロール
+  clearMessagesOnSuccess?: boolean           // 成功の応答で前回の失敗の表示を消す
   scrollTarget?: string | null               // 成功時にスクロールする要素のCSSセレクター
   // バインド先・コピー先のうち編集可能な行と、その data-each コンテナの対応
   // （値が null の要素は data-each-before / -after の固定要素）
@@ -1207,11 +1208,17 @@ async handleError(response: Response): Promise<void> {
 
 サーバが `{ "errors": { "code": "メッセージ", "email": ["...", "..."] } }`（または `message` / `messages` を除くトップレベルの `key: 値`）形式で 4xx を返すと、`key` は `Form.addErrorMessage(baseFragment, key, message)` 経由で**対応する `name` のフィールドへ自動的に振り分け**られます（`name`・`data-form-object`・`data-form-list` のドット区切りキーで解決）。haori-bootstrap を併用している場合は、対象フィールド直後（checkbox/radio は `.form-check` 末尾）に `invalid-feedback` 要素を自動生成し、`is-invalid` クラスを付与します。したがって**フィールド側に `data-message-key` のような対応付け属性を書く必要はありません**。`key` を持たないエントリ（`message` / `messages`）はフォーム全体のエラーとして表示されます。
 
+**ラジオボタンへは、1 件のエラーを 1 回だけ渡します。** `key` に一致した要素のうち、ラジオボタンは最初の 1 つにだけメッセージを渡します。同じキーで収集するラジオボタンは 1 つの値を表すため、ラジオの数だけ渡すと同じ文がラジオの数だけ並びます（haori-bootstrap はグループの共通の祖先に置き場を 1 つ作るため、1 つの枠に同じ文が重なります）。haori 単体では、最初のラジオの親要素に付きます。チェックボックスと、ほかの入力欄への振り分けは変わりません。同じ `key` に複数の文（配列）を返した場合は改行でつないだ 1 件になり（上の擬似コード）、最初のラジオへ 1 回だけ渡します。
+
 トップレベルが配列の `[{ "key": "code", "message": "..." }]` 形式（一部のサーバ実装が返す例外ハンドラ／バリデーションメッセージ等）にも対応します。各要素を `errors` と同等に扱い、`key` を持つ要素は対応するフィールドへ振り分け、`key` を持たない（または空の）要素はフォーム全体エラーとします。同一 `key` が複数あれば改行で連結します。`key` は `name`・`data-form-object`・`data-form-list` のドット区切りキーで解決します。
 
 これらの振り分けは**ステータスコードに依存しません**（`400` だけでなく、業務エラーの `409` などカスタムステータスでも同様に振り分けます）。応答ボディが `application/json` 以外（プレーンテキスト等）の場合は、ボディ全文をフォーム全体エラーとして表示します（空の場合は `${status} ${statusText}`）。
 
 エラーメッセージの描画を始める前に、**フェッチ単位で対象スコープの既存メッセージを 1 度だけクリア**します。これにより、同じボタンを複数回押してエラー応答が繰り返されても表示は**常に最新の 1 応答分へ置き換わり**、再試行のたびにメッセージが積み増される（累積する）ことはありません。1 応答内に複数のフィールドエラーや全体エラーが含まれる場合は、クリア後にまとめて追加されるため**同一応答内のメッセージは従来どおり並んで表示**されます。クリア対象は、フォーム／対象フラグメントが特定できる場合はそのスコープ、特定できない場合は `document.body`（ページ全体の管理メッセージ）です。`Haori.clearMessages(parent)` は対象配下のフォーム全体エラーとフィールド別フィードバックの双方を除去します。フォームの外の要素が表示先の場合は、その要素への表示（haori 単体では親要素に付く）も除去します。
+
+**成功の応答では、既存のメッセージを消しません。** 前回の失敗の表示を成功で消すには、[`data-{event}-clear-messages`](#data-event-clear-messages) を宣言します。
+
+**`data-{event}-scroll-error` を宣言した手続きでは、表示の後に最初のエラーへスクロールします。** スクロール先は、表示先（上のクリア対象と同じ要素）自身、その親要素、その子孫、その直後の兄弟の順に探した、`data-message-level="error"` を持つ最初の要素です。整列は `behavior: smooth` / `block: nearest` です。表示を差し替えるライブラリは、エラーを表示した要素にこの属性を付けることでスクロール先になります（haori-bootstrap は、全体エラーの枠と、`is-invalid` を付けた入力欄に付けます。ボタンなど中へ表示を入れられない要素では、枠をその直後に置きます）。
 
 [`data-{event}-error-no-message`](#失敗時のアクション) を宣言した手続きでは、失敗時のアクションを実行する失敗に限り、上の表示を行いません（ステータスごとの組を使う失敗では、その組の `-error-{ステータス}-no-message` に従います）。非イベントの `data-fetch` では `data-fetch-error-no-message`、定期取得では `data-poll-error-no-message` です。[`data-{event}-error-bind`](#失敗時のアクション) を宣言した手続きでは、表示する代わりに本文をバインドします。どちらの場合も、既存メッセージのクリアは行います。表示する文言は、表示を止めた場合も [`_fetch.responseMessage`](#data-fetch-state--data-event-fetch-state) で参照できます。
 
@@ -3167,9 +3174,11 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 | `boolean` | `true` / `false`（判定できない場合は `null`） |
 | `number` | 数値（判定できない場合は `null`） |
 | `string` | 文字列（数値・真偽値をバインドしても文字列へそろえます） |
+| `lines` | 行の配列（`<textarea>` だけ。改行で分けた値） |
 
 - `boolean` は `"true"` / `"false"` を大文字小文字の区別なく判定します。**空文字と値なしは `null`** です（未入力を `false` として送らないため）。それ以外の文字列（`"1"` / `"on"` / `"はい"` など）も `null` です。判定を緩めると、画面に出ていない値が送信されます（[収集は DOM を真とする](#収集は-dom-を真とする)）。真偽値がそのまま渡された場合はその値を使います。
 - `number` の規則は `type="number"` と同じです（[収集は DOM を真とする](#収集は-dom-を真とする)の表を参照）。ブラウザが `<input type="number">` の値として受け付ける形だけを数値とし、空文字・受け付けない文字列・有限でない数値は `null` になります。
+- `lines` は、値を改行（`\n` / `\r\n`）で分け、各行の前後の空白を除き、**空の行は捨てた配列**です。未入力は空の配列です。GET のクエリでは同じ名前のキーの繰り返し（空の配列ではキーを送りません）、JSON の本文では配列になります。自由入力の複数の値を 1 欄で受け、配列を受ける API へ送るためのものです。
 - 上記以外の値（`"bool"` / `"int"` など）を書いた場合は**宣言が無いものとして扱い**、開発モードで警告します。
 
 **値は従来どおり DOM から読みます。** 正規化するのは読み取った後で、DOM の値を読むすべての経路（`change` での取り込み、収集、バインドから内部値への反映、`value="{{式}}"` / `data-attr-value` の評価）で同じ規則が適用されます。`type="number"` と同じ扱いです（原則「[収集は DOM を真とする](#収集は-dom-を真とする)」）。
@@ -3177,6 +3186,16 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 **`boolean` を宣言した入力欄では、`false` も値として書きます。** `data-attr-value` / `value="{{式}}"` は評価結果が `false` のとき通常は属性を削除しますが（[`data-attr-*`](#data-attr-)）、この宣言がある入力欄では `"false"` を書きます。`false` は「値が無い」ではなく送信すべき値だからです。`null` / `undefined` / 未解決参照は従来どおり空になり、収集値は `null` です。
 
 **対象は値を持つ入力です。** `<input>`（`checkbox` / `radio` / `file` を除く）、`<textarea>`、単一選択の `<select>` で有効です。それ以外（`checkbox` / `radio` / `file` / `<select multiple>`）へ宣言した場合は**無視し**、開発モードで警告します。チェック状態は `value="true"` の boolean モードで真偽値になります（[値の取得構造](#値の取得構造)）。
+
+**`lines` は `<textarea>` にだけ宣言できます。** `<input>` は改行を持てないためです。ほかの要素へ宣言した場合は無視し、開発モードで警告します。
+
+**`lines` の欄へバインドの配列を書くときは、改行でつないで書きます。** `null` と、配列の `null` の要素は空として扱います。ただし欄の内容が同じ配列を表している場合（空の行や前後の空白だけが違う場合）は書き換えません。入力をコミットしたときの書き戻しで、利用者が書いた空の行や空白を消さないためです。
+
+```html
+<!-- 改行区切りの値を配列で送る（k=a&k=b） -->
+<textarea name="k" data-value-type="lines"
+  data-change-fetch="/api/count" data-change-bind="#count"></textarea>
+```
 
 **`type` より宣言が優先されます。** `type="number"` に `data-value-type="string"` を宣言した場合は文字列で収集します。
 
@@ -4839,6 +4858,23 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
     data-click-toast-level="{{warned ? 'warning' : 'success'}}">保存</button>
 </div>
 ```
+
+##### `data-{event}-clear-messages`
+
+取得が成功したときに、**前回の失敗の表示を消します**。値は書きません（属性の有無で決まります）。
+
+```html
+<form id="search"><input name="q"></form>
+<button type="button" data-click-form="#search"
+  data-click-fetch="/api/customers" data-click-bind="#result"
+  data-click-clear-messages>検索</button>
+```
+
+- 消す範囲は失敗の表示と同じです（フォーム、無ければ対象要素、それも無ければ `document.body`。[エラーハンドリング](#エラーハンドリング)）。`Haori.clearMessages()` で消すため、haori-bootstrap を併用している場合は、その枠とフィードバックが消えます。
+- **入力欄の値・バインドデータ・`data-each` の複製には触れません。** 値も初期値へ戻す [`data-{event}-reset`](#data-event-reset) と違い、検索の条件を残したまま失敗の表示だけを消せます。
+- 消すのは、応答が成功（2xx）と決まった後、バインド（処理順 9）の前です。`data-{event}-fetch-download` では保存に成功した後です。`data-{event}-after-run` が止めた場合と、保存を取り消した場合は消しません。
+- 宣言しない手続きは、従来どおり成功の応答では消しません。
+- イベントを伴わない `data-fetch` では使えません。
 
 ##### 失敗時のアクション
 

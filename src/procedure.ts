@@ -993,6 +993,12 @@ export interface ProcedureOptions {
   /** エラー時に最初のエラー要素へスクロールするかどうか */
   scrollOnError?: boolean | null;
 
+  /**
+   * 成功の応答で、失敗の表示と同じスコープの管理メッセージを消すかどうか
+   * （`data-{event}-clear-messages`）。
+   */
+  clearMessagesOnSuccess?: boolean;
+
   /** 成功時にスクロールする要素のCSSセレクター */
   scrollTarget?: string | null;
 
@@ -2418,6 +2424,9 @@ ${body}
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'scroll-error'))) {
         options.scrollOnError = true;
+      }
+      if (fragment.hasAttribute(Procedure.attrName(event, 'clear-messages'))) {
+        options.clearMessagesOnSuccess = true;
       }
       if (fragment.hasAttribute(Procedure.attrName(event, 'scroll'))) {
         options.scrollTarget = Procedure.readLateAttribute(
@@ -3937,13 +3946,7 @@ ${body}
    * @returns 表示の完了 Promise
    */
   private async showDownloadFailure(display: boolean): Promise<void> {
-    const baseFragment =
-      this.options.formFragment ??
-      (this.options.targetFragment
-        ? Form.getFormFragment(this.options.targetFragment) ||
-          this.options.targetFragment
-        : null);
-    const target = baseFragment ? baseFragment.getTarget() : document.body;
+    const target = this.resolveMessageScope();
     const activeHaori = resolveProcedureHaoriApi();
     // 失敗の表示は 1 応答分へ置き換える（`handleFetchError()` と同じ規則）。
     await activeHaori.clearMessages(target);
@@ -4157,6 +4160,11 @@ ${body}
         await this.runErrorActions(null);
         return false;
       }
+    }
+    if (this.options.clearMessagesOnSuccess) {
+      // 仕様「`data-{event}-clear-messages`」。前回の失敗の表示を、成功の応答で
+      // 消す。範囲は失敗の表示と同じで、入力欄の値には触れない。
+      await activeHaori.clearMessages(this.resolveMessageScope());
     }
     const promises: Promise<unknown>[] = [];
     promises.push(this.bindResult(response));
@@ -4612,6 +4620,26 @@ ${body}
   }
 
   /**
+   * 失敗の表示先（メッセージのスコープ）を解決します。
+   *
+   * フォーム、無ければ対象要素（その祖先のフォームがあればフォーム）、それも
+   * 無ければ `document.body` です（仕様「エラーハンドリング」）。
+   *
+   * @returns 失敗の表示先の要素
+   */
+  private resolveMessageScope(): HTMLElement {
+    const baseFragment =
+      this.options.formFragment ??
+      (this.options.targetFragment
+        ? Form.getFormFragment(this.options.targetFragment) ||
+          this.options.targetFragment
+        : null);
+    return baseFragment
+      ? (baseFragment.getTarget() as HTMLElement)
+      : document.body;
+  }
+
+  /**
    * フェッチエラー応答のメッセージを適切な要素へ伝播します。
    *
    * 表示しない場合も、既存メッセージのクリアと本文の解析は行います。
@@ -4655,13 +4683,21 @@ ${body}
       }
       const root = baseFragment ? baseFragment.getTarget() : document.body;
       // addErrorMessage はフォーム以外の target に対して parentElement へエラーを付与するため、
-      // root 自身・parentElement・root 配下の順で探索する
+      // root 自身・parentElement・root 配下の順で探索する。表示を差し替えたライブラリ
+      // （haori-bootstrap など）は、ボタンなど中へ入れられない要素では表示を直後に
+      // 置くため、最後に直後の兄弟も探す（仕様「エラーハンドリング」）。
+      const next = root.nextElementSibling;
       const errorTarget =
         root.getAttribute('data-message-level') === 'error'
           ? root
           : root.parentElement?.getAttribute('data-message-level') === 'error'
             ? root.parentElement
-            : root.querySelector<HTMLElement>('[data-message-level="error"]');
+            : (root.querySelector<HTMLElement>(
+                '[data-message-level="error"]',
+              ) ??
+              (next?.getAttribute('data-message-level') === 'error'
+                ? next
+                : null));
       errorTarget?.scrollIntoView({behavior: 'smooth', block: 'nearest'});
     };
 

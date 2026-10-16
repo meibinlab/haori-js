@@ -1537,6 +1537,25 @@ HTML のラジオボタンは「同じフォームの中の同名要素」で 1 
 - `checkbox` / `radio` / `file` と複数選択の`<select>`では無視されます（開発モードで警告します）。チェック状態を真偽値で送る場合は`value="true"`のチェックボックスを使います。
 - 単一選択の`<select>`や`<textarea>`でも宣言できます（`<select name="planId" data-value-type="number">`など）。
 
+#### 1 欄に書いた複数の値を配列で送る（`data-value-type="lines"`）
+
+`<textarea>`に改行区切りで書いた値を、配列を受ける API へ送る場合は`lines`を宣言します。
+
+```html
+<form id="searchForm">
+  <textarea name="keywords" data-value-type="lines"
+    data-change-fetch="/api/products/count" data-change-bind="#count"></textarea>
+</form>
+<div id="count">{{count}} 件</div>
+```
+
+`りんご`・空の行・` みかん `と書くと、収集値は`["りんご", "みかん"]`になり、GET のクエリは`keywords=りんご&keywords=みかん`になります。
+
+- 各行の前後の空白を除き、空の行は捨てます。未入力は空の配列で、GET ではキーを送りません。
+- JSON の本文では配列になります。
+- バインドの配列は改行でつないで欄に書きます。欄の内容が同じ配列を表している場合は書き換えないため、利用者が書いた空の行や空白は残ります。
+- `<textarea>`だけで使えます（`<input>`は改行を持てないため。開発モードで警告します）。
+
 #### 他の項目から算出した値を送る（`readonly` / `type="hidden"`）
 
 同じフォームの他の項目から算出した値を、そのまま送信データに載せたいことがあります。算出結果を入れる欄は、**`readonly` にするか `type="hidden"` にしてください**。
@@ -2835,6 +2854,29 @@ haori-bootstrap を併用していれば、エラーのあるフィールド直�
 
 - `-toast-level` と `-error-toast-level` は、メッセージと同じく表示の直前に評価します。`info` / `warning` / `error` / `success` のどれでもない結果は `info` になります。
 
+#### 成功したら前回の失敗の表示を消す（`data-click-clear-messages`）
+
+失敗の表示は、成功の応答では消えません。検索フォームのように、条件を残したまま前回の失敗の文言だけを消したい場合は`data-click-clear-messages`を宣言します。
+
+```html
+<form id="customer-search-form" data-url-param>
+  <input name="keyword">
+</form>
+<button type="button"
+  data-click-form="#customer-search-form"
+  data-click-fetch="/api/customers" data-click-bind="#customers"
+  data-click-clear-messages>検索</button>
+<button type="button"
+  data-click-form="#customer-search-form"
+  data-click-fetch="/api/customers/export"
+  data-click-fetch-download="customers.csv"
+  data-click-clear-messages>エクスポート</button>
+```
+
+- 消す範囲は失敗の表示と同じです（`data-click-form`のフォーム、無ければボタン、それも無ければ`document.body`）。
+- 入力欄の値とバインドデータには触れません。
+- 消すのは応答が成功と決まった後、バインドの前です。ダウンロードでは保存に成功した後です。
+
 #### 画面を開いたときの取得の失敗を画面で出し分ける（`data-fetch-error-no-message`）
 
 イベントを伴わない `data-fetch` の失敗を `_fetch` で画面が扱う場合は、`data-fetch-error-no-message` で応答本文の自動表示を止めます。止めないと、画面の表示と自動表示が重なります。
@@ -3923,7 +3965,7 @@ CSV のエクスポートや PDF のダウンロードを、宣言だけで書�
 
 - 属性値は不要です（属性の有無で動作を切り替えます）
 - バリデーション失敗時は最初の不正入力フィールドへスクロールします
-- サーバーエラー時は `data-message-level="error"` が付与された最初の要素へスクロールします
+- サーバーエラー時は `data-message-level="error"` が付与された最初の要素へスクロールします（表示先の要素自身、親要素、子孫、直後の兄弟の順に探します）。haori-bootstrap は、全体エラーの枠と赤枠の入力欄にこの属性を付けるため、併用時もその枠や欄へスクロールします
 - 複数のエラーが同時に発生しても、スクロールは 1 回だけ実行されます
 
 > **バリデーション失敗時のスクロールはこの属性が無くても行われます。** 不正な欄が画面外にある場合、ブラウザは検証 UI（バブル）の表示に伴って自分でスクロールします。このときエンジンは、先にスクロールして**止まってから**バブルを出します（逆順だとバブルが画面外の位置に固定され、`scroll-behavior: smooth` のページではメッセージが見えません）。この属性は、サーバーエラー時のスクロールを有効にするために指定してください。

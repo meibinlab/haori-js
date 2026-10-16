@@ -2931,6 +2931,17 @@ export default class Form {
         promises.push(
           Form.applyFragmentValue(fragment, value, emitEvents, origin),
         );
+      } else if (Array.isArray(value) && fragment.collectsLines()) {
+        // `data-value-type="lines"` の textarea: 配列を行として書く（仕様
+        // 「`data-value-type`」）。文字列にするとカンマでつながる。
+        promises.push(
+          Form.applyFragmentValue(
+            fragment,
+            value as Array<string | number | boolean | null>,
+            emitEvents,
+            origin,
+          ),
+        );
       } else {
         promises.push(
           Form.applyFragmentValue(fragment, String(value), emitEvents, origin),
@@ -3551,7 +3562,9 @@ export default class Form {
         ? (addMsgFn.call(activeHaori, target, message, level) as Promise<void>)
         : (activeHaori.addErrorMessage(target, message) as Promise<void>);
 
-    const targetFragments = Form.findFragmentsByKey(fragment, key);
+    const targetFragments = Form.keepFirstRadio(
+      Form.findFragmentsByKey(fragment, key),
+    );
     targetFragments.forEach(targetFragment => {
       promises.push(doAdd(targetFragment.getTarget() as HTMLElement));
     });
@@ -3559,6 +3572,33 @@ export default class Form {
       promises.push(doAdd(fragment.getTarget() as HTMLElement));
     }
     return Promise.all(promises).then(() => undefined);
+  }
+
+  /**
+   * キーに一致したフラグメントから、2 つめ以降のラジオボタンを除きます。
+   *
+   * 同じキーで収集するラジオボタンは 1 つの値を表すため、メッセージは最初の
+   * 1 つにだけ渡します（仕様「エラーハンドリング」）。ラジオの数だけ渡すと、
+   * 同じ文がラジオの数だけ並びます。
+   *
+   * @param fragments キーに一致したフラグメント
+   * @returns メッセージを渡すフラグメント
+   */
+  private static keepFirstRadio(
+    fragments: ElementFragment[],
+  ): ElementFragment[] {
+    let hasRadio = false;
+    return fragments.filter(fragment => {
+      const target = fragment.getTarget();
+      if (!(target instanceof HTMLInputElement) || target.type !== 'radio') {
+        return true;
+      }
+      if (hasRadio) {
+        return false;
+      }
+      hasRadio = true;
+      return true;
+    });
   }
 
   /**
