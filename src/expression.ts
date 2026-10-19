@@ -109,6 +109,9 @@ export default class Expression {
   /** 危険値チェック結果の短命キャッシュ */
   private static forbiddenBindingValueCache = new WeakMap<object, boolean>();
 
+  /** 現在の microtask で使う危険値の集合（未作成は null） */
+  private static forbiddenBindingValueSet: ReadonlySet<unknown> | null = null;
+
   /** 危険値チェックキャッシュのクリア予約済みフラグ */
   private static forbiddenBindingValueCacheResetScheduled = false;
 
@@ -259,11 +262,17 @@ export default class Expression {
    * @returns 危険値の集合
    */
   private static getForbiddenBindingValueSet(): ReadonlySet<unknown> {
-    return new Set(this.getForbiddenBindingValues());
+    if (this.forbiddenBindingValueSet === null) {
+      this.forbiddenBindingValueSet = new Set(this.getForbiddenBindingValues());
+    }
+    return this.forbiddenBindingValueSet;
   }
 
   /**
-   * 危険値チェック用の短命キャッシュを次の microtask で破棄します。
+   * 危険値チェック用の短命キャッシュと危険値の集合を次の microtask で破棄します。
+   *
+   * 危険値の集合も同じ寿命にします。`fetch` などは差し替えられることがあるため、
+   * 集合を作り直さないと、差し替えた後の値を危険値として扱えません。
    */
   private static scheduleForbiddenBindingValueCacheReset(): void {
     if (this.forbiddenBindingValueCacheResetScheduled) {
@@ -272,6 +281,7 @@ export default class Expression {
     this.forbiddenBindingValueCacheResetScheduled = true;
     queueMicrotask(() => {
       this.forbiddenBindingValueCache = new WeakMap<object, boolean>();
+      this.forbiddenBindingValueSet = null;
       this.forbiddenBindingValueCacheResetScheduled = false;
     });
   }
@@ -446,6 +456,12 @@ export default class Expression {
 
   /** 式 → 自由識別子一覧のキャッシュ */
   private static readonly FREE_IDENTIFIER_CACHE = new Map<string, string[]>();
+
+  /** 式 → 式が値として参照し得る名前のキャッシュ */
+  private static readonly REFERENCED_NAME_CACHE = new Map<
+    string,
+    readonly string[]
+  >();
 
   /** 式ごとの「式の中で束縛された識別子」のキャッシュ */
   private static readonly BOUND_IDENTIFIER_CACHE = new Map<
@@ -1356,14 +1372,24 @@ export default class Expression {
         );
       }
     }
-    const forbiddenBindingValues = this.getForbiddenBindingValueSet();
-    if (
-      this.containsForbiddenBindingValues(
-        bindedValues,
-        new WeakSet(),
-        forbiddenBindingValues,
-      )
-    ) {
+    // 式が参照する名前の値だけを調べる。式は名前を書かずにほかの引数へ届かない
+    // （`arguments` と `eval` は strict モードで封じ、`this` は undefined）ため、
+    // 参照しない名前の値に危険値があっても、その式へは渡らない。スコープ全体を
+    // 毎回調べると、行のスコープへ継承された一覧の全体を行の式の数だけ調べ直す。
+    // 要素データの複製（`haori.data`）はすべての名前を運ぶため、全体を調べる。
+    // 文字列リテラル（'...' / "..."）内の `haori` は識別子ではないので検出から除外する
+    // （テンプレートリテラル内の ${haori...} を壊さないようバッククォートは残す）。
+    const expressionForDetection = expression.replace(
+      /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g,
+      '',
+    );
+    const referencesBuiltinData = this.BUILTIN_DATA_REFERENCE_PATTERN.test(
+      expressionForDetection,
+    );
+    const referencedNames = referencesBuiltinData
+      ? null
+      : this.getReferencedNames(expression);
+    if (this.containsForbiddenReferencedValues(bindedValues, referencedNames)) {
       Log.warn(
         '[Haori]',
         bindedValues,
@@ -1374,12 +1400,6 @@ export default class Expression {
 
     // 式が予約名前空間 `haori` を参照している場合のみ組み込みヘルパーを注入する。
     // 参照していない式に無駄な引数・Proxy ラップを増やさないための最適化。
-    // 文字列リテラル（'...' / "..."）内の `haori` は識別子ではないので検出から除外する
-    // （テンプレートリテラル内の ${haori...} を壊さないようバッククォートは残す）。
-    const expressionForDetection = expression.replace(
-      /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g,
-      '',
-    );
     const referencesBuiltins = this.BUILTIN_REFERENCE_PATTERN.test(
       expressionForDetection,
     );
@@ -1407,7 +1427,7 @@ export default class Expression {
       // 参照できないため、ブラケット記法で読める経路を用意する。
       // 参照しない式では静的な組み込みヘルパーをそのまま渡し、評価ごとの
       // オブジェクト生成を増やさない（`haori.date` などの既存の式が該当）。
-      if (this.BUILTIN_DATA_REFERENCE_PATTERN.test(expressionForDetection)) {
+      if (referencesBuiltinData) {
         // 要素データの複製は名前空間の代入より前に評価されるため、`haori` 自身は
         // 複製に入らない（自己参照にならない）。
         runtimeBindings[this.BUILTIN_NAMESPACE] = {
@@ -2708,18 +2728,97 @@ export default class Expression {
   }
 
   /**
+   * 式が値として参照し得る名前を返します。
+   *
+   * プロパティアクセスの右辺（`foo.bar` の `bar`）を除いた識別子をすべて返します。
+   * オブジェクトリテラルのキーやアロー関数の引数も含みますが、余分に含んでも
+   * 調べる値が増えるだけです。重複も除きません（2 回目は検査結果のキャッシュで
+   * 済みます）。
+   *
+   * 字句に分けられない式は空配列を返しますが、そうした式は危険値の検査より前に
+   * 許可構文の検証（`hasAllowedSyntax()`）で拒否されるため、ここへは来ません。
+   *
+   * @param expression 評価対象の式
+   * @returns 名前の一覧
+   */
+  private static getReferencedNames(expression: string): readonly string[] {
+    const cached = this.REFERENCED_NAME_CACHE.get(expression);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const tokens = this.tokenizeExpression(expression);
+    const names: string[] = [];
+    let previous: ExpressionToken | null = null;
+    for (const token of tokens ?? []) {
+      const isProperty = previous?.value === '.' || previous?.value === '?.';
+      if (token.type === 'identifier' && !isProperty) {
+        names.push(token.value);
+      }
+      previous = token;
+    }
+    this.REFERENCED_NAME_CACHE.set(expression, names);
+    return names;
+  }
+
+  /**
+   * 式が参照する名前の値に、危険値が含まれていないかを判定します。
+   *
+   * @param bindedValues バインドされた値のオブジェクト
+   * @param referencedNames 式が参照する名前。null はスコープ全体を調べる
+   * @returns 危険値が含まれていれば true
+   */
+  private static containsForbiddenReferencedValues(
+    bindedValues: Record<string, unknown>,
+    referencedNames: readonly string[] | null,
+  ): boolean {
+    const forbiddenBindingValues = this.getForbiddenBindingValueSet();
+    const seen = new WeakSet<object>();
+    if (referencedNames === null) {
+      return this.containsForbiddenBindingValues(
+        bindedValues,
+        seen,
+        forbiddenBindingValues,
+      );
+    }
+    // バインドに無い名前（プロトタイプの名前を含む）は、危険な値を返さないため
+    // 区別せずに調べる。
+    for (const name of referencedNames) {
+      const value = bindedValues[name];
+      if (typeof value === 'function') {
+        if (forbiddenBindingValues.has(value)) {
+          return true;
+        }
+        continue;
+      }
+      if (
+        this.containsForbiddenBindingValues(value, seen, forbiddenBindingValues)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * バインド値に危険なホストオブジェクトやグローバル関数が含まれていないかを再帰的に判定します。
+   *
+   * 循環参照は、たどっている途中の祖先へ戻った時点で打ち切ります。打ち切った
+   * 部分木の「含まない」は、祖先のほかの子を調べ終えるまで確定しないため
+   * キャッシュしません（A→B→A で A だけが危険値を持つ場合、B を「含まない」と
+   * 控えると、B を起点にした検査が A の危険値を見逃します）。
    *
    * @param obj チェック対象の値
    * @param seen 循環参照検出用の訪問済み集合
    * @param forbiddenValues 危険値の集合。省略すると組み立てる。再帰呼び出しでは
    *   作り直さないよう、組み立てた集合を引き回す
+   * @param cut 打ち切りの記録。部分木で打ち切りが起きたら `cut` を true にする
    * @return 危険値が含まれていればtrue
    */
   protected static containsForbiddenBindingValues(
     obj: unknown,
     seen: WeakSet<object> = new WeakSet<object>(),
     forbiddenValues?: ReadonlySet<unknown>,
+    cut?: {cut: boolean},
   ): boolean {
     if (!obj || typeof obj !== 'object') {
       return false;
@@ -2733,6 +2832,9 @@ export default class Expression {
     }
 
     if (seen.has(obj as object)) {
+      if (cut) {
+        cut.cut = true;
+      }
       return false;
     }
     seen.add(obj as object);
@@ -2742,6 +2844,7 @@ export default class Expression {
       return true;
     }
 
+    const subtree = {cut: false};
     for (const value of Object.values(obj as Record<string, unknown>)) {
       if (typeof value === 'function') {
         if (forbiddenBindingValues.has(value)) {
@@ -2751,13 +2854,24 @@ export default class Expression {
         continue;
       }
       if (
-        this.containsForbiddenBindingValues(value, seen, forbiddenBindingValues)
+        this.containsForbiddenBindingValues(
+          value,
+          seen,
+          forbiddenBindingValues,
+          subtree,
+        )
       ) {
         this.forbiddenBindingValueCache.set(obj as object, true);
         return true;
       }
     }
 
+    if (subtree.cut) {
+      if (cut) {
+        cut.cut = true;
+      }
+      return false;
+    }
     this.forbiddenBindingValueCache.set(obj as object, false);
     return false;
   }

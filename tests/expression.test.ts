@@ -368,7 +368,12 @@ describe('Expression', () => {
       expect(Expression.evaluate('user.profile.name', bindedValues)).toBe('田中');
       const firstCallCount = containsForbiddenBindingValuesSpy.mock.calls.length;
 
-      expect(Expression.evaluate('items[1].label', bindedValues)).toBe('B');
+      // 危険値の検査は式が参照する名前の値に限るため（仕様「評価メカニズム」の
+      // 「**4 の危険な値の検査は、式が参照する名前の値に限ります。**」）、同じ名前を
+      // 参照する式で比べる。
+      expect(
+        Expression.evaluate('user.profile.name + "様"', bindedValues),
+      ).toBe('田中様');
       const secondCallCount =
         containsForbiddenBindingValuesSpy.mock.calls.length - firstCallCount;
 

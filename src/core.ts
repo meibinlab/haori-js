@@ -2018,11 +2018,12 @@ export default class Core {
    * フラグメントとその子要素を評価します。
    *
    * @param fragment 対象フラグメント
+   * @param skipFragments 評価しない子孫（要素は配下ごと、テキストはそのものを省く）
    * @return Promise (DOM操作が完了したときに解決される)
    */
   public static evaluateAll(
     fragment: ElementFragment,
-    skipFragments: ReadonlySet<ElementFragment> = new Set(),
+    skipFragments: ReadonlySet<Fragment> = new Set(),
   ): Promise<void> {
     if (skipFragments.has(fragment)) {
       return Promise.resolve();
@@ -2081,7 +2082,7 @@ export default class Core {
       chain = chain.then(() => {
         const wasVisible = fragment.isVisible();
         sequence = ElementFragment.currentSequence();
-        return Core.evaluateIf(fragment).then(() => {
+        return Core.evaluateIf(fragment, skipFragments).then(() => {
           shownFromHidden = !wasVisible && fragment.isVisible();
         });
       });
@@ -2141,7 +2142,10 @@ export default class Core {
               return;
             }
             promises.push(Core.evaluateAll(child, skipFragments));
-          } else if (child instanceof TextFragment) {
+          } else if (
+            child instanceof TextFragment &&
+            !skipFragments.has(child)
+          ) {
             promises.push(Core.evaluateText(child));
           }
         });
@@ -2412,9 +2416,14 @@ export default class Core {
    * それ以外の場合は表示します。
    *
    * @param fragment 対象フラグメント
+   * @param skipFragments 表示のままの分岐で評価しない子孫（`evaluateAll()` と同じ）。
+   *   表示へ切り替わった分岐では使わない（非表示のあいだ評価していないため）
    * @return Promise (DOM操作が完了したときに解決される)
    */
-  public static evaluateIf(fragment: ElementFragment): Promise<void> {
+  public static evaluateIf(
+    fragment: ElementFragment,
+    skipFragments: ReadonlySet<Fragment> = new Set(),
+  ): Promise<void> {
     const promises: Promise<void>[] = [];
     const condition = fragment.getAttribute(`${Env.prefix}if`);
     if (Core.isHiddenIfCondition(condition)) {
@@ -2466,7 +2475,7 @@ export default class Core {
           if (!child.isMounted()) {
             childPromises.push(Core.scanElement(child.getTarget(), false));
           } else if (wasVisible) {
-            childPromises.push(Core.evaluateAll(child));
+            childPromises.push(Core.evaluateAll(child, skipFragments));
           } else {
             // 非表示のあいだは `data-fetch` / `data-import` の再評価が配下へ降りない
             // （`reevaluateReactiveSpecialAttributes()`）。表示へ戻った時点で、非表示の
@@ -2479,7 +2488,10 @@ export default class Core {
               ),
             );
           }
-        } else if (child instanceof TextFragment) {
+        } else if (
+          child instanceof TextFragment &&
+          !(wasVisible && skipFragments.has(child))
+        ) {
           childPromises.push(Core.evaluateText(child));
         }
       });
@@ -2928,7 +2940,8 @@ export default class Core {
    * 差分更新が不要な `data-each` の既存行について、子孫の再評価だけを行います。
    *
    * 行スコープの値だけで描画が決まるテンプレートでは、行の要素データが同値である
-   * 限り描画結果も変わらないため何もしません。
+   * 限り描画結果も変わらないため何もしません。行の外を参照するテンプレートでも、
+   * 行スコープの名前だけを参照する部分は評価しません（`collectRowLocalFragments()`）。
    *
    * @param fragment `data-each` コンテナのフラグメント
    * @returns 再評価完了の Promise
@@ -2947,9 +2960,105 @@ export default class Core {
     if (rows.length === 0) {
       return Promise.resolve();
     }
-    return Promise.all(rows.map(row => Core.evaluateAll(row))).then(
-      () => undefined,
-    );
+    return Promise.all(
+      rows.map(row =>
+        Core.evaluateAll(row, Core.collectRowLocalFragments(fragment, row)),
+      ),
+    ).then(() => undefined);
+  }
+
+  /**
+   * 行の要素データが同値のときに評価を省ける、行の中の部分を集めます。
+   *
+   * 行スコープの名前（`data-each-arg` と `data-each-index`）だけを参照する要素
+   * （配下を含む）とテキストは、要素データが同値なら評価しても結果が変わりません。
+   * テンプレート全体が行スコープだけで描画できる場合（`isRowLocalEachTemplate()`）
+   * の判定を、要素とテキストの単位へ細かくしたものです。
+   *
+   * 降りるのは、名前を差し替えない要素（`keepsRowScopeNames()`）の配下だけです。
+   * それ以外の `data-*` を持つ要素（`data-bind`・`data-derive`・`data-each`・
+   * 手続きなど）は、配下へ公開する名前を変え得るため、その配下は省きません。
+   *
+   * @param container `data-each` コンテナのフラグメント
+   * @param row 行のフラグメント
+   * @returns 評価を省ける要素とテキストの集合
+   */
+  private static collectRowLocalFragments(
+    container: ElementFragment,
+    row: ElementFragment,
+  ): Set<Fragment> {
+    const fragments = new Set<Fragment>();
+    const scopeNames = Core.getEachScopeNames(container);
+    if (scopeNames === null) {
+      return fragments;
+    }
+    const visit = (fragment: ElementFragment): void => {
+      if (!Core.keepsRowScopeNames(fragment)) {
+        return;
+      }
+      for (const child of fragment.getChildren()) {
+        if (child instanceof TextFragment) {
+          if (
+            Core.areExpressionsRowLocal(
+              Core.extractInterpolations(child.getRawText()),
+              scopeNames,
+            )
+          ) {
+            fragments.add(child);
+          }
+        } else if (child instanceof ElementFragment) {
+          if (Core.isRowLocalSubtree(child, scopeNames)) {
+            fragments.add(child);
+          } else {
+            visit(child);
+          }
+        }
+      }
+    };
+    visit(row);
+    return fragments;
+  }
+
+  /**
+   * 要素が、配下へ公開する名前を差し替えないかどうかを返します。
+   *
+   * `data-*` として `data-if` と `data-row`（差分更新が行の根へ付けるリストキー）
+   * だけを持つ要素が該当します。
+   *
+   * @param fragment 判定対象フラグメント
+   * @returns 名前を差し替えないなら true
+   */
+  private static keepsRowScopeNames(fragment: ElementFragment): boolean {
+    return fragment
+      .getAttributeNames()
+      .every(
+        name =>
+          !name.startsWith(Env.prefix) ||
+          name === `${Env.prefix}if` ||
+          name === `${Env.prefix}row`,
+      );
+  }
+
+  /**
+   * `data-each` が行スコープへ公開する名前を返します。
+   *
+   * @param fragment `data-each` コンテナのフラグメント
+   * @returns 名前の集合。`data-each-arg` が無い（要素データのキーが行スコープへ
+   *   直接展開され、名前を静的に決められない）場合は null
+   */
+  private static getEachScopeNames(
+    fragment: ElementFragment,
+  ): Set<string> | null {
+    const itemArg = fragment.getAttribute(`${Env.prefix}each-arg`);
+    if (!itemArg) {
+      return null;
+    }
+    const scopeNames = new Set<string>([String(itemArg)]);
+    const indexKey = fragment.getAttribute(`${Env.prefix}each-index`);
+    if (indexKey) {
+      scopeNames.add(String(indexKey));
+    }
+    return scopeNames;
   }
 
   /**
@@ -3056,15 +3165,10 @@ export default class Core {
       return cached;
     }
     const template = fragment.getTemplate();
-    const itemArg = fragment.getAttribute(`${Env.prefix}each-arg`);
-    if (template === null || !itemArg) {
+    const scopeNames = Core.getEachScopeNames(fragment);
+    if (template === null || scopeNames === null) {
       fragment.setRowLocalTemplate(false);
       return false;
-    }
-    const scopeNames = new Set<string>([String(itemArg)]);
-    const indexKey = fragment.getAttribute(`${Env.prefix}each-index`);
-    if (indexKey) {
-      scopeNames.add(String(indexKey));
     }
     const rowLocal = Core.isRowLocalSubtree(template, scopeNames);
     fragment.setRowLocalTemplate(rowLocal);
@@ -3762,9 +3866,14 @@ export default class Core {
               // 厳密比較する `data-attr-selected` など）では、確定した編集が画面
               // と収集値から静かに消える（仕様「ユーザー編集と宣言バインドの
               // 権威」）。
-              return Core.evaluateAll(child).then(() =>
-                Core.applyRowFormValues(parent, child, item),
-              );
+              // 行の入力が同一なら、行スコープの名前だけを参照する部分は評価しない
+              // （`reevaluateEachRows()` と同じ）。
+              return Core.evaluateAll(
+                child,
+                changed
+                  ? new Set()
+                  : Core.collectRowLocalFragments(parent, child),
+              ).then(() => Core.applyRowFormValues(parent, child, item));
             }),
           ),
         );
