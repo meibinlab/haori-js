@@ -14,6 +14,11 @@
  *   します。次の microtask では捨てて調べ直す」
  * - 「循環参照（A→B→A）は、たどっている途中の値へ戻った時点で打ち切ります。
  *   打ち切った部分の「危険な値なし」は控えません」
+ * - 「ストレージは値の同一性ではなく種類（`instanceof Storage`）で判定するため、検査の
+ *   ために `localStorage` / `sessionStorage` を読みません。ストレージを参照しただけで
+ *   例外になる環境（`allow-same-origin` の無い sandbox iframe など）でも、先に取り出され
+ *   たストレージを持ち込めば拒否します。`Storage` の無い環境（ブラウザ以外）では、
+ *   ストレージの判定を行いません」
  */
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import Expression from '../src/expression';
@@ -97,6 +102,75 @@ describe('危険な値の検査', () => {
       expect(Expression.evaluate('x', {x: a})).toBeNull();
       expect(Expression.evaluate('y.c === y.c', {y: b})).toBeNull();
       expect(Expression.evaluate('z.a === z.a', {z: c})).toBeNull();
+    });
+  });
+
+  describe('ストレージ', () => {
+    /** 退避したプロパティの定義（復元用） */
+    const saved = new Map<string, PropertyDescriptor>();
+
+    afterEach(() => {
+      for (const [name, descriptor] of saved) {
+        Object.defineProperty(window, name, descriptor);
+      }
+      saved.clear();
+      vi.unstubAllGlobals();
+    });
+
+    /**
+     * ストレージの参照を差し替えます。
+     *
+     * @param name 対象のグローバル名
+     * @param get 参照されたときの処理
+     */
+    function replaceStorage(
+      name: 'localStorage' | 'sessionStorage',
+      get: () => unknown,
+    ): void {
+      const descriptor = Object.getOwnPropertyDescriptor(window, name);
+      if (descriptor && !saved.has(name)) {
+        saved.set(name, descriptor);
+      }
+      Object.defineProperty(window, name, {configurable: true, get});
+    }
+
+    it('検査のためにストレージを読まない', async () => {
+      const local = window.localStorage;
+      const session = window.sessionStorage;
+      let reads = 0;
+      replaceStorage('localStorage', () => {
+        reads++;
+        return local;
+      });
+      replaceStorage('sessionStorage', () => {
+        reads++;
+        return session;
+      });
+      // 前の microtask で作った危険値の集合を使わないよう、microtask を進める。
+      await Promise.resolve();
+
+      expect(Expression.evaluate('x.label', {x: {label: 'a'}})).toBe('a');
+      expect(reads).toBe(0);
+    });
+
+    it('参照すると例外になる環境でも、先に取り出したストレージは拒否する（回帰）', async () => {
+      silence();
+      const session = window.sessionStorage;
+      const blocked = () => {
+        throw new DOMException('storage is blocked', 'SecurityError');
+      };
+      replaceStorage('localStorage', blocked);
+      replaceStorage('sessionStorage', blocked);
+      await Promise.resolve();
+
+      expect(Expression.evaluate('s', {s: session})).toBeNull();
+    });
+
+    it('Storage の無い環境でも、式を評価する', async () => {
+      vi.stubGlobal('Storage', undefined);
+      await Promise.resolve();
+
+      expect(Expression.evaluate('x.label', {x: {label: 'a'}})).toBe('a');
     });
   });
 

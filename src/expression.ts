@@ -191,33 +191,10 @@ export default class Expression {
   ]);
 
   /**
-   * ストレージを、参照が例外になる環境でも安全に読み出します。
-   *
-   * `localStorage` / `sessionStorage` は、`allow-same-origin` の無い sandbox
-   * iframe やサイトデータをブロックした状態のクロスサイト iframe では、参照した
-   * だけで `SecurityError` になります。呼び出し元は全式評価の共通経路なので、
-   * 例外をそのまま通すと画面上のすべての `{{}}` が評価できなくなります。読めない
-   * 値は「その環境では入手できない値」で、バインド値へ紛れ込みようもないため、
-   * `undefined` を返して照合の対象から外します。
-   *
-   * 警告は出しません。式評価のたびに呼ばれるためログが氾濫するうえ、`data-store`
-   * が同じ状況を種別ごとに一度だけ警告するので、原因は追跡できます。
-   *
-   * @param read ストレージを読み出す関数
-   * @returns 読み出せた `Storage`。参照が例外になる場合は undefined
-   */
-  private static readStorageSafely(
-    read: () => Storage | undefined,
-  ): Storage | undefined {
-    try {
-      return read();
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
    * 明示バインド内に持ち込まれてはならない危険値を返します。
+   *
+   * ストレージ（`localStorage` / `sessionStorage`）は含めません。値の同一性ではなく
+   * 種類で判定するためです（`isForbiddenStorage()`）。
    *
    * @returns 危険値の配列
    */
@@ -227,8 +204,6 @@ export default class Expression {
       document?: Document;
       navigator?: Navigator;
       history?: History;
-      localStorage?: Storage;
-      sessionStorage?: Storage;
       fetch?: typeof fetch;
     };
     const candidates: unknown[] = [
@@ -237,10 +212,6 @@ export default class Expression {
       scope.document,
       scope.navigator,
       scope.history,
-      // 参照だけで例外になり得るのはこの 2 つのみ（他は同一オリジンの自 window
-      // 由来で常に読める）。ホットパスなので、囲むのも必要な箇所だけに絞る。
-      Expression.readStorageSafely(() => scope.localStorage),
-      Expression.readStorageSafely(() => scope.sessionStorage),
       scope.fetch,
       scope.Function,
       scope.setTimeout,
@@ -254,6 +225,25 @@ export default class Expression {
       candidates.push(scope.window.location);
     }
     return candidates.filter(value => value !== undefined && value !== null);
+  }
+
+  /**
+   * 値がストレージ（`Storage`）かどうかを返します。
+   *
+   * ストレージは同一性ではなく種類で判定します。`localStorage` / `sessionStorage` の
+   * 読み出しは高く（危険値の集合を作るたびに読むと、式の評価の時間の 1 割を超える）、
+   * `allow-same-origin` の無い sandbox iframe などでは参照しただけで `SecurityError`
+   * になるためです。種類で判定すれば読み出しが要らず、読めない環境でも、先に
+   * 取り出されたストレージを止められます。
+   *
+   * `Storage` の無い環境（ブラウザ以外）では、ストレージは存在しないため false です。
+   *
+   * @param value 判定する値
+   * @returns ストレージなら true
+   */
+  private static isForbiddenStorage(value: object): boolean {
+    const storage = (globalThis as {Storage?: typeof Storage}).Storage;
+    return storage !== undefined && value instanceof storage;
   }
 
   /**
@@ -456,6 +446,9 @@ export default class Expression {
 
   /** 式 → 自由識別子一覧のキャッシュ */
   private static readonly FREE_IDENTIFIER_CACHE = new Map<string, string[]>();
+
+  /** 式 → 許可構文の検証結果のキャッシュ（`hasAllowedSyntax()`） */
+  private static readonly ALLOWED_SYNTAX_CACHE = new Map<string, boolean>();
 
   /** 式 → 式が値として参照し得る名前のキャッシュ */
   private static readonly REFERENCED_NAME_CACHE = new Map<
@@ -1763,10 +1756,29 @@ export default class Expression {
   /**
    * 許可する式構文かどうかを検証します。
    *
+   * 結果は式の文字列だけで決まるため、式ごとに控えます（仕様「評価メカニズム」）。
+   * 評価のたびに字句へ分け直すと、同じ式を行の数だけ評価する一覧で時間がかさみます。
+   *
    * @param expression 検証対象の式
    * @returns 許可する構文であればtrue
    */
   private static hasAllowedSyntax(expression: string): boolean {
+    const cached = this.ALLOWED_SYNTAX_CACHE.get(expression);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const allowed = this.checkAllowedSyntax(expression);
+    this.ALLOWED_SYNTAX_CACHE.set(expression, allowed);
+    return allowed;
+  }
+
+  /**
+   * 許可する式構文かどうかを、字句に分けて検証します（`hasAllowedSyntax()` の本体）。
+   *
+   * @param expression 検証対象の式
+   * @returns 許可する構文であればtrue
+   */
+  private static checkAllowedSyntax(expression: string): boolean {
     const tokens = this.tokenizeExpression(expression);
     if (tokens === null || tokens.length === 0) {
       return false;
@@ -2839,7 +2851,10 @@ export default class Expression {
     }
     seen.add(obj as object);
 
-    if (forbiddenBindingValues.has(obj)) {
+    if (
+      forbiddenBindingValues.has(obj) ||
+      this.isForbiddenStorage(obj as object)
+    ) {
       this.forbiddenBindingValueCache.set(obj as object, true);
       return true;
     }

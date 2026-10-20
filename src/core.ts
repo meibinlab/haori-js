@@ -1415,6 +1415,7 @@ export default class Core {
       next,
       origin,
       '',
+      new Map(),
     );
     return merged === Core.ABSENT_PATH
       ? next
@@ -1429,6 +1430,8 @@ export default class Core {
    * @param next その経路の更新後の値（存在しない場合は `ABSENT_PATH`）
    * @param origin この更新の由来
    * @param path その経路（ルートは空文字）
+   * @param keyArgs 経路の形ごとの `data-each-key` の照合結果（この更新の中で共有する。
+   *   `Core.resolveEachKeyArg()`）
    * @returns 採用した値。その経路を持たせない場合は `ABSENT_PATH`
    */
   private static mergePathAuthority(
@@ -1437,6 +1440,7 @@ export default class Core {
     next: unknown,
     origin: ValueChangeOrigin,
     path: string,
+    keyArgs: Map<string, string | null>,
   ): unknown {
     if (Core.isPlainRecord(previous) && Core.isPlainRecord(next)) {
       const previousRecord = previous as Record<string, unknown>;
@@ -1461,6 +1465,7 @@ export default class Core {
             : Core.ABSENT_PATH,
           origin,
           childPath,
+          keyArgs,
         );
         if (child !== Core.ABSENT_PATH) {
           result[key] = child;
@@ -1478,7 +1483,13 @@ export default class Core {
       // 保持している参照と内部の値が別物になり、無用な複製も生む。
       return substituted ? result : nextRecord;
     }
-    const pairedKeys = Core.resolveArrayPairing(fragment, previous, next, path);
+    const pairedKeys = Core.resolveArrayPairing(
+      fragment,
+      previous,
+      next,
+      path,
+      keyArgs,
+    );
     if (pairedKeys !== null) {
       const previousArray = previous as unknown[];
       const nextArray = next as unknown[];
@@ -1489,6 +1500,7 @@ export default class Core {
           item,
           origin,
           `${path}[${pairedKeys[index]}]`,
+          keyArgs,
         ),
       );
       return merged.some((item, index) => item !== nextArray[index])
@@ -1530,6 +1542,7 @@ export default class Core {
    * @param previous 更新前の値
    * @param next 更新後の値
    * @param path その経路
+   * @param keyArgs 経路の形ごとの `data-each-key` の照合結果（`Core.resolveEachKeyArg()`）
    * @returns 要素ごとのリストキー。要素へ降りない場合は null
    */
   private static resolveArrayPairing(
@@ -1537,6 +1550,7 @@ export default class Core {
     previous: unknown,
     next: unknown,
     path: string,
+    keyArgs: Map<string, string | null>,
   ): string[] | null {
     if (!Array.isArray(previous) || !Array.isArray(next)) {
       return null;
@@ -1547,7 +1561,7 @@ export default class Core {
     // `Core.createListKey()` は素のオブジェクト以外で `keyArg` を見ないため、
     // その場合は DOM の走査を省く（更新のたびに走るので費用が積み上がる）。
     const keyArg = next.some(item => Core.isPlainRecord(item))
-      ? Core.resolveEachKeyArg(fragment, path)
+      ? Core.resolveEachKeyArg(fragment, path, keyArgs)
       : null;
     const previousKeys = previous.map((item, index) =>
       Core.createListKey(
@@ -1579,18 +1593,45 @@ export default class Core {
    * （`Core.resolveEachDeclarationPath()`）。経路の側は配列要素の区間（`[キー]`）を
    * 取り除いた形にします。宣言は「どの階層の配列か」しか表さないためです。
    *
+   * 照合の結果は、1 回の更新の中で経路の形ごとに使い回します（仕様
+   * 「`Core.setBindingData(element, data, options?)`」）。行ごとの入れ子の配列
+   * （`rows[7].items`）は形が同じなので、行の数だけ照合し直すと、時間が行数の
+   * 2 乗で増えます。照合は同期的に終わるため、更新の途中で宣言が変わることは
+   * ありません。
+   *
    * @param fragment 対象のフラグメント
    * @param path 配列の経路（`rows[7].items` のような形）
+   * @param keyArgs 経路の形ごとの照合結果。この更新の中で共有する
    * @returns リストキーに使うプロパティ名。宣言が無ければ null
    */
   private static resolveEachKeyArg(
     fragment: ElementFragment,
     path: string,
+    keyArgs: Map<string, string | null>,
   ): string | null {
-    const eachAttribute = `${Env.prefix}each`;
-    const root = fragment.getTarget();
     // `rows[7].items` → `rows.items`。宣言は階層だけを表すため、要素の区間を落とす。
     const shapePath = path.replace(/\[[^\]]*\]/g, '');
+    const cached = keyArgs.get(shapePath);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const keyArg = Core.findEachKeyArg(fragment.getTarget(), shapePath);
+    keyArgs.set(shapePath, keyArg);
+    return keyArg;
+  }
+
+  /**
+   * 経路の形に対応する `data-each` の宣言を探し、その `data-each-key` を返します。
+   *
+   * @param root 起点の要素（経路の基準）
+   * @param shapePath 要素の区間を落とした配列の経路（`rows.items` のような形）
+   * @returns リストキーに使うプロパティ名。宣言が無ければ null
+   */
+  private static findEachKeyArg(
+    root: HTMLElement,
+    shapePath: string,
+  ): string | null {
+    const eachAttribute = `${Env.prefix}each`;
     const elements = root.querySelectorAll(`[${eachAttribute}]`);
     for (const element of Array.from(elements)) {
       const declared = Core.resolveEachDeclarationPath(element, root);
@@ -3803,6 +3844,11 @@ export default class Core {
       child.hasAttribute(`${Env.prefix}each-before`),
     ).length;
     let chain = Promise.resolve();
+    // そのまま使う既存の行の再評価。行の追加・移動（`chain`）は挿入位置の記録
+    // （`insertTargets`）が前の行の結果に依存するため 1 行ずつ行うが、再評価は行ごとに
+    // 完結しているので鎖に入れない。入れると、行ごとに描画のキューの反映（フレーム）
+    // を待ち、既存の行の数だけフレームを待つ（仕様「data-each の差分更新アルゴリズム」）。
+    const rowEvaluations: Promise<void>[] = [];
     newKeys.forEach((newKey, loopIndex) => {
       // 行と配列要素は出現順で対応する（`newKeys` は `newList` と同じ並び）。キーで
       // 引くと、キーが重複したときに同じ要素データを複数の行へ渡してしまう。
@@ -3868,12 +3914,15 @@ export default class Core {
               // 権威」）。
               // 行の入力が同一なら、行スコープの名前だけを参照する部分は評価しない
               // （`reevaluateEachRows()` と同じ）。
-              return Core.evaluateAll(
-                child,
-                changed
-                  ? new Set()
-                  : Core.collectRowLocalFragments(parent, child),
-              ).then(() => Core.applyRowFormValues(parent, child, item));
+              rowEvaluations.push(
+                Core.evaluateAll(
+                  child,
+                  changed
+                    ? new Set()
+                    : Core.collectRowLocalFragments(parent, child),
+                ).then(() => Core.applyRowFormValues(parent, child, item)),
+              );
+              return undefined;
             }),
           ),
         );
@@ -3909,11 +3958,13 @@ export default class Core {
     });
     return Promise.all(removalPromises)
       .then(() => chain)
+      .then(() => Promise.all(rowEvaluations))
       .then(() => {
         // eachupdate イベントを発火する。
-        // chain は全新規行の initializeFreshEachRow（= 行内容の描画）完了まで await
-        // しているため、本イベントは「今回の差分で追加・削除・並べ替えされた全行が
-        // DOM に反映され、各行の {{...}} 補間などの内容描画が完了した後」に発火する。
+        // chain は全新規行の initializeFreshEachRow（= 行内容の描画）完了まで、
+        // rowEvaluations は既存の行の再評価の完了まで await しているため、本イベントは
+        // 「今回の差分で追加・削除・並べ替えされた全行が DOM に反映され、各行の
+        // {{...}} 補間などの内容描画が完了した後」に発火する。
         // これにより外部から data-each の描画完了を検知できる（仕様上の保証）。
         const validNewKeys = newKeys.filter(
           (key): key is string => key !== null,
