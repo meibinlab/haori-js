@@ -757,6 +757,12 @@ export interface ProcedureOptions {
   formFragment?: ElementFragment | null;
 
   /**
+   * 宣言の無い入力欄の change / input で、値の反映のためだけに対象フォームを
+   * 自動で設定した場合に true
+   */
+  implicitFormFragment?: boolean;
+
+  /**
    * フォームコンテナが無い change / input で、値収集の対象とする入力要素自身の
    * フラグメント。`<form>` や `data-form` の外に置いた単独の入力（同意チェック等）
    * でも、その要素の `name` と値を送信データへ含められるようにします。
@@ -1964,6 +1970,12 @@ export default class Procedure {
         // change / input イベントの場合、data-{event}-form 属性がなくても自動的に
         // フォームを検索し、入力値を双方向バインディングへ反映する。
         options.formFragment = Form.getFormFragment(fragment);
+        // 利用者が宣言した手続きではないため、検証の書き忘れの警告から外す
+        // （仕様「`data-validity` / `data-validity-message`」）。
+        const declarationPrefix = `${Env.prefix}${event}-`;
+        options.implicitFormFragment = !fragment
+          .getAttributeNames()
+          .some(name => name.startsWith(declarationPrefix));
         if (
           options.formFragment === null &&
           Procedure.isNamedInputFragment(fragment)
@@ -4833,10 +4845,12 @@ ${body}
    */
   validate(fragment: ElementFragment): boolean {
     if (this.options.valid !== true) {
-      Form.warnUnvalidatedCustomValidity(
-        fragment,
-        `${Env.prefix}${this.eventType ?? 'fetch'}-validate の指定がありません`,
-      );
+      if (!this.options.implicitFormFragment) {
+        Form.warnUnvalidatedCustomValidity(
+          fragment,
+          `${Env.prefix}${this.eventType ?? 'fetch'}-validate の指定がありません`,
+        );
+      }
       return true;
     }
     // data-validity の条件を検証の直前に同期評価して setCustomValidity へ反映する。
@@ -5010,8 +5024,10 @@ ${body}
       return false;
     }
     if (!result.value) {
-      if (!quiet && Dev.isEnabled()) {
-        Log.warn(
+      // 条件が偽で止めるのは宣言どおりの動きなので、警告ではなく情報として出す
+      // （参照が解決できない場合は宣言の誤りの可能性があるため上で警告する）。
+      if (!quiet) {
+        Log.info(
           'Haori',
           `${attributeName} の条件が偽のため手続きを中断しました: ${expression}`,
         );
@@ -5785,10 +5801,10 @@ ${body}
     // multipart 以外で File を含む送信を検出したら明示的に警告する。
     if (Object.keys(payload).length > 0 && containsBinaryValue(payload)) {
       const declaredContentType = headers.get('Content-Type') || '';
+      // 宣言した方法で判定する。demo ランタイムの正規化（GET への置き換え）は
+      // 本番の宣言の誤りではないため（仕様「`input[type=file]` の値収集」）。
       const isMultipart =
-        method !== 'GET' &&
-        method !== 'HEAD' &&
-        method !== 'OPTIONS' &&
+        !isQueryTransportMethod(requestedMethod) &&
         /multipart\/form-data/i.test(declaredContentType);
       if (!isMultipart) {
         Log.warn(

@@ -150,6 +150,66 @@ describe('別スコープで供給されているキーの診断', () => {
     expect(crossScopeWarnings(warn)).toEqual([]);
   });
 
+  describe('予約キー', () => {
+    // 仕様「未解決参照の診断」の「予約キー（`_fetch` / `_poll` など `_` 始まり）は、
+    // 判定する式として結論が出た評価では報告しません」。
+
+    it('予約キーを判定する式は警告しない（回帰）', async () => {
+      // 別の要素への注入（`data-fetch-state` の取得の後）。
+      Expression.evaluateDetailed('_fetch.statusCode', {
+        _fetch: {statusCode: 200},
+      });
+      const negated = Expression.evaluateDetailed('!!_fetch.error', {});
+      const combined = Expression.evaluateDetailed(
+        '!!_fetch.error && _fetch.statusCode === 400',
+        {},
+      );
+      await Queue.waitForIdle();
+
+      expect(negated.value).toBe(false);
+      expect(combined.value).toBe(false);
+      expect(crossScopeWarnings(warn)).toEqual([]);
+    });
+
+    it('予約キーでも値を求める式は警告する', async () => {
+      Expression.evaluateDetailed('_fetch.responseMessage', {
+        _fetch: {responseMessage: '失敗しました'},
+      });
+      const expression = "_fetch.responseMessage ?? '取得できませんでした'";
+      Expression.evaluateDetailed(expression, {});
+      await Queue.waitForIdle();
+
+      const messages = crossScopeWarnings(warn);
+      expect(messages.length).toBe(1);
+      expect(messages[0]).toContain(expression);
+    });
+
+    it('予約キーではないキーは判定する式でも警告する', async () => {
+      // 応答を兄弟要素へバインドした宣言。
+      Expression.evaluateDetailed('siblingResult.ok', {
+        siblingResult: {ok: true},
+      });
+      const expression = '!!siblingResult.ok';
+      Expression.evaluateDetailed(expression, {});
+      await Queue.waitForIdle();
+
+      const messages = crossScopeWarnings(warn);
+      expect(messages.length).toBe(1);
+      expect(messages[0]).toContain(expression);
+    });
+
+    it('判定する式に両方があれば予約キーではないキーだけを警告する', async () => {
+      Expression.evaluateDetailed('_fetch.loading', {_fetch: {loading: false}});
+      Expression.evaluateDetailed('mixedResult.ok', {mixedResult: {ok: true}});
+      Expression.evaluateDetailed('!!_fetch.loading || !!mixedResult.ok', {});
+      await Queue.waitForIdle();
+
+      const messages = crossScopeWarnings(warn);
+      expect(messages.length).toBe(1);
+      expect(messages[0]).toContain('provided in another scope: mixedResult.');
+    });
+  });
+
   describe('束縛識別子のキャッシュ', () => {
     /**
      * 束縛識別子のキャッシュを取り出します。

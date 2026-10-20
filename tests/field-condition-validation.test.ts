@@ -224,6 +224,32 @@ describe('フィールド間検証', () => {
       ).toBe(true);
     });
 
+    it('条件が偽で止めたことは警告ではなく情報として出す（回帰）', async () => {
+      // 仕様「`data-{event}-if`」の「開発モード（読み込み時の `<script data-dev>`）
+      // でのみ中断の情報ログを出します」。
+      Dev.enable();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const root = await mount(
+        `<div data-bind='{"n":0}'>
+           <button id="go" data-click-fetch="/api/next"
+                   data-click-if="{{n > 0}}">次へ</button>
+         </div>`,
+      );
+
+      root
+        .querySelector<HTMLElement>('#go')!
+        .dispatchEvent(new Event('click', {bubbles: true}));
+      await waitForDomSettled();
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const stopped = (calls: unknown[][]): boolean =>
+        calls.some(call => String(call[1]).includes('条件が偽のため'));
+      expect(fetched).toEqual([]);
+      expect(stopped(warn.mock.calls)).toBe(false);
+      expect(stopped(info.mock.calls)).toBe(true);
+    });
+
     it('data-form-arg 構成ではそのキー配下で参照できる', async () => {
       const root = await mount(
         `<div data-bind='{"draft":{"a":"1","b":""}}'>
@@ -370,6 +396,59 @@ describe('フィールド間検証', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       expect(fetched).toEqual(['/api/next']);
+      expect(
+        warn.mock.calls.some(call =>
+          String(call[1]).includes('検証は行われません'),
+        ),
+      ).toBe(true);
+    });
+
+    it('宣言の無い入力欄の変更では警告しない（回帰）', async () => {
+      // 仕様「`data-validity` / `data-validity-message`」の「その入力欄にそのイベントの
+      // `data-{event}-*`（`change` なら `data-change-*`）を 1 つも宣言していない
+      // 場合は警告しません」。
+      Dev.enable();
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => {});
+      const root = await mount(
+        `<form id="f" data-bind='{"a":"","b":""}'>
+           <input name="a">
+           <input name="b" data-validity="{{a === b}}">
+         </form>`,
+      );
+      const a = root.querySelector<HTMLInputElement>('input[name="a"]')!;
+
+      a.value = 'x';
+      a.dispatchEvent(new Event('input', {bubbles: true}));
+      a.dispatchEvent(new Event('change', {bubbles: true}));
+      await waitForDomSettled();
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(
+        warn.mock.calls.some(call =>
+          String(call[1]).includes('検証は行われません'),
+        ),
+      ).toBe(false);
+    });
+
+    it('change に手続きを宣言して検証を書いていない入力欄では警告する', async () => {
+      // 仕様「`data-validity` / `data-validity-message`」の「`data-{event}-validate`
+      // が無い手続きでは検証されません。開発モードではその状況を警告します」。
+      Dev.enable();
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => {});
+      const root = await mount(
+        `<form id="f" data-bind='{"a":"","b":""}'>
+           <input name="a" data-change-fetch="/api/check">
+           <input name="b" data-validity="{{a === b}}">
+         </form>`,
+      );
+      const a = root.querySelector<HTMLInputElement>('input[name="a"]')!;
+
+      a.value = 'x';
+      a.dispatchEvent(new Event('change', {bubbles: true}));
+      await waitForDomSettled();
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(fetched).toEqual(['/api/check']);
       expect(
         warn.mock.calls.some(call =>
           String(call[1]).includes('検証は行われません'),

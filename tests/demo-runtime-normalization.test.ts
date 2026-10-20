@@ -299,4 +299,75 @@ describe('demo ランタイムでの通信の正規化', () => {
       expect(calls[0].url).toContain('a=1');
     });
   });
+
+  describe('File の送信の診断', () => {
+    // 仕様「`input[type=file]` の値収集」の「判定は**宣言**した方法と `Content-Type`
+    // で行います」。正規化は本番の宣言の誤りではない。
+
+    /**
+     * file input にファイルを選んだフォームを送り、File の送信の警告が出たかを返します。
+     *
+     * @param fetchAttributes 送信ボタンへ付ける方法と Content-Type の宣言
+     * @returns 警告が出たら true
+     */
+    const sendFile = async (fetchAttributes: string): Promise<boolean> => {
+      Dev.set(true);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await mount(
+        `<form id="f"><input type="file" name="file"></form>
+         <button id="go" data-click-form="#f"
+           data-click-fetch="http://api.test/import" ${fetchAttributes}
+         >送信</button>`,
+      );
+      const file = new File(['a'], 'a.csv', {type: 'text/csv'});
+      // `files` は読み取り専用のため、FileList 相当のオブジェクトを差し込む。
+      Object.defineProperty(
+        container.querySelector('input[type="file"]'),
+        'files',
+        {
+          configurable: true,
+          get: () =>
+            ({
+              0: file,
+              length: 1,
+              item: () => file,
+              [Symbol.iterator]: function* () {
+                yield file;
+              },
+            }) as unknown as FileList,
+        },
+      );
+
+      await clickAndWait('#go');
+
+      return warn.mock.calls.some(call =>
+        call.map(String).join(' ').includes('A File value cannot be sent'),
+      );
+    };
+
+    it('demo でも POST と multipart/form-data の宣言には警告しない（回帰）', async () => {
+      const warned = await sendFile(
+        'data-click-fetch-method="POST" data-click-fetch-content-type="multipart/form-data"',
+      );
+
+      expect(String(calls[0].options.method).toUpperCase()).toBe('GET');
+      expect(warned).toBe(false);
+    });
+
+    it('demo でも multipart/form-data を宣言しない POST には警告する', async () => {
+      expect(await sendFile('data-click-fetch-method="POST"')).toBe(true);
+    });
+
+    it('demo でも GET の宣言には警告する', async () => {
+      expect(
+        await sendFile('data-click-fetch-content-type="multipart/form-data"'),
+      ).toBe(true);
+    });
+
+    it('embedded でも multipart/form-data を宣言しない POST には警告する', async () => {
+      Env.setRuntime('embedded');
+
+      expect(await sendFile('data-click-fetch-method="POST"')).toBe(true);
+    });
+  });
 });

@@ -1225,6 +1225,19 @@ export default class Expression {
   }
 
   /**
+   * 予約キー（エンジン管理変数）かどうかを判定します。
+   *
+   * `_fetch` / `_poll` など、Haori が実行時に要素ごとに注入する値です（仕様
+   * 「`data-bind`」）。`ElementFragment.isReservedBindingKey()` はこの判定を使います。
+   *
+   * @param key 判定対象のキー
+   * @returns 予約キーなら true
+   */
+  public static isReservedBindingKey(key: string): boolean {
+    return key.startsWith('_');
+  }
+
+  /**
    * バインドに無いキーを `undefined` とみなして、判定結果が出るかを試します。
    *
    * 「無いものを表示する」式は未解決参照（空表示）が妥当ですが、「無いものを
@@ -1453,6 +1466,9 @@ export default class Expression {
         // 標準組み込み（`Math` など）は式から参照できる仕様のため遮蔽しない。
         !this.ALLOWED_GLOBAL_IDENTIFIERS.has(name),
     );
+    // 「別のスコープでは供給されている」診断の対象。評価の結果で絞るため、記録は
+    // 評価の後に行う。
+    let scopeMissingNames: string[] | null = null;
     if (Dev.isEnabled()) {
       // 「このスコープには無いが別のスコープでは供給されている」キーの診断材料。
       // `??` などで既定値を書いた式は値のある結果になるため、未解決参照の診断では
@@ -1463,13 +1479,46 @@ export default class Expression {
       // あるだけで誤った警告になる。遮蔽（グローバルへの解決の遮断）は名前だけでは
       // 束縛の範囲を判断できないため、上の一覧のまま行う。
       const bound = this.extractBoundIdentifiers(expression);
-      this.recordScopeMissingIdentifiers(
+      scopeMissingNames =
         bound.size === 0
           ? unknownIdentifiers
-          : unknownIdentifiers.filter(name => !bound.has(name)),
+          : unknownIdentifiers.filter(name => !bound.has(name));
+    }
+    const detail = this.evaluateWithShadowing(
+      expression,
+      runtimeBindings,
+      unknownIdentifiers,
+      allowMissingIdentifierRecovery,
+    );
+    if (scopeMissingNames !== null) {
+      this.recordScopeMissingIdentifiers(
+        typeof detail.value === 'boolean'
+          ? // 判定する式として結論が出た評価では、予約キーが無いのは正常
+            // （注入より前の状態）なので報告しない（仕様「未解決参照の診断」）。
+            scopeMissingNames.filter(name => !this.isReservedBindingKey(name))
+          : scopeMissingNames,
         expression,
       );
     }
+    return detail;
+  }
+
+  /**
+   * バインドに無い識別子を遮蔽して式を評価します。
+   *
+   * @param expression 評価する式
+   * @param runtimeBindings 評価に用いるバインド値（回復のため書き換えます）
+   * @param unknownIdentifiers バインドに無い識別子の一覧
+   * @param allowMissingIdentifierRecovery 未宣言識別子を undefined として評価を
+   *   続けてよい式か
+   * @returns 評価結果と未解決参照の有無
+   */
+  private static evaluateWithShadowing(
+    expression: string,
+    runtimeBindings: Record<string, unknown>,
+    unknownIdentifiers: string[],
+    allowMissingIdentifierRecovery: boolean,
+  ): ExpressionEvaluationDetail {
     if (allowMissingIdentifierRecovery) {
       // `?.` / `??` / `||` / `&&` を含む式は、従来から未宣言識別子を undefined と
       // して評価を続ける。事前に undefined を渡せば ReferenceError による再試行が

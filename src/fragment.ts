@@ -1716,13 +1716,14 @@ export class ElementFragment extends Fragment {
    *
    * `_fetch` / `_poll` など、Haori が実行時に注入し、`data-bind` 属性へ書き出さない
    * 値が対象です（仕様「`data-bind`」）。`data-bind` 属性へのミラー
-   * （`Core.setBindingData()`）も同じ判定で対象から外します。
+   * （`Core.setBindingData()`）も同じ判定で対象から外します。式の診断と判定を揃える
+   * ため、実体は `Expression.isReservedBindingKey()` に置いています。
    *
    * @param key 判定対象のキー
    * @returns 予約キーなら true
    */
   public static isReservedBindingKey(key: string): boolean {
-    return key.startsWith('_');
+    return Expression.isReservedBindingKey(key);
   }
 
   /**
