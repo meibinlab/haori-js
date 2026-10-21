@@ -10,6 +10,7 @@ import Expression from './expression';
 import Env from './env';
 import Dev from './dev';
 import Enhance from './enhance';
+import Url from './url';
 
 /**
  * `data-if` が偽の分岐で、エンジンが `disabled` を付与した入力に立てる印。
@@ -1007,6 +1008,24 @@ export class ElementFragment extends Fragment {
     'required',
     'reversed',
     'selected',
+  ]);
+
+  /**
+   * URL を値に取る属性。
+   *
+   * 式を含む宣言の評価結果が `javascript:` / `vbscript:` なら属性を削除します
+   * （仕様「プレースホルダ解決規則」の URL 属性）。
+   */
+  private static readonly URL_ATTRIBUTES = new Set([
+    'href',
+    'src',
+    'action',
+    'formaction',
+    'xlink:href',
+    'poster',
+    'data',
+    'cite',
+    'background',
   ]);
 
   /** inputイベントを発生させるタイプ */
@@ -3777,12 +3796,27 @@ export class ElementFragment extends Fragment {
       shouldSyncValueProperty &&
       ElementFragment.isUserEditableValue(element) &&
       (element === rootNode.activeElement || this.hasPendingUserEdit());
-    const stringResult =
+    const evaluatedString =
       shouldRemoveTarget ||
       result === null ||
       (result === false && !keepsFalseAsValue)
         ? null
         : String(result);
+    // 値から組み立てた URL がスクリプトの実行になる場合は、属性を反映しない。
+    const blocksScriptUrl =
+      contents.isEvaluate &&
+      evaluatedString !== null &&
+      ElementFragment.URL_ATTRIBUTES.has(targetName) &&
+      Url.hasScriptScheme(evaluatedString);
+    if (blocksScriptUrl) {
+      Log.warn(
+        '[Haori]',
+        `Attribute "${targetName}" was removed because the evaluated URL uses` +
+          ` a script scheme: ${rawName}="${value}" -> ${evaluatedString}`,
+        element,
+      );
+    }
+    const stringResult = blocksScriptUrl ? null : evaluatedString;
     const requiresRawAttributeWrite =
       rawName !== targetName && element.getAttribute(rawName) !== value;
     const requiresTargetAttributeWrite =
@@ -5080,8 +5114,11 @@ class TextContents {
 /**
  * 属性のコンテンツを管理するクラスです。
  * 一度生成されると内部は変更しません。
+ *
+ * パッケージの入口からは公開しません。警告済みの記録が本番で増えないことを
+ * テストから確かめるためだけに export します。
  */
-class AttributeContents extends TextContents {
+export class AttributeContents extends TextContents {
   /** 強制評価する属性の接尾辞（プレースホルダが無くても式として評価する） */
   private static readonly FORCE_EVALUATION_SUFFIXES = ['if', 'each', 'derive'];
 
@@ -5097,6 +5134,18 @@ class AttributeContents extends TextContents {
   /** 強制評価フラグ（プレースホルダでなくても評価する） */
   private readonly forceEvaluation: boolean;
 
+  /** 警告済みの「イベントハンドラ属性に書いた `{{`」（属性名と値の組） */
+  private static readonly WARNED_EVENT_HANDLER_PLACEHOLDERS = new Set<string>();
+
+  /** 警告済みの「URL のパスに埋め込んだ値」（属性名・式・値の組） */
+  private static readonly WARNED_URL_PATH_VALUES = new Set<string>();
+
+  /** 属性名 */
+  private readonly name: string;
+
+  /** URL のパスに埋め込んだ値を診断する属性（取得先の URL）かどうか */
+  private readonly checksUrlPath: boolean;
+
   /**
    * コンストラクタ。
    *
@@ -5106,19 +5155,115 @@ class AttributeContents extends TextContents {
   constructor(name: string, value: string) {
     // `data-bind` の値は式として評価しない（仕様「`data-bind`」の「値は式として評価
     // しません」）。評価すると、値に含まれる `{{ }}` が属性の上でだけ評価され、
-    // 利用者の入力が式として実行される。
-    super(value, AttributeContents.isLiteralAttribute(name));
+    // 利用者の入力が式として実行される。イベントハンドラ属性も、値がそのまま
+    // コードになるため評価しない（仕様「プレースホルダ解決規則」の「評価しない属性」）。
+    const isEventHandler = AttributeContents.isEventHandlerAttribute(name);
+    super(value, name === `${Env.prefix}bind` || isEventHandler);
+    this.name = name;
     this.forceEvaluation = AttributeContents.needsForceEvaluation(name);
+    this.checksUrlPath = AttributeContents.isRequestUrlAttribute(name);
+    if (isEventHandler && Dev.isEnabled() && value.includes('{{')) {
+      AttributeContents.warnEventHandlerPlaceholder(name, value);
+    }
   }
 
   /**
-   * 値を文字のまま扱う属性（`data-bind`）かどうかを判定します。
+   * イベントハンドラ属性（名前が `on` で始まる属性と `data-attr-on*`）かどうかを
+   * 判定します。
    *
    * @param name 属性名
-   * @returns 文字のまま扱う属性なら true
+   * @returns イベントハンドラ属性なら true
    */
-  private static isLiteralAttribute(name: string): boolean {
-    return name === `${Env.prefix}bind`;
+  private static isEventHandlerAttribute(name: string): boolean {
+    const aliasPrefix = `${Env.prefix}attr-`;
+    const target = name.startsWith(aliasPrefix)
+      ? name.slice(aliasPrefix.length)
+      : name;
+    return target.startsWith('on');
+  }
+
+  /**
+   * 取得先の URL を持つ属性（`data-fetch`・`data-{event}-fetch`・`data-import`）かどうかを
+   * 判定します。
+   *
+   * @param name 属性名
+   * @returns 取得先の URL を持つ属性なら true
+   */
+  private static isRequestUrlAttribute(name: string): boolean {
+    return (
+      name === `${Env.prefix}import` ||
+      (name.startsWith(Env.prefix) && name.endsWith('fetch'))
+    );
+  }
+
+  /**
+   * イベントハンドラ属性に書いた `{{` を、属性名と値の組ごとに一度だけ警告します。
+   *
+   * @param name 属性名
+   * @param value 属性値
+   */
+  private static warnEventHandlerPlaceholder(
+    name: string,
+    value: string,
+  ): void {
+    const key = `${name}\u0000${value}`;
+    if (AttributeContents.WARNED_EVENT_HANDLER_PLACEHOLDERS.has(key)) {
+      return;
+    }
+    AttributeContents.WARNED_EVENT_HANDLER_PLACEHOLDERS.add(key);
+    Log.warn(
+      '[Haori]',
+      'Placeholders in event handler attributes are not evaluated:' +
+        ` ${name}="${value}". Use ${Env.prefix}{event}-run, or read the bound` +
+        ' value inside the called function.',
+    );
+  }
+
+  /**
+   * URL のパスに埋め込んだ値が送り先のパスを変える場合に警告します（開発モード）。
+   *
+   * 値は URL エンコードしないため、`/` や `..` を含む値は別のパスへの要求になります
+   * （仕様「9. URL に埋め込む値」）。書いた文字の後ろで、`?`・`#` より前に埋め込んだ
+   * 値だけを対象にします。
+   *
+   * @param results 内容ごとの評価結果
+   */
+  private diagnoseUrlPathValues(results: unknown[]): void {
+    let hasLiteralBefore = false;
+    let preceding = '';
+    this.contents.forEach((content, index) => {
+      const text = String(results[index]);
+      if (content.type === ExpressionType.TEXT) {
+        hasLiteralBefore = true;
+      } else if (
+        hasLiteralBefore &&
+        !/[?#]/.test(preceding) &&
+        AttributeContents.changesUrlPath(text)
+      ) {
+        const key = `${this.name}\u0000${this.getValue()}\u0000${text}`;
+        if (!AttributeContents.WARNED_URL_PATH_VALUES.has(key)) {
+          AttributeContents.WARNED_URL_PATH_VALUES.add(key);
+          Log.warn(
+            '[Haori]',
+            'A value embedded in the URL path is not URL-encoded and changes' +
+              ` the request path: ${this.name}="${this.getValue()}", value:` +
+              ` ${text}. Encode it with encodeURIComponent, or send it as a` +
+              ' query.',
+          );
+        }
+      }
+      preceding += text;
+    });
+  }
+
+  /**
+   * URL のパスに埋め込むと送り先のパスを変える値かどうかを判定します。
+   *
+   * @param value 埋め込む値
+   * @returns `/`・`\`・`?`・`#` を含むか、`.`・`..`（`%2e` を含む）そのものなら true
+   */
+  private static changesUrlPath(value: string): boolean {
+    return /[/\\?#]/.test(value) || /^(?:\.|%2e){1,2}$/i.test(value);
   }
 
   /**
@@ -5201,6 +5346,9 @@ class AttributeContents extends TextContents {
         content.type === ExpressionType.RAW_EXPRESSION,
       'attribute',
     );
+    if (this.checksUrlPath && Dev.isEnabled()) {
+      this.diagnoseUrlPathValues(detail.results);
+    }
     if (this.forceEvaluation && detail.results.length > 1) {
       Log.error(
         '[Haori]',

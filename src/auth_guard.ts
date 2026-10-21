@@ -25,6 +25,8 @@
 import Env from './env';
 import Expression from './expression';
 import Fragment, {ElementFragment} from './fragment';
+import Log from './log';
+import Url from './url';
 
 /** ステータスコードと対応する遷移属性サフィックスの対応表。 */
 const REDIRECT_ATTR_SUFFIX: Readonly<Record<number, string>> = {
@@ -155,6 +157,16 @@ export function checkAuthRedirect(status: number): boolean {
       continue;
     }
     const finalUrl = applyReturnParam(element, attr, url);
+    // `javascript:` などへの遷移はコードの実行になるため行わない（仕様
+    // 「認証ガード（`data-unauthorized-redirect` / `data-forbidden-redirect`）」）。
+    if (!Url.isNavigableUrl(finalUrl)) {
+      Log.error(
+        'Haori',
+        '遷移先が http: / https: / 現在ページと同じスキームの URL ではないため' +
+          `遷移しません: ${finalUrl}`,
+      );
+      return false;
+    }
     // ログインページ自身の通信が再び認証エラーになった場合などの無限ループを防ぐ。
     try {
       if (
@@ -163,7 +175,7 @@ export function checkAuthRedirect(status: number): boolean {
         return false;
       }
     } catch {
-      // URL 解決に失敗した場合はそのまま遷移を試みる。
+      // 解析できない URL は上の判定で除いている。
     }
     window.location.href = finalUrl;
     return true;

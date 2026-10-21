@@ -60,4 +60,47 @@ export default class Url {
       return false;
     }
   }
+
+  /**
+   * 値が遷移してよい URL かどうかを判定します。
+   *
+   * 現在ページの URL を基準に解決し、スキームが `http:`・`https:`、または現在ページと
+   * 同じスキームのときだけ true を返します。`javascript:` などへの遷移は、遷移の
+   * 代わりにそのページの権限でコードを実行するため拒否します（仕様
+   * 「`data-{event}-redirect`」の「遷移できるスキーム」）。解析は `URL` に任せるため、
+   * ブラウザが遷移先を読むときと同じく前後の空白・制御文字と途中のタブ・改行を
+   * 無視して判定します。
+   *
+   * @param value 判定対象の URL（相対 URL を含む）
+   * @returns 遷移してよい URL なら true
+   */
+  public static isNavigableUrl(value: string): boolean {
+    try {
+      const current = new URL(window.location.href).protocol;
+      const {protocol} = new URL(value, window.location.href);
+      return (
+        protocol === 'http:' || protocol === 'https:' || protocol === current
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * URL がスクリプトを実行するスキーム（`javascript:` / `vbscript:`）かどうかを判定します。
+   *
+   * ブラウザが URL を読むときと同じく、先頭の空白・制御文字と途中のタブ・改行を
+   * 除き、大文字と小文字を区別せずに判定します（仕様「プレースホルダ解決規則」の
+   * URL 属性）。
+   *
+   * @param value 判定対象の URL
+   * @returns スクリプトを実行するスキームなら true
+   */
+  public static hasScriptScheme(value: string): boolean {
+    const normalized = value
+      // eslint-disable-next-line no-control-regex
+      .replace(/^[\u0000- ]+/, '')
+      .replace(/[\t\n\r]/g, '');
+    return /^(?:javascript|vbscript):/i.test(normalized);
+  }
 }

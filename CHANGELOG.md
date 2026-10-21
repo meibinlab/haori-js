@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## [0.62.0] - 2026-10-21
+
+**値がコードになる経路を 3 つ塞いだ版です。遷移先の `javascript:` で遷移しなくなり、URL 属性の `javascript:` が属性ごと外れ、イベントハンドラ属性（`on*`）の `{{ }}` を評価しなくなります。`on*` 属性に `{{ }}` を書いていた画面は、`data-{event}-run` などへ書き換えてください。**
+
+### Security
+
+- **`data-{event}-redirect` / `data-{event}-redirect-replace` と認証ガード（`data-unauthorized-redirect` / `data-forbidden-redirect`）で、遷移先のスキームを検査するようにした**（`src/procedure.ts`・`src/auth_guard.ts`・`src/url.ts`）。応答や URL パラメータの値が `javascript:...` だと、遷移の代わりにそのページの権限でコードが動いていた。
+  - `http:`・`https:`・現在ページと同じスキームのときだけ遷移する。相対 URL と外部の `https:` の URL へは従来どおり遷移する。
+  - それ以外（`javascript:`・`data:`・`vbscript:`・`blob:`・`mailto:` など）と、解析できない URL では `Log.error` で報告して遷移しない。
+- **URL 属性の `{{ }}` を評価した結果が `javascript:` / `vbscript:` なら、属性を外すようにした**（`src/fragment.ts`）。対象は `href`・`src`・`action`・`formaction`・`xlink:href`・`poster`・`data`・`cite`・`background` で、`data-attr-*` で書いた場合も含む。
+  - 先頭の空白・制御文字と途中のタブ・改行を除き、大文字と小文字を区別せずに判定する。
+  - 式を含まない宣言（`href="javascript:void(0)"`）と、`data:` / `blob:` には触らない。
+
+### Changed
+
+- **イベントハンドラ属性（`on` で始まる属性と `data-attr-on*`）の `{{ }}` を評価しないようにした**（`src/fragment.ts`）。中身は JavaScript なので、値を差し込むと値がそのままコードになっていた。
+  - `data-bind` と同じく、書いたとおりの文字のまま扱う。`data-attr-onclick="..."` は書いた文字をそのまま `onclick` へ写す。
+  - 開発モードでは、`{{` を書いた宣言を属性と値の組ごとに一度だけ警告する。
+
+### Added
+
+- **開発モードで、`data-fetch`・`data-{event}-fetch`・`data-import` の URL のパスに埋め込んだ値が送り先を変える場合に警告するようにした**（`src/fragment.ts`）。値は URL エンコードしないため、`../admin` のような値で同じオリジンの別のパスへ送られる。
+  - 書いた文字の後ろで、`?`・`#` より前に埋め込んだ値が対象。`/`・`\`・`?`・`#` を含むか、値そのものが `.`・`..`（`%2e` を含む）のときに警告する。
+
+### Docs
+
+- 仕様の「XSS対策」に「7. 遷移先のスキーム」「8. 属性へ書いた値」「9. URL に埋め込む値」を足した。`srcdoc` と `style` は塞がないため、信頼できる値だけを入れるよう明記した。
+- 仕様の「プレースホルダ解決規則」に URL 属性と「評価しない属性」を、`data-{event}-redirect`・認証ガード・`data-fetch`・`data-import` に注記を足した。
+
 ## [0.61.1] - 2026-10-21
 
 **開発モードの誤った警告を 3 つ直し、`data-{event}-if` で止めたことのログを情報に下げた版です。本番での振る舞いは変わりません。**

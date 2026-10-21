@@ -4327,7 +4327,13 @@ ${body}
           }
         }
       }
-      if (redirectReplaceUrl) {
+      if (!Url.isNavigableUrl(destination)) {
+        Log.error(
+          'Haori',
+          '遷移先が http: / https: / 現在ページと同じスキームの URL ではないため' +
+            `遷移しません: ${destination}`,
+        );
+      } else if (redirectReplaceUrl) {
         // 現在の履歴項目を置き換える。遷移前のページへは「戻る」で到達できない。
         window.location.replace(destination);
       } else {
