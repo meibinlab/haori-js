@@ -2948,65 +2948,70 @@ export default class Form {
         );
       }
     } else if (objectName) {
-      const childValues = values[String(objectName)];
-      if (childValues && typeof childValues === 'object') {
-        // values が切り替わるので出現位置も数え直す。
-        const childCursors = new Map<string, number>();
-        for (const child of fragment.getChildElementFragments()) {
-          promises.push(
-            Form.setPartValues(
-              child,
-              childValues as Record<string, unknown>,
-              force,
-              emitEvents,
-              clearMissing,
-              childCursors,
-              origin,
-            ),
-          );
-        }
+      const rawChildValues = values[String(objectName)];
+      // キーが無い（またはオブジェクトでない）場合も配下へ降りる。clearMissing
+      // （data-each 行への反映）では配下の入力欄のキーも「無い」ので空にする必要が
+      // あり、降りないと行の途中への挿入で使い回された DOM に前の行の選択が残る。
+      // clearMissing でなければ配下の無いキーは維持になるため、降りても変わらない。
+      const childValues =
+        rawChildValues && typeof rawChildValues === 'object'
+          ? rawChildValues
+          : {};
+      // values が切り替わるので出現位置も数え直す。
+      const childCursors = new Map<string, number>();
+      for (const child of fragment.getChildElementFragments()) {
+        promises.push(
+          Form.setPartValues(
+            child,
+            childValues as Record<string, unknown>,
+            force,
+            emitEvents,
+            clearMissing,
+            childCursors,
+            origin,
+          ),
+        );
       }
     } else if (listName) {
-      const childList = values[String(listName)];
-      if (Array.isArray(childList)) {
-        const children = fragment.getChildElementFragments();
-        // 行と配列要素はリストキーで対応付ける。位置で組み合わせると、行を挿入・削除
-        // した直後（逆方向同期は `data-each` の行生成より前に走る）に、その位置より
-        // 後の行がひとつずつずれた値を受け取る。
-        const eachKey = fragment.getAttribute(`${Env.prefix}each-key`);
-        // 取得元と収集先が別の配列のときは、リストキーで収集先の要素を引けない。
-        // 引こうとすると全行が「対応する要素なし」になり、行の値が届かなくなる。
-        const paired = Form.isCollectedListFromEachSource(fragment)
-          ? Form.pairRowsWithItems(
-              children,
-              childList,
-              eachKey === null || eachKey === undefined
-                ? null
-                : String(eachKey),
-            )
-          : null;
-        for (let i = 0; i < children.length; i++) {
-          const child = children[i];
-          // 対応する配列要素が無い行（これから取り除かれる古い行、または配列より
-          // 多い行）は空の値を渡して触らない。
-          const item = paired
-            ? paired[i]
-            : childList.length > i
-              ? childList[i]
-              : null;
-          promises.push(
-            // 行ごとに values が切り替わるので出現位置も行単位で数える。
-            Form.setPartValues(
-              child,
-              (Form.asPlainRecord(item) ?? {}) as Record<string, unknown>,
-              force,
-              emitEvents,
-              clearMissing,
-              new Map(),
-              origin,
-            ),
-          );
-        }
+      const rawChildList = values[String(listName)];
+      // キーが無い場合は 0 件として配下へ降りる（`data-form-object` と同じ理由）。
+      const childList = Array.isArray(rawChildList) ? rawChildList : [];
+      const children = fragment.getChildElementFragments();
+      // 行と配列要素はリストキーで対応付ける。位置で組み合わせると、行を挿入・削除
+      // した直後（逆方向同期は `data-each` の行生成より前に走る）に、その位置より
+      // 後の行がひとつずつずれた値を受け取る。
+      const eachKey = fragment.getAttribute(`${Env.prefix}each-key`);
+      // 取得元と収集先が別の配列のときは、リストキーで収集先の要素を引けない。
+      // 引こうとすると全行が「対応する要素なし」になり、行の値が届かなくなる。
+      const paired = Form.isCollectedListFromEachSource(fragment)
+        ? Form.pairRowsWithItems(
+            children,
+            childList,
+            eachKey === null || eachKey === undefined ? null : String(eachKey),
+          )
+        : null;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        // 対応する配列要素が無い行（これから取り除かれる古い行、または配列より
+        // 多い行）には空の値を渡す。clearMissing では入力欄が空になり、それ以外では
+        // 無いキーとして値を保つ。
+        const item = paired
+          ? paired[i]
+          : childList.length > i
+            ? childList[i]
+            : null;
+        promises.push(
+          // 行ごとに values が切り替わるので出現位置も行単位で数える。
+          Form.setPartValues(
+            child,
+            (Form.asPlainRecord(item) ?? {}) as Record<string, unknown>,
+            force,
+            emitEvents,
+            clearMissing,
+            new Map(),
+            origin,
+          ),
+        );
       }
     } else {
       for (const child of fragment.getChildElementFragments()) {
