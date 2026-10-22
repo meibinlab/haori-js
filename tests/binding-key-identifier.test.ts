@@ -93,6 +93,8 @@ describe('識別子として使えないバインドキー', () => {
       ['先頭が数字', '1st'],
       ['空白', 'foo bar'],
       ['予約語', 'class'],
+      // 仕様「バインドキーと識別子（`name` の命名）」の「`public`（予約語。strict モードだけの予約語を含む）」
+      ['strict モードだけの予約語', 'public'],
       ['カンマ', 'a,b'],
       ['分割代入の形', '{a}'],
       ['既定値の形', 'a=1'],
@@ -209,6 +211,18 @@ describe('識別子として使えないバインドキー', () => {
         .filter(message => message.includes('diag.only.key'));
       expect(messages).toHaveLength(1);
       expect(messages[0]).toContain('haori.data');
+    });
+
+    it('strict モードだけの予約語のキーも除外したキーとして警告する', () => {
+      // 仕様「バインドキーと識別子（`name` の命名）」の「判定は実際に strict モードの `new Function` へ通して行うため、予約語も将来の識別子規則も取りこぼしません」
+      Dev.enable();
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
+      Expression.evaluate('plainKey', {implements: 1, plainKey: 'abc'});
+      expect(
+        warn.mock.calls
+          .map(args => args.join(' '))
+          .filter(message => message.includes('implements')),
+      ).toHaveLength(1);
     });
 
     it('Unicode の識別子キーは除外対象として警告しない', () => {

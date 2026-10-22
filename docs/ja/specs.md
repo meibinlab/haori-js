@@ -595,10 +595,10 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
     Log.error('[Haori]', `Binding keys are reserved and ignored: ${...}`)
   }
 
-  // 3. 再バインド不可の禁止識別子を除外したバインドキーでキャッシュキーを作成
-  const bindKeys = Object.keys(bindedValues)
-    .filter(key => !FORBIDDEN_BINDING_NAMES.has(key))
-    .sort()
+  // 3. 式が参照する名前のうち、バインドにあり、再バインド不可の禁止識別子でない
+  //    ものを引数にして、キャッシュキーを作成
+  const bindKeys = referencedNames(expression)
+    .filter(name => Object.hasOwn(bindedValues, name) && !FORBIDDEN_BINDING_NAMES.has(name))
   const cacheKey = `${expression}:${bindKeys.join(',')}`
 
   // 4. 評価関数をキャッシュまたは生成
@@ -616,10 +616,12 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
     EXPRESSION_CACHE.set(cacheKey, evaluator)
   }
 
-  // 6. バインド値を Proxy でラップし、評価中のみ prototype 系アクセスを遮断して実行
-  const wrappedValues = this.wrapBoundValues(bindedValues)
-  const argValues = bindKeys.map(key => wrappedValues[key])
-  return this.withBlockedPropertyAccess(() => evaluator(...argValues))
+  // 6. 引数の値を Proxy でラップし、呼び出しかスプレッドを含む式は評価中のみ
+  //    prototype 系アクセスを遮断して実行
+  const argValues = bindKeys.map(key => this.wrapBoundValue(bindedValues[key]))
+  return needsPropertyBlocking(expression)
+    ? this.withBlockedPropertyAccess(() => evaluator(...argValues))
+    : evaluator(...argValues)
 }
 ```
 
@@ -629,13 +631,17 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 3. 禁止識別子を `undefined` で上書きし、strict モードで `eval` と `arguments` を抑止
 4. トップレベルキーが再バインド不可の予約名と衝突する場合は**該当キーのみ無視**（引数から除外＋`undefined` 遮蔽）し、`error` ログにキー名を明示。**式が参照する名前の値**を再帰的にチェックし、実ホストオブジェクト等の**危険な値**を含む場合は評価を拒否（後述）
 5. plain object / array / function を Proxy でラップし、`constructor`、`__proto__`、`prototype` へのアクセスを遮断（**ラップは冪等**。後述）
-6. 評価中のみ prototype 系プロパティの生アクセスを一時的に遮断（`Object.prototype` と `Function.prototype` の `constructor`、`Object.prototype.__proto__`）
+6. 呼び出しかスプレッドを含む式は、評価中のみ prototype 系プロパティの生アクセスを一時的に遮断（`Object.prototype` と `Function.prototype` の `constructor`、`Object.prototype.__proto__`。後述）
 7. 計算プロパティ名（`obj[式]`）は評価時にプロパティ名を検査し、`constructor` / `__proto__` / `prototype` のときは名前を `undefined` へ差し替え
 8. バインドに無い識別子を関数スコープへ引き込み、グローバルへ解決されないよう遮蔽（後述）
 
 3・5・6・7 で遮断されたアクセスは、[暗黙のオプショナルチェーン](#暗黙のオプショナルチェーン)により例外ではなく `undefined` になります。遮断は同じですが原因が見えにくくなるため、遮断された識別子を参照している式には開発モードで警告を出力します。
 
-**1 の検証の結果は式の文字列だけで決まるため、式ごとに控えます。** 同じ式を評価するたびに字句へ分け直しません（一覧では同じ式を行の数だけ評価するためです）。
+**1・2 の検証の結果は式の文字列だけで決まるため、式ごとに控えます。** 同じ式を評価するたびに字句へ分け直しません（一覧では同じ式を行の数だけ評価するためです）。式が参照する名前、`haori` を参照するかどうか、6 の遮断が要るかどうかも、同じく式ごとに控えます。
+
+**評価関数の引数と 5 のラップは、式が参照する名前に限ります。** 式は名前を書かずにほかの引数へ届かないため（`arguments` と `eval` は 3 で封じ、`this` は使用できないキーワード）、参照しない名前を渡しても結果は変わりません。たとえば `{{n.label}}` の評価関数が受け取るのは `n` だけです。スコープの全キーを渡すと、行の式ごとにキーの数だけ並べ替えとラップを繰り返し、スコープのキーが多い画面ほど遅くなるためです。
+
+**6 の遮断は、呼び出し（`?.()` を含む）かスプレッドを含む式に限ります。** 6 が守るのは、式の外のコードが評価中に `constructor` などを読む経路で、これは `map` などの標準組み込みのメソッドを呼んだときに起きます。式に書いたメンバーアクセスは 1・5・7 が遮断します。呼び出しもスプレッドも無い式（`r.id`・`r.stock > 0` など）は遮断しても結果が変わらないため、評価のたびに `Object.prototype` と `Function.prototype` を書き換えません。そうした式の評価中に、バインド値のゲッターなど式の外のコードが `constructor` を読んだ場合は、本来の値が返ります。
 
 **7 は名前の書き方に依存しません。** 1 の構文検証は文字列リテラルのトークンを 1 個ずつ照合するため、`obj["con" + "structor"]` のように**式で組み立てた名前**は検出できません（`String.fromCharCode`・`join`・Unicode エスケープなど作り方は無数にあります）。名前が確定するのは評価時なので、そこで検査します。名前はプロパティのキーへ変換してから検査するため、文字列以外の値で書いた名前（`obj[["constructor"]]` のような配列など）も遮断します。
 
@@ -801,19 +807,19 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 
 #### バインドキーと識別子（`name` の命名）
 
-式は `new Function(...バインドキー, 本体)` として組み立てるため、**バインドキーは関数の引数名になります**。引数名にできないキーは式のスコープへ載せません。
+式は `new Function(...バインドキー, 本体)` として組み立てるため、**バインドキーは関数の引数名になります**（引数にするのは式が参照するキーだけです。「評価メカニズム」を参照）。引数名にできないキーは式のスコープへ載せません。スコープに引数名にできないキーがあっても、ほかのキーを参照する式はそのまま評価できます。
 
 | キーの例 | 扱い |
 | --- | --- |
 | `plainKey`、`_ok`、`$x` | 引数として載せる（式から直接参照できる） |
-| `customer.email`、`a-b`、`1st`、`foo bar`、`class`（予約語） | 載せない（式から直接参照できない） |
+| `customer.email`、`a-b`、`1st`、`foo bar`、`class`・`public`（予約語。strict モードだけの予約語を含む） | 載せない（式から直接参照できない） |
 | `a,b`、`{a}`、`a=1`（引数リストの構造を壊す形） | 載せない |
 | `氏名` などの非 ASCII | 載せるが、式の検証で非 ASCII 識別子は使えないため実質参照できない |
 
 - 載せなかったキーを式が参照した場合は**未解決参照**として扱います（表示は空、`data-attr-*` は属性削除）。値は `haori.data['キー']` または `Core.getBindingData(element, {resolved: true})` から読めます。
 - 収集値・送信形式は変わりません。`name="customer.email"` はフラットなキー `customer.email` として収集され、クエリでも `customer.email=...` として送られます（サーバ側のネストパラメータ束縛に合わせた命名をそのまま使えます）。入れ子の構造で送りたい場合は `data-form-object` / `data-form-list` を使います。
 - 開発モードでは、載せなかったキーをキーごとに一度だけ警告します。
-- 判定は実際に `new Function` へ通して行うため、予約語も将来の識別子規則も取りこぼしません。結果はキー単位でキャッシュします。
+- 判定は実際に strict モードの `new Function` へ通して行うため、予約語も将来の識別子規則も取りこぼしません。結果はキー単位でキャッシュします。
 
 > **`data-attr-value` と再評価について**: `<input data-attr-value="{{ haori.today(-1) }}">` のような記述は「初期値」ではなく、バインドスコープの変化のたびに**再評価**されます。`haori.now` / `haori.today` は非冪等なため、日跨ぎや再描画でユーザーが編集した値が上書きされる場合があります。一度だけ設定したい場合は、初期スコープを `data-bind` でシードする（例 `data-bind` に算出済みの日付文字列を入れる）か、再描画で再適用されてよい用途に限定してください。
 
