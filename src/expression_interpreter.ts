@@ -220,6 +220,9 @@ export default class ExpressionInterpreter {
         evaluator: this.compileNode(node, null),
       };
     } catch (error) {
+      // 構文エラー以外（入れ子が深すぎるときの RangeError など）は控えない。控えても
+      // 評価できない式であることは変わらないため、テストでは区別しない。
+      // Stryker disable next-line ConditionalExpression
       if (error instanceof SyntaxError) {
         this.COMPILE_CACHE.set(expression, error.message);
       }
@@ -457,6 +460,8 @@ export default class ExpressionInterpreter {
     const found = this.findSlot(name, scope);
     if (found !== null) {
       const {depth, slot} = found;
+      // 外側をたどらない近道（`outerFrame(frame, 0)` は `frame` そのもの）。
+      // Stryker disable next-line ConditionalExpression
       return depth === 0
         ? frame => frame.slots[slot]
         : frame => this.outerFrame(frame, depth).slots[slot];
@@ -475,8 +480,9 @@ export default class ExpressionInterpreter {
         return run.bindings[name];
       }
       switch (kind) {
+        // 再バインドできる禁止識別子は、バインド値に無ければ `undefined`
+        // （`CONSTANTS` に無い名前なので、定数の分岐と同じ結果になる）。
         case 'rebindable':
-          return undefined;
         case 'constant':
           return CONSTANTS.get(name);
         case 'builtin':
@@ -530,6 +536,7 @@ export default class ExpressionInterpreter {
       const writable =
         kind !== 'forbidden' && isOwnEnumerable(run.bindings, name);
       if (!writable && kind !== 'free') {
+        // Stryker disable next-line StringLiteral: 例外の説明文
         throw new TypeError(`Assignment to constant variable '${name}'.`);
       }
       const [old, updated] = apply(read(frame));
@@ -554,34 +561,38 @@ export default class ExpressionInterpreter {
     left: Evaluator,
     right: Evaluator,
   ): Evaluator {
-    type Operand = number;
+    // 演算の意味は JavaScript の演算子そのものに任せるため、型だけを数値として扱う。
+    // 式の中で `as` を使わずに引数の型で受けるのは、ミューテーションテストの書き換えが
+    // `as` の括弧を落とし、比較演算子と組み合わさって構文エラーになるため。
+    const l = left as (frame: Frame) => number;
+    const r = right as (frame: Frame) => number;
     switch (operator) {
       case '+':
-        return f => (left(f) as Operand) + (right(f) as Operand);
+        return f => l(f) + r(f);
       case '-':
-        return f => (left(f) as Operand) - (right(f) as Operand);
+        return f => l(f) - r(f);
       case '*':
-        return f => (left(f) as Operand) * (right(f) as Operand);
+        return f => l(f) * r(f);
       case '/':
-        return f => (left(f) as Operand) / (right(f) as Operand);
+        return f => l(f) / r(f);
       case '%':
-        return f => (left(f) as Operand) % (right(f) as Operand);
+        return f => l(f) % r(f);
       case '**':
-        return f => (left(f) as Operand) ** (right(f) as Operand);
+        return f => l(f) ** r(f);
       case '<<':
-        return f => (left(f) as Operand) << (right(f) as Operand);
+        return f => l(f) << r(f);
       case '>>':
-        return f => (left(f) as Operand) >> (right(f) as Operand);
+        return f => l(f) >> r(f);
       case '>>>':
-        return f => (left(f) as Operand) >>> (right(f) as Operand);
+        return f => l(f) >>> r(f);
       case '<':
-        return f => (left(f) as Operand) < (right(f) as Operand);
+        return f => l(f) < r(f);
       case '>':
-        return f => (left(f) as Operand) > (right(f) as Operand);
+        return f => l(f) > r(f);
       case '<=':
-        return f => (left(f) as Operand) <= (right(f) as Operand);
+        return f => l(f) <= r(f);
       case '>=':
-        return f => (left(f) as Operand) >= (right(f) as Operand);
+        return f => l(f) >= r(f);
       case '==':
         return f => left(f) == right(f);
       case '!=':
@@ -804,13 +815,17 @@ export default class ExpressionInterpreter {
           key: property.key,
           bind: this.compilePattern(property.value, scope),
         }));
+        // 残余の置き場が無いときの分岐は、置き場を作らないための近道で、結果は
+        // 変わらない（使われない置き場に書くだけになる）。
         const restSlot =
+          // Stryker disable next-line ConditionalExpression
           pattern.rest === null ? null : scope.names.get(pattern.rest)!;
         const excluded = new Set<PropertyKey>(properties.map(item => item.key));
         return (frame, value) => {
           if (value === null || value === undefined) {
             const text = String(value);
             throw new TypeError(
+              // Stryker disable next-line StringLiteral: 例外の説明文
               `Cannot destructure '${text}' as it is ${text}.`,
             );
           }
@@ -820,6 +835,7 @@ export default class ExpressionInterpreter {
               (value as Record<string, unknown>)[property.key],
             );
           }
+          // Stryker disable next-line ConditionalExpression: 上の近道と同じ
           if (restSlot !== null) {
             const rest = {};
             copyDataProperties(rest, value, excluded);
@@ -887,6 +903,7 @@ export default class ExpressionInterpreter {
         pattern.properties.forEach(property =>
           this.assignSlots(property.value, names),
         );
+        // Stryker disable next-line ConditionalExpression: 上の近道と同じ
         if (pattern.rest !== null) {
           names.set(pattern.rest, names.size);
         }

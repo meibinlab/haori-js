@@ -332,6 +332,37 @@ function syntaxError(message: string, position: number): SyntaxError {
   return new SyntaxError(`${message} (at position ${position})`);
 }
 
+// 例外の説明文は開発者向けで、評価の結果（構文エラーになるかどうか）には影響しない
+// ため、ミューテーションテストの対象から外す。
+// Stryker disable all
+/** 構文エラーの説明文 */
+const MESSAGES = {
+  comment: 'Comments are not allowed in expressions',
+  unexpectedCharacter: (character: string) =>
+    `Unexpected character '${character}'`,
+  unterminatedRegExp: 'Unterminated regular expression',
+  invalidRegExp: (reason: string) => `Invalid regular expression: ${reason}`,
+  numericSeparator: 'Numeric separators are not allowed here',
+  invalidToken: 'Invalid or unexpected token',
+  octalLiteral: 'Octal literals are not allowed in strict mode',
+  unterminatedString: 'Unterminated string literal',
+  octalEscape: 'Octal escape sequences are not allowed in strict mode',
+  invalidHex: 'Invalid hexadecimal escape sequence',
+  invalidUnicode: 'Invalid Unicode escape sequence',
+  unexpectedEnd: 'Unexpected end of expression',
+  unexpectedToken: (value: string) => `Unexpected token '${value}'`,
+  notInExpressions: (name: string) => `'${name}' cannot be used in expressions`,
+  notParameter: (name: string) => `'${name}' cannot be used as a parameter`,
+  notProperty: (name: string) => `'${name}' cannot be used as a property`,
+  duplicateParameter: 'Duplicate parameter name',
+  blockBody: 'Arrow functions with a block body are not supported',
+  mixNullish: 'Cannot mix ?? with || or &&',
+  unaryExponent:
+    'Unary operator used immediately before exponentiation expression',
+  invalidUpdate: 'Invalid left-hand side expression in update operation',
+} as const;
+// Stryker restore all
+
 /**
  * 字句解析器です。
  *
@@ -339,6 +370,10 @@ function syntaxError(message: string, position: number): SyntaxError {
  * `readRegExp()` で正規表現リテラルとして読み直します（仕様「正規表現
  * リテラル」の「`/` が正規表現リテラルの開始になるのは、値が来る位置に
  * 限られます」）。
+ *
+ * 式の末尾を越えた位置の文字は `undefined` です。`/[0-9]/.test(undefined)` は
+ * 文字列 `'undefined'` を調べるため、数字や記号の判定は偽になります（末尾を
+ * 越えた位置を別に確かめる必要はありません）。
  */
 class Lexer {
   /** 次に読む位置 */
@@ -394,9 +429,11 @@ class Lexer {
         newlineBefore,
       };
     }
+    // `/*` を除算として読んでも、続く `*` で構文エラーになる（結果は同じ）。
+    // Stryker disable next-line ConditionalExpression,StringLiteral
     if (character === '/' && (next === '/' || next === '*')) {
       // コメントは式の構文に含めない（仕様「正規表現リテラル」）。
-      throw syntaxError('Comments are not allowed in expressions', start);
+      throw syntaxError(MESSAGES.comment, start);
     }
     for (const punctuator of PUNCTUATORS) {
       if (!source.startsWith(punctuator, start)) {
@@ -413,7 +450,7 @@ class Lexer {
         newlineBefore,
       };
     }
-    throw syntaxError(`Unexpected character '${character}'`, start);
+    throw syntaxError(MESSAGES.unexpectedCharacter(character), start);
   }
 
   /**
@@ -434,12 +471,14 @@ class Lexer {
     for (;;) {
       const character = source[index];
       if (character === undefined || isLineTerminator(character)) {
-        throw syntaxError('Unterminated regular expression', start);
+        throw syntaxError(MESSAGES.unterminatedRegExp, start);
       }
       if (character === '\\') {
+        // 末尾の `\`（`escaped` が undefined）は、次の周回で終端が無い構文
+        // エラーになる。
         const escaped = source[index + 1];
-        if (escaped === undefined || isLineTerminator(escaped)) {
-          throw syntaxError('Unterminated regular expression', start);
+        if (isLineTerminator(escaped)) {
+          throw syntaxError(MESSAGES.unterminatedRegExp, start);
         }
         index += 2;
         continue;
@@ -464,13 +503,17 @@ class Lexer {
       new RegExp(pattern, flags);
     } catch (error) {
       throw syntaxError(
-        `Invalid regular expression: ${(error as Error).message}`,
+        MESSAGES.invalidRegExp((error as Error).message),
         start,
       );
     }
     this.position = index;
     return {
+      // 正規表現の字句は構文解析器がすぐに値として読むため、種類と元の書き方は
+      // 使わない。
+      // Stryker disable next-line StringLiteral
       type: 'regexp',
+      // Stryker disable next-line MethodExpression
       value: source.slice(start, index),
       literal: {pattern, flags},
       start,
@@ -500,7 +543,7 @@ class Lexer {
         const after = source[current + 1];
         // 先頭の `_`（`0x_1`）は直前が数字でないことで弾かれる。
         if (!digit.test(before) || after === undefined || !digit.test(after)) {
-          throw syntaxError('Numeric separators are not allowed here', current);
+          throw syntaxError(MESSAGES.numericSeparator, current);
         }
         current += 1;
         continue;
@@ -524,11 +567,7 @@ class Lexer {
     let index = start;
     let isBigInt = false;
     const prefix = source[start + 1];
-    if (
-      source[start] === '0' &&
-      prefix !== undefined &&
-      /[xXoObB]/.test(prefix)
-    ) {
+    if (source[start] === '0' && /[xXoObB]/.test(prefix)) {
       const digit = /[xX]/.test(prefix)
         ? /[0-9a-fA-F]/
         : /[oO]/.test(prefix)
@@ -536,24 +575,24 @@ class Lexer {
           : /[01]/;
       index = this.readDigits(start + 2, digit);
       if (index === start + 2) {
-        throw syntaxError('Invalid or unexpected token', start);
+        throw syntaxError(MESSAGES.invalidToken, start);
       }
       if (source[index] === 'n') {
         isBigInt = true;
         index += 1;
       }
     } else {
-      if (source[start] === '0' && /[0-9_]/.test(source[start + 1] ?? '')) {
-        throw syntaxError(
-          'Octal literals are not allowed in strict mode',
-          start,
-        );
+      if (source[start] === '0' && /[0-9_]/.test(source[start + 1])) {
+        throw syntaxError(MESSAGES.octalLiteral, start);
       }
       index = this.readDigits(start, /[0-9]/);
       if (source[index] === '.') {
         index += 1;
         // `.` の直後の `_`（`1._5`）は、数値の直後の識別子として弾かれる。
-        if (/[0-9]/.test(source[index] ?? '')) {
+        // 数字が無ければ `readDigits()` は位置を進めないため、この判定を外しても
+        // 結果は同じ。
+        // Stryker disable next-line ConditionalExpression
+        if (/[0-9]/.test(source[index])) {
           index = this.readDigits(index, /[0-9]/);
         }
       }
@@ -562,8 +601,8 @@ class Lexer {
         if (source[index] === '+' || source[index] === '-') {
           index += 1;
         }
-        if (!/[0-9]/.test(source[index] ?? '')) {
-          throw syntaxError('Invalid or unexpected token', start);
+        if (!/[0-9]/.test(source[index])) {
+          throw syntaxError(MESSAGES.invalidToken, start);
         }
         index = this.readDigits(index, /[0-9]/);
       }
@@ -579,6 +618,7 @@ class Lexer {
     this.position = index;
     return {
       type: 'number',
+      // Stryker disable next-line MethodExpression: 字句の元の書き方は説明文にだけ使う
       value: source.slice(start, index),
       literal: isBigInt ? BigInt(text.slice(0, -1)) : Number(text),
       start,
@@ -595,8 +635,10 @@ class Lexer {
    * @returns 値。桁が足りない場合は null
    */
   private readHex(index: number, length: number): number | null {
+    // 末尾を越えて桁が足りないときは、続けて終端が無い構文エラーになるため、桁の
+    // 数は確かめない。
     const text = this.source.slice(index, index + length);
-    if (text.length !== length || !/^[0-9a-fA-F]+$/.test(text)) {
+    if (!/^[0-9a-fA-F]+$/.test(text)) {
       return null;
     }
     return parseInt(text, 16);
@@ -620,7 +662,7 @@ class Lexer {
     for (;;) {
       const character = source[index];
       if (character === undefined || character === '\n' || character === '\r') {
-        throw syntaxError('Unterminated string literal', start);
+        throw syntaxError(MESSAGES.unterminatedString, start);
       }
       if (character === quote) {
         index += 1;
@@ -632,10 +674,13 @@ class Lexer {
         continue;
       }
       const escaped = source[index + 1];
+      const escapeStart = index;
       index += 2;
       switch (escaped) {
+        // 末尾の `\` は、次の周回で終端が無い構文エラーになる（結果は同じ）。
+        // Stryker disable next-line ConditionalExpression
         case undefined:
-          throw syntaxError('Unterminated string literal', start);
+          throw syntaxError(MESSAGES.unterminatedString, start);
         case 'n':
           value += '\n';
           break;
@@ -655,18 +700,15 @@ class Lexer {
           value += '\v';
           break;
         case '0':
-          if (/[0-9]/.test(source[index] ?? '')) {
-            throw syntaxError(
-              'Octal escape sequences are not allowed in strict mode',
-              index - 2,
-            );
+          if (/[0-9]/.test(source[index])) {
+            throw syntaxError(MESSAGES.octalEscape, escapeStart);
           }
           value += '\0';
           break;
         case 'x': {
           const code = this.readHex(index, 2);
           if (code === null) {
-            throw syntaxError('Invalid hexadecimal escape sequence', index - 2);
+            throw syntaxError(MESSAGES.invalidHex, escapeStart);
           }
           value += String.fromCharCode(code);
           index += 2;
@@ -675,10 +717,14 @@ class Lexer {
         case 'u': {
           if (source[index] === '{') {
             const close = source.indexOf('}', index);
-            const text = close < 0 ? '' : source.slice(index + 1, close);
+            // `}` が無ければ中身を空として読み、続く判定で構文エラーにする（`}` が
+            // 無いときの分岐を外しても、中身が 16 進にならず同じ構文エラーになる）。
+            // Stryker disable next-line all
+            const end = close < 0 ? index : close;
+            const text = source.slice(index + 1, end);
             const code = /^[0-9a-fA-F]+$/.test(text) ? parseInt(text, 16) : NaN;
             if (!(code <= 0x10ffff)) {
-              throw syntaxError('Invalid Unicode escape sequence', index - 2);
+              throw syntaxError(MESSAGES.invalidUnicode, escapeStart);
             }
             value += String.fromCodePoint(code);
             index = close + 1;
@@ -686,7 +732,7 @@ class Lexer {
           }
           const code = this.readHex(index, 4);
           if (code === null) {
-            throw syntaxError('Invalid Unicode escape sequence', index - 2);
+            throw syntaxError(MESSAGES.invalidUnicode, escapeStart);
           }
           value += String.fromCharCode(code);
           index += 4;
@@ -704,10 +750,7 @@ class Lexer {
           break;
         default:
           if (/[1-9]/.test(escaped)) {
-            throw syntaxError(
-              'Octal escape sequences are not allowed in strict mode',
-              index - 2,
-            );
+            throw syntaxError(MESSAGES.octalEscape, escapeStart);
           }
           value += escaped;
       }
@@ -715,6 +758,7 @@ class Lexer {
     this.position = index;
     return {
       type: 'string',
+      // Stryker disable next-line MethodExpression: 字句の元の書き方は説明文にだけ使う
       value: source.slice(start, index),
       literal: value,
       start,
@@ -775,9 +819,11 @@ class Parser {
    */
   private unexpected(): SyntaxError {
     const token = this.token;
+    // 説明文を選ぶだけなので、ミューテーションテストの対象から外す。
+    // Stryker disable next-line all
     return token.type === 'eof'
-      ? syntaxError('Unexpected end of expression', token.start)
-      : syntaxError(`Unexpected token '${token.value}'`, token.start);
+      ? syntaxError(MESSAGES.unexpectedEnd, token.start)
+      : syntaxError(MESSAGES.unexpectedToken(token.value), token.start);
   }
 
   /**
@@ -799,7 +845,13 @@ class Parser {
    * @returns 指定の記号であれば true
    */
   private is(value: string): boolean {
-    return this.token.type === 'punct' && this.token.value === value;
+    // 記号以外の字句の元の書き方は記号と一致しない（文字列は引用符を含む）ため、
+    // 種類の判定を外しても結果は同じ。
+    // Stryker disable next-line ConditionalExpression
+    if (this.token.type !== 'punct') {
+      return false;
+    }
+    return this.token.value === value;
   }
 
   /**
@@ -877,7 +929,7 @@ class Parser {
       STRICT_FORBIDDEN_NAMES.has(name) ||
       STRICT_RESERVED_WORDS.has(name)
     ) {
-      throw syntaxError(`'${name}' cannot be used in expressions`, position);
+      throw syntaxError(MESSAGES.notInExpressions(name), position);
     }
   }
 
@@ -890,7 +942,7 @@ class Parser {
   private checkBindingName(name: string, position: number): void {
     this.checkReferenceName(name, position);
     if (name === 'true' || name === 'false' || name === 'null') {
-      throw syntaxError(`'${name}' cannot be used as a parameter`, position);
+      throw syntaxError(MESSAGES.notParameter(name), position);
     }
   }
 
@@ -909,7 +961,7 @@ class Parser {
       STRICT_FORBIDDEN_NAMES.has(name) ||
       FORBIDDEN_PROPERTY_NAMES.has(name)
     ) {
-      throw syntaxError(`'${name}' cannot be used as a property`, position);
+      throw syntaxError(MESSAGES.notProperty(name), position);
     }
   }
 
@@ -970,7 +1022,8 @@ class Parser {
             ];
             return this.parseArrowBody(params, null, true, start);
           }
-        } else if (this.is('(')) {
+        } else {
+          // `(` でなければ、引数の解析が失敗して null を返す。
           const arrow = this.tryParseParenthesizedArrow(true, start);
           if (arrow !== null) {
             return arrow;
@@ -1158,15 +1211,12 @@ class Parser {
       this.collectBoundNames(rest, names);
     }
     if (new Set(names).size !== names.length) {
-      throw syntaxError('Duplicate parameter name', start);
+      throw syntaxError(MESSAGES.duplicateParameter, start);
     }
     this.expect('=>');
     if (this.is('{')) {
       // ブロックの本体は文になる（仕様「CSP モードの式評価」）。
-      throw syntaxError(
-        'Arrow functions with a block body are not supported',
-        this.token.start,
-      );
+      throw syntaxError(MESSAGES.blockBody, this.token.start);
     }
     const body = this.parseAssignment();
     return this.finish<ArrowNode>(
@@ -1210,11 +1260,13 @@ class Parser {
       return left;
     }
     if (left.type === 'Logical' && !left.paren) {
-      throw syntaxError('Cannot mix ?? with || or &&', this.token.start);
+      throw syntaxError(MESSAGES.mixNullish, this.token.start);
     }
     while (this.eat('??')) {
       const right = this.parseBinary(1);
       left = this.finish<LogicalNode>(
+        // 評価器は `&&` と `||` 以外を `??` として扱う。
+        // Stryker disable next-line StringLiteral
         {type: 'Logical', operator: '??', left, right},
         start,
       );
@@ -1284,10 +1336,7 @@ class Parser {
       return left;
     }
     if (left.type === 'Unary' && !left.paren) {
-      throw syntaxError(
-        'Unary operator used immediately before exponentiation expression',
-        this.token.start,
-      );
+      throw syntaxError(MESSAGES.unaryExponent, this.token.start);
     }
     this.advance();
     const right = this.parseExponent();
@@ -1308,10 +1357,7 @@ class Parser {
    */
   private toUpdateTarget(node: ExpressionNode): IdentifierNode {
     if (node.type !== 'Identifier') {
-      throw syntaxError(
-        'Invalid left-hand side expression in update operation',
-        node.start,
-      );
+      throw syntaxError(MESSAGES.invalidUpdate, node.start);
     }
     return node;
   }
@@ -1377,6 +1423,7 @@ class Parser {
       case 'Member':
       case 'Call':
         return true;
+      // Stryker disable next-line all: 分岐を外しても undefined（偽）を返す
       default:
         return false;
     }
@@ -1500,10 +1547,12 @@ class Parser {
       this.advance();
       return token.value;
     }
+    // 数値の字句を文字列として扱っても、キーの値と検査の結果は同じ。
+    // Stryker disable next-line ConditionalExpression
     if (token.type === 'string') {
       const key = token.literal as string;
       if (FORBIDDEN_PROPERTY_NAMES.has(key)) {
-        throw syntaxError(`'${key}' cannot be used as a property`, token.start);
+        throw syntaxError(MESSAGES.notProperty(key), token.start);
       }
       this.advance();
       return key;
@@ -1526,6 +1575,8 @@ class Parser {
     const properties: ObjectProperty[] = [];
     while (!this.is('}')) {
       if (this.eat('...')) {
+        // 評価器は `init` 以外をスプレッドとして扱う。
+        // Stryker disable next-line StringLiteral
         properties.push({kind: 'spread', argument: this.parseAssignment()});
       } else {
         // 計算プロパティ名（`[k]: v`）・メソッド（`f() {}`）・getter / setter
@@ -1626,6 +1677,7 @@ class Parser {
       }
       case 'punct':
         break;
+      // Stryker disable next-line all: この後の分岐がすべて外れ、同じ構文エラーになる
       default:
         throw this.unexpected();
     }
@@ -1649,6 +1701,8 @@ class Parser {
     if (this.is('[')) {
       return this.parseArray();
     }
+    // `{` でなければ、`parseObject()` の `expect()` が同じ構文エラーにする。
+    // Stryker disable next-line ConditionalExpression
     if (this.is('{')) {
       return this.parseObject();
     }

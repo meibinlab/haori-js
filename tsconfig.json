@@ -26,6 +26,7 @@
     "vite.config.ts",
     "vitest.config.ts",
     "vitest.csp.config.ts",
+    "vitest.mutation.config.ts",
     "eslint.config.js"
   ],
   "exclude": ["node_modules", "dist"]

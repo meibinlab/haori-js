@@ -26,6 +26,8 @@ temp/
 # Test reports
 coverage/
 test-results/
+reports/
+.stryker-tmp/
 
 # Editor config
 .DS_Store
