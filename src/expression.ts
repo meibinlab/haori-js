@@ -961,6 +961,31 @@ export default class Expression {
   }
 
   /**
+   * `(` がアロー関数の引数リストの開始かどうかを判定します。
+   *
+   * `async (x) => x` の `(x)` は引数リストで、呼び出しではありません（仕様
+   * 「暗黙のオプショナルチェーン」の「アロー関数の引数リストやグループ化の丸括弧は
+   * 呼び出しとみなしません」）。呼び出しの位置（直前が識別子・`)`・`]`）にある
+   * `(` のうち、対応する `)` の直後が `=>` のものだけを引数リストとみなします
+   * （`async` 以外の名前の後では構文エラーの式で、どちらとみなしても結果は
+   * 同じです）。引数の既定値は書けないため、引数リストの中に丸括弧は現れず、
+   * 最初の `)` が対応する `)` です。
+   *
+   * @param tokens 式のトークン列
+   * @param index `(` の位置
+   * @returns 引数リストの開始であれば true
+   */
+  private static startsArrowParameters(
+    tokens: ExpressionToken[],
+    index: number,
+  ): boolean {
+    const close = tokens.findIndex(
+      (token, cursor) => cursor > index && token.value === ')',
+    );
+    return tokens[close + 1]?.value === '=>';
+  }
+
+  /**
    * メンバーアクセスを暗黙のオプショナルチェーンへ変換します。
    *
    * `a.b` を `a?.b`、`a[i]` を `a?.[i]`、`a.b()` を `a?.b?.()` へ書き換えます。
@@ -985,7 +1010,8 @@ export default class Expression {
     if (tokens !== null) {
       const edits: {start: number; end: number; text: string}[] = [];
       let previous: ExpressionToken | null = null;
-      for (const token of tokens) {
+      for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index];
         // すでに `?.` が書かれている箇所へ二重に挿入しない。
         if (token.type === 'operator' && previous?.value !== '?.') {
           if (token.value === '.') {
@@ -996,7 +1022,9 @@ export default class Expression {
             });
           } else if (
             (token.value === '[' && this.startsMemberAccess(previous)) ||
-            (token.value === '(' && this.startsCall(previous))
+            (token.value === '(' &&
+              this.startsCall(previous) &&
+              !this.startsArrowParameters(tokens, index))
           ) {
             edits.push({
               start: token.position,
