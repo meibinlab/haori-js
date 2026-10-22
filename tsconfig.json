@@ -25,6 +25,7 @@
     "tests",
     "vite.config.ts",
     "vitest.config.ts",
+    "vitest.csp.config.ts",
     "eslint.config.js"
   ],
   "exclude": ["node_modules", "dist"]

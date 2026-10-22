@@ -807,11 +807,6 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 - ブロックを本体にしたアロー関数（`x => { f(x) }`）
 - オブジェクトリテラルのメソッド・getter・setter（`{f() {}}` / `{get a() {}}`）
 
-**次の 2 つは、CSP モードの方が厳しく遮断します。** 従来の方式の遮断を素通りする書き方で、CSP モードでは遮断の対象になります。
-
-- 標準組み込みへの `++` / `--`（`Math++`）: 従来の方式はグローバルの値を書き換えてしまいます。CSP モードは `TypeError` です
-- 文字列以外の値で組み立てた計算プロパティ名（`""[["constructor"]]`）: 従来の方式は名前が文字列のときだけ検査します。CSP モードはプロパティのキーへ変換してから検査します
-
 #### 組み込みヘルパー（予約名前空間 `haori`）
 
 式評価エンジンは、純粋関数の組み込みヘルパー（`builtins.ts`）を予約名前空間 `haori` として式スコープへ注入します。実装は `src/builtins.ts`、注入は `Expression.evaluateDetailed` 内で行います。

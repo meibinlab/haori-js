@@ -296,13 +296,6 @@ describe('CSP モードの式の評価器', () => {
     });
   });
 
-  // 仕様「CSP モードと従来の方式の違い」の「次の 2 つは、CSP モードの方が厳しく遮断します」
-  describe('CSP モードの方が厳しく遮断するもの', () => {
-    it('文字列以外の値で組み立てた計算プロパティ名を遮断する', () => {
-      expect(run(String.raw`""[["constructor"]]`)).toBeUndefined();
-    });
-  });
-
   // 仕様「暗黙のオプショナルチェーン」
   describe('暗黙のオプショナルチェーン', () => {
     it('途中の値が null / undefined でも undefined になる', () => {
@@ -405,6 +398,14 @@ describe('CSP モードの式の評価器', () => {
         expect(run('f[k]', {f: () => 1, k: name})).toBeUndefined();
       },
     );
+
+    // 仕様「評価メカニズム」の「文字列以外の値で書いた名前（`obj[["constructor"]]` のような配列など）も遮断します」
+    it('文字列以外の値で書いた名前も遮断する', () => {
+      expect(run('s[[k]]', {s: 'x', k: 'constructor'})).toBeUndefined();
+      expect(
+        run('s[o]', {s: 'x', o: {toString: () => 'constructor'}}),
+      ).toBeUndefined();
+    });
 
     it('式で組み立てた名前も遮断する', () => {
       expect(run('a["con" + "structor"]', {a: {}})).toBeUndefined();
