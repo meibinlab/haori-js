@@ -29,7 +29,7 @@ Haori.jsは、**HTML-First**の設計思想に基づく軽量なリアクティ�
 - **仮想DOM実装**: 効率的なDOM更新と無限ループ防止機構
 - **リアクティブシステム**: MutationObserverによる自動的なDOM監視と更新
 - **式評価**: 表示の自動エスケープと、禁止識別子・禁止プロパティの遮断を備えた式評価エンジン（前提は「[XSS対策](#xss対策)」の脅威モデルを参照）
-- **非同期キュー**: requestAnimationFrameベースの効率的なDOM操作
+- **非同期キュー**: 次のタスクで処理を始め、8ms ごとに区切って入力と描画に譲る DOM 操作
 - **双方向バインディング**: フォーム要素との自動同期
 - **ゼロ依存**: ピュアブラウザAPIのみで実装
 
@@ -80,8 +80,8 @@ Haori.jsは以下の設計原則に基づいて構築されています：
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                      Queue System                           │
-│  requestAnimationFrame ベースの非同期実行キュー              │
-│  (1フレーム最大8ms、優先度制御)                              │
+│  次のタスクで処理する非同期実行キュー                        │
+│  (1回あたり最大8ms、優先度制御)                              │
 └─────────────────────────────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -123,7 +123,7 @@ src/
 ├── event_dispatcher.ts  - イベント振り分け (click, change, load)
 ├── procedure.ts         - 手続き的処理管理 (data-*-fetch等の実行)
 ├── form.ts              - フォーム双方向バインディング
-├── queue.ts             - 非同期キュー管理 (requestAnimationFrame)
+├── queue.ts             - 非同期キュー管理 (MessageChannel)
 ├── import.ts            - HTMLインポート機能
 ├── selector.ts          - セレクタ属性の解決 (テンプレート式の評価と安全な照会)
 ├── store.ts             - ブラウザストレージ連携 (data-store)
@@ -1743,7 +1743,7 @@ private findFragmentByKeyParts(fragment: ElementFragment, parts: string[]): Elem
 
 ### 7. Queue (queue.ts)
 
-**役割**: requestAnimationFrameベースの非同期キュー
+**役割**: 次のタスクで処理する非同期キュー
 
 ```typescript
 class Queue {
@@ -1771,46 +1771,44 @@ interface QueueItem {
 #### 処理アルゴリズム
 
 ```typescript
-private async processQueue(): Promise<void> {
+// 処理は次のタスクで始める（MessageChannel。無い環境では setTimeout(0)）
+private scheduleProcessing(): void {
   if (this.processing) return
+  channel.port2.postMessage(null)  // port1 の onmessage で processQueue() を呼ぶ
+}
+
+private async processQueue(): Promise<void> {
+  if (this.processing || this.queue.length === 0) return
   this.processing = true
-
-  await new Promise<void>(resolve => {
-    requestAnimationFrame(() => {
-      const startTime = performance.now()
-      const MAX_FRAME_TIME = 8  // 1フレームあたり最大8ms
-
-      while (this.queue.length > 0) {
-        if (performance.now() - startTime > MAX_FRAME_TIME) {
-          break  // 次のフレームへ
-        }
-
-        const item = this.queue.shift()!
-
-        try {
-          const result = item.task()
-          if (result instanceof Promise) {
-            result.then(item.resolve).catch(item.reject)
-          } else {
-            item.resolve(result)
-          }
-        } catch (error) {
-          item.reject(error)
-        }
+  try {
+    const start = performance.now()
+    while (this.queue.length > 0) {
+      const item = this.queue.shift()!
+      try {
+        item.resolve(await item.task())
+      } catch (error) {
+        item.reject(error)
       }
-
-      resolve()
-    })
-  })
-
-  this.processing = false
-
-  // まだキューが残っている場合は次のフレームで処理
-  if (this.queue.length > 0) {
-    this.processQueue()
+      if (performance.now() - start > MAX_BUDGET) {
+        break  // 8ms を超えたら区切り、入力と描画に譲る
+      }
+    }
+  } finally {
+    this.processing = false
+    // まだキューが残っている場合は次のタスクで続ける
+    if (this.queue.length > 0) {
+      this.scheduleProcessing()
+    }
   }
 }
 ```
+
+**処理は次のフレームを待たず、次のタスクで始めます。** 1 回の更新の中でも、キューは何度も空になってから再開します（行の差し替えの後に行の中の描画を積む、など）。再開のたびに次のフレーム（`requestAnimationFrame`）を待つと、その待ち時間が積み重なり、300 行の一覧を開くだけで処理時間の倍以上かかっていました。タスクの合間にはブラウザが入力の処理と描画を行うため、8ms で区切って譲る効果は変わりません。
+
+- 次のタスクへの受け渡しには `MessageChannel` を使います。`setTimeout(0)` は入れ子が深くなると 4ms 以上に引き延ばされ、背面のタブではさらに間引かれるためです。`MessageChannel` の無い環境では `setTimeout(0)` を使います。
+- `MessageChannel` は最初に処理を積んだときに 1 つだけ作り、使い回します。読み込んだだけでは作りません（受け口を開いた `MessageChannel` は、Node などでプロセスの終了を妨げるためです）。
+- **背面のタブでも処理は進みます。** 背面のタブでは次のフレームが来ないため、フレームを待つ方式では表示に戻るまで描画が止まっていました。背面にいる間に届いた応答も、その時点で DOM へ反映されます。
+- 描画の完了を待つ `Haori.waitForRenders()` は、従来どおりキューが空のまま 1 フレームを跨ぐまで待ちます。
 
 #### DOM 書き込みの判定時点と優先実行の関係
 
@@ -1954,7 +1952,7 @@ class Store {
 | 保存 | `Core.setBindingData()` | 内部バインドデータの確定直後（同期） |
 | 破棄 | `Procedure.run()` | `data-{event}-history` の直前 |
 
-保存を `Queue`（`requestAnimationFrame`）へ遅延させず同期で行うのは、`data-{event}-redirect` による遷移や背面タブで次フレームが来ず、遷移直前の保存を取りこぼすためです。書き込みの間引きは「直前の書き出し内容と変わらなければ書かない」だけで行い、まずキーごとの参照同一性で比較して直列化そのものを省きます（`_fetch` / `_poll` などの高頻度更新で直列化が繰り返されないようにするためです）。
+保存を `Queue` へ遅延させず同期で行うのは、`data-{event}-redirect` による遷移が先に始まり、遷移直前の保存を取りこぼすためです。書き込みの間引きは「直前の書き出し内容と変わらなければ書かない」だけで行い、まずキーごとの参照同一性で比較して直列化そのものを省きます（`_fetch` / `_poll` などの高頻度更新で直列化が繰り返されないようにするためです）。
 
 なお `localStorage` / `sessionStorage` は式の[禁止識別子](#禁止識別子リスト)であり、式から直接読み書きすることはできません。ストレージへのアクセスは `data-store` 系の属性に限られます。
 
@@ -3020,7 +3018,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 **保存（バインディングデータ → ストレージ）**:
 
 - 対象キーの値が変わったときに自動で書き出します（明示的な保存指定は不要です）。フォームの双方向コミット・`data-{event}-bind`・`data-fetch` の応答反映はいずれも同じ導線を通るため、**フェッチ応答の一部の退避**も宣言だけで行えます。
-- 書き出しはバインディングデータの確定と**同期**で行います。`requestAnimationFrame` を待たないため、`data-{event}-redirect` による遷移の直前や背面タブでも取りこぼしません。
+- 書き出しはバインディングデータの確定と**同期**で行います。描画のキューを待たないため、`data-{event}-redirect` による遷移の直前でも取りこぼしません。
 - 直前に書き出した内容と同じ場合は書き込みません。
 - 宣言したキーがその要素のバインディングデータに**存在しない**場合、レコードは変更しません。削除は `data-{event}-store-clear` だけが行います。
 - `_fetch` / `_poll` などの予約キー（先頭が `_`）は常に対象外です。
@@ -3762,7 +3760,7 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 表示制御の `data-if` とは別物です。`data-if` は要素の表示を切り替え、`data-{event}-if` は手続きを実行するかどうかを決めます。
 
-- 条件は手続きの実行時に**同期評価**します。属性値の再描画（`requestAnimationFrame`）を待たないため、直前に変更した入力を含めて判定できます。
+- 条件は手続きの実行時に**同期評価**します。属性値の再描画（描画のキュー）を待たないため、直前に変更した入力を含めて判定できます。
 - 評価は `data-{event}-validate` の**後**、`data-{event}-run` の**前**に行います。必須欄が空のようなネイティブ検証で表現できるエラーは先にバブル表示し、それ以外の条件でここで止めます。
 - 偽のときは停止するだけです（メッセージ表示は `data-if` / `data-message` と併用します）。開発モード（読み込み時の `<script data-dev>`）でのみ中断の情報ログを出します。宣言どおりの停止なので、警告にはしません。
 - 参照が解決できない場合は「条件を満たしていない」と扱い実行しません（ブロック目的の宣言なので安全側に倒します）。この場合は警告ログを出します。
@@ -4659,7 +4657,7 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 
 #### フィールド間の条件
 
-`data-attr-required` / `data-attr-disabled` と `data-if` はフィールド間の条件を**表示**できますが、押下の**ブロック**には使えません。属性値の反映はキュー（`requestAnimationFrame`）で行われるため、「最後の欄を直してそのまま次へを押す」操作ではクリック時点の属性が 1 フレーム古く、条件を満たしていない状態で手続きが走ります（逆に、直した直後は `disabled` が残っていてクリックが無視されます）。
+`data-attr-required` / `data-attr-disabled` と `data-if` はフィールド間の条件を**表示**できますが、押下の**ブロック**には使えません。属性値の反映はキューで非同期に行われるため、「最後の欄を直してそのまま次へを押す」操作ではクリック時点の属性がまだ古いことがあり、条件を満たしていない状態で手続きが走ります（逆に、直した直後は `disabled` が残っていてクリックが無視されます）。
 
 **`disabled` を押下のブロックに使わないでください。** HTML 仕様上、無効化されたフォーム部品はクリックイベントを発火しないため、「直したのに押せない」方向は実行時の判定では救えません。ブロックは `data-validity` または `data-{event}-if` で行い、`data-attr-disabled` は視覚的な合図としてのみ使うか `data-attr-class` に置き換えます。
 
@@ -6131,27 +6129,26 @@ const cacheKey = `${expression}:${bindKeys.sort().join(',')}`
 
 このアルゴリズムにより、最小限のDOM操作で効率的に更新できます。
 
-### フレーム単位の処理制限
+### 1 回あたりの処理時間の制限
 
-`Queue` は1フレームあたり最大8msの処理時間制限を設けています:
+`Queue` は 1 回の処理を最大 8ms で区切り、残りは次のタスクで続けます（「[7. Queue](#7-queue-queuets)」を参照）:
 
 ```typescript
-const startTime = performance.now()
-const MAX_BUDGET = 8  // 1フレームあたりの最大処理時間(ms)
+const start = performance.now()
+const MAX_BUDGET = 8  // 1 回あたりの最大処理時間(ms)
 
 while (queue.length > 0) {
-  if (performance.now() - startTime > MAX_BUDGET) {
-    break  // 次のフレームへ
-  }
-
   // タスク実行...
+
+  if (performance.now() - start > MAX_BUDGET) {
+    break  // 次のタスクへ
+  }
 }
 ```
 
 これにより:
-- 60fpsを維持 (1フレーム = 16.67ms、うち8msをHaori.jsに割り当て)
-- ブラウザの描画をブロックしない
-- ユーザー操作のレスポンス性を維持
+- 区切りの合間にブラウザが描画と入力の処理を行える
+- 長い更新でもユーザー操作のレスポンス性を維持
 
 ---
 
@@ -6296,9 +6293,9 @@ DOMツリーを `Fragment` ツリーとして管理し、DOM操作を最小化:
 
 ### 2. 非同期キュー
 
-`requestAnimationFrame` で描画タイミングに合わせて実行:
+次のタスクで実行し、フレームを待たない:
 
-- フレームあたり8ms制限でUI応答性を維持
+- 1 回あたり 8ms で区切り、UI 応答性を維持
 - タスクの優先度制御 (`prepend` オプション)
 - 複数の変更をバッチ処理
 

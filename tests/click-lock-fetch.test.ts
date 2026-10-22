@@ -16,6 +16,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import Core from '../src/core';
 import EventDispatcher from '../src/event_dispatcher';
+import Queue from '../src/queue';
 import {nextTask, waitForDomSettled, waitForIdle} from './helpers/async';
 
 /** 保留中のフェッチを解決・失敗させる操作 */
@@ -24,6 +25,23 @@ interface PendingFetch {
   resolve: (response: Response) => void;
   /** 通信失敗として拒否する */
   reject: (error: Error) => void;
+}
+
+/**
+ * 描画のキューを止めます。返した関数を呼ぶまで、後から積まれた処理は実行されません。
+ *
+ * 反映の途中の状態を観測するために使います。キューが処理を始める時機（次のタスク）に
+ * 左右されず、反映が終わっていない状態を作れます。
+ *
+ * @returns キューを再開する関数
+ */
+function holdQueue(): () => void {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  void Queue.enqueue(() => gate);
+  return release;
 }
 
 describe('click 手続きのロックとフェッチの完了', () => {
@@ -222,6 +240,7 @@ describe('click 手続きのロックとフェッチの完了', () => {
     const button = container.querySelector('#c') as HTMLButtonElement;
     const destination = container.querySelector('#dst') as HTMLElement;
 
+    const release = holdQueue();
     button.click();
     await nextTask();
 
@@ -229,6 +248,7 @@ describe('click 手続きのロックとフェッチの完了', () => {
     expect(destination.getAttribute('data-bind')).toBe('{"zip":""}');
     expect(button.hasAttribute('disabled')).toBe(true);
 
+    release();
     await waitForIdle();
     expect(destination.getAttribute('data-bind')).toContain('100-0001');
     expect(button.hasAttribute('disabled')).toBe(false);
@@ -281,6 +301,7 @@ describe('click 手続きのロックとフェッチの完了', () => {
     input.dispatchEvent(new Event('change', {bubbles: true}));
     await waitForIdle();
 
+    const release = holdQueue();
     button.click();
     await nextTask();
 
@@ -289,6 +310,7 @@ describe('click 手続きのロックとフェッチの完了', () => {
     expect(button.hasAttribute('disabled')).toBe(true);
     expect(button.hasAttribute('data-haori-click-lock')).toBe(true);
 
+    release();
     await waitForIdle();
     expect(input.value).toBe('初期');
     expect(button.hasAttribute('disabled')).toBe(false);
