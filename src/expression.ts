@@ -438,6 +438,34 @@ export default class Expression {
     'decodeURIComponent',
   ]);
 
+  /**
+   * 評価関数の `this` に渡す、標準組み込みの値の置き場。
+   *
+   * 式が参照する標準組み込みは、評価関数の中で `const` として宣言し、ここから
+   * 値を受け取ります（`buildBuiltinConstants()`）。
+   * 宣言しないと標準組み込みはグローバルへ解決されるため、`Math++` がページ全体の
+   * `Math` を書き換えてしまいます（仕様「バインドに無い識別子の扱い」の
+   * 「標準組み込みは書き換えられません」）。
+   *
+   * 値は読むたびにグローバルから取ります（後から読み込んだ polyfill も反映する）。
+   * 式は `this` を書けないため（使用できないキーワード）、式からは届きません。
+   */
+  private static readonly BUILTIN_HOLDER: Readonly<Record<string, unknown>> =
+    Object.freeze(
+      Object.defineProperties(
+        {},
+        Object.fromEntries(
+          [...Expression.ALLOWED_GLOBAL_IDENTIFIERS].map(name => [
+            name,
+            {
+              get: () => (globalThis as Record<string, unknown>)[name],
+              enumerable: true,
+            },
+          ]),
+        ),
+      ),
+    );
+
   /** 式 → 評価関数のグローバルキャッシュ */
   private static readonly EXPRESSION_CACHE = new Map<
     string,
@@ -474,10 +502,18 @@ export default class Expression {
    * `obj[` の直後へ挿入し、`]` の直前で閉じます（`toGuardedMemberExpression()`）。
    * 引数名 `_hk` はアロー関数の引数なので、同名のバインドキーがあっても
    * 呼び出し側の引数式は外側のスコープで評価され、値は取り違えません。
+   *
+   * キーは比べる前にプロパティのキー（シンボル以外は文字列）へ変換します。変換
+   * しないと、`""[["constructor"]]` のように配列で書いた名前が比較をすり抜け、
+   * 参照の時点で `"constructor"` へ変換されて届いてしまいます（仕様「評価
+   * メカニズム」の「7 は名前の書き方に依存しません」）。変換はテンプレート
+   * リテラルで行います。`String()` はバインドのキーで差し替えられるためです。
+   * 変換後の文字列をそのままキーにするため、`toString()` が呼ばれる回数は
+   * 変換しない場合と同じ 1 回です。
    */
   private static readonly MEMBER_KEY_GUARD_OPEN =
-    "(_hk=>_hk==='constructor'||_hk==='__proto__'||_hk==='prototype'" +
-    '?undefined:_hk)(';
+    "(_hk=>(_hk=typeof _hk==='symbol'?_hk:`${_hk}`)==='constructor'" +
+    "||_hk==='__proto__'||_hk==='prototype'?undefined:_hk)(";
 
   /**
    * ブロック識別子の検出に使う正規表現。
@@ -649,6 +685,31 @@ export default class Expression {
     return this.FORBIDDEN_NAMES.filter(name => !bindKeySet.has(name))
       .map(name => `const ${name} = undefined`)
       .join(';\n');
+  }
+
+  /**
+   * 式が参照する標準組み込みを `const` として宣言するコードを生成します。
+   *
+   * `const` にした名前へ `++` / `--` を書くと `TypeError` になり、グローバルは
+   * 書き換わりません。バインドのキーと同じ名前は引数が遮蔽するため宣言しません
+   * （宣言すると引数と重複して構文エラーになります）。
+   *
+   * @param expression 評価対象の式
+   * @param bindKeySet 現在の式で利用するバインド識別子
+   * @returns 評価前に挿入する宣言。対象が無ければ空文字
+   */
+  private static buildBuiltinConstants(
+    expression: string,
+    bindKeySet: ReadonlySet<string>,
+  ): string {
+    const names = this.extractFreeIdentifiers(expression).filter(
+      name =>
+        this.ALLOWED_GLOBAL_IDENTIFIERS.has(name) && !bindKeySet.has(name),
+    );
+    if (names.length === 0) {
+      return '';
+    }
+    return `const ${names.map(name => `${name} = this.${name}`).join(', ')};\n`;
   }
 
   /**
@@ -1268,7 +1329,7 @@ export default class Expression {
       const wrappedValues = this.wrapBoundValues(fallbackBindings);
       const argValues = setup.bindKeys.map(key => wrappedValues[key]);
       const value = this.withBlockedPropertyAccess(() =>
-        setup.evaluator!(...argValues),
+        setup.evaluator!.call(this.BUILTIN_HOLDER, ...argValues),
       );
       return typeof value === 'boolean' ? value : undefined;
     } catch {
@@ -1379,7 +1440,7 @@ export default class Expression {
       }
     }
     // 式が参照する名前の値だけを調べる。式は名前を書かずにほかの引数へ届かない
-    // （`arguments` と `eval` は strict モードで封じ、`this` は undefined）ため、
+    // （`arguments` と `eval` は strict モードで封じ、`this` は書けない）ため、
     // 参照しない名前の値に危険値があっても、その式へは渡らない。スコープ全体を
     // 毎回調べると、行のスコープへ継承された一覧の全体を行の式の数だけ調べ直す。
     // 要素データの複製（`haori.data`）はすべての名前を運ぶため、全体を調べる。
@@ -1553,7 +1614,7 @@ export default class Expression {
           argValues.push(wrappedValues[key]);
         });
         const value = this.withBlockedPropertyAccess(() =>
-          setup.evaluator!(...argValues),
+          setup.evaluator!.call(this.BUILTIN_HOLDER, ...argValues),
         );
         if (value === undefined) {
           // ブロック識別子が原因で静かに undefined になった場合のヒント。
@@ -1666,16 +1727,19 @@ export default class Expression {
     }
 
     const assignments = this.buildAssignments(bindKeys);
+    const builtinConstants = this.buildBuiltinConstants(expression, bindKeySet);
     const shadowDeclarations = this.buildShadowDeclarations(declarations);
     // メンバーアクセスは暗黙のオプショナルチェーンへ変換し、さらに計算プロパティ名の
     // 検査（禁止プロパティ名の遮断）を挿入してから評価する。
     const source = this.toGuardedMemberExpression(
       this.toOptionalChainExpression(expression),
     );
-    const body = assignments
-      ? '"use strict";\n' +
-        `${assignments};\nreturn (${source});${shadowDeclarations}`
-      : '"use strict";\n' + `return (${source});${shadowDeclarations}`;
+    // 再バインドできない禁止識別子は引数から外しているため、`assignments` は
+    // 空にならない（空の場合の分岐は持たない）。
+    const body =
+      '"use strict";\n' +
+      `${assignments};\n${builtinConstants}return (${source});` +
+      shadowDeclarations;
     try {
       evaluator = new Function(...bindKeys, body) as (
         ...args: unknown[]

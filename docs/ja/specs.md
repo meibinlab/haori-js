@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.62.1
+バージョン: 0.62.2
 最終更新: 2026-09-02
 
 ## 目次
@@ -637,9 +637,9 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 
 **1 の検証の結果は式の文字列だけで決まるため、式ごとに控えます。** 同じ式を評価するたびに字句へ分け直しません（一覧では同じ式を行の数だけ評価するためです）。
 
-**7 は名前の書き方に依存しません。** 1 の構文検証は文字列リテラルのトークンを 1 個ずつ照合するため、`obj["con" + "structor"]` のように**式で組み立てた名前**は検出できません（`String.fromCharCode`・`join`・Unicode エスケープなど作り方は無数にあります）。名前が確定するのは評価時なので、そこで検査します。
+**7 は名前の書き方に依存しません。** 1 の構文検証は文字列リテラルのトークンを 1 個ずつ照合するため、`obj["con" + "structor"]` のように**式で組み立てた名前**は検出できません（`String.fromCharCode`・`join`・Unicode エスケープなど作り方は無数にあります）。名前が確定するのは評価時なので、そこで検査します。名前はプロパティのキーへ変換してから検査するため、文字列以外の値で書いた名前（`obj[["constructor"]]` のような配列など）も遮断します。
 
-**4 の危険な値の検査は、式が参照する名前の値に限ります。** 式は名前を書かずにほかの値へ届かないため（`arguments` と `eval` は 3 で封じ、`this` は `undefined`）、参照しない名前の値に危険な値があっても、その式の評価は拒否しません。たとえば `{{n.label}}` は `n` の値だけを調べ、同じスコープにある一覧の全体は調べません。スコープ全体を毎回調べると、行のスコープへ継承された一覧を行の式の数だけ調べ直し、時間が行数の 2 乗で増えるためです。`haori.data` を参照する式は、すべての名前の値を運ぶため、従来どおりスコープ全体を調べます。
+**4 の危険な値の検査は、式が参照する名前の値に限ります。** 式は名前を書かずにほかの値へ届かないため（`arguments` と `eval` は 3 で封じ、`this` は使用できないキーワード）、参照しない名前の値に危険な値があっても、その式の評価は拒否しません。たとえば `{{n.label}}` は `n` の値だけを調べ、同じスコープにある一覧の全体は調べません。スコープ全体を毎回調べると、行のスコープへ継承された一覧を行の式の数だけ調べ直し、時間が行数の 2 乗で増えるためです。`haori.data` を参照する式は、すべての名前の値を運ぶため、従来どおりスコープ全体を調べます。
 
 **危険な値は、グローバルオブジェクト（`window`）・`document`・`navigator`・`history`・`location`・`fetch`・`Function`・`setTimeout`・`setInterval`・`requestAnimationFrame`・`alert`・`confirm`・`prompt` と、すべてのストレージ（`Storage`）です。** ストレージは値の同一性ではなく種類（`instanceof Storage`）で判定するため、検査のために `localStorage` / `sessionStorage` を読みません。ストレージを参照しただけで例外になる環境（`allow-same-origin` の無い sandbox iframe など）でも、先に取り出されたストレージを持ち込めば拒否します。`Storage` の無い環境（ブラウザ以外）では、ストレージの判定を行いません。
 
@@ -676,6 +676,8 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 | 関数 | `parseInt` / `parseFloat` / `isNaN` / `isFinite` / `encodeURI` / `encodeURIComponent` / `decodeURI` / `decodeURIComponent` |
 
 `Object` / `Function` / `Reflect` / `window` / `document` などは従来どおり禁止識別子として `undefined` に遮断されます。
+
+**標準組み込みは書き換えられません。** `Math++` のように標準組み込みへ増減演算子（`++` / `--`）を書いた式は `TypeError` になり、評価できません（結果は `null` で、`error` ログを出力します）。ページの `Math` などはそのまま残ります。バインドのキーに同じ名前がある場合は、その値を書き換えます（書き換えはその評価の中だけで、バインドデータは書き換えません）。
 
 #### 暗黙のオプショナルチェーン
 
@@ -5485,7 +5487,7 @@ document.addEventListener('haori:ready', (event) => {
 
 **detail**:
 ```typescript
-{ version: string }  // ライブラリのバージョン（例: '0.62.1'）
+{ version: string }  // ライブラリのバージョン（例: '0.62.2'）
 ```
 
 > **補足**: `data-each` の描画完了を検知したい場合は、専用の完了マーカー
@@ -5898,7 +5900,7 @@ Haori.enhancers.register('choices', {init, refresh, destroy})
 
 ```javascript
 Haori.Core.dumpScope(element)
-Haori.version // '0.62.1'
+Haori.version // '0.62.2'
 ```
 
 `Haori.Haori` と `Haori.default` はグローバル自身への自己参照です
