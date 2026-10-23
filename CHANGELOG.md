@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## [0.64.0] - 2026-10-23
+
+**認証ガードの 401 / 403 の遷移を、取得ごとに切り替えられるようにした版です。画面を開いた時点の確認の取得だけを遷移させ、開いた後の操作の失敗は画面内に出す、という使い分けを宣言で書けます。あわせて、`data-fetch` が通信の例外で終わると、その要素の子孫が構築されないまま残る不具合を直しました。**
+
+### Added
+
+- **取得ごとの認証ガードの切り替え**（仕様「取得ごとの切り替え」）。取得の要素に `data-fetch-forbidden-redirect` / `data-{event}-forbidden-redirect` / `data-import-forbidden-redirect`（401 は `-unauthorized-redirect`）を書くと、その取得の応答では `<body>`／`<html>` の宣言ではなく取得の要素の宣言に従う（`src/auth_guard.ts`）。
+  - URL を書けば、`<body>` に宣言が無くてもその URL へ遷移する。空を書けば遷移せず、失敗時のアクションと応答本文の表示へ進む。宣言の無い取得は従来どおり `<body>`／`<html>` の宣言に従う。
+  - 値の `{{...}}` は取得の要素のスコープで評価する。戻り先クエリ（`-return-param`）も取得の要素に書く。
+  - 取得の無い要素に書いたイベントの宣言（`data-click-forbidden-redirect` など）は、開発モードで `warn` を出す。
+
+### Fixed
+
+- **`data-fetch` が通信の例外（ネットワーク断・接続の拒否など）で終わると、その要素の子孫の式が評価されないまま残るのを直した**（`src/core.ts`）。`<body>` に置いた場合は、初期化で「Failed to build body fragment」が出ていた。HTTP の失敗と同じく子孫を構築し、失敗は `_fetch` と失敗時のアクションで伝える。値の変化による取り直しが通信の例外で終わった場合も、ほかの要素の再評価が止まらない。
+
+### Docs
+
+- 仕様の「`data-fetch`」に「取得の失敗と子孫の構築」を、「認証ガード」に「取得ごとの切り替え」を足した。
+
+### Internal
+
+- `tests/data-fetch-network-failure.test.ts`（5 件）と `tests/auth-redirect-per-fetch.test.ts`（13 件）を足した。回帰と付けたテストは、いずれも修正前の本体で落ちる。
+- 実ブラウザの E2E（`playwright/fetch-network-failure.spec.cjs`・`playwright/auth-per-fetch.spec.cjs`）を足した。どちらも従来の方式と CSP モード（`'unsafe-eval'` の無い CSP）の両方で確かめる。
+- CI で、CSP モードでも全単体テストを流すようにした（`npm run test:csp`）。
+
 ## [0.63.0] - 2026-10-23
 
 **CSP（Content Security Policy）に `'unsafe-eval'` を書かなくても動かせる CSP モードを足した版です。読み込む `<script>` に `data-csp` を書くと、式を `new Function` を使わずに評価します。`data-click-run` などの `*-run` 系からは、登録した関数を `-handler` と `-args` で呼べるようになりました。既定は従来の方式のままで、既存のページの動きは変わりません。**
