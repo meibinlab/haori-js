@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## [0.65.0] - 2026-10-24
+
+**CSP モードを既定にした版です。`data-csp` を書かなくても、式を `new Function` を使わずに評価し、CSP に `'unsafe-eval'` を書かないページでもそのまま動きます。`*-run` 系の本文を JavaScript として実行する従来の方式は、`<script>` に `data-csp="false"` を書いて選びます。**
+
+### Breaking Changes
+
+- **既定の方式を、従来の方式（`new Function`）から CSP モードへ変えた**（仕様「CSP モード」、`src/env.ts`）。`data-csp` を書いていないページも CSP モードで動く。
+  - **動かなくなる書き方**: `data-{event}-run` / `-before-run` / `-after-run` / `data-each-rendered-run` の本文に、グローバルの関数（`window.foo()`・`Plans.save()`・`console.log()` など）・`this`・文（`return false`・`;` で区切った複数の文・`if` 文）・`{{...}}`・`arguments` を書いたもの。これらは実行せず、`warn` ログを出す（仕様「CSP モードでの `*-run`」）。
+  - **すぐに前と同じに動かすには**: 読み込む `<script>` に `data-csp="false"` を書く（ESM では、最初の式の評価より前に `Haori.setCsp(false)` を呼ぶ）。従来の方式は CSP に `'unsafe-eval'` が要る。
+  - **CSP モードへ移すには**: 関数を `Haori.handlers.register()` で登録し、`data-click-run-handler="名前"` と `data-click-run-args="[式]"` で呼ぶ。本文が 1 つの式なら、登録した関数をそのまま呼べる（`data-click-run="save(row)"`）。手順は仕様「従来の方式からの移行」を参照。
+  - `{{式}}` と `data-*` の式（`data-if`・`data-each`・`data-attr-*` など）は、どちらの方式でも同じ結果になる（仕様「CSP モードの式評価」）。
+  - 0.63.0・0.64.0 で書いた `data-csp` は、そのままで CSP モード。
+
+### Changed
+
+- CSP モードで評価しなかった `*-run` の `warn` に、`-handler` への移行と並べて、従来の方式（`data-csp="false"`）を案内するようにした（`src/run_attribute.ts`）。
+- 従来の方式で `new Function` が CSP に拒否されたときの `error` の案内を、`data-csp="false"` を外す形にした（`src/expression.ts`）。
+
+### Docs
+
+- 仕様の「CSP モード」「Content Security Policy (CSP)」「従来の方式からの移行」を、CSP モードが既定の形に改めた。`*-run` 系の各節に、既定（CSP モード）の書き方と、本文の例が従来の方式の書き方であることを書いた。
+- ガイドの `*-run` 系の例を、登録した関数（`-handler` / `-args`）で書き直した。
+- README に、既定が CSP モードであることと、従来の方式の選び方を書いた。
+
+### Internal
+
+- 単体テストの設定を入れ替えた。`npm test` は CSP モード（本体からの `Function` / `eval` を拒否）で、新しく足した `npm run test:legacy` は従来の方式で全単体テストを流す。CI も両方を流す。`npm run test:csp` は無くした。
+- デモの `data-click-run` / `data-click-before-run` / `data-click-after-run` を、登録した関数で書き直した。
+- 実ブラウザの E2E は、`'unsafe-eval'` の無い CSP を付けたページを既定（`data-csp` を書かない）で、従来の方式のページを `data-csp="false"` で読み込むようにした。
+- ミューテーションテストで落ちなかった CSP モードの評価器の書き換え 9 件に対応し、100% に戻した。5 件はテストを足して確かめた（`CR` の改行・記号の直後の正規表現・`1 constructor 2`・`f(1 2)`・`await`）。1 件は使われない判定を削った。3 件は結果を変えない書き換えのため、理由を書いて対象から外した。
+- E2E の配信の直下に空の `favicon.ico` を置いた。ブラウザが自動で取りに行くファビコンの 404 が、コンソールの `error` を数えるテストへ入るのを防ぐ。
+
 ## [0.64.0] - 2026-10-23
 
 **認証ガードの 401 / 403 の遷移を、取得ごとに切り替えられるようにした版です。画面を開いた時点の確認の取得だけを遷移させ、開いた後の操作の失敗は画面内に出す、という使い分けを宣言で書けます。あわせて、`data-fetch` が通信の例外で終わると、その要素の子孫が構築されないまま残る不具合を直しました。**
