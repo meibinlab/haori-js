@@ -6,7 +6,7 @@
  * 同じです」です。評価関数を作る部分の前後は両方の方式で共通のため、ここでは
  * 方式ごとに分けた部分（評価器が受け付けない式の扱いと、バインドに無い名前の
  * 報告）を確かめます。従来の方式と比べるため、CSP モードの設定
- * （`vitest.csp.config.ts`）では流しません。
+ * （`vitest.config.ts`）では流しません。
  */
 
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';

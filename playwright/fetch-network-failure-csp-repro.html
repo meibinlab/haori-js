@@ -5,7 +5,7 @@
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'">
   <title>body の data-fetch の通信の失敗（CSP モード）</title>
-  <script src="/dist/haori.iife.js" data-csp></script>
+  <script src="/dist/haori.iife.js"></script>
 </head>
 <!-- 確認の取得が通信の例外で終わっても、子孫の式を評価する -->
 <body data-bind='{"ok": null}' data-fetch="/api/check.json" data-fetch-arg="ok"

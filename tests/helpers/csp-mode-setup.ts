@@ -1,8 +1,8 @@
 /**
  * @fileoverview 全テストを CSP モードで流すための設定
  *
- * `vitest.csp.config.ts` の `setupFiles` から読み込みます。CSP モードを有効にし、
- * あわせて `Function` コンストラクタと `eval` を、`'unsafe-eval'` の無い CSP の
+ * `vitest.config.ts` の `setupFiles` から読み込みます。CSP モードは既定のまま
+ * にし、`Function` コンストラクタと `eval` を、`'unsafe-eval'` の無い CSP の
  * 下と同じく `EvalError` を投げるものへ置き換えます。式の評価が `new Function`
  * を一度も使わないことを、全テストで確かめるためです。
  *
@@ -12,16 +12,6 @@
  */
 
 import {resolve} from 'node:path';
-
-import {vi} from 'vitest';
-
-// モジュールを読み直すテスト（`vi.resetModules()`）でも CSP モードになるよう、
-// 読み込むたびに有効にする。
-vi.mock('../../src/env', async importOriginal => {
-  const module = await importOriginal<typeof import('../../src/env')>();
-  module.default.setCsp(true);
-  return module;
-});
 
 /**
  * Haori の本体のディレクトリ（スタックの行と比べるため `/` 区切りの小文字）。

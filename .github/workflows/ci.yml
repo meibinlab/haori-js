@@ -30,13 +30,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # CSP モード（既定）で全単体テストを流す。本体からの Function と eval を
+      # 拒否した状態で流し、式の評価が new Function を使わないことを確かめる。
       - name: Run tests
         run: npm run test
 
-      # CSP モード（data-csp）でも全単体テストを流す。本体からの Function と eval を
-      # 拒否した状態で流し、式の評価が new Function を使わないことを確かめる。
-      - name: Run tests in CSP mode
-        run: npm run test:csp
+      # 従来の方式（data-csp="false"）でも全単体テストを流す。
+      - name: Run tests in legacy mode
+        run: npm run test:legacy
 
       - name: Build
         run: npm run build

@@ -12,39 +12,42 @@
   </style>
 </head>
 <body>
-  <h2>data-click-run デモ（イベント時に任意の JS を実行する）</h2>
+  <h2>data-click-run デモ（イベント時に登録した関数を呼ぶ）</h2>
   <p>
     data-{event}-run は、フェッチを伴わない処理を宣言から呼び出すための属性です。
-    本体は実 JavaScript として実行され、this は起点要素、引数 event は起点のイベントです。
+    関数は <code>Haori.handlers.register()</code> で登録し、宣言には名前と引数だけを書きます。
+    <code>-handler</code> で呼んだ関数の this は起点要素、最初の引数は起点のイベントです。
     同期的に false を返したときだけ既定動作を抑止します。
   </p>
 
   <div class="panel">
-    <h3>関数を呼ぶ（type="button" では抑止は不要）</h3>
-    <button type="button" id="count-button" data-click-run="Demo.increment()">
+    <h3>関数を呼ぶ（本文を 1 つの式で書く）</h3>
+    <button type="button" id="count-button" data-click-run="increment()">
       カウントを増やす
     </button>
     <p>カウント: <span id="count">0</span></p>
   </div>
 
   <div class="panel">
-    <h3>this と event を使う</h3>
-    <button type="button" id="self-button" data-click-run="Demo.describe(this, event)">
+    <h3>this と event を使う（<code>-handler</code>）</h3>
+    <button type="button" id="self-button" data-click-run-handler="describe">
       押した要素を調べる
     </button>
     <p id="describe">（未実行）</p>
   </div>
 
   <div class="panel">
-    <h3>行ごとの値を渡す（<code>{{}}</code> はレンダリング時に展開）</h3>
+    <h3>行ごとの値を渡す（<code>-args</code>）</h3>
     <p>
-      展開結果はコードとして実行されるため、埋め込むのは自分で制御する値（行番号など）だけにします。
+      <code>-args</code> は haori の式で、値はコードへ埋め込まずにそのまま関数へ渡します。
     </p>
     <div data-bind='{"rows":[{"label":"1 行目"},{"label":"2 行目"},{"label":"3 行目"}]}'>
       <ul data-each="rows" data-each-arg="row" data-each-index="i">
         <li>
           {{row.label}}
-          <button type="button" class="pick" data-click-run="Demo.pick({{i}})">選ぶ</button>
+          <button type="button" class="pick"
+            data-click-run-handler="pick"
+            data-click-run-args="[i]">選ぶ</button>
         </li>
       </ul>
     </div>
@@ -52,63 +55,56 @@
   </div>
 
   <div class="panel">
-    <h3>既定動作を抑止する（return false）</h3>
+    <h3>既定動作を抑止する（false を返す）</h3>
     <p>
-      リンクの遷移を止めます。<code>return false</code> を返さない場合は遷移します。
+      リンクの遷移を止めます。関数が <code>false</code> を返さない場合は遷移します。
     </p>
     <a
       id="blocked-link"
       href="./data-click-run-demo.html?moved=1"
-      data-click-run="Demo.log('リンクの遷移を止めました'); return false"
+      data-click-run-handler="blockLink"
     >遷移しないリンク</a>
   </div>
 
   <p>実行の記録: <span id="log"></span></p>
 
-  <script>
-    // 画面個別の処理はグローバルの名前空間へ置き、宣言から呼び出す。
-    window.Demo = {
-      /** カウントを 1 増やします。 */
-      increment: function () {
-        var count = document.getElementById('count');
-        count.textContent = String(Number(count.textContent) + 1);
-        Demo.log('increment');
-      },
-
-      /**
-       * 起点要素とイベントの情報を表示します。
-       *
-       * @param element 起点要素（this）
-       * @param event 起点の DOM イベント
-       */
-      describe: function (element, event) {
-        document.getElementById('describe').textContent =
-          'this の id: ' + element.id + ' / event.type: ' + event.type;
-        Demo.log('describe');
-      },
-
-      /**
-       * 選んだ行番号を表示します。
-       *
-       * @param index 0 始まりの行番号
-       */
-      pick: function (index) {
-        document.getElementById('picked').textContent =
-          '選んだ行: ' + String(index + 1) + ' 行目';
-        Demo.log('pick:' + index);
-      },
-
-      /**
-       * 実行の記録へ追記します。
-       *
-       * @param text 追記する文字列
-       */
-      log: function (text) {
-        var log = document.getElementById('log');
-        log.textContent = (log.textContent + ' ' + text).trim();
-      },
-    };
-  </script>
   <script src="../../dist/haori.iife.js"></script>
+  <script>
+    /**
+     * 実行の記録へ追記します。
+     *
+     * @param text 追記する文字列
+     */
+    function log(text) {
+      var element = document.getElementById('log');
+      element.textContent = (element.textContent + ' ' + text).trim();
+    }
+
+    // 画面個別の処理を登録し、宣言から名前で呼び出す。
+    Haori.handlers.register('increment', function () {
+      var count = document.getElementById('count');
+      count.textContent = String(Number(count.textContent) + 1);
+      log('increment');
+    });
+
+    // this は宣言を書いた要素、event は起点の DOM イベント。
+    Haori.handlers.register('describe', function (event) {
+      document.getElementById('describe').textContent =
+        'this の id: ' + this.id + ' / event.type: ' + event.type;
+      log('describe');
+    });
+
+    // -args の値は、イベントの後ろに並ぶ。
+    Haori.handlers.register('pick', function (event, index) {
+      document.getElementById('picked').textContent =
+        '選んだ行: ' + String(index + 1) + ' 行目';
+      log('pick:' + index);
+    });
+
+    Haori.handlers.register('blockLink', function () {
+      log('リンクの遷移を止めました');
+      return false;
+    });
+  </script>
 </body>
 </html>

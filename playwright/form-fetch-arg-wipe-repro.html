@@ -35,7 +35,8 @@
             : src === 'cdn-0.17.1'
               ? 'https://cdn.jsdelivr.net/npm/haori@0.17.1/dist/haori.iife.js'
               : '/dist/haori.iife.js';
-        document.write('<script src="' + url + '"><\/script>');
+        // 本文を JavaScript として実行するため、従来の方式で読み込む。
+        document.write('<script src="' + url + '" data-csp="false"><\/script>');
       })();
     </script>
     <script>

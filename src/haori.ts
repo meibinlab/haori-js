@@ -65,9 +65,10 @@ export default class Haori {
    * CSP モードを設定します。最初の式の評価より前に呼んでください。
    *
    * CSP モードでは、式と `*-run` 系の宣言を `new Function` を使わずに評価します
-   * （仕様「CSP モード」）。`<script>` に `data-csp` を書いた場合と同じです。
+   * （仕様「CSP モード」）。既定は CSP モードです。false を渡すと従来の方式に
+   * なり、`<script>` に `data-csp="false"` を書いた場合と同じです。
    *
-   * @param enabled 有効にする場合は true。
+   * @param enabled CSP モードにする場合は true。従来の方式にする場合は false。
    * @return 戻り値はありません。
    */
   public static setCsp(enabled: boolean): void {

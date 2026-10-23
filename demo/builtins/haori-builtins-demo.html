@@ -16,6 +16,12 @@
   </p>
 
   <script src="../../dist/haori.iife.js"></script>
+  <script>
+    // 送信ボタンの run から呼ぶ（送信抑止の確認用）。
+    Haori.handlers.register('markSubmitted', function () {
+      window.__submitHandled = true;
+    });
+  </script>
 
   <main
     id="app"
@@ -79,7 +85,7 @@
         id="save-btn"
         type="submit"
         data-click-prevent
-        data-click-run="window.__submitHandled = true"
+        data-click-run="markSubmitted()"
       >保存</button>
     </form>
   </main>

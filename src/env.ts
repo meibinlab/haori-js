@@ -57,13 +57,14 @@ export default class Env {
   private static _prefix: string = 'data-';
   private static _runtime: HaoriRuntime = DEFAULT_RUNTIME;
   private static _strictBind: boolean = false;
-  private static _csp: boolean = false;
+  private static _csp: boolean = true;
 
   /**
    * CSP モードが有効かどうかを取得します。
    *
    * 有効な場合、式は `new Function` を使わずに評価します（仕様「CSP モードの
-   * 式評価」）。
+   * 式評価」）。既定は有効です。無効にすると従来の方式（`new Function`）で
+   * 評価します（仕様「CSP モード」）。
    *
    * @returns CSP モードなら true。
    */
@@ -74,7 +75,7 @@ export default class Env {
   /**
    * CSP モードを設定します。
    *
-   * @param enabled 有効にする場合は true。
+   * @param enabled 有効にする場合は true。従来の方式にする場合は false。
    * @return 戻り値はありません。
    */
   public static setCsp(enabled: boolean): void {

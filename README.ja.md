@@ -60,10 +60,11 @@ ES Module:
 import Haori from 'haori';
 ```
 
-CSP（Content Security Policy）で `'unsafe-eval'` を許さないページでは、読み込む `<script>` に `data-csp` を書きます（ESM では `Haori.setCsp(true)`）。式を `new Function` を使わずに評価します。推奨する CSP と移行の手順は [仕様書の「Content Security Policy (CSP)」](docs/ja/specs.md#content-security-policy-csp) を参照してください。
+既定は CSP モードです。式を `new Function` を使わずに評価するため、CSP（Content Security Policy）で `'unsafe-eval'` を許さないページでもそのまま動きます。`data-click-run` などの本文を JavaScript として実行する従来の方式を使う場合は、読み込む `<script>` に `data-csp="false"` を書きます（ESM では `Haori.setCsp(false)`）。従来の方式は `'unsafe-eval'` を必要とします。0.64.0 までは従来の方式が既定でした。推奨する CSP と移行の手順は [仕様書の「Content Security Policy (CSP)」](docs/ja/specs.md#content-security-policy-csp) を参照してください。
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-csp></script>
+<!-- 従来の方式 -->
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-csp="false"></script>
 ```
 
 ---
@@ -179,7 +180,7 @@ JS からバインドデータを読むには `Haori.Core.getBindingData(element
 
 公開運用メモ:
 
-1. `npm run test`、`npm run build`、`npm pack --dry-run` を実行する
+1. `npm run test`、`npm run test:legacy`、`npm run build`、`npm pack --dry-run` を実行する
 2. `npm version patch` などで公開する版数に更新する
 3. `git push origin main` と `git push origin --tags` を実行する
 4. 新しい版数タグから GitHub Release を公開する
@@ -198,7 +199,10 @@ npm install
 ```bash
 npm run compile
 npm run test
+npm run test:legacy
 ```
+
+`npm run test` は CSP モード（既定）で、`npm run test:legacy` は従来の方式で全単体テストを流します。
 
 3. 配布物のビルド
 
@@ -232,6 +236,7 @@ git push origin --tags
 公開前の推奨確認:
 
 - `npm run test`
+- `npm run test:legacy`
 - `npm run build`
 - `npm pack --dry-run`
 

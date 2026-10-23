@@ -10,7 +10,7 @@
     "preview:demo": "vite preview --config demo/vite.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:csp": "vitest run --config vitest.csp.config.ts",
+    "test:legacy": "vitest run --config vitest.legacy.config.ts",
     "test:mutation": "stryker run",
     "bench": "vitest bench --run",
     "bench:browser": "node bench/run.mjs",

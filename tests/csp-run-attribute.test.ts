@@ -314,5 +314,21 @@ describe('CSP モードでの *-run', () => {
       expect(calls).toEqual([]);
       expect(warned(warn, '{{...}}')).toBe(true);
     });
+
+    it.each([
+      ['1 つの式として読めない本文', 'return false'],
+      ['{{...}} を含む本文', 'first({{ruleI}})'],
+    ])('%s の warn は従来の方式も案内する', async (_label, body) => {
+      // 仕様「CSP モードでの `*-run`」の「`warn` ログで、`-handler` への移行と、本文を JavaScript として実行する従来の方式（`data-csp="false"`）を案内します」
+      const warn = vi.spyOn(Log, 'warn').mockImplementation(() => undefined);
+      Haori.handlers.register('first', () => undefined);
+      await mount(`
+        <div data-bind='{"ruleI": 2}'>
+          <button id="b" type="button" data-click-run="${body}"></button>
+        </div>`);
+      await click('#b');
+      expect(warned(warn, 'data-click-run-handler')).toBe(true);
+      expect(warned(warn, 'data-csp="false"')).toBe(true);
+    });
   });
 });

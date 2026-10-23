@@ -782,17 +782,23 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 
 #### CSP モード
 
-**CSP（Content Security Policy）に `'unsafe-eval'` を書かなくても動かすための動作モードです。** 既定は従来の方式（`new Function`）です。CSP モードでは、式を [CSP モードの式評価](#csp-モードの式評価)で評価し、`*-run` 系の宣言を [CSP モードでの `*-run`](#csp-モードでの--run) のとおりに扱います。
+**CSP（Content Security Policy）に `'unsafe-eval'` を書かなくても動かすための動作モードです。既定は CSP モードです。** 式を [CSP モードの式評価](#csp-モードの式評価)で評価し、`*-run` 系の宣言を [CSP モードでの `*-run`](#csp-モードでの--run) のとおりに扱います。0.64.0 までは従来の方式が既定でした。
 
-**有効にするには、読み込む `<script>` に `data-csp` を書きます。** 値を書かないか、`false` / `off` / `0` 以外を書くと有効です。`data-prefix` で接頭辞を変えたページでは、`data-strict-bind` と同じく変えた接頭辞で書きます（`data-prefix="hx"` なら `hx-csp`）。
+**従来の方式（`new Function`）を使うには、読み込む `<script>` に `data-csp="false"` を書きます。** `data-csp` の値が `false` / `off` / `0` なら従来の方式です。`data-csp` を書かないか、値を書かないか、ほかの値を書くと CSP モードです。`data-prefix` で接頭辞を変えたページでは、`data-strict-bind` と同じく変えた接頭辞で書きます（`data-prefix="hx"` なら `hx-csp="false"`）。
 
 ```html
-<script src="haori.iife.js" data-csp></script>
+<!-- CSP モード（既定） -->
+<script src="haori.iife.js"></script>
+
+<!-- 従来の方式 -->
+<script src="haori.iife.js" data-csp="false"></script>
 ```
 
-ESM で読み込む場合など `<script>` の属性を使えないときは、最初の式の評価より前に `Haori.setCsp(true)` を呼びます。`Haori.csp` で現在のモードを読めます。
+**従来の方式は、`*-run` 系の本文を JavaScript として実行するためのものです。** 本文にグローバルの関数・`this`・文（`return` や `if`）・`{{...}}` を書いたページが対象です。CSP の `script-src` に `'unsafe-eval'` が要ります（[Content Security Policy (CSP)](#content-security-policy-csp)）。新しく書くページは、CSP モードのまま [登録した関数](#登録した関数haorihandlers)を使ってください。
 
-**従来の方式のまま `'unsafe-eval'` の無いページで動かすと、`error` ログで CSP モードを案内します。** `new Function` が CSP に拒否されると式はどれも評価できないため、原因と対処（`data-csp`）を 1 回だけ出します。式ごとの「コンパイル失敗」の `error` も従来どおり出ます。
+ESM で読み込む場合など `<script>` の属性を使えないときは、最初の式の評価より前に `Haori.setCsp(false)` を呼びます（`Haori.setCsp(true)` で CSP モードに戻ります）。`Haori.csp` で現在のモードを読めます（CSP モードなら `true`）。
+
+**従来の方式を選んだページを `'unsafe-eval'` の無い CSP の下で動かすと、`error` ログで CSP モードを案内します。** `new Function` が CSP に拒否されると式はどれも評価できないため、原因と対処（`data-csp="false"` を外す）を 1 回だけ出します。式ごとの「コンパイル失敗」の `error` も従来どおり出ます。
 
 #### CSP モードの式評価
 
@@ -2308,7 +2314,7 @@ data-each="arrayExpression"
 - `data-row`: 各行に自動付与されるキー (手動変更禁止)
 - `data-each-visible`: スクロール追従の可視行範囲を組み込み変数として公開（後述）
 - `data-each-done`: 全行の描画が安定して完了したときに **Haori が自動付与**するマーカー（手動指定不可）。新しい描画サイクルの開始時に外され、完了時に再付与されます。E2E テスト等で `[data-each-done]` の出現を待って描画完了を検知できます。**発火保証**: 初回描画・再 fetch・再バインドなど描画サイクルが走るたびに、コンテナ単位で「除去 → 再付与」が必ず一度行われます。差分更新で実際の DOM 変更がない場合でも、サイクルが安定した時点で再付与されます。これにより外部ウィジェットの再同期契機として利用できます。**非表示のあいだは外れます。** `data-if` が偽のコンテナでは描画を保留するため（[data-if の動作](#data-if-の動作)の「配下は再評価しない」）、保留した時点でマーカーを外し、表示へ戻って描き終えた時点で再付与します。付けたままにすると、非表示のあいだに配列が変わった場合に**古い行数のまま「描画完了」を示し続けます**。**markup が持ち込んだ `data-each-done` は宣言として取り込みません。** このマーカーは判定の結果（追随結果）であって宣言ではないため、Haori が出力した HTML を保存して再配信する構成、`innerHTML` でコピーした断片、`data-import` で取り込む断片に残っていても、フラグメントを作る時点で落とします（[data-if の動作](#data-if-の動作)の「追随結果は**宣言として取り込みません**」と同じ扱い）。落とさないと、行を 1 つも描いていない状態で完了を示します
-- `data-each-rendered-run`: 描画が確定し `data-each-done` が付与されるたびに、**コンテナ単位で一度だけ**実行する任意の JS（`data-{event}-run` と同じ式評価）。初回の描画では 1 回だけ実行します。本体内の `this` は対象コンテナ要素に束縛されます。外部の select 拡張ライブラリ（Choices.js 等）の再同期フック（例: `data-each-rendered-run="window.__choicesRefresh(this)"`）として利用できます。適用の冪等性やインスタンスの保持まで宣言に寄せる場合は [`data-enhance`](#data-enhance) を使ってください（`data-enhance` の再同期はこのフックより前に実行されます）
+- `data-each-rendered-run`: 描画が確定し `data-each-done` が付与されるたびに、**コンテナ単位で一度だけ**実行する処理（`data-{event}-run` と同じ扱い）。初回の描画では 1 回だけ実行します。既定の CSP モードでは本文を [CSP モードでの `*-run`](#csp-モードでの--run) のとおりに扱うため、[登録した関数](#登録した関数haorihandlers)を `data-each-rendered-run-handler` で呼びます（関数の `this` は対象コンテナ要素）。[従来の方式](#csp-モード)では本文を JavaScript として実行し、本体内の `this` は対象コンテナ要素に束縛されます。外部の select 拡張ライブラリ（Choices.js 等）の再同期フック（例: `data-each-rendered-run-handler="choicesRefresh"`）として利用できます。適用の冪等性やインスタンスの保持まで宣言に寄せる場合は [`data-enhance`](#data-enhance) を使ってください（`data-enhance` の再同期はこのフックより前に実行されます）
 - `data-each-rendered-change`: 描画確定後に、対象コンテナ要素へ `change` イベント（バブリングあり）を発火します。API から取得した候補を `data-each` で流し込んだ `<select>` について、「既定選択を確定して初期データを取得する」パターンをインライン JS なしで宣言できます。`<select>` はブラウザが先頭 `<option>` を自動選択するため、描画確定後の `change` がそのまま既定選択の確定になります。`data-each-rendered-run` より後に実行されるため、外部ウィジェットの再同期を先に済ませた状態で発火します
   - 属性値を省略、または `once`: 描画行が 1 件以上ある**最初の描画確定時のみ**発火します（既定）
   - `always`: 描画確定ごとに毎回発火します
@@ -2577,14 +2583,21 @@ data-each="arrayExpression"
     data-each="electricPlans.content"
     data-each-key="id"
     data-each-arg="ep"
-    data-each-rendered-run="window.__choicesRefresh(this)"
+    data-each-rendered-run-handler="choicesRefresh"
   >
     <option value="{{ ep.planName }}">{{ ep.planName }}</option>
   </select>
 </div>
 ```
 
-`<option>` は `data-each` で配列バインドし、外部生成 DOM は `data-external` で監視除外、描画確定のたびに `data-each-rendered-run` で外部ウィジェットを再同期します。選択結果は `<select multiple>` の配列値としてフォーム送信値（`data-click-form` 等）に反映されます。任意の select 拡張ライブラリへ一般化できます。
+```js
+// this は data-each のコンテナ（<select>）
+Haori.handlers.register('choicesRefresh', function () {
+  window.__choicesRefresh(this);
+});
+```
+
+`<option>` は `data-each` で配列バインドし、外部生成 DOM は `data-external` で監視除外、描画確定のたびに `data-each-rendered-run-handler` で外部ウィジェットを再同期します。選択結果は `<select multiple>` の配列値としてフォーム送信値（`data-click-form` 等）に反映されます。任意の select 拡張ライブラリへ一般化できます。
 
 #### `data-enhance`
 
@@ -3948,6 +3961,8 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 #### コールバック
 
+**既定の CSP モードでは、`*-run` 系の本文を JavaScript としては実行しません。** 本文は 1 つの式として評価し、参照できるのは引数・要素のスコープ・[登録した関数](#登録した関数haorihandlers)だけです（[CSP モードでの `*-run`](#csp-モードでの--run)）。文や `this`、グローバルの関数を使う処理は、登録した関数を `-handler` で呼びます。この節の本文の例のうち、`console` などのグローバル・`return`・`arguments` を書いたものは、[従来の方式](#csp-モード)（`data-csp="false"`）の書き方です。
+
 ##### `data-{event}-before-run`
 
 フェッチ前に実行するスクリプトを指定します。
@@ -3968,12 +3983,28 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 - `data-runtime="demo"` では、上書き後の設定に対しても[クエリ付き GET への正規化](#demo-ランタイムでの通信の正規化)が再適用されます。
 
 ```html
+<!-- 既定（CSP モード）: 登録した関数を呼ぶ -->
+<button
+  data-click-fetch="/api/data"
+  data-click-before-run-handler="logStart"
+>
+  取得
+</button>
+
+<!-- 従来の方式（data-csp="false"）: 本文を JavaScript として実行する -->
 <button
   data-click-fetch="/api/data"
   data-click-before-run="console.log('フェッチ開始', arguments[0]); return true"
 >
   取得
 </button>
+```
+
+```js
+Haori.handlers.register('logStart', function (fetchUrl, fetchOptions) {
+  console.log('フェッチ開始', fetchUrl);
+  return true;
+});
 ```
 
 ##### `data-{event}-after-run`
@@ -3986,6 +4017,7 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 **本文を読む場合は `clone()` が必要です**。`Response` の本文は一度しか読めないため、ここで直接読むと後続のバインド処理が本文を読めなくなります。
 
 ```html
+<!-- 従来の方式（data-csp="false"） -->
 <button
   data-click-fetch="/api/data"
   data-click-after-run="arguments[0].clone().json().then(d => console.log(d))"
@@ -4001,6 +4033,15 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 **`this`**: `before-run` と同じく起点要素ではありません。
 
 ```html
+<!-- 既定（CSP モード）: 登録した関数を呼ぶ -->
+<button
+  data-click-fetch="/api/data"
+  data-click-after-run-handler="logDone"
+>
+  取得
+</button>
+
+<!-- 従来の方式（data-csp="false"） -->
 <button
   data-click-fetch="/api/data"
   data-click-after-run="console.log('取得完了', arguments[0].status)"
@@ -4009,11 +4050,19 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 </button>
 ```
 
+```js
+Haori.handlers.register('logDone', function (response) {
+  console.log('取得完了', response.status);
+});
+```
+
 ##### `data-{event}-run`
 
-フェッチを伴わないイベント時に、任意の JavaScript を実行します。`data-click-run` / `data-change-run` などイベント種別ごとに利用できます。クライアント側の状態操作や関数呼び出しのために、`document.addEventListener('click', ...)` 等の独自ハンドラを書かずに済ませるための属性です。
+フェッチを伴わないイベント時に、処理を実行します。`data-click-run` / `data-change-run` などイベント種別ごとに利用できます。クライアント側の状態操作や関数呼び出しのために、`document.addEventListener('click', ...)` 等の独自ハンドラを書かずに済ませるための属性です。
 
-- **実行方式**: 属性値を本体として `new Function('event', "use strict"; body)` で実行します（`before-run` / `after-run` と同じ実 JS 実行。サンドボックス式評価ではありません）。`this` は起点要素、引数 `event` は起点の DOM イベントです。
+**既定の CSP モードでは、本文を 1 つの式として評価します**（`data-click-run="save(row)"` など。[CSP モードでの `*-run`](#csp-モードでの--run)）。`this`・文・`{{...}}`・グローバルの関数を使う処理は、[登録した関数](#登録した関数haorihandlers)を `data-click-run-handler` で呼びます。戻り値の扱い（`false` での既定動作の抑止、Promise の完了待ち）は下と同じです。**以下の「実行方式」「戻り値の捕捉」「`{{...}}` の展開」と本文の例は、[従来の方式](#csp-モード)（`data-csp="false"`）での動きです。**
+
+- **実行方式**（従来の方式）: 属性値を本体として `new Function('event', "use strict"; body)` で実行します（`before-run` / `after-run` と同じ実 JS 実行。サンドボックス式評価ではありません）。`this` は起点要素、引数 `event` は起点の DOM イベントです。
 - **戻り値の捕捉**: 属性値が**単一式**として評価できる場合（例: `save()`、`Foo.bar('#x')`）は、`return` を書かなくても**式の値が戻り値として捕捉**されます。これにより素の async 関数呼び出しでも戻り値の Promise が後述の await 対象になり、同期的な `false` で `preventDefault()` が働きます。複数文・`if` 文・明示的な `return` を含む本体は単一式として扱えないため**従来どおりの文ブロック**として実行され、その場合の戻り値は本体内に書いた**明示的な `return` に従います**（戻り値が必要なら `return <値>` を明示してください）。
 - **`{{...}}` の展開**: 属性値に含まれる `{{...}}` は、他の属性と同様にレンダリング時に評価・展開され、展開後の文字列が本体として実行されます（`{{...}}` 部分のみバインディングスコープを参照できます）。
 - **戻り値による既定動作の抑止**: 本体が**同期的に `false` を返したときだけ `event.preventDefault()`** を呼びます（`onclick="return false"` / jQuery と同じ慣習）。`<a href>` や `type="submit"` の既定動作を抑止したい場合は `return false` を返してください。`type="button"` など既定動作が無い要素では不要です。
@@ -4027,6 +4076,8 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 - **エラー時**: 評価・実行エラーは `Log.error` でコンソールに報告し、例外は外へ投げません。
 - **注意**: `data-click-defer` と併用すると手続きが次フレームへ遅延し同期実行でなくなるため、`return false` による `preventDefault()` は間に合いません。
 - **⚠️ セキュリティ（重要）**: `{{...}}` の展開結果は**実行コードへ文字列結合**されます。他属性の `{{...}}` は結果を「データ」として扱いますが、本属性は結果を「コード」として再実行するため、**`{{...}}` に入れた値が JavaScript として実行されます**。例えば `data-click-run="greet('{{name}}')"` で `name` が信頼できない文字列（`'); evilCode(); ('` 等）の場合、`greet(''); evilCode(); ('')` となり任意コードが実行されます（XSS）。`{{...}}` には**自分で制御する信頼できる値（数値 index・自前採番 ID など）のみ**を入れ、**API レスポンスやユーザー入力などの信頼できない文字列を差し込まないでください**。信頼できない値は `{{...}}` で結合せず、`data-bind` でスコープに置いて呼び出す関数の内部で参照する構成にします。
+
+従来の方式の例です。
 
 ```html
 <!-- 関数呼び出し（type=button では preventDefault 不要） -->
@@ -4092,11 +4143,11 @@ Haori.handlers.register('editRule', function (event, index, formSelector) {
 
 ##### CSP モードでの `*-run`
 
-**CSP モードでは、`*-run` 系の本文を JavaScript としては実行しません。** 本文が 1 つの式として書ける場合は、haori の式として評価します（[CSP モードの式評価](#csp-モードの式評価)）。
+**CSP モード（既定）では、`*-run` 系の本文を JavaScript としては実行しません。** 本文が 1 つの式として書ける場合は、haori の式として評価します（[CSP モードの式評価](#csp-モードの式評価)）。
 
 - **式から参照できる名前**: 従来の本文の引数（`event` / `fetchUrl` / `fetchOptions` / `response`）、要素のスコープ、[登録した関数](#登録した関数haorihandlers)です。同じ名前があれば、この順に先のものを使います。登録した関数がスコープのキーに隠れる場合は、開発モードで `warn` ログを出します。
 - **戻り値**は従来の本文と同じ扱いです（`data-click-run="save(row)"` の Promise は完了まで待ちます）。
-- **評価しない本文**: 次の本文は評価せず、`warn` ログで `-handler` への移行を案内します。
+- **評価しない本文**: 次の本文は評価せず、`warn` ログで、`-handler` への移行と、本文を JavaScript として実行する従来の方式（`data-csp="false"`）を案内します。
   - 1 つの式として読めない本文（`return false`、`;` で区切った複数の文、`if` 文など）
   - `{{...}}` を含む本文。値をコードへ埋め込む書き方は、CSP モードでは使えません。式の中で名前を直接参照するか、`-args` で渡します
 - **`this` は使えません**（式に書けないため）。起点要素を使う処理（`window.__choicesRefresh(this)` など）は、[登録した関数](#登録した関数haorihandlers)へ移します。グローバル（`window` の関数）も式からは参照できないため、同じく登録した関数へ移します。
@@ -6358,7 +6409,9 @@ if (type === ExpressionType.EXPRESSION) {
 
 #### 6. 実 JS 実行属性（escape hatch）の注意
 
-`data-{event}-before-run` / `data-{event}-after-run` / `data-{event}-run` は、サンドボックス式評価ではなく **`new Function` による実 JavaScript 実行**です。これらの属性値は上記の式評価の制限（禁止識別子・危険パターン検出など）の対象外であり、記述したコードがそのまま実行されます。
+この項は [従来の方式](#csp-モード)（`data-csp="false"`）を選んだページの注意です。既定の CSP モードでは本文を JavaScript としては実行しません（[CSP モードでの `*-run`](#csp-モードでの--run)）。
+
+従来の方式では、`data-{event}-before-run` / `data-{event}-after-run` / `data-{event}-run` は、サンドボックス式評価ではなく **`new Function` による実 JavaScript 実行**です。これらの属性値は上記の式評価の制限（禁止識別子・危険パターン検出など）の対象外であり、記述したコードがそのまま実行されます。
 
 特に **`data-{event}-run` は `{{...}}` の展開結果を実行コードへ文字列結合**します（`before-run` / `after-run` は生の値を使うため `{{...}}` 展開は行いません）。そのため `data-{event}-run` の `{{...}}` に入れた値は JavaScript として実行されます。
 
@@ -6372,7 +6425,7 @@ if (type === ExpressionType.EXPRESSION) {
 - **API レスポンスやユーザー入力などの信頼できない文字列を `{{...}}` で差し込まない**。必要な場合は `data-bind` でスコープに置き、`data-{event}-run` から呼ぶ関数の内部で参照する。
 - `before-run` / `after-run` / `run` の本体自体（コード部分）は静的なテンプレートに書き、動的な値はコードへ結合せずデータとして渡す。
 - 値をコードへ結合しない書き方として、[登録した関数](#登録した関数haorihandlers)を `-handler` で呼び、値を `-args` の式で渡せます。
-- [CSP モード](#csp-モード)では、本文を JavaScript としては実行しません（[CSP モードでの `*-run`](#csp-モードでの--run)）。`{{...}}` を含む本文も評価しないため、上の結合は起きません。
+- 既定の [CSP モード](#csp-モード)では、本文を JavaScript としては実行しません（[CSP モードでの `*-run`](#csp-モードでの--run)）。`{{...}}` を含む本文も評価しないため、上の結合は起きません。
 
 #### 7. 遷移先のスキーム
 
@@ -6415,10 +6468,10 @@ if (type === ExpressionType.EXPRESSION) {
 
 | 方式 | 有効にする方法 | `script-src` に要るもの |
 | ---- | -------------- | ----------------------- |
-| 従来の方式（既定） | なし | `'unsafe-eval'`（式と `*-run` 系の本文を `new Function` で評価するため） |
-| [CSP モード](#csp-モード) | `<script>` に `data-csp`、または `Haori.setCsp(true)` | 不要 |
+| [CSP モード](#csp-モード)（既定） | なし | 不要 |
+| 従来の方式 | `<script>` に `data-csp="false"`、または `Haori.setCsp(false)` | `'unsafe-eval'`（式と `*-run` 系の本文を `new Function` で評価するため） |
 
-`'unsafe-eval'` を許すと、ページへ差し込まれた文字列もコードとして実行できるため、CSP で XSS を抑える効果が大きく下がります。CSP を設定するページでは CSP モードを使ってください。
+`'unsafe-eval'` を許すと、ページへ差し込まれた文字列もコードとして実行できるため、CSP で XSS を抑える効果が大きく下がります。CSP を設定するページでは、従来の方式を選ばずに CSP モードのまま使ってください。
 
 #### 推奨する CSP
 
@@ -6430,7 +6483,7 @@ if (type === ExpressionType.EXPRESSION) {
   object-src 'none';
   base-uri 'none'">
 <script src="https://cdn.jsdelivr.net/npm/haori@x.y.z/dist/haori.iife.js"
-  integrity="sha384-…" crossorigin="anonymous" data-csp></script>
+  integrity="sha384-…" crossorigin="anonymous"></script>
 ```
 
 - **CDN はファイルのパスまで書いて絞ります**（`x.y.z` は使う版）。 `https://cdn.jsdelivr.net` だけを許すと、jsDelivr が配信するほかのパッケージ（CSP をすり抜けるのに使える古いライブラリを含む）も読み込めてしまいます。版を固定し、`integrity`（SRI）を付けてください。
@@ -6441,7 +6494,12 @@ if (type === ExpressionType.EXPRESSION) {
 
 #### 従来の方式からの移行
 
-1. 読み込む `<script>` に `data-csp` を書きます（ESM では、最初の式の評価より前に `Haori.setCsp(true)` を呼びます）。
+0.64.0 までは従来の方式が既定でした。0.65.0 からは、`data-csp` を書いていないページも CSP モードで動きます。`*-run` 系の本文を JavaScript で書いたページは、次のどちらかを選びます。
+
+- **すぐに前と同じに動かす**: 読み込む `<script>` に `data-csp="false"` を書きます（ESM では、最初の式の評価より前に `Haori.setCsp(false)` を呼びます）。
+- **CSP モードへ移す**: 次の手順で書き換えます。`'unsafe-eval'` の無い CSP を付けられるようになります。
+
+1. 読み込む `<script>` から `data-csp="false"` を外します（`Haori.setCsp(false)` も呼びません）。0.63.0・0.64.0 で書いた `data-csp` は、そのままでも CSP モードです。
 2. `{{式}}` と `data-*` の式は、そのまま動きます（[CSP モードの式評価](#csp-モードの式評価)）。評価できない書き方は、[CSP モードと従来の方式の違い](#csp-モードと従来の方式の違い)にある 2 つだけです。
 3. `*-run` 系の本文を書き換えます。本文が 1 つの式なら、そのまま式として評価します。ただし式から参照できるのは、従来の本文の引数・要素のスコープ・登録した関数だけです（[CSP モードでの `*-run`](#csp-モードでの--run)）。
 

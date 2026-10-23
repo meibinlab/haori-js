@@ -105,7 +105,7 @@ test.describe('data-click-run', () => {
     expect(errors).toEqual([]);
   });
 
-  test('行ごとの値を展開して渡せる', async ({page}) => {
+  test('行ごとの値を -args で渡せる', async ({page}) => {
     await open(page, '/demo/click/data-click-run-demo.html');
     await page.locator('.pick').nth(2).click();
     await expect(page.locator('#picked')).toHaveText('選んだ行: 3 行目');

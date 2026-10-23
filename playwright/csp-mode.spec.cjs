@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* global require, window, document */
-// CSP モード（data-csp）の実ブラウザ確認。jsdom は CSP を強制しないため、
+// CSP モード（既定）の実ブラウザ確認。jsdom は CSP を強制しないため、
 // 'unsafe-eval' の無い CSP を付けたページで、式・一覧・条件・属性・run 系・取得が
 // 動き、CSP の違反が起きないことをここで確かめる。期待値の根拠は仕様「CSP モード」
 // 「CSP モードの式評価」「登録した関数（`Haori.handlers`）」「CSP モードでの `*-run`」。
@@ -44,7 +44,9 @@ function violations(page) {
 }
 
 test.describe('CSP モード', () => {
-  test('式・一覧・条件・属性が CSP の違反なしに描画される', async ({page}) => {
+  test('data-csp を書かない既定のまま、式・一覧・条件・属性が CSP の違反なしに描画される', async ({
+    page,
+  }) => {
     await open(page, '/playwright/csp-mode-repro.html');
     await expect(page.locator('#title')).toHaveText('一覧');
     await expect(page.locator('#list .name')).toHaveText(['りんご', 'みかん']);
@@ -79,14 +81,14 @@ test.describe('CSP モード', () => {
     expect(await violations(page)).toEqual(['style-src-attr inline ']);
   });
 
-  test('対照: data-csp が無いと式が評価できず、CSP モードを案内する', async ({
+  test('対照: 従来の方式（data-csp="false"）では式が評価できず、CSP モードを案内する', async ({
     page,
   }) => {
     const {errors} = await open(page, '/playwright/csp-mode-legacy-repro.html');
     await expect(page.locator('#title')).toHaveText('');
-    expect(errors.filter(message => message.includes('data-csp'))).toHaveLength(
-      1,
-    );
+    expect(
+      errors.filter(message => message.includes('data-csp="false"')),
+    ).toHaveLength(1);
     expect(
       (await violations(page)).some(entry => entry.startsWith('script-src')),
     ).toBe(true);

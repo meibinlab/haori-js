@@ -1857,8 +1857,9 @@ export default class Expression {
     Log.error(
       '[Haori]',
       'Expressions cannot be compiled because the Content Security Policy' +
-        " does not allow 'unsafe-eval'. Enable the CSP mode with" +
-        ' <script src="haori.js" data-csp> or Haori.setCsp(true).',
+        " does not allow 'unsafe-eval'. Use the CSP mode (the default) by" +
+        ' removing data-csp="false" from the <script> or not calling' +
+        ' Haori.setCsp(false).',
     );
   }
 

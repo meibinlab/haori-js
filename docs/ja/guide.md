@@ -131,18 +131,14 @@ Haori.js の初期化（スキャンと初期フェッチ）がすべて完了�
 </div>
 ```
 
-### CSP を設定したページで使う（data-csp）
+### CSP モード（既定）と従来の方式（data-csp）
 
-ページに CSP（Content Security Policy）を設定していて、`script-src` に `'unsafe-eval'` を書かない場合は、読み込む `<script>` に `data-csp` を書きます。式を `new Function` を使わずに評価するようになり、`{{式}}` や `data-if` などはそのまま動きます。
+Haori は既定で CSP モードで動きます。式を `new Function` を使わずに評価するため、CSP（Content Security Policy）の `script-src` に `'unsafe-eval'` を書かないページでもそのまま動きます。`{{式}}` や `data-if` などは、どちらの方式でも同じように動きます。
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-csp></script>
-```
-
-`data-click-run` などの `*-run` 系は、本文を JavaScript としては実行しません。本文が `save(item)` のような 1 つの式なら式として評価し、呼べるのは `Haori.handlers.register()` で登録した関数です。`this` や `return`、複数の文を書いた本文は、登録した関数を `data-click-run-handler` で呼ぶ形へ移します。
+`data-click-run` などの `*-run` 系は、CSP モードでは本文を JavaScript としては実行しません。本文が `save(item)` のような 1 つの式なら式として評価し、呼べるのは `Haori.handlers.register()` で登録した関数です。`this` や `return`、複数の文を書いた本文は、登録した関数を `data-click-run-handler` で呼ぶ形へ移します。
 
 ```js
-// 別のファイルに置く（インラインの <script> は CSP で止まります）
+// CSP を設定したページでは別のファイルに置く（インラインの <script> は CSP で止まります）
 Haori.handlers.register('editRule', function (event, index) {
   // this はボタン
 });
@@ -152,6 +148,12 @@ Haori.handlers.register('editRule', function (event, index) {
 <button type="button"
   data-click-run-handler="editRule"
   data-click-run-args="[ruleI]">編集</button>
+```
+
+本文を JavaScript として実行する従来の方式を使う場合は、読み込む `<script>` に `data-csp="false"` を書きます（ESM では、最初の式の評価より前に `Haori.setCsp(false)` を呼びます）。従来の方式は CSP に `'unsafe-eval'` が要ります。0.64.0 までは従来の方式が既定でした。
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-csp="false"></script>
 ```
 
 推奨する CSP の例と移行の手順は、仕様書の「[Content Security Policy (CSP)](specs.md#content-security-policy-csp)」を参照してください。
@@ -343,7 +345,7 @@ Haori.Core.setBindingData(document.getElementById('profile'), {
 
 - `setBindingData()` は、その要素のバインドデータを渡した値で置き換えます。関数と一緒に、表示に使う値も渡してください。
 - バインドデータは配下の要素へ引き継がれます（[データの継承](#データの継承)）。ページの上の方の要素へ入れておくと、配下のどの式からも呼べます。
-- [CSP モード](#csp-を設定したページで使うdata-csp)でも同じように動きます。
+- [CSP モード（既定）と従来の方式](#csp-モード既定と従来の方式data-csp)のどちらでも同じように動きます。
 
 ### 組み込みヘルパーで整形する（`haori.date` / `haori.number`）
 
@@ -1322,19 +1324,20 @@ HTML のラジオボタンは「同じフォームの中の同名要素」で 1 
   <!-- 権限セット: change で個別権限を「加算」する（他セットの権限は解除しない） -->
   <label>
     <input type="checkbox" value="VIEWER_SET"
-      data-change-run="window.applyPermissionSet(['DASHBOARD_VIEW','REPORT_VIEW'])">
+      data-change-run="applyPermissionSet(['DASHBOARD_VIEW','REPORT_VIEW'])">
     閲覧者セット
   </label>
 </div>
 
 <script>
-  window.applyPermissionSet = added => {
+  // 宣言から呼ぶ関数を登録する（Haori を読み込んだ後に置く）
+  Haori.handlers.register('applyPermissionSet', added => {
     const el = document.getElementById('perm-state')
     // 現在の解決済みスコープから permissions を読み、集合加算してから書き戻す
     const current = Haori.Core.getBindingData(el, { resolved: true }) || {}
     const next = new Set([...(current.permissions || []), ...added])
     Haori.Core.setBindingData(el, { ...current, permissions: [...next] })
-  }
+  })
 </script>
 ```
 
@@ -2992,29 +2995,46 @@ state に持った配列（編集中のルール一覧など）への要素追�
 
 ### クリップボードへコピーする（`data-click-run` + `data-click-toast`）
 
-クリップボードへのコピーは、独自のクリックハンドラを書かずに `data-click-run`（任意 JS 実行）で `navigator.clipboard.writeText(...)` を呼べます。コピー結果のフィードバックは `data-click-toast` で出すと、ボタン文言を一時的に差し替える（Haori の管理 DOM と競合しうる）必要がありません。
+クリップボードへのコピーは、`navigator.clipboard.writeText(...)` を呼ぶ関数を登録し、`data-click-run-handler` で呼びます。コピーする値は `-args` で渡します。コピー結果のフィードバックは `data-click-toast` で出すと、ボタン文言を一時的に差し替える（Haori の管理 DOM と競合しうる）必要がありません。
 
 ```html
 <button type="button"
-  data-click-run="navigator.clipboard.writeText('{{detail.id}}')"
+  data-click-run-handler="copyText"
+  data-click-run-args="[detail.id]"
   data-click-toast="コピーしました">
   <i class="bi bi-clipboard"></i> ID をコピー
 </button>
 ```
 
+```js
+Haori.handlers.register('copyText', (event, text) =>
+  navigator.clipboard.writeText(String(text)),
+)
+```
+
 - `navigator.clipboard` は**セキュアコンテキスト（https / localhost）でのみ**利用できます。
-- **⚠️ セキュリティ**: `data-click-run` の `{{...}}` は実行コードへ結合されます。コピー対象は ID など**自分で管理する信頼値のみ**にしてください（API・ユーザー入力などの任意文字列は XSS リスク。詳細は前述の `data-click-run` の警告を参照）。
+- `-args` の値はコードへ埋め込まずにそのまま関数へ渡すため、API・ユーザー入力の値でも安全にコピーできます。
 
 ### 送信前にペイロードを加工する（`data-click-before-run`）
 
-「フォームリストの空行を送信から除外する」といった**送信ボディの加工**は、`data-click-before-run` で行えます。`fetchOptions` を受け取り、加工した `fetchOptions` を返すと、その内容で送信されます。
+「フォームリストの空行を送信から除外する」といった**送信ボディの加工**は、`data-click-before-run-handler` で呼ぶ関数で行えます。関数は `fetchUrl` と `fetchOptions` を受け取り、加工した `fetchOptions` を返すと、その内容で送信されます。
 
 ```html
 <button type="button"
   data-click-fetch="../api/demand-powers.json" data-click-fetch-method="POST"
   data-click-data='{"items": {{items}} }'
-  data-click-before-run="const b=JSON.parse(fetchOptions.body); b.items=b.items.filter(r=>r.demandPowerKw!==''&&r.demandPowerKw!=null); return {fetchOptions:{...fetchOptions, body:JSON.stringify(b)}};"
+  data-click-before-run-handler="dropEmptyRows"
   data-click-toast="保存しました。">保存</button>
+```
+
+```js
+Haori.handlers.register('dropEmptyRows', (fetchUrl, fetchOptions) => {
+  const body = JSON.parse(fetchOptions.body)
+  body.items = body.items.filter(
+    r => r.demandPowerKw !== '' && r.demandPowerKw != null,
+  )
+  return {fetchOptions: {...fetchOptions, body: JSON.stringify(body)}}
+})
 ```
 
 `demandPowerKw` が空（空文字・null）の行を除外してから送信します。複数フィールドの条件も `filter` の条件式で自由に書けます。
@@ -3358,38 +3378,53 @@ Haori は `data-click-*` のクリック手続き実行中、多重クリック�
 </button>
 ```
 
-> **注意（デフォルト動作との関係）**: 遅延後の手続きは元のクリック `event` を参照しないため、`data-{event}-run` の `return false` のように**手続き内で**呼ぶ `preventDefault()` は間に合いません。`<a href="…">` や `type="submit"` のボタンに `defer` を併用し、かつ手続き内で既定動作を止めようとすると、遅延された手続きが走る前にリンク遷移・フォーム送信が先に発生します。デフォルト動作を抑止したい場合は `data-click-prevent` を併用してください。`data-click-prevent` はクリックの同期段で `preventDefault()` を呼ぶため、`defer` と併用しても確実に抑止できます。
+> **注意（デフォルト動作との関係）**: 遅延後の手続きは元のクリック `event` を参照しないため、`data-{event}-run` が `false` を返す場合のように**手続き内で**呼ぶ `preventDefault()` は間に合いません。`<a href="…">` や `type="submit"` のボタンに `defer` を併用し、かつ手続き内で既定動作を止めようとすると、遅延された手続きが走る前にリンク遷移・フォーム送信が先に発生します。デフォルト動作を抑止したい場合は `data-click-prevent` を併用してください。`data-click-prevent` はクリックの同期段で `preventDefault()` を呼ぶため、`defer` と併用しても確実に抑止できます。
 
 なお、他ライブラリが要素へ命令的に付与したクラス（Bootstrap の `.show` など）は、その要素や祖先が Haori によって再描画されると、宣言された静的な属性で上書きされて失われることがあります（`data-click-defer` ではこの再描画起因の競合は解消しません）。トグル対象（collapse の本体など）は、Haori が再描画する subtree の外に置くか、`data-bind` 由来の再評価対象に含めない構成にすることを推奨します。
 
 #### フェッチなしで JS を実行する（`data-click-run`）
 
-`data-click-run` を付けると、フェッチを伴わずに**任意の JavaScript をクリック時に実行**できます。クライアント側の状態操作や関数呼び出しのために独自のクリックハンドラ（`document.addEventListener('click', ...)`）を書かずに済みます。`data-change-run` など他イベントでも同様に使えます。
+`data-click-run` を付けると、フェッチを伴わずに**登録した関数をクリック時に呼べます**。クライアント側の状態操作や関数呼び出しのために独自のクリックハンドラ（`document.addEventListener('click', ...)`）を書かずに済みます。`data-change-run` など他イベントでも同様に使えます。
+
+```js
+// 宣言から呼ぶ関数を登録する
+// 本文の式から呼ぶ関数は、式に書いた引数をそのまま受け取る
+Haori.handlers.register('addRule', (stateSelector, formSelector) => {
+  // ...
+})
+// -handler で呼ぶ関数は、event の後ろに -args の値を受け取る
+Haori.handlers.register('editRule', function (event, stateSelector, index) {
+  // this はボタン
+})
+```
 
 ```html
-<!-- 関数呼び出し（type=button では既定動作がないので preventDefault 不要） -->
+<!-- 本文が 1 つの式なら、登録した関数をそのまま呼べる（type=button では既定動作がないので preventDefault 不要） -->
 <button type="button"
-  data-click-run="Plans.addRule('#state', '#rule-form')">
+  data-click-run="addRule('#state', '#rule-form')">
   ルール追加
 </button>
 
-<!-- {{...}} はレンダリング時に展開される（ruleI=2 なら editRule('#state', 2) を実行） -->
+<!-- -handler で呼ぶと、this と event を受け取れる。値は -args で渡す（ruleI=2 なら editRule(event, '#state', 2)） -->
 <button type="button"
-  data-click-run="Plans.editRule('#state', {{ruleI}})">
+  data-click-run-handler="editRule"
+  data-click-run-args="['#state', ruleI]">
   編集
 </button>
 ```
 
 ポイント:
 
-- 属性値は `data-click-before-run` / `-after-run` と同じく**実 JavaScript** として実行されます（サンドボックス式ではないため `Plans` や `confirm` などのグローバルも使えます）。`{{...}}` 部分のみバインディングスコープを参照できます。
-- 本体が **`false` を返したときだけ `event.preventDefault()`** を呼びます（`onclick="return false"` と同じ慣習）。`<a href>` や `type="submit"` の既定動作を止めたいときは `return false` を返してください。
-- `event` を引数で受け取れるので、`event.stopPropagation()` 等も本体から呼べます。
+- 本文は haori の式として評価します。式から参照できるのは、引数の `event`・要素のスコープ・登録した関数だけです（`Plans` や `confirm` などのグローバルは参照できません）。`this`・`return`・複数の文は書けないため、登録した関数へ移します。
+- `-handler` で呼んだ関数の `this` は起点要素、最初の引数は起点のイベントで、`-args` の値がその後ろに並びます。`event.stopPropagation()` 等も関数から呼べます。
+- 本文や関数が **`false` を返したときだけ `event.preventDefault()`** を呼びます（`onclick="return false"` と同じ慣習）。`<a href>` や `type="submit"` の既定動作を止めたいときは、関数から `false` を返してください。
 - `data-click-fetch` と併用すると **run → fetch** の順で実行されます（run の `false` は preventDefault のみを制御し、fetch は中止しません。fetch を止めたい場合は `data-click-before-run` を使用）。
 - 実行・評価エラーはコンソールに出力され、例外は外へ伝播しません。
-- `data-click-defer` と併用すると手続きが次フレームへ遅延し、`return false` による `preventDefault()` は間に合いません。
+- `data-click-defer` と併用すると手続きが次フレームへ遅延し、`false` による `preventDefault()` は間に合いません。
 
-> **⚠️ セキュリティ警告（重要）**: `data-click-run` の `{{...}}` は、**展開後の文字列がそのまま実行コードに結合**されます。`data-bind` やテキストの `{{...}}` は結果を「データ」として扱うため安全ですが、`data-click-run` では結果を「コード」として再実行するため、**`{{...}}` に入れた値が JavaScript として実行されます**。
+本文を JavaScript として実行する書き方（`data-click-run="Plans.editRule('#state', {{ruleI}})"` のようにグローバルの関数・`this`・`{{...}}` を書く）は、[従来の方式](#csp-モード既定と従来の方式data-csp)（`data-csp="false"`）で使えます。
+
+> **⚠️ セキュリティ警告（従来の方式・重要）**: `data-click-run` の `{{...}}` は、**展開後の文字列がそのまま実行コードに結合**されます。`data-bind` やテキストの `{{...}}` は結果を「データ」として扱うため安全ですが、`data-click-run` では結果を「コード」として再実行するため、**`{{...}}` に入れた値が JavaScript として実行されます**。
 >
 > ```html
 > <!-- 危険: name が API/ユーザー入力など信頼できない文字列の場合 -->
@@ -3478,11 +3513,18 @@ HTML5バリデーション（required, type, minlength等）を実行し、エ�
 
 ```html
 <button
-  data-click-before-run="console.log('送信開始'); return true"
+  data-click-before-run-handler="logStart"
   data-click-fetch="/api/data"
 >
   送信
 </button>
+```
+
+```js
+Haori.handlers.register('logStart', (fetchUrl, fetchOptions) => {
+  console.log('送信開始')
+  return true
+})
 ```
 
 戻り値が`false`または`{stop: true}`の場合、以降の処理を中断します。
@@ -3625,10 +3667,16 @@ CSV のエクスポートや PDF のダウンロードを、宣言だけで書�
 ```html
 <button
   data-click-fetch="/api/data"
-  data-click-after-run="console.log('取得完了', arguments[0])"
+  data-click-after-run-handler="logDone"
 >
   取得
 </button>
+```
+
+```js
+Haori.handlers.register('logDone', response => {
+  console.log('取得完了', response)
+})
 ```
 
 #### `data-click-adjust`: 値の増減
@@ -4903,16 +4951,16 @@ Haori.enhancers.register('choices', {
 - `init` が `data-external` の外に生成した宣言（`{{式}}` や `data-*`）は、初期表示の途中でも後から追加した要素と同じく処理されます。ただし、既にある要素を生成した要素で包んだ場合、その生成要素（中の宣言を含む）は初期表示では処理しません。要素を包んだり移したりするライブラリには `data-external` を併用してください。
 - `init` の失敗はログに記録して先へ進みます。1 つの連携の失敗で画面が止まりません。
 
-### select 拡張ライブラリ（Choices.js）との連携（`data-each-rendered-run` を使う書き方）
+### select 拡張ライブラリ（Choices.js）との連携（`data-each-rendered-run-handler` を使う書き方）
 
 API から取得した選択肢を `data-each` で動的生成しつつ、検索可能なタグ型マルチセレクト（[Choices.js](https://github.com/Choices-js/Choices) など。MIT ライセンス）で表示するレシピです。任意の select 拡張ライブラリへ一般化できます。
 
 ポイントは次の 3 点です。
 
 - **`data-external`**: Choices.js は元の `<select>` を隠して独自 DOM を生成・随時更新します。外側コンテナに `data-external` を付け、その生成 DOM を Haori の自動監視から除外します（`data-each` による `<option>` 生成は監視除外下でも維持されます）。
-- **`data-each-rendered-run`**: `data-each` で `<option>` を再生成した後、Choices.js を再同期する必要があります。描画確定ごとに一度だけ実行されるこのフックで `refresh()` を呼びます。
+- **`data-each-rendered-run-handler`**: `data-each` で `<option>` を再生成した後、Choices.js を再同期する必要があります。描画確定ごとに一度だけ実行されるこのフックで、登録した関数から `refresh()` を呼びます（関数の `this` は `<select>`）。
 - **`<select multiple>` の配列値**: Choices.js での選択は native `<select>` を更新して `change` を発火するため、Haori は選択値を**配列**としてフォーム値に取り込みます。
-- **空の初回描画では初期化しない**: 選択肢を `data-fetch` 等で非同期取得する場合、fetch 完了前の空 `<option>` 状態でも `data-each-rendered-run` は発火します。この時点で Choices.js を初期化すると、空の `<select>` を取り込んでしまい、後から選択肢を描画しても「No choices」のままになることがあります。初回初期化は `selectEl.options.length > 0` を確認してから行ってください。
+- **空の初回描画では初期化しない**: 選択肢を `data-fetch` 等で非同期取得する場合、fetch 完了前の空 `<option>` 状態でも `data-each-rendered-run-handler` の関数は呼ばれます。この時点で Choices.js を初期化すると、空の `<select>` を取り込んでしまい、後から選択肢を描画しても「No choices」のままになることがあります。初回初期化は `selectEl.options.length > 0` を確認してから行ってください。
 
 ```html
 <!-- option は data-each で配列バインド、外部DOMは監視除外、描画確定で refresh -->
@@ -4923,7 +4971,7 @@ API から取得した選択肢を `data-each` で動的生成しつつ、検索
     data-each="electricPlans.content"
     data-each-key="id"
     data-each-arg="ep"
-    data-each-rendered-run="window.__choicesRefresh(this)"
+    data-each-rendered-run-handler="choicesRefresh"
   >
     <option value="{{ ep.planName }}">{{ ep.planName }}</option>
   </select>
@@ -4934,7 +4982,9 @@ API から取得した選択肢を `data-each` で動的生成しつつ、検索
 // select 要素ごとに Choices インスタンスを保持し、再同期できるようにする
 const choicesMap = new WeakMap()
 
-window.__choicesRefresh = (selectEl) => {
+// this は data-each のコンテナ（<select>）
+Haori.handlers.register('choicesRefresh', function () {
+  const selectEl = this
   let choices = choicesMap.get(selectEl)
   if (!choices) {
     // fetch 完了前の空描画では初期化しない（空のまま取り込むと「No choices」が固定化するため）
@@ -4946,7 +4996,7 @@ window.__choicesRefresh = (selectEl) => {
     // data-each による option 再生成後に Choices 側の表示を作り直す
     choices.refresh()
   }
-}
+})
 ```
 
 選択結果は `electricPlanName` の配列として、`data-click-form` などの送信値に反映されます（例: `{"electricPlanName": ["プランA", "プランB"]}`）。

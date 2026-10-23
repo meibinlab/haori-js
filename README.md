@@ -60,10 +60,11 @@ ES Module import:
 import Haori from 'haori';
 ```
 
-On pages whose Content Security Policy does not allow `'unsafe-eval'`, add `data-csp` to the `<script>` tag (or call `Haori.setCsp(true)` with ES modules). Expressions are then evaluated without `new Function`. See "Content Security Policy (CSP)" in the specification (`docs/ja/specs.md`, Japanese) for the recommended policy and the migration steps.
+The CSP mode is the default. Expressions are evaluated without `new Function`, so Haori works on pages whose Content Security Policy does not allow `'unsafe-eval'`. To use the legacy mode, which runs the bodies of `data-click-run` and similar attributes as JavaScript, add `data-csp="false"` to the `<script>` tag (or call `Haori.setCsp(false)` with ES modules). The legacy mode requires `'unsafe-eval'`. Up to 0.64.0, the legacy mode was the default. See "Content Security Policy (CSP)" in the specification (`docs/ja/specs.md`, Japanese) for the recommended policy and the migration steps.
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-csp></script>
+<!-- Legacy mode -->
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-csp="false"></script>
 ```
 
 ---
@@ -181,7 +182,7 @@ Basic local verification and release preparation steps:
 
 Quick release memo:
 
-1. Run `npm run test`, `npm run build`, and `npm pack --dry-run`.
+1. Run `npm run test`, `npm run test:legacy`, `npm run build`, and `npm pack --dry-run`.
 2. Bump the package version with `npm version patch` or the intended version command.
 3. Push `main` and tags with `git push origin main` and `git push origin --tags`.
 4. Publish a GitHub Release from the new version tag.
@@ -200,7 +201,10 @@ npm install
 ```bash
 npm run compile
 npm run test
+npm run test:legacy
 ```
+
+`npm run test` runs all unit tests in the CSP mode (the default), and `npm run test:legacy` runs them in the legacy mode.
 
 3. Build release artifacts
 
@@ -234,6 +238,7 @@ Required repository setup:
 Recommended pre-release checks:
 
 - `npm run test`
+- `npm run test:legacy`
 - `npm run build`
 - `npm pack --dry-run`
 

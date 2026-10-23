@@ -44,12 +44,15 @@ const MESSAGES = {
     `${attrName}-args must evaluate to an array without unresolved` +
     ' references; the handler is not called.',
   templateInBody: (attrName: string): string =>
-    `${attrName} with {{...}} is not run in the CSP mode. Write the` +
-    ' expression without {{...}}, or use ' +
-    `${attrName}-handler and ${attrName}-args.`,
+    `${attrName} with {{...}} is not run in the CSP mode (the default).` +
+    ' Write the expression without {{...}}, or use ' +
+    `${attrName}-handler and ${attrName}-args. To run it as JavaScript,` +
+    ' select the legacy mode with <script data-csp="false">.',
   notExpression: (attrName: string): string =>
-    `${attrName} is not run in the CSP mode because it is not a single` +
-    ` expression. Use ${attrName}-handler and ${attrName}-args.`,
+    `${attrName} is not run in the CSP mode (the default) because it is not` +
+    ` a single expression. Use ${attrName}-handler and ${attrName}-args.` +
+    ' To run it as JavaScript, select the legacy mode with' +
+    ' <script data-csp="false">.',
   shadowed: (names: readonly string[], attrName: string): string =>
     `Handler(s) ${names.join(', ')} are shadowed by binding keys of` +
     ` the same name in ${attrName}; the binding values are used.`,
