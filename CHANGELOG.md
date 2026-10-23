@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## [0.63.0] - 2026-10-23
+
+**CSP（Content Security Policy）に `'unsafe-eval'` を書かなくても動かせる CSP モードを足した版です。読み込む `<script>` に `data-csp` を書くと、式を `new Function` を使わずに評価します。`data-click-run` などの `*-run` 系からは、登録した関数を `-handler` と `-args` で呼べるようになりました。既定は従来の方式のままで、既存のページの動きは変わりません。**
+
+### Added
+
+- **CSP モード**（仕様「CSP モード」「CSP モードの式評価」）。式を自前の構文解析と評価器で評価し、`new Function` を使わない（`src/expression_parser.ts`・`src/expression_interpreter.ts`）。評価の結果・危険な値の検査・未解決参照・ログと診断は従来の方式と同じ。
+  - 有効にするには、読み込む `<script>` に `data-csp` を書く（`false` / `off` / `0` は無効）。ESM では最初の式の評価より前に `Haori.setCsp(true)` を呼ぶ。`Haori.csp` で今のモードを読める。
+  - 書ける構文は従来の方式と同じ。文を本体にする関数（`x => { … }` と、オブジェクトのメソッド・getter・setter）だけは書けない。
+  - 従来の方式のまま `'unsafe-eval'` の無いページで動かすと、`data-csp` を案内する `error` を 1 回だけ出す。これまでは式ごとの「コンパイル失敗」しか出ず、原因が分からなかった。
+- **登録した関数（`Haori.handlers`）**（仕様「登録した関数（`Haori.handlers`）」）。`Haori.handlers.register(名前, 関数)` で登録し（ESM では `import {handlers} from 'haori'`）、`*-run` 系の宣言から名前で呼ぶ。両方の方式で使える。
+  - `data-{event}-run-handler` / `-before-run-handler` / `-after-run-handler` / `data-each-rendered-run-handler`（`data-intersect-*`・`data-on-*` も同じ）。
+  - `this` は宣言を書いた要素。引数は従来の本文の引数（`event` / `fetchUrl`, `fetchOptions` / `response`）の後ろに、`-args` の式（`data-click-run-args="[ruleI, '#form']"`）の値を並べる。値をコードへ埋め込まないため、`{{...}}` を本文へ結合する書き方の XSS の心配が無い。
+- **CSP モードでの `*-run`**（仕様「CSP モードでの `*-run`」）。本文が 1 つの式なら haori の式として評価する（`data-click-run="save(row)"`）。式から参照できるのは、従来の本文の引数・要素のスコープ・登録した関数。式として読めない本文（`return false` や複数の文）と `{{...}}` を含む本文は評価せず、`-handler` への移行を `warn` で案内する。
+
+### Performance
+
+- 300 行の一覧（`npm run bench:browser`、ヘッドレスの Chrome、7 回の中央値）で、2 つの方式の差は 0〜10% ほど。
+
+  | 方式 | スコープ | 開く | 状態を 1 つ変える | 行を 1 件足す |
+  | ---- | -------- | ---- | ----------------- | ------------- |
+  | 従来の方式 | 狭い | 298 ms | 105 ms | 109 ms |
+  | CSP モード | 狭い | 313 ms | 106 ms | 115 ms |
+  | 従来の方式 | 広い（キー +40） | 329 ms | 121 ms | 155 ms |
+  | CSP モード | 広い（キー +40） | 360 ms | 133 ms | 159 ms |
+
+- 評価器を同梱するため、`haori.iife.js` は約 245 KB から約 271 KB になった（gzip で約 75 KB）。
+
+### Docs
+
+- 仕様の「Content Security Policy (CSP)」を書き直した。方式ごとに要るもの、推奨する CSP（パスで絞った CDN と SRI、`connect-src`、`object-src 'none'`、`base-uri 'none'`、style 属性の注意）、従来の方式からの移行の手順、CSP モードで守れないもの。WebAssembly への移行を検討中という一文は削った。
+- README とガイドに CSP モードの短い節を足した。
+- ガイドの「グローバル関数を使った値の整形」が、`window` の関数を式から呼べると書いていたのを直した（呼べない。仕様「バインドに無い識別子の扱い」）。関数を `Haori.Core.setBindingData()` でバインドデータへ入れる例に改めた。
+
+### Internal
+
+- 禁止識別子などの名前の一覧を `src/expression_rules.ts` の 1 か所にまとめ、2 つの方式で共有するようにした。
+- `npm run test:csp` で、全単体テストを CSP モードで流す（`Function` と `eval` を拒否した状態）。`*-run` 系の本文を JavaScript で書いたテストと、2 つの方式を比べるテストは既定の設定で流す。
+- 評価器のテスト（パーサーと評価器の網羅、従来の方式との一致を 1480 件の式と乱数で組み立てた式で比べるもの、遮断のすり抜けの試み）を足し、`npm run test:mutation`（Stryker）でミューテーションテストを行うようにした（100%）。
+- 実ブラウザで `'unsafe-eval'` の無い CSP を付けたページの E2E（`playwright/csp-mode.spec.cjs`）を足した。`playwright/data-attr-demo.spec.cjs` は、ファビコンの 404 を数えないようにした。
+
 ## [0.62.3] - 2026-10-23
 
 **描画と式の評価を速くした版です。300 行の一覧（Chrome）で、開くのが約 670 ms から約 240 ms、状態を 1 つ変えるのが 197 ms から約 85 ms、行を 1 件足すのが 197 ms から約 110 ms になります。描画の処理は次のフレームを待たずに始まり、背面のタブでも進みます。あわせて、引数を丸括弧で囲んだ async のアロー関数と、`public` のような名前のキーがあるスコープの式が評価できなかった不具合を直しました。**
