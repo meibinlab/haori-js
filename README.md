@@ -60,6 +60,12 @@ ES Module import:
 import Haori from 'haori';
 ```
 
+On pages whose Content Security Policy does not allow `'unsafe-eval'`, add `data-csp` to the `<script>` tag (or call `Haori.setCsp(true)` with ES modules). Expressions are then evaluated without `new Function`. See "Content Security Policy (CSP)" in the specification (`docs/ja/specs.md`, Japanese) for the recommended policy and the migration steps.
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-csp></script>
+```
+
 ---
 
 ## Quick start

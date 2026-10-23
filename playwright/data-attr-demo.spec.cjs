@@ -14,6 +14,12 @@ function collectRuntimeErrors(page) {
   const consoleErrors = [];
   page.on('pageerror', error => pageErrors.push(error));
   page.on('console', message => {
+    // ブラウザが自動で取りに行くファビコンは、デモの記述ではなく配信側の
+    // 都合（テスト用のサーバーに置いていない）なので数えない。取りに行く
+    // 時機は描画の速さで前後し、検査の時間内に入ることがある。
+    if (message.location().url.endsWith('/favicon.ico')) {
+      return;
+    }
     if (message.type() === 'error') {
       consoleErrors.push(message.text());
     }

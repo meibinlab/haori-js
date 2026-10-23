@@ -60,6 +60,12 @@ ES Module:
 import Haori from 'haori';
 ```
 
+CSP（Content Security Policy）で `'unsafe-eval'` を許さないページでは、読み込む `<script>` に `data-csp` を書きます（ESM では `Haori.setCsp(true)`）。式を `new Function` を使わずに評価します。推奨する CSP と移行の手順は [仕様書の「Content Security Policy (CSP)」](docs/ja/specs.md#content-security-policy-csp) を参照してください。
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-csp></script>
+```
+
 ---
 
 ## クイックスタート

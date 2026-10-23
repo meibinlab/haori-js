@@ -131,6 +131,31 @@ Haori.js の初期化（スキャンと初期フェッチ）がすべて完了�
 </div>
 ```
 
+### CSP を設定したページで使う（data-csp）
+
+ページに CSP（Content Security Policy）を設定していて、`script-src` に `'unsafe-eval'` を書かない場合は、読み込む `<script>` に `data-csp` を書きます。式を `new Function` を使わずに評価するようになり、`{{式}}` や `data-if` などはそのまま動きます。
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/haori/dist/haori.iife.js" data-csp></script>
+```
+
+`data-click-run` などの `*-run` 系は、本文を JavaScript としては実行しません。本文が `save(item)` のような 1 つの式なら式として評価し、呼べるのは `Haori.handlers.register()` で登録した関数です。`this` や `return`、複数の文を書いた本文は、登録した関数を `data-click-run-handler` で呼ぶ形へ移します。
+
+```js
+// 別のファイルに置く（インラインの <script> は CSP で止まります）
+Haori.handlers.register('editRule', function (event, index) {
+  // this はボタン
+});
+```
+
+```html
+<button type="button"
+  data-click-run-handler="editRule"
+  data-click-run-args="[ruleI]">編集</button>
+```
+
+推奨する CSP の例と移行の手順は、仕様書の「[Content Security Policy (CSP)](specs.md#content-security-policy-csp)」を参照してください。
+
 ---
 
 ## データバインディングの基本

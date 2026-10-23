@@ -13,6 +13,7 @@
     "test:csp": "vitest run --config vitest.csp.config.ts",
     "test:mutation": "stryker run",
     "bench": "vitest bench --run",
+    "bench:browser": "node bench/run.mjs",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src",

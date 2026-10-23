@@ -6265,7 +6265,7 @@ while (queue.length > 0) {
 
 - **値は安全側です。** 利用者入力や API 応答を `data-bind` の**値**として渡す限り、式はそれをデータとして扱います。値からコードにはなりません。値の行き先によってコードになり得る箇所（遷移先・URL 属性・イベントハンドラ属性）は Haori の側で塞ぎ、塞がない箇所（`{{{ }}}`・`srcdoc`・URL に埋め込む値など）は下の 7〜9 に挙げます。
 - **式テキストへ差し込まないでください。** サーバ側テンプレートで利用者入力を Haori の属性値へ埋め込み、その結果を式として評価する構成は、任意コード実行になり得ます。**HTML エスケープは式のエスケープではありません**。`'` を `&#39;` にしても HTML パーサが属性値を読む時点で `'` に戻すため、式の文字列リテラルの外へ出られます。利用者入力は `data-bind` の値として渡し、式からはキーで参照してください。
-- **以下のレイヤーは多層防御です。** 事故（開発者の書き間違い、意図しない値の流入）を難しくするための遮断であり、**単独の防御境界として依存しないでください**。式は最終的に `new Function` で評価されるため、遮断は許可リストではなく禁止リストによる緩和です。同じ理由で、Haori を使うページの CSP は `unsafe-eval` を必要とします。
+- **以下のレイヤーは多層防御です。** 事故（開発者の書き間違い、意図しない値の流入）を難しくするための遮断であり、**単独の防御境界として依存しないでください**。従来の方式では式は最終的に `new Function` で評価されるため、遮断は許可リストではなく禁止リストによる緩和です。同じ理由で、従来の方式の CSP は `'unsafe-eval'` を必要とします（[CSP モード](#csp-モード)では不要です。[Content Security Policy (CSP)](#content-security-policy-csp) を参照）。
 
 同じ前提は `data-{event}-run` / `-before-run` / `-after-run` にも当てはまります（こちらは遮断すらせず、書いたコードをそのまま実行します。後述の「6. 実 JS 実行属性」を参照）。
 
@@ -6336,6 +6336,8 @@ if (type === ExpressionType.EXPRESSION) {
 - `data-{event}-run` の `{{...}}` には**自分で制御する信頼できる値のみ**（数値 index・自前採番 ID 等）を入れる。
 - **API レスポンスやユーザー入力などの信頼できない文字列を `{{...}}` で差し込まない**。必要な場合は `data-bind` でスコープに置き、`data-{event}-run` から呼ぶ関数の内部で参照する。
 - `before-run` / `after-run` / `run` の本体自体（コード部分）は静的なテンプレートに書き、動的な値はコードへ結合せずデータとして渡す。
+- 値をコードへ結合しない書き方として、[登録した関数](#登録した関数haorihandlers)を `-handler` で呼び、値を `-args` の式で渡せます。
+- [CSP モード](#csp-モード)では、本文を JavaScript としては実行しません（[CSP モードでの `*-run`](#csp-モードでの--run)）。`{{...}}` を含む本文も評価しないため、上の結合は起きません。
 
 #### 7. 遷移先のスキーム
 
@@ -6374,13 +6376,56 @@ if (type === ExpressionType.EXPRESSION) {
 
 ### Content Security Policy (CSP)
 
-Haori.jsは `new Function()` を使用するため、CSPで `unsafe-eval` が必要です:
+**Haori の動かし方は 2 つあり、CSP に求めるものが違います。**
+
+| 方式 | 有効にする方法 | `script-src` に要るもの |
+| ---- | -------------- | ----------------------- |
+| 従来の方式（既定） | なし | `'unsafe-eval'`（式と `*-run` 系の本文を `new Function` で評価するため） |
+| [CSP モード](#csp-モード) | `<script>` に `data-csp`、または `Haori.setCsp(true)` | 不要 |
+
+`'unsafe-eval'` を許すと、ページへ差し込まれた文字列もコードとして実行できるため、CSP で XSS を抑える効果が大きく下がります。CSP を設定するページでは CSP モードを使ってください。
+
+#### 推奨する CSP
 
 ```html
-<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-eval';">
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' https://cdn.jsdelivr.net/npm/haori@x.y.z/dist/haori.iife.js;
+  connect-src 'self';
+  object-src 'none';
+  base-uri 'none'">
+<script src="https://cdn.jsdelivr.net/npm/haori@x.y.z/dist/haori.iife.js"
+  integrity="sha384-…" crossorigin="anonymous" data-csp></script>
 ```
 
-将来的には WebAssembly ベースの式評価への移行を検討中です。
+- **CDN はファイルのパスまで書いて絞ります**（`x.y.z` は使う版）。 `https://cdn.jsdelivr.net` だけを許すと、jsDelivr が配信するほかのパッケージ（CSP をすり抜けるのに使える古いライブラリを含む）も読み込めてしまいます。版を固定し、`integrity`（SRI）を付けてください。
+- **`connect-src` で通信先を絞ります。** CSP モードでも、差し込まれた `data-fetch` などは実行されます（下の「CSP モードで守れないもの」）。通信先を絞ると、外部へ送り出す経路を塞げます。
+- **`object-src 'none'` と `base-uri 'none'` を書きます。** プラグインの埋め込みと、`<base>` による相対 URL の付け替えを塞ぎます。
+- **style 属性は `style-src` の対象です。** `data-attr-style` と、HTML に書いた `style="…"` は style 属性として書き込まれるため、`style-src` に `'unsafe-inline'` が無いと止まります（`style-src-attr` の違反）。これらを使うページでは `style-src 'self' 'unsafe-inline'` を書くか、クラス（`data-attr-class`）へ置き換えてください。`data-if` の非表示は style 属性ではなく要素のスタイルを直接書き換えるため、止まりません。
+- **利用側のインラインのスクリプトは、nonce か hash が要ります。** `<script>…</script>` と `onclick="…"` のようなイベントハンドラ属性は、`'self'` では許されません。関数の登録（`Haori.handlers.register`）などは別のファイルへ移すか、nonce を付けてください。
+
+#### 従来の方式からの移行
+
+1. 読み込む `<script>` に `data-csp` を書きます（ESM では、最初の式の評価より前に `Haori.setCsp(true)` を呼びます）。
+2. `{{式}}` と `data-*` の式は、そのまま動きます（[CSP モードの式評価](#csp-モードの式評価)）。評価できない書き方は、[CSP モードと従来の方式の違い](#csp-モードと従来の方式の違い)にある 2 つだけです。
+3. `*-run` 系の本文を書き換えます。本文が 1 つの式なら、そのまま式として評価します。ただし式から参照できるのは、従来の本文の引数・要素のスコープ・登録した関数だけです（[CSP モードでの `*-run`](#csp-モードでの--run)）。
+
+   | 今の書き方 | 移す先 |
+   | ---------- | ------ |
+   | `data-click-run="Plans.save()"`（グローバルの関数） | 関数を登録し、`data-click-run="save()"` または `data-click-run-handler="save"` |
+   | `data-click-run="Plans.editRule('#x', {{ruleI}})"`（値の埋め込み） | `data-click-run-handler="editRule"` と `data-click-run-args="['#x', ruleI]"` |
+   | `data-each-rendered-run="window.__choicesRefresh(this)"`（`this`） | `data-each-rendered-run-handler="choicesRefresh"`（関数の `this` がコンテナ） |
+   | `data-click-before-run="if (!ok) return false"`（文） | 関数を登録し、`data-click-before-run-handler="check"` |
+
+4. 利用側のインラインのスクリプトとイベントハンドラ属性を、別のファイルへ移すか nonce を付けます。
+5. 開発環境で `'unsafe-eval'` の無い CSP を付けて動かし、ブラウザのコンソールに CSP の違反と Haori の `warn`（評価しなかった `*-run`）が出ないことを確かめます。
+
+#### CSP モードで守れないもの
+
+**CSP モードにしても、ページへ HTML を差し込まれた場合に安全になるわけではありません。** 「[0. 脅威モデル（前提）](#0-脅威モデル前提)」のとおり、式は開発者が書くコードです。
+
+- 差し込まれた `data-if` や `data-click-fetch` などの宣言も、Haori はそのまま評価・実行します。属性だけで、表示されているデータを外部へ送り出すこともできます。`connect-src` で通信先を絞ってください。
+- CSP モードの式から届く範囲は、従来の方式より狭くなります（グローバルへ解決せず、文字列をコードとして実行する手段がありません）。ただし、DOM の値をたどると `window` に届きます。たとえば `data-click-run` の式で `event.view` を読むと `window` です。CSP が文字列からのコードの生成を止めるため任意のコードは実行できませんが、`window` の関数は呼べます。
 
 ---
 
