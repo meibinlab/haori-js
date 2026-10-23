@@ -264,6 +264,8 @@ describe('CSP モードの式の評価器', () => {
       '1 // c',
       'typeof a',
       'await a',
+      'await',
+      'a.await',
       'a in b',
       'new Date()',
       'this',
@@ -512,6 +514,11 @@ describe('CSP モードの式の評価器', () => {
 
     it('フラグを読む', () => {
       expect((run('/a/gi') as RegExp).flags).toBe('gi');
+    });
+
+    // 仕様「正規表現リテラル」の「**式の中に正規表現リテラル（`/…/フラグ`）を書けます。**」
+    it('記号の直後に置いた正規表現をコメントと読まない', () => {
+      expect(run('2**/x/.source.length')).toBe(2);
     });
 
     // 仕様「正規表現リテラル」の「`(a + b) / 2`・`items[0] / count`・`count++ / 2` は従来どおり除算になります」

@@ -307,8 +307,8 @@ function isLineTerminator(character: string): boolean {
  * @param character 判定する文字
  * @returns 識別子の先頭にできれば true
  */
-function isIdentifierStart(character: string | undefined): boolean {
-  return character !== undefined && /[A-Za-z_$]/.test(character);
+function isIdentifierStart(character: string): boolean {
+  return /[A-Za-z_$]/.test(character);
 }
 
 /**
@@ -329,6 +329,8 @@ function isIdentifierPart(character: string | undefined): boolean {
  * @returns 構文エラー
  */
 function syntaxError(message: string, position: number): SyntaxError {
+  // 例外の説明文は、評価の結果（構文エラーになるかどうか）に影響しない。
+  // Stryker disable next-line StringLiteral
   return new SyntaxError(`${message} (at position ${position})`);
 }
 
@@ -392,6 +394,9 @@ class Lexer {
   public lex(): Token {
     const source = this.source;
     let newlineBefore = false;
+    // 末尾（`position === length`）の文字は undefined で、改行にも空白にも当たらず
+    // 抜けるため、`<=` に書き換えても結果は同じ（等価な書き換え）。
+    // Stryker disable next-line EqualityOperator
     while (this.position < source.length) {
       const character = source[this.position];
       if (isLineTerminator(character)) {
@@ -1205,6 +1210,9 @@ class Parser {
     isAsync: boolean,
     start: number,
   ): ArrowNode {
+    // 名前は重複の検査にだけ使う。書き換えが初めに足す値（空白を含む文字列）は
+    // 識別子にならず、重複を生まないため、配列の初期値の書き換えは等価。
+    // Stryker disable next-line ArrayDeclaration
     const names: string[] = [];
     params.forEach(param => this.collectBoundNames(param, names));
     if (rest !== null) {

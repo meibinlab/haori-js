@@ -313,6 +313,10 @@ describe('評価器が単独で構文エラーにする式', () => {
     ['((a b) => a)'],
     ['(({a b}) => a)'],
     ['(([a b]) => a)'],
+    ['f(1 2)'],
+    ['1 constructor 2'],
+    // 復帰（CR）も改行として扱う（`=>` の前に改行を置けない）。
+    ['(x)\r=> x'],
   ])('%s', expression => {
     // 仕様「CSP モードの式評価」の「従来の方式と同じく、次は書けません（構文エラーになります）」
     expect(() => new Function(`"use strict"; return (${expression});`)).toThrow(
