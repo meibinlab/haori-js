@@ -1,15 +1,73 @@
 /**
- * @fileoverview 全テストを CSP モードの評価器で流すための差し替え
+ * @fileoverview 全テストを CSP モードで流すための設定
  *
- * `vitest.csp.config.ts` の `setupFiles` から読み込みます。`Expression.evaluateDetailed()`
- * （`Expression.evaluate()` もこれを通ります）を、評価関数の部分だけを CSP モードの
- * 評価器へ差し替えた形（`csp-evaluate.ts`）に置き換えます。組み合わせる前に、既存の
- * テストの期待値が CSP モードでも成り立つことを確かめるためのものです。
+ * `vitest.csp.config.ts` の `setupFiles` から読み込みます。CSP モードを有効にし、
+ * あわせて `Function` コンストラクタと `eval` を、`'unsafe-eval'` の無い CSP の
+ * 下と同じく `EvalError` を投げるものへ置き換えます。式の評価が `new Function`
+ * を一度も使わないことを、全テストで確かめるためです。
+ *
+ * 拒否するのは Haori の本体（`src/`）からの呼び出しだけです。テストの環境
+ * （jsdom のセレクタの処理など）は `Function` を使うため、ほかの呼び出しは
+ * そのまま通します。
  */
 
-import Expression from '../../src/expression';
-import {cspEvaluateDetailed} from './csp-evaluate';
+import {resolve} from 'node:path';
 
-(
-  Expression as unknown as {evaluateDetailed: typeof cspEvaluateDetailed}
-).evaluateDetailed = cspEvaluateDetailed;
+import {vi} from 'vitest';
+
+// モジュールを読み直すテスト（`vi.resetModules()`）でも CSP モードになるよう、
+// 読み込むたびに有効にする。
+vi.mock('../../src/env', async importOriginal => {
+  const module = await importOriginal<typeof import('../../src/env')>();
+  module.default.setCsp(true);
+  return module;
+});
+
+/**
+ * Haori の本体のディレクトリ（スタックの行と比べるため `/` 区切りの小文字）。
+ * テストはリポジトリの直下で動かします。
+ */
+const SOURCE_DIRECTORY = `${resolve('src')}/`.replace(/\\/g, '/').toLowerCase();
+
+/** CSP が文字列からのコードの生成を拒否したときの文言 */
+const REFUSED =
+  "Refused to evaluate a string as JavaScript because 'unsafe-eval' is not" +
+  ' an allowed source of script.';
+
+/**
+ * 呼び出し元が Haori の本体かを返します。
+ *
+ * @returns 本体からの呼び出しなら true
+ */
+function calledFromHaori(): boolean {
+  const frames = (new Error().stack ?? '').split('\n').slice(1);
+  const caller = frames.find(frame => !frame.includes('csp-mode-setup'));
+  return (
+    caller !== undefined &&
+    caller.replace(/\\/g, '/').toLowerCase().includes(SOURCE_DIRECTORY)
+  );
+}
+
+const OriginalFunction = Function;
+const originalEval = globalThis.eval;
+
+globalThis.Function = new Proxy(OriginalFunction, {
+  apply(target, thisArg, args) {
+    if (calledFromHaori()) {
+      throw new EvalError(REFUSED);
+    }
+    return Reflect.apply(target, thisArg, args);
+  },
+  construct(target, args, newTarget) {
+    if (calledFromHaori()) {
+      throw new EvalError(REFUSED);
+    }
+    return Reflect.construct(target, args, newTarget);
+  },
+});
+globalThis.eval = (source: string) => {
+  if (calledFromHaori()) {
+    throw new EvalError(REFUSED);
+  }
+  return originalEval(source);
+};

@@ -90,7 +90,7 @@ Select-String -Path src\*.ts,tests\*.ts,tests\helpers\*.ts,docs\ja\*.md `
 
 ### CSP モードの評価器はミューテーションテストで確かめる
 
-CSP モードの評価器（`src/expression_parser.ts`・`src/expression_interpreter.ts`・`src/expression_rules.ts`）は、規則 3 の確認を `npm run test:mutation`（Stryker）で機械的に行います。コードを 1 か所ずつ書き換え、評価器のテスト（`tests/expression-interpreter*.test.ts`）が落ちるかを調べます。十数分かかり、結果は `reports/mutation/index.html` に出ます。
+CSP モードの評価器（`src/expression_parser.ts`・`src/expression_interpreter.ts`・`src/expression_rules.ts`）は、規則 3 の確認を `npm run test:mutation`（Stryker）で機械的に行います。コードを 1 か所ずつ書き換え、評価器のテスト（`tests/expression-interpreter*.test.ts` と、評価器を組み込んだ部分の `tests/expression-csp-integration.test.ts`）が落ちるかを調べます。十数分かかり、結果は `reports/mutation/index.html` に出ます。
 
 落ちなかった書き換え（生き残り）は、規則 3 の表に従って対応します。ただし、次の 2 つは書き換えても結果が変わらないため、コードに理由を書いたうえで `// Stryker disable next-line` で対象から外します。
 

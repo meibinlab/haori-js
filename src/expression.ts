@@ -11,6 +11,19 @@ import Builtins from './builtins';
 import Dev from './dev';
 import Env from './env';
 import Queue from './queue';
+import ExpressionInterpreter, {
+  CompiledExpression,
+  MissingIdentifierError,
+} from './expression_interpreter';
+import {
+  ALLOWED_GLOBAL_IDENTIFIERS,
+  DISALLOWED_KEYWORDS,
+  FORBIDDEN_NAMES,
+  FORBIDDEN_PROPERTY_NAMES,
+  REBINDABLE_FORBIDDEN_NAMES,
+  STRICT_FORBIDDEN_NAMES,
+  STRICT_RESERVED_WORDS,
+} from './expression_rules';
 
 /**
  * 式評価結果の詳細です。
@@ -38,8 +51,37 @@ interface ExpressionToken {
 
 interface ExpressionEvaluatorSetup {
   bindKeys: string[];
+  /** 従来の方式の評価関数（CSP モードとコンパイルの失敗では null） */
   evaluator: ((...args: unknown[]) => unknown) | null;
   compileFailed: boolean;
+  /** CSP モードで評価器が変換した式（従来の方式では無い） */
+  compiled?: CompiledExpression;
+}
+
+/**
+ * 式の文字列だけで決まる、評価の準備に使う判定。
+ *
+ * 一覧では同じ式を行の数だけ評価するため、式ごとに一度だけ求めて控えます
+ * （`Expression.getExpressionProfile()`）。
+ */
+interface ExpressionProfile {
+  /** 危険なパターンを含むか（`containsDangerousPatterns()`） */
+  dangerous: boolean;
+
+  /** 予約名前空間 `haori` を独立した識別子として参照するか */
+  referencesBuiltins: boolean;
+
+  /** `haori.data` を参照するか */
+  referencesBuiltinData: boolean;
+
+  /** 未宣言識別子の補完を試みてよい式か */
+  allowMissingIdentifierRecovery: boolean;
+
+  /** 評価中に prototype 系プロパティの生アクセスを遮断する必要があるか */
+  needsPropertyBlocking: boolean;
+
+  /** 評価関数の引数にする名前の候補（式が値として参照し得る名前。重複なし） */
+  parameterCandidates: readonly string[];
 }
 
 type GroupContext = 'paren' | 'array' | 'member' | 'object';
@@ -97,6 +139,23 @@ export default class Expression {
   private static readonly IDENTIFIER_NAME_PATTERN =
     /^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*$/u;
 
+  /**
+   * strict モードの関数で引数名にできない予約語です（CSP モードのキーの判定に使う）。
+   *
+   * ECMAScript の予約語と、strict モードだけの予約語、`eval` / `arguments` です。
+   * `await` は非同期でない関数の引数名にできるため含めません。
+   */
+  private static readonly STRICT_PARAMETER_RESERVED_WORDS: ReadonlySet<string> =
+    new Set([
+      ...[...DISALLOWED_KEYWORDS].filter(keyword => keyword !== 'await'),
+      ...STRICT_RESERVED_WORDS,
+      ...STRICT_FORBIDDEN_NAMES,
+      'extends',
+      'true',
+      'false',
+      'null',
+    ]);
+
   /** キーが関数の引数名として使えるかの判定キャッシュ */
   private static readonly usableBindingKeyCache = new Map<string, boolean>();
 
@@ -122,42 +181,14 @@ export default class Expression {
   private static loggedForbiddenKeyResetScheduled = false;
 
   /** Haoriで禁止すべき識別子一覧（eval と arguments は strict モードで無効化） */
-  private static readonly FORBIDDEN_NAMES = [
-    // グローバルオブジェクト
-    'window',
-    'self',
-    'globalThis',
-    'frames',
-    'parent',
-    'top',
-    // 危険な関数/オブジェクト
-    'Function',
-    'setTimeout',
-    'setInterval',
-    'requestAnimationFrame',
-    'alert',
-    'confirm',
-    'prompt',
-    'fetch',
-    'XMLHttpRequest',
-    'Reflect',
-    // 脱出経路・プロトタイプ
-    'constructor',
-    '__proto__',
-    'prototype',
-    'Object',
-    // その他
-    'document',
-    'location',
-    'navigator',
-    'localStorage',
-    'sessionStorage',
-    'IndexedDB',
-    'history',
+  private static readonly FORBIDDEN_NAMES: readonly string[] = [
+    ...FORBIDDEN_NAMES,
   ];
 
   /** strict モードで禁止される識別子 */
-  private static readonly STRICT_FORBIDDEN_NAMES = ['eval', 'arguments'];
+  private static readonly STRICT_FORBIDDEN_NAMES: readonly string[] = [
+    ...STRICT_FORBIDDEN_NAMES,
+  ];
 
   /**
    * 明示バインド時のみ利用を許可する衝突名。
@@ -169,15 +200,8 @@ export default class Expression {
    * `window`/`self`/`globalThis`/`Object`/`Function`/`eval`/`constructor` などの
    * 実行系・プロトタイプ脱出名は再バインドを許可しません。
    */
-  private static readonly REBINDABLE_FORBIDDEN_NAMES = new Set([
-    'location',
-    'history',
-    'document',
-    'navigator',
-    'localStorage',
-    'sessionStorage',
-    'IndexedDB',
-  ]);
+  private static readonly REBINDABLE_FORBIDDEN_NAMES =
+    REBINDABLE_FORBIDDEN_NAMES;
 
   /** バインド識別子としては拒否する名前 */
   private static readonly FORBIDDEN_BINDING_NAMES = new Set([
@@ -294,11 +318,7 @@ export default class Expression {
   }
 
   /** プロパティアクセスで拒否する名前 */
-  private static readonly FORBIDDEN_PROPERTY_NAMES = new Set([
-    'constructor',
-    '__proto__',
-    'prototype',
-  ]);
+  private static readonly FORBIDDEN_PROPERTY_NAMES = FORBIDDEN_PROPERTY_NAMES;
 
   /** object literal のプロパティ定義で前置修飾子として扱う識別子 */
   private static readonly OBJECT_PROPERTY_MODIFIERS = new Set([
@@ -308,41 +328,7 @@ export default class Expression {
   ]);
 
   /** 式構文として許可しない予約語 */
-  private static readonly DISALLOWED_KEYWORDS = new Set([
-    'await',
-    'break',
-    'case',
-    'catch',
-    'class',
-    'const',
-    'continue',
-    'debugger',
-    'default',
-    'delete',
-    'do',
-    'else',
-    'export',
-    'finally',
-    'for',
-    'function',
-    'if',
-    'import',
-    'in',
-    'instanceof',
-    'let',
-    'new',
-    'return',
-    'switch',
-    'this',
-    'throw',
-    'try',
-    'typeof',
-    'var',
-    'void',
-    'while',
-    'with',
-    'yield',
-  ]);
+  private static readonly DISALLOWED_KEYWORDS = DISALLOWED_KEYWORDS;
 
   /**
    * 未知の識別子であっても宣言によって遮蔽してはならない名前。
@@ -361,15 +347,7 @@ export default class Expression {
     'NaN',
     'Infinity',
     // strict モードの予約語（`let` 宣言が構文エラーになる）
-    'enum',
-    'implements',
-    'interface',
-    'package',
-    'private',
-    'protected',
-    'public',
-    'static',
-    'super',
+    ...STRICT_RESERVED_WORDS,
   ]);
 
   /**
@@ -380,63 +358,8 @@ export default class Expression {
    * バインドに無い識別子の遮蔽対象からは、この一覧を除外します。ここに漏れがあると
    * その組み込みを使う式が未解決参照になるため、追加時は仕様書の一覧も更新します。
    */
-  private static readonly ALLOWED_GLOBAL_IDENTIFIERS = new Set([
-    // 名前空間オブジェクト
-    'Math',
-    'JSON',
-    'Intl',
-    'Atomics',
-    // 基本コンストラクタ
-    'Array',
-    'String',
-    'Number',
-    'Boolean',
-    'Date',
-    'RegExp',
-    'Symbol',
-    'BigInt',
-    'Map',
-    'Set',
-    'WeakMap',
-    'WeakSet',
-    'WeakRef',
-    'FinalizationRegistry',
-    'Promise',
-    'Proxy',
-    // エラー系
-    'Error',
-    'AggregateError',
-    'EvalError',
-    'RangeError',
-    'ReferenceError',
-    'SyntaxError',
-    'TypeError',
-    'URIError',
-    // バイナリ系
-    'ArrayBuffer',
-    'SharedArrayBuffer',
-    'DataView',
-    'Int8Array',
-    'Uint8Array',
-    'Uint8ClampedArray',
-    'Int16Array',
-    'Uint16Array',
-    'Int32Array',
-    'Uint32Array',
-    'Float32Array',
-    'Float64Array',
-    'BigInt64Array',
-    'BigUint64Array',
-    // 関数
-    'parseInt',
-    'parseFloat',
-    'isNaN',
-    'isFinite',
-    'encodeURI',
-    'encodeURIComponent',
-    'decodeURI',
-    'decodeURIComponent',
-  ]);
+  private static readonly ALLOWED_GLOBAL_IDENTIFIERS =
+    ALLOWED_GLOBAL_IDENTIFIERS;
 
   /**
    * 評価関数の `this` に渡す、標準組み込みの値の置き場。
@@ -483,6 +406,9 @@ export default class Expression {
     string,
     readonly string[]
   >();
+
+  /** 式 → 式の文字列だけで決まる判定のキャッシュ（`getExpressionProfile()`） */
+  private static readonly PROFILE_CACHE = new Map<string, ExpressionProfile>();
 
   /** 式ごとの「式の中で束縛された識別子」のキャッシュ */
   private static readonly BOUND_IDENTIFIER_CACHE = new Map<
@@ -613,16 +539,17 @@ export default class Expression {
   /**
    * バインドキーが関数の引数名として使えるかを返します。
    *
-   * 評価器は `new Function(...bindKeys, body)` で組み立てるため、引数名にできない
+   * 評価器の引数は式が参照する名前（識別子の字句）から選ぶため、引数名にできない
    * キー（`customer.email` のようにドットを含むもの、ハイフン、空白、先頭が数字、
-   * 予約語など）が 1 つでも混ざると引数リスト自体が壊れ、**そのスコープで評価する
-   * すべての式**がコンパイルできなくなります。カンマを含むキーは引数の位置をずらし、
-   * 例外も出さずに他のキーの値を壊します。
+   * 予約語など）は引数になりません。この判定は、そうしたキーを開発モードで報告
+   * するために使います（`reportUnusableBindingKeys()`）。
    *
    * 判定は 2 段で行います。実際に `new Function` へ通して予約語（`class` など）と
    * 識別子として不正な文字を弾き、あわせて単一の識別子名かを検査して `a,b`
    * （複数引数になる）や `{a}` / `a=1`（引数パターンになる）を弾きます。正規表現
    * だけでは予約語を通してしまい、`new Function` だけでは構造を持つキーを通します。
+   * CSP モードでは `new Function` を使えないため、2 段目を予約語の一覧
+   * （`STRICT_PARAMETER_RESERVED_WORDS`）との照合に替えます。
    * 結果はキー単位でキャッシュするため、評価ごとのコストは無視できます。
    *
    * @param key 判定するバインドキー
@@ -634,9 +561,15 @@ export default class Expression {
       return cached;
     }
     let usable = this.IDENTIFIER_NAME_PATTERN.test(key);
-    if (usable) {
+    if (usable && Env.csp) {
+      // CSP モードでは `new Function` を使えないため、strict モードで引数名に
+      // できない予約語の一覧で判定する。
+      usable = !this.STRICT_PARAMETER_RESERVED_WORDS.has(key);
+    } else if (usable) {
       try {
-        new Function(key, '');
+        // 評価関数の本体は strict モードなので、strict モードだけの予約語
+        // （`public` など）も弾けるよう同じモードで通す。
+        new Function(key, '"use strict"');
       } catch {
         usable = false;
       }
@@ -655,7 +588,7 @@ export default class Expression {
    * @returns 戻り値はありません。
    */
   private static reportUnusableBindingKeys(keys: string[]): void {
-    if (keys.length === 0 || !Dev.isEnabled()) {
+    if (keys.length === 0) {
       return;
     }
     const unlogged = keys.filter(
@@ -931,6 +864,31 @@ export default class Expression {
   }
 
   /**
+   * `(` がアロー関数の引数リストの開始かどうかを判定します。
+   *
+   * `async (x) => x` の `(x)` は引数リストで、呼び出しではありません（仕様
+   * 「暗黙のオプショナルチェーン」の「アロー関数の引数リストやグループ化の丸括弧は
+   * 呼び出しとみなしません」）。呼び出しの位置（直前が識別子・`)`・`]`）にある
+   * `(` のうち、対応する `)` の直後が `=>` のものだけを引数リストとみなします
+   * （`async` 以外の名前の後では構文エラーの式で、どちらとみなしても結果は
+   * 同じです）。引数の既定値は書けないため、引数リストの中に丸括弧は現れず、
+   * 最初の `)` が対応する `)` です。
+   *
+   * @param tokens 式のトークン列
+   * @param index `(` の位置
+   * @returns 引数リストの開始であれば true
+   */
+  private static startsArrowParameters(
+    tokens: ExpressionToken[],
+    index: number,
+  ): boolean {
+    const close = tokens.findIndex(
+      (token, cursor) => cursor > index && token.value === ')',
+    );
+    return tokens[close + 1]?.value === '=>';
+  }
+
+  /**
    * メンバーアクセスを暗黙のオプショナルチェーンへ変換します。
    *
    * `a.b` を `a?.b`、`a[i]` を `a?.[i]`、`a.b()` を `a?.b?.()` へ書き換えます。
@@ -955,7 +913,8 @@ export default class Expression {
     if (tokens !== null) {
       const edits: {start: number; end: number; text: string}[] = [];
       let previous: ExpressionToken | null = null;
-      for (const token of tokens) {
+      for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index];
         // すでに `?.` が書かれている箇所へ二重に挿入しない。
         if (token.type === 'operator' && previous?.value !== '?.') {
           if (token.value === '.') {
@@ -966,7 +925,9 @@ export default class Expression {
             });
           } else if (
             (token.value === '[' && this.startsMemberAccess(previous)) ||
-            (token.value === '(' && this.startsCall(previous))
+            (token.value === '(' &&
+              this.startsCall(previous) &&
+              !this.startsArrowParameters(tokens, index))
           ) {
             edits.push({
               start: token.position,
@@ -1073,6 +1034,10 @@ export default class Expression {
     error: ReferenceError,
     shadowNames: string[],
   ): string[] {
+    if (error instanceof MissingIdentifierError) {
+      // CSP モードの評価器は、参照された名前をエラーに持たせる。
+      return [error.identifier];
+    }
     const message = String(error.message || '');
     const matched = shadowNames.filter(name =>
       ["'", '"', '`'].some(quote =>
@@ -1322,15 +1287,11 @@ export default class Expression {
       fallbackBindings[name] = undefined;
     });
     const setup = this.prepareEvaluator(expression, fallbackBindings);
-    if (setup.compileFailed || setup.evaluator === null) {
+    if (setup.compileFailed) {
       return undefined;
     }
     try {
-      const wrappedValues = this.wrapBoundValues(fallbackBindings);
-      const argValues = setup.bindKeys.map(key => wrappedValues[key]);
-      const value = this.withBlockedPropertyAccess(() =>
-        setup.evaluator!.call(this.BUILTIN_HOLDER, ...argValues),
-      );
+      const value = this.runEvaluator(expression, setup, fallbackBindings);
       return typeof value === 'boolean' ? value : undefined;
     } catch {
       return undefined;
@@ -1388,7 +1349,8 @@ export default class Expression {
       Log.warn('[Haori]', expression, 'Expression is empty');
       return {value: null, unresolvedReference: false};
     }
-    if (this.containsDangerousPatterns(expression)) {
+    const profile = this.getExpressionProfile(expression);
+    if (profile.dangerous) {
       const keywords = this.detectDisallowedKeywords(expression);
       if (keywords.length > 0) {
         // function 宣言・return・各種ステートメント系キーワードは式構文として
@@ -1444,15 +1406,7 @@ export default class Expression {
     // 参照しない名前の値に危険値があっても、その式へは渡らない。スコープ全体を
     // 毎回調べると、行のスコープへ継承された一覧の全体を行の式の数だけ調べ直す。
     // 要素データの複製（`haori.data`）はすべての名前を運ぶため、全体を調べる。
-    // 文字列リテラル（'...' / "..."）内の `haori` は識別子ではないので検出から除外する
-    // （テンプレートリテラル内の ${haori...} を壊さないようバッククォートは残す）。
-    const expressionForDetection = expression.replace(
-      /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g,
-      '',
-    );
-    const referencesBuiltinData = this.BUILTIN_DATA_REFERENCE_PATTERN.test(
-      expressionForDetection,
-    );
+    const referencesBuiltinData = profile.referencesBuiltinData;
     const referencedNames = referencesBuiltinData
       ? null
       : this.getReferencedNames(expression);
@@ -1467,9 +1421,7 @@ export default class Expression {
 
     // 式が予約名前空間 `haori` を参照している場合のみ組み込みヘルパーを注入する。
     // 参照していない式に無駄な引数・Proxy ラップを増やさないための最適化。
-    const referencesBuiltins = this.BUILTIN_REFERENCE_PATTERN.test(
-      expressionForDetection,
-    );
+    const referencesBuiltins = profile.referencesBuiltins;
     if (referencesBuiltins && this.BUILTIN_NAMESPACE in bindedValues) {
       Log.warn(
         '[Haori]',
@@ -1511,7 +1463,7 @@ export default class Expression {
       this.recordSuppliedIdentifiers(runtimeBindings);
     }
     const allowMissingIdentifierRecovery =
-      this.canAttemptMissingIdentifierRecovery(expression);
+      profile.allowMissingIdentifierRecovery;
 
     // バインドに無い識別子は、そのままでは関数のスコープチェーンを通ってグローバルへ
     // 解決される。`id="foo"` の要素が `window.foo` として見える named access や、
@@ -1604,18 +1556,11 @@ export default class Expression {
         runtimeBindings,
         shadowNames,
       );
-      if (setup.compileFailed || setup.evaluator === null) {
+      if (setup.compileFailed) {
         return {value: null, unresolvedReference: false};
       }
       try {
-        const argValues: unknown[] = [];
-        const wrappedValues = this.wrapBoundValues(runtimeBindings);
-        setup.bindKeys.forEach((key: string) => {
-          argValues.push(wrappedValues[key]);
-        });
-        const value = this.withBlockedPropertyAccess(() =>
-          setup.evaluator!.call(this.BUILTIN_HOLDER, ...argValues),
-        );
+        const value = this.runEvaluator(expression, setup, runtimeBindings);
         if (value === undefined) {
           // ブロック識別子が原因で静かに undefined になった場合のヒント。
           this.warnBlockedIdentifiers(expression);
@@ -1679,6 +1624,115 @@ export default class Expression {
   }
 
   /**
+   * 式の文字列だけで決まる判定を返します（式ごとに一度だけ求めて控えます）。
+   *
+   * @param expression 評価する式
+   * @returns 式の判定
+   */
+  private static getExpressionProfile(expression: string): ExpressionProfile {
+    const cached = this.PROFILE_CACHE.get(expression);
+    if (cached !== undefined) {
+      return cached;
+    }
+    // 文字列リテラル（'...' / "..."）内の `haori` は識別子ではないので検出から除外する
+    // （テンプレートリテラル内の ${haori...} を壊さないようバッククォートは残す）。
+    const expressionForDetection = expression.replace(
+      /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g,
+      '',
+    );
+    const profile: ExpressionProfile = {
+      dangerous: this.containsDangerousPatterns(expression),
+      referencesBuiltins: this.BUILTIN_REFERENCE_PATTERN.test(
+        expressionForDetection,
+      ),
+      referencesBuiltinData: this.BUILTIN_DATA_REFERENCE_PATTERN.test(
+        expressionForDetection,
+      ),
+      allowMissingIdentifierRecovery:
+        this.canAttemptMissingIdentifierRecovery(expression),
+      needsPropertyBlocking: this.needsPropertyBlocking(expression),
+      parameterCandidates: [...new Set(this.getReferencedNames(expression))],
+    };
+    this.PROFILE_CACHE.set(expression, profile);
+    return profile;
+  }
+
+  /**
+   * 評価中に prototype 系プロパティの生アクセスを遮断する必要がある式かを返します。
+   *
+   * 遮断（`withBlockedPropertyAccess()`）が守るのは、式の外のコード（標準組み込みの
+   * メソッドなど）が評価中に `constructor` や `__proto__` を読む経路です。式に書いた
+   * メンバーアクセスは、構文の検証・Proxy・計算プロパティ名の検査が遮断します。
+   * 式の外のコードが `constructor` などを読むのは、`map` などの標準組み込みの
+   * メソッドを呼んだときです（`new` とテンプレートリテラルは書けません）。
+   * スプレッドも反復のメソッドを呼ぶため含めます。どちらも無い式は遮断しても
+   * 結果が変わらないため、評価のたびに `Object.prototype` と `Function.prototype`
+   * を書き換えません。
+   *
+   * 呼び出しは、`(` の直前が識別子・`)`・`]`・`?.` のときとみなします。
+   * `startsCall()` と違い `undefined` などの直後も呼び出しに数えます（同名の
+   * バインドキーに関数を渡せるためです）。
+   *
+   * 字句に分けられない式は `false` を返しますが、そうした式は許可構文の検証
+   * （`hasAllowedSyntax()`）で拒否されるため評価されません。
+   *
+   * @param expression 評価する式
+   * @returns 遮断が必要であれば true
+   */
+  private static needsPropertyBlocking(expression: string): boolean {
+    let previous: ExpressionToken | null = null;
+    for (const token of this.tokenizeExpression(expression) ?? []) {
+      if (token.value === '...') {
+        return true;
+      }
+      if (
+        token.value === '(' &&
+        previous !== null &&
+        (previous.type === 'identifier' ||
+          [')', ']', '?.'].includes(previous.value))
+      ) {
+        return true;
+      }
+      previous = token;
+    }
+    return false;
+  }
+
+  /**
+   * 引数の値を Proxy でラップし、評価関数を実行します。
+   *
+   * @param expression 評価する式
+   * @param setup 評価関数の準備結果（評価関数があること）
+   * @param bindings 評価に用いるバインド値
+   * @returns 評価結果
+   */
+  private static runEvaluator(
+    expression: string,
+    setup: ExpressionEvaluatorSetup,
+    bindings: Record<string, unknown>,
+  ): unknown {
+    const cache = new WeakMap<object, unknown>();
+    const argValues = setup.bindKeys.map(key =>
+      this.wrapBoundValue(bindings[key], cache),
+    );
+    let run: () => unknown;
+    const compiled = setup.compiled;
+    if (compiled !== undefined) {
+      // CSP モードの評価器へは、引数にする名前だけを載せたスコープを渡す。
+      const scope: Record<string, unknown> = {};
+      setup.bindKeys.forEach((key, index) => {
+        scope[key] = argValues[index];
+      });
+      run = () => ExpressionInterpreter.run(compiled, scope);
+    } else {
+      run = () => setup.evaluator!.call(this.BUILTIN_HOLDER, ...argValues);
+    }
+    return this.getExpressionProfile(expression).needsPropertyBlocking
+      ? this.withBlockedPropertyAccess(run)
+      : run();
+  }
+
+  /**
    * 現在のバインド集合で evaluator を取得または生成します。
    *
    * @param expression 評価する式
@@ -1691,22 +1745,27 @@ export default class Expression {
     bindedValues: Record<string, unknown>,
     shadowNames: string[] = [],
   ): ExpressionEvaluatorSetup {
-    const safeKeys = Object.keys(bindedValues).filter(
-      key => !this.FORBIDDEN_BINDING_NAMES.has(key),
+    // 引数にするのは、式が値として参照し得る名前のうちバインドにあるものだけ。
+    // 式は名前を書かずにほかの引数へ届かない（`arguments` と `eval` は strict
+    // モードで封じ、`this` は書けない）ため、参照しない名前を渡しても結果は
+    // 変わらない。スコープの全キーを渡すと、一覧の行の式ごとにキーの数だけ
+    // 並べ替え・連結・Proxy ラップを繰り返す。候補は識別子の字句なので、引数名に
+    // できない形（`customer.email` など）は含まない。
+    const bindKeys = this.getExpressionProfile(
+      expression,
+    ).parameterCandidates.filter(
+      name =>
+        Object.prototype.propertyIsEnumerable.call(bindedValues, name) &&
+        !this.FORBIDDEN_BINDING_NAMES.has(name),
     );
-    // 引数名として使えないキーは載せない。1 つ混ざるだけで引数リストが壊れ、
-    // そのスコープの全式が評価できなくなる（カンマ入りは無言で値をずらす）。
-    const bindKeys: string[] = [];
-    const unusableKeys: string[] = [];
-    safeKeys.forEach(key => {
-      if (this.isUsableBindingKey(key)) {
-        bindKeys.push(key);
-      } else {
-        unusableKeys.push(key);
-      }
-    });
-    bindKeys.sort();
-    this.reportUnusableBindingKeys(unusableKeys);
+    if (Dev.isEnabled()) {
+      this.reportUnusableBindingKeys(
+        Object.keys(bindedValues).filter(key => !this.isUsableBindingKey(key)),
+      );
+    }
+    if (Env.csp) {
+      return this.prepareInterpretedEvaluator(expression, bindKeys);
+    }
     const bindKeySet = new Set(bindKeys);
     // 引数・`const` 遮蔽と重複する宣言は構文エラーになるため取り除く。
     const declarations = shadowNames.filter(name => !bindKeySet.has(name));
@@ -1773,6 +1832,33 @@ export default class Expression {
         evaluator: null,
         compileFailed: true,
       };
+    }
+  }
+
+  /**
+   * CSP モードの評価器で式を変換します（仕様「CSP モードの式評価」）。
+   *
+   * `new Function` を使わないため、従来の方式の式の書き換え（暗黙のオプショナル
+   * チェーン・計算プロパティ名の検査・グローバルの遮蔽）は評価器が受け持ちます。
+   * 変換の結果は評価器が式ごとに控えます。受け付けない式は、従来の方式の
+   * コンパイル失敗と同じく記録してログに出します。変換の成否は式だけで決まる
+   * ため、従来の方式と違い、失敗の記録を取り消す場面はありません。
+   *
+   * @param expression 評価する式
+   * @param bindKeys 評価器のスコープへ載せる名前
+   * @returns evaluator 準備結果
+   */
+  private static prepareInterpretedEvaluator(
+    expression: string,
+    bindKeys: string[],
+  ): ExpressionEvaluatorSetup {
+    try {
+      const compiled = ExpressionInterpreter.compile(expression);
+      return {bindKeys, evaluator: null, compileFailed: false, compiled};
+    } catch (error) {
+      Log.error('[Haori]', 'Failed to compile expression:', expression, error);
+      this.compileFailedExpressions.add(expression);
+      return {bindKeys, evaluator: null, compileFailed: true};
     }
   }
 
@@ -2630,25 +2716,6 @@ export default class Expression {
             return escaped;
         }
       });
-  }
-
-  /**
-   * バインド値を安全なProxyでラップします。
-   *
-   * @param bindedValues バインド値
-   * @returns ラップ済みのバインド値
-   */
-  private static wrapBoundValues(
-    bindedValues: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const cache = new WeakMap<object, unknown>();
-    const wrappedValues: Record<string, unknown> = {};
-
-    Object.entries(bindedValues).forEach(([key, value]) => {
-      wrappedValues[key] = this.wrapBoundValue(value, cache);
-    });
-
-    return wrappedValues;
   }
 
   /**

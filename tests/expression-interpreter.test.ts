@@ -336,9 +336,8 @@ describe('CSP モードの式の評価器', () => {
     });
 
     it('バインドに無い識別子は既定では ReferenceError になる', () => {
-      expect(() => run('missing')).toThrow(
-        new ReferenceError('missing is not defined'),
-      );
+      expect(() => run('missing')).toThrow(ReferenceError);
+      expect(() => run('missing')).toThrow('missing is not defined');
     });
 
     // 仕様「バインドに無い識別子の扱い」の「`?.` / `??` / `||` / `&&` を含む式では、従来どおり `undefined` として評価を続けます」
@@ -349,6 +348,62 @@ describe('CSP モードの式の評価器', () => {
     // 仕様「バインドに無い識別子の扱い」の「短絡評価や三項演算子で**参照されなかった**識別子は、未解決参照になりません」
     it('参照されなかった識別子は ReferenceError にならない', () => {
       expect(run('flag ? missing : 5', {flag: false})).toBe(5);
+    });
+
+    // 仕様「バインドに無い識別子の扱い」の「**式から参照できる標準組み込み**は遮蔽の対象外です。以下は従来どおり利用できます」
+    it.each([
+      'Math',
+      'JSON',
+      'Intl',
+      'Atomics',
+      'Array',
+      'String',
+      'Number',
+      'Boolean',
+      'Date',
+      'RegExp',
+      'Symbol',
+      'BigInt',
+      'Map',
+      'Set',
+      'WeakMap',
+      'WeakSet',
+      'WeakRef',
+      'FinalizationRegistry',
+      'Promise',
+      'Proxy',
+      'Error',
+      'AggregateError',
+      'EvalError',
+      'RangeError',
+      'ReferenceError',
+      'SyntaxError',
+      'TypeError',
+      'URIError',
+      'ArrayBuffer',
+      'SharedArrayBuffer',
+      'DataView',
+      'Int8Array',
+      'Uint8Array',
+      'Uint8ClampedArray',
+      'Int16Array',
+      'Uint16Array',
+      'Int32Array',
+      'Uint32Array',
+      'Float32Array',
+      'Float64Array',
+      'BigInt64Array',
+      'BigUint64Array',
+      'parseInt',
+      'parseFloat',
+      'isNaN',
+      'isFinite',
+      'encodeURI',
+      'encodeURIComponent',
+      'decodeURI',
+      'decodeURIComponent',
+    ])('一覧にある標準組み込み %s はグローバルの値になる', name => {
+      expect(run(name)).toBe((globalThis as Record<string, unknown>)[name]);
     });
 
     // 仕様「バインドに無い識別子の扱い」の「**式から参照できる標準組み込み**は遮蔽の対象外です」

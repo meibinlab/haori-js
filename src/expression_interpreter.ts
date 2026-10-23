@@ -39,7 +39,8 @@ import {
 /**
  * バインドに無い識別子を参照したときの扱いです。
  *
- * - `throw`: `ReferenceError`（`名前 is not defined`）を投げます
+ * - `throw`: `MissingIdentifierError`（`名前 is not defined` の
+ *   `ReferenceError`）を投げます
  * - `undefined`: `undefined` として評価を続けます
  *
  * 従来の方式は、`?.` / `??` / `||` / `&&` を含む式だけを `undefined` として
@@ -47,6 +48,25 @@ import {
  * 決めます。
  */
 export type MissingIdentifierPolicy = 'throw' | 'undefined';
+
+/**
+ * バインドに無い識別子を参照したときに投げるエラーです（`missingIdentifier` が
+ * `throw` の場合）。
+ *
+ * 呼び出し側が、参照された名前を文言から読み取らずに知るために名前を持ちます。
+ */
+export class MissingIdentifierError extends ReferenceError {
+  /** 参照された名前 */
+  public readonly identifier: string;
+
+  /**
+   * @param identifier 参照された名前
+   */
+  constructor(identifier: string) {
+    super(`${identifier} is not defined`);
+    this.identifier = identifier;
+  }
+}
 
 /** 評価のオプションです。 */
 export interface InterpreterRunOptions {
@@ -437,7 +457,7 @@ export default class ExpressionInterpreter {
    */
   private static missing(run: RunState, name: string): undefined {
     if (run.missingIdentifier === 'throw') {
-      throw new ReferenceError(`${name} is not defined`);
+      throw new MissingIdentifierError(name);
     }
     return undefined;
   }

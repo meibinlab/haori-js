@@ -1,7 +1,7 @@
 /**
  * @fileoverview 汎用非同期キュー機能
  *
- * 任意の処理を非同期でキューイングし、requestAnimationFrameを使用して順次実行します。
+ * 任意の処理を非同期でキューイングし、次のタスクで順次実行します（1 回あたり 8ms で区切ります）。
  * 各処理はPromiseを返し、完了時の処理を記述できます。
  * DOM操作などの非同期処理に適しています。
  */
@@ -115,20 +115,48 @@ class AsyncQueue {
 
   /**
    * 処理をスケジュールします。
+   *
+   * 処理は次のタスクで始めます（仕様「7. Queue (queue.ts)」の「処理は次のフレームを待たず、
+   * 次のタスクで始めます」）。1 回の更新の中でもキューは何度も空になってから
+   * 再開するため、再開のたびに次のフレームを待つと、その待ち時間が積み重なります。
+   * タスクの合間にはブラウザが入力の処理と描画を行えるため、8ms で区切って
+   * 譲る効果は変わりません。
    */
   private scheduleProcessing(): void {
     if (this.processing) {
       return;
     }
-    if (typeof requestAnimationFrame !== 'undefined') {
-      requestAnimationFrame(() => {
-        this.processQueue();
-      });
+    const channel = this.getChannel();
+    if (channel !== null) {
+      channel.port2.postMessage(null);
     } else {
       setTimeout(() => {
         this.processQueue();
-      }, 16); // 60fps
+      }, 0);
     }
+  }
+
+  /** 次のタスクで処理を始めるための通知路（`getChannel()` で作ります） */
+  private channel: MessageChannel | null = null;
+
+  /**
+   * 次のタスクで処理を始めるための `MessageChannel` を返します。
+   *
+   * `setTimeout(0)` は入れ子が深くなると 4ms 以上に引き延ばされ、背面のタブでは
+   * さらに間引かれるため、`MessageChannel` を使います。最初に処理を積んだときに
+   * 1 つだけ作って使い回します（仕様「7. Queue (queue.ts)」の「読み込んだだけでは
+   * 作りません」）。
+   *
+   * @returns 通知路。`MessageChannel` の無い環境では null
+   */
+  private getChannel(): MessageChannel | null {
+    if (this.channel === null && typeof MessageChannel !== 'undefined') {
+      this.channel = new MessageChannel();
+      this.channel.port1.onmessage = () => {
+        this.processQueue();
+      };
+    }
+    return this.channel;
   }
 
   /**

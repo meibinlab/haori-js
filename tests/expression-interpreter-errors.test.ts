@@ -42,6 +42,16 @@ function bindings(): Record<string, unknown> {
   return {a: 1, s: 'abc', list: [1, 2], empty: [], none: null, obj: {x: 1}};
 }
 
+/** 例外の種類を比べるときの標準のエラー */
+const STANDARD_ERRORS = [
+  ReferenceError,
+  TypeError,
+  RangeError,
+  SyntaxError,
+  URIError,
+  EvalError,
+];
+
 /** 例外になる式 */
 const CASES: readonly string[] = [
   'list.map(1)',
@@ -113,7 +123,10 @@ describe('例外になる式での、CSP モードの評価器と従来の方式
       try {
         return `value ${JSON.stringify(comparable(run()))}`;
       } catch (error) {
-        return `throw ${(error as Error).constructor.name}`;
+        // 種類は標準のエラーで比べる（評価器の `MissingIdentifierError` は
+        // `ReferenceError` の派生）。
+        const kind = STANDARD_ERRORS.find(type => error instanceof type);
+        return `throw ${kind?.name ?? (error as Error).constructor.name}`;
       }
     };
     const values = bindings();

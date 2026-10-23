@@ -7,16 +7,12 @@
  * と組み合わせるまで二つの方式で形が違うため、ここではすべての識別子が解決する
  * 式だけを比べます。組み込みヘルパー（`haori`）の注入も呼び出し側が受け持つため、
  * ここでは比べません。
- *
- * 名前の規則の一覧（`expression_rules.ts`）が従来の方式と同じであることも
- * 確かめます。食い違うと、遮断する名前や参照できる組み込みが方式によって変わります。
  */
 
 import {describe, expect, it} from 'vitest';
 
 import Expression from '../src/expression';
 import ExpressionInterpreter from '../src/expression_interpreter';
-import * as Rules from '../src/expression_rules';
 
 /**
  * 比べられる形へ値を写します（関数は種類だけを比べます）。
@@ -129,42 +125,5 @@ describe('CSP モードの評価器と従来の方式の結果の一致', () => 
     const expected = Expression.evaluate(expression, {...bindings});
     const actual = ExpressionInterpreter.evaluate(expression, {...bindings});
     expect(comparable(actual)).toEqual(comparable(expected));
-  });
-
-  it('名前の規則の一覧が従来の方式と同じ', () => {
-    const legacy = Expression as unknown as Record<string, Iterable<string>>;
-    const names = (value: Iterable<string>) => [...value].sort();
-    expect(names(Rules.FORBIDDEN_NAMES)).toEqual(names(legacy.FORBIDDEN_NAMES));
-    expect(names(Rules.STRICT_FORBIDDEN_NAMES)).toEqual(
-      names(legacy.STRICT_FORBIDDEN_NAMES),
-    );
-    expect(names(Rules.REBINDABLE_FORBIDDEN_NAMES)).toEqual(
-      names(legacy.REBINDABLE_FORBIDDEN_NAMES),
-    );
-    expect(names(Rules.FORBIDDEN_PROPERTY_NAMES)).toEqual(
-      names(legacy.FORBIDDEN_PROPERTY_NAMES),
-    );
-    expect(names(Rules.DISALLOWED_KEYWORDS)).toEqual(
-      names(legacy.DISALLOWED_KEYWORDS),
-    );
-    expect(names(Rules.ALLOWED_GLOBAL_IDENTIFIERS)).toEqual(
-      names(legacy.ALLOWED_GLOBAL_IDENTIFIERS),
-    );
-    // 従来の方式の遮蔽しない名前は、リテラル・定数と strict モードの予約語。
-    const literalNames = [
-      'true',
-      'false',
-      'null',
-      'undefined',
-      'NaN',
-      'Infinity',
-    ];
-    expect(names(Rules.STRICT_RESERVED_WORDS)).toEqual(
-      names(
-        [...legacy.NON_SHADOWABLE_IDENTIFIERS].filter(
-          name => !literalNames.includes(name),
-        ),
-      ),
-    );
   });
 });

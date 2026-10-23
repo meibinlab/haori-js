@@ -1,6 +1,6 @@
 # Haori.js 技術仕様書
 
-バージョン: 0.62.2
+バージョン: 0.62.3
 最終更新: 2026-09-02
 
 ## 目次
@@ -29,7 +29,7 @@ Haori.jsは、**HTML-First**の設計思想に基づく軽量なリアクティ�
 - **仮想DOM実装**: 効率的なDOM更新と無限ループ防止機構
 - **リアクティブシステム**: MutationObserverによる自動的なDOM監視と更新
 - **式評価**: 表示の自動エスケープと、禁止識別子・禁止プロパティの遮断を備えた式評価エンジン（前提は「[XSS対策](#xss対策)」の脅威モデルを参照）
-- **非同期キュー**: requestAnimationFrameベースの効率的なDOM操作
+- **非同期キュー**: 次のタスクで処理を始め、8ms ごとに区切って入力と描画に譲る DOM 操作
 - **双方向バインディング**: フォーム要素との自動同期
 - **ゼロ依存**: ピュアブラウザAPIのみで実装
 
@@ -80,8 +80,8 @@ Haori.jsは以下の設計原則に基づいて構築されています：
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                      Queue System                           │
-│  requestAnimationFrame ベースの非同期実行キュー              │
-│  (1フレーム最大8ms、優先度制御)                              │
+│  次のタスクで処理する非同期実行キュー                        │
+│  (1回あたり最大8ms、優先度制御)                              │
 └─────────────────────────────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -123,7 +123,7 @@ src/
 ├── event_dispatcher.ts  - イベント振り分け (click, change, load)
 ├── procedure.ts         - 手続き的処理管理 (data-*-fetch等の実行)
 ├── form.ts              - フォーム双方向バインディング
-├── queue.ts             - 非同期キュー管理 (requestAnimationFrame)
+├── queue.ts             - 非同期キュー管理 (MessageChannel)
 ├── import.ts            - HTMLインポート機能
 ├── selector.ts          - セレクタ属性の解決 (テンプレート式の評価と安全な照会)
 ├── store.ts             - ブラウザストレージ連携 (data-store)
@@ -595,10 +595,10 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
     Log.error('[Haori]', `Binding keys are reserved and ignored: ${...}`)
   }
 
-  // 3. 再バインド不可の禁止識別子を除外したバインドキーでキャッシュキーを作成
-  const bindKeys = Object.keys(bindedValues)
-    .filter(key => !FORBIDDEN_BINDING_NAMES.has(key))
-    .sort()
+  // 3. 式が参照する名前のうち、バインドにあり、再バインド不可の禁止識別子でない
+  //    ものを引数にして、キャッシュキーを作成
+  const bindKeys = referencedNames(expression)
+    .filter(name => Object.hasOwn(bindedValues, name) && !FORBIDDEN_BINDING_NAMES.has(name))
   const cacheKey = `${expression}:${bindKeys.join(',')}`
 
   // 4. 評価関数をキャッシュまたは生成
@@ -616,10 +616,12 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
     EXPRESSION_CACHE.set(cacheKey, evaluator)
   }
 
-  // 6. バインド値を Proxy でラップし、評価中のみ prototype 系アクセスを遮断して実行
-  const wrappedValues = this.wrapBoundValues(bindedValues)
-  const argValues = bindKeys.map(key => wrappedValues[key])
-  return this.withBlockedPropertyAccess(() => evaluator(...argValues))
+  // 6. 引数の値を Proxy でラップし、呼び出しかスプレッドを含む式は評価中のみ
+  //    prototype 系アクセスを遮断して実行
+  const argValues = bindKeys.map(key => this.wrapBoundValue(bindedValues[key]))
+  return needsPropertyBlocking(expression)
+    ? this.withBlockedPropertyAccess(() => evaluator(...argValues))
+    : evaluator(...argValues)
 }
 ```
 
@@ -629,13 +631,17 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 3. 禁止識別子を `undefined` で上書きし、strict モードで `eval` と `arguments` を抑止
 4. トップレベルキーが再バインド不可の予約名と衝突する場合は**該当キーのみ無視**（引数から除外＋`undefined` 遮蔽）し、`error` ログにキー名を明示。**式が参照する名前の値**を再帰的にチェックし、実ホストオブジェクト等の**危険な値**を含む場合は評価を拒否（後述）
 5. plain object / array / function を Proxy でラップし、`constructor`、`__proto__`、`prototype` へのアクセスを遮断（**ラップは冪等**。後述）
-6. 評価中のみ prototype 系プロパティの生アクセスを一時的に遮断（`Object.prototype` と `Function.prototype` の `constructor`、`Object.prototype.__proto__`）
+6. 呼び出しかスプレッドを含む式は、評価中のみ prototype 系プロパティの生アクセスを一時的に遮断（`Object.prototype` と `Function.prototype` の `constructor`、`Object.prototype.__proto__`。後述）
 7. 計算プロパティ名（`obj[式]`）は評価時にプロパティ名を検査し、`constructor` / `__proto__` / `prototype` のときは名前を `undefined` へ差し替え
 8. バインドに無い識別子を関数スコープへ引き込み、グローバルへ解決されないよう遮蔽（後述）
 
 3・5・6・7 で遮断されたアクセスは、[暗黙のオプショナルチェーン](#暗黙のオプショナルチェーン)により例外ではなく `undefined` になります。遮断は同じですが原因が見えにくくなるため、遮断された識別子を参照している式には開発モードで警告を出力します。
 
-**1 の検証の結果は式の文字列だけで決まるため、式ごとに控えます。** 同じ式を評価するたびに字句へ分け直しません（一覧では同じ式を行の数だけ評価するためです）。
+**1・2 の検証の結果は式の文字列だけで決まるため、式ごとに控えます。** 同じ式を評価するたびに字句へ分け直しません（一覧では同じ式を行の数だけ評価するためです）。式が参照する名前、`haori` を参照するかどうか、6 の遮断が要るかどうかも、同じく式ごとに控えます。
+
+**評価関数の引数と 5 のラップは、式が参照する名前に限ります。** 式は名前を書かずにほかの引数へ届かないため（`arguments` と `eval` は 3 で封じ、`this` は使用できないキーワード）、参照しない名前を渡しても結果は変わりません。たとえば `{{n.label}}` の評価関数が受け取るのは `n` だけです。スコープの全キーを渡すと、行の式ごとにキーの数だけ並べ替えとラップを繰り返し、スコープのキーが多い画面ほど遅くなるためです。
+
+**6 の遮断は、呼び出し（`?.()` を含む）かスプレッドを含む式に限ります。** 6 が守るのは、式の外のコードが評価中に `constructor` などを読む経路で、これは `map` などの標準組み込みのメソッドを呼んだときに起きます。式に書いたメンバーアクセスは 1・5・7 が遮断します。呼び出しもスプレッドも無い式（`r.id`・`r.stock > 0` など）は遮断しても結果が変わらないため、評価のたびに `Object.prototype` と `Function.prototype` を書き換えません。そうした式の評価中に、バインド値のゲッターなど式の外のコードが `constructor` を読んだ場合は、本来の値が返ります。
 
 **7 は名前の書き方に依存しません。** 1 の構文検証は文字列リテラルのトークンを 1 個ずつ照合するため、`obj["con" + "structor"]` のように**式で組み立てた名前**は検出できません（`String.fromCharCode`・`join`・Unicode エスケープなど作り方は無数にあります）。名前が確定するのは評価時なので、そこで検査します。名前はプロパティのキーへ変換してから検査するため、文字列以外の値で書いた名前（`obj[["constructor"]]` のような配列など）も遮断します。
 
@@ -693,7 +699,7 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 - `{{view.totalCount}}` のように、値が届く前でもそのまま書けます（`{{view?.totalCount}}` や `data-bind='{"view":{}}'` は不要）
 - すでに `?.` を書いてある式はそのまま動作します（二重には適用しません）
 - 解決できる場合の結果は従来と同じです。`items.map(i => i.v)` や `Math.max(...scores)` のような呼び出しも変わりません
-- 変換はメンバーアクセスに限られます。アロー関数の引数リストやグループ化の丸括弧は呼び出しとみなしません
+- 変換はメンバーアクセスに限られます。アロー関数の引数リストやグループ化の丸括弧は呼び出しとみなしません（`async (x) => x` の `(x)` も引数リストです）
 - 呼び出しの `(` は、直前が識別子・`)`・`]` のときに変換します（`f()` は `f?.()`、`(flag ? f : g)()` は `(flag ? f : g)?.()`）。リテラル（`'x'()` / `null()` など）と `undefined` / `NaN` / `Infinity` の呼び出しは変換しないため、`TypeError` になります
 
 なお、値が存在しても**呼び出せない**場合（`a.b` が数値なのに `a.b()` と書いた場合など）は従来どおり `TypeError` となり、`error` ログを出力します。
@@ -776,11 +782,20 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 
 #### CSP モードの式評価
 
-> **開発中です。** 評価器（`src/expression_parser.ts` / `src/expression_interpreter.ts`）は単体で作ってあり、まだ式の評価には使っていません。有効にする方法はありません。
+> **開発中です。** 評価器（`src/expression_parser.ts` / `src/expression_interpreter.ts`）は式の評価に組み込んであり、CSP モードではこの評価器で式を評価します。ただし、CSP モードを有効にする方法はまだ公開していません。`data-{event}-run` など属性値を JavaScript として実行する属性は、CSP モードでもまだ `new Function` を使います。
 
 **`new Function` を使わずに式を評価する方式です。** 式を自前で構文解析し、構文木をたどって評価します。CSP に `'unsafe-eval'` を書かずに動かすための方式です。
 
 **評価の結果は従来の方式と同じです。** 識別子の解決（[バインドに無い識別子の扱い](#バインドに無い識別子の扱い)）、[暗黙のオプショナルチェーン](#暗黙のオプショナルチェーン)、[正規表現リテラル](#正規表現リテラル)、[評価メカニズム](#評価メカニズム)の禁止識別子と計算プロパティ名の検査は、それぞれの節のとおりです。演算子の意味（型の変換・比較・短絡評価）と、リテラル・スプレッド・分割代入の評価は JavaScript と同じです。式は strict モードの規則で読みます（`010` や `'\1'` のような 8 進の書き方は書けません）。
+
+**方式によらない部分は、両方の方式で同じ処理を通ります。** 評価関数を作る部分だけを方式ごとに分けています。その前後の次の処理は共通です。
+
+- 危険なパターンと危険な値の検査
+- `haori` の注入
+- バインド値の Proxy によるラップと、評価中の prototype 系アクセスの遮断
+- 未解決参照の扱いと診断
+
+そのため、ログと診断も従来の方式と同じです。評価器が受け付けない式は、従来の方式でコンパイルに失敗した式と同じく `error` ログを出し、値は `null` になります。
 
 **書ける構文は次のとおりです。** 従来の方式で書ける構文と同じです（文を本体にする関数だけは書けません。[CSP モードと従来の方式の違い](#csp-モードと従来の方式の違い)を参照）。
 
@@ -835,19 +850,20 @@ evaluate(expression: string, bindedValues: Record<string, unknown>): unknown {
 
 #### バインドキーと識別子（`name` の命名）
 
-式は `new Function(...バインドキー, 本体)` として組み立てるため、**バインドキーは関数の引数名になります**。引数名にできないキーは式のスコープへ載せません。
+式は `new Function(...バインドキー, 本体)` として組み立てるため、**バインドキーは関数の引数名になります**（引数にするのは式が参照するキーだけです。「評価メカニズム」を参照）。引数名にできないキーは式のスコープへ載せません。スコープに引数名にできないキーがあっても、ほかのキーを参照する式はそのまま評価できます。
 
 | キーの例 | 扱い |
 | --- | --- |
 | `plainKey`、`_ok`、`$x` | 引数として載せる（式から直接参照できる） |
-| `customer.email`、`a-b`、`1st`、`foo bar`、`class`（予約語） | 載せない（式から直接参照できない） |
+| `customer.email`、`a-b`、`1st`、`foo bar`、`class`・`public`（予約語。strict モードだけの予約語を含む） | 載せない（式から直接参照できない） |
 | `a,b`、`{a}`、`a=1`（引数リストの構造を壊す形） | 載せない |
 | `氏名` などの非 ASCII | 載せるが、式の検証で非 ASCII 識別子は使えないため実質参照できない |
 
 - 載せなかったキーを式が参照した場合は**未解決参照**として扱います（表示は空、`data-attr-*` は属性削除）。値は `haori.data['キー']` または `Core.getBindingData(element, {resolved: true})` から読めます。
 - 収集値・送信形式は変わりません。`name="customer.email"` はフラットなキー `customer.email` として収集され、クエリでも `customer.email=...` として送られます（サーバ側のネストパラメータ束縛に合わせた命名をそのまま使えます）。入れ子の構造で送りたい場合は `data-form-object` / `data-form-list` を使います。
 - 開発モードでは、載せなかったキーをキーごとに一度だけ警告します。
-- 判定は実際に `new Function` へ通して行うため、予約語も将来の識別子規則も取りこぼしません。結果はキー単位でキャッシュします。
+- 判定は実際に strict モードの `new Function` へ通して行うため、予約語も将来の識別子規則も取りこぼしません。結果はキー単位でキャッシュします。
+- [CSP モード](#csp-モードの式評価)では `new Function` を使えないため、strict モードの関数で引数名にできない予約語の一覧で判定します。一覧は、ECMAScript の予約語、strict モードだけの予約語、`eval` / `arguments` です。判定の結果は従来の方式と同じです。
 
 > **`data-attr-value` と再評価について**: `<input data-attr-value="{{ haori.today(-1) }}">` のような記述は「初期値」ではなく、バインドスコープの変化のたびに**再評価**されます。`haori.now` / `haori.today` は非冪等なため、日跨ぎや再描画でユーザーが編集した値が上書きされる場合があります。一度だけ設定したい場合は、初期スコープを `data-bind` でシードする（例 `data-bind` に算出済みの日付文字列を入れる）か、再描画で再適用されてよい用途に限定してください。
 
@@ -1771,7 +1787,7 @@ private findFragmentByKeyParts(fragment: ElementFragment, parts: string[]): Elem
 
 ### 7. Queue (queue.ts)
 
-**役割**: requestAnimationFrameベースの非同期キュー
+**役割**: 次のタスクで処理する非同期キュー
 
 ```typescript
 class Queue {
@@ -1799,46 +1815,44 @@ interface QueueItem {
 #### 処理アルゴリズム
 
 ```typescript
-private async processQueue(): Promise<void> {
+// 処理は次のタスクで始める（MessageChannel。無い環境では setTimeout(0)）
+private scheduleProcessing(): void {
   if (this.processing) return
+  channel.port2.postMessage(null)  // port1 の onmessage で processQueue() を呼ぶ
+}
+
+private async processQueue(): Promise<void> {
+  if (this.processing || this.queue.length === 0) return
   this.processing = true
-
-  await new Promise<void>(resolve => {
-    requestAnimationFrame(() => {
-      const startTime = performance.now()
-      const MAX_FRAME_TIME = 8  // 1フレームあたり最大8ms
-
-      while (this.queue.length > 0) {
-        if (performance.now() - startTime > MAX_FRAME_TIME) {
-          break  // 次のフレームへ
-        }
-
-        const item = this.queue.shift()!
-
-        try {
-          const result = item.task()
-          if (result instanceof Promise) {
-            result.then(item.resolve).catch(item.reject)
-          } else {
-            item.resolve(result)
-          }
-        } catch (error) {
-          item.reject(error)
-        }
+  try {
+    const start = performance.now()
+    while (this.queue.length > 0) {
+      const item = this.queue.shift()!
+      try {
+        item.resolve(await item.task())
+      } catch (error) {
+        item.reject(error)
       }
-
-      resolve()
-    })
-  })
-
-  this.processing = false
-
-  // まだキューが残っている場合は次のフレームで処理
-  if (this.queue.length > 0) {
-    this.processQueue()
+      if (performance.now() - start > MAX_BUDGET) {
+        break  // 8ms を超えたら区切り、入力と描画に譲る
+      }
+    }
+  } finally {
+    this.processing = false
+    // まだキューが残っている場合は次のタスクで続ける
+    if (this.queue.length > 0) {
+      this.scheduleProcessing()
+    }
   }
 }
 ```
+
+**処理は次のフレームを待たず、次のタスクで始めます。** 1 回の更新の中でも、キューは何度も空になってから再開します（行の差し替えの後に行の中の描画を積む、など）。再開のたびに次のフレーム（`requestAnimationFrame`）を待つと、その待ち時間が積み重なり、300 行の一覧を開くだけで処理時間の倍以上かかっていました。タスクの合間にはブラウザが入力の処理と描画を行うため、8ms で区切って譲る効果は変わりません。
+
+- 次のタスクへの受け渡しには `MessageChannel` を使います。`setTimeout(0)` は入れ子が深くなると 4ms 以上に引き延ばされ、背面のタブではさらに間引かれるためです。`MessageChannel` の無い環境では `setTimeout(0)` を使います。
+- `MessageChannel` は最初に処理を積んだときに 1 つだけ作り、使い回します。読み込んだだけでは作りません（受け口を開いた `MessageChannel` は、Node などでプロセスの終了を妨げるためです）。
+- **背面のタブでも処理は進みます。** 背面のタブでは次のフレームが来ないため、フレームを待つ方式では表示に戻るまで描画が止まっていました。背面にいる間に届いた応答も、その時点で DOM へ反映されます。
+- 描画の完了を待つ `Haori.waitForRenders()` は、従来どおりキューが空のまま 1 フレームを跨ぐまで待ちます。
 
 #### DOM 書き込みの判定時点と優先実行の関係
 
@@ -1982,7 +1996,7 @@ class Store {
 | 保存 | `Core.setBindingData()` | 内部バインドデータの確定直後（同期） |
 | 破棄 | `Procedure.run()` | `data-{event}-history` の直前 |
 
-保存を `Queue`（`requestAnimationFrame`）へ遅延させず同期で行うのは、`data-{event}-redirect` による遷移や背面タブで次フレームが来ず、遷移直前の保存を取りこぼすためです。書き込みの間引きは「直前の書き出し内容と変わらなければ書かない」だけで行い、まずキーごとの参照同一性で比較して直列化そのものを省きます（`_fetch` / `_poll` などの高頻度更新で直列化が繰り返されないようにするためです）。
+保存を `Queue` へ遅延させず同期で行うのは、`data-{event}-redirect` による遷移が先に始まり、遷移直前の保存を取りこぼすためです。書き込みの間引きは「直前の書き出し内容と変わらなければ書かない」だけで行い、まずキーごとの参照同一性で比較して直列化そのものを省きます（`_fetch` / `_poll` などの高頻度更新で直列化が繰り返されないようにするためです）。
 
 なお `localStorage` / `sessionStorage` は式の[禁止識別子](#禁止識別子リスト)であり、式から直接読み書きすることはできません。ストレージへのアクセスは `data-store` 系の属性に限られます。
 
@@ -3048,7 +3062,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 **保存（バインディングデータ → ストレージ）**:
 
 - 対象キーの値が変わったときに自動で書き出します（明示的な保存指定は不要です）。フォームの双方向コミット・`data-{event}-bind`・`data-fetch` の応答反映はいずれも同じ導線を通るため、**フェッチ応答の一部の退避**も宣言だけで行えます。
-- 書き出しはバインディングデータの確定と**同期**で行います。`requestAnimationFrame` を待たないため、`data-{event}-redirect` による遷移の直前や背面タブでも取りこぼしません。
+- 書き出しはバインディングデータの確定と**同期**で行います。描画のキューを待たないため、`data-{event}-redirect` による遷移の直前でも取りこぼしません。
 - 直前に書き出した内容と同じ場合は書き込みません。
 - 宣言したキーがその要素のバインディングデータに**存在しない**場合、レコードは変更しません。削除は `data-{event}-store-clear` だけが行います。
 - `_fetch` / `_poll` などの予約キー（先頭が `_`）は常に対象外です。
@@ -3790,7 +3804,7 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 
 表示制御の `data-if` とは別物です。`data-if` は要素の表示を切り替え、`data-{event}-if` は手続きを実行するかどうかを決めます。
 
-- 条件は手続きの実行時に**同期評価**します。属性値の再描画（`requestAnimationFrame`）を待たないため、直前に変更した入力を含めて判定できます。
+- 条件は手続きの実行時に**同期評価**します。属性値の再描画（描画のキュー）を待たないため、直前に変更した入力を含めて判定できます。
 - 評価は `data-{event}-validate` の**後**、`data-{event}-run` の**前**に行います。必須欄が空のようなネイティブ検証で表現できるエラーは先にバブル表示し、それ以外の条件でここで止めます。
 - 偽のときは停止するだけです（メッセージ表示は `data-if` / `data-message` と併用します）。開発モード（読み込み時の `<script data-dev>`）でのみ中断の情報ログを出します。宣言どおりの停止なので、警告にはしません。
 - 参照が解決できない場合は「条件を満たしていない」と扱い実行しません（ブロック目的の宣言なので安全側に倒します）。この場合は警告ログを出します。
@@ -4687,7 +4701,7 @@ HTTP エラー応答の本文に書かれたサーバのメッセージを、ト
 
 #### フィールド間の条件
 
-`data-attr-required` / `data-attr-disabled` と `data-if` はフィールド間の条件を**表示**できますが、押下の**ブロック**には使えません。属性値の反映はキュー（`requestAnimationFrame`）で行われるため、「最後の欄を直してそのまま次へを押す」操作ではクリック時点の属性が 1 フレーム古く、条件を満たしていない状態で手続きが走ります（逆に、直した直後は `disabled` が残っていてクリックが無視されます）。
+`data-attr-required` / `data-attr-disabled` と `data-if` はフィールド間の条件を**表示**できますが、押下の**ブロック**には使えません。属性値の反映はキューで非同期に行われるため、「最後の欄を直してそのまま次へを押す」操作ではクリック時点の属性がまだ古いことがあり、条件を満たしていない状態で手続きが走ります（逆に、直した直後は `disabled` が残っていてクリックが無視されます）。
 
 **`disabled` を押下のブロックに使わないでください。** HTML 仕様上、無効化されたフォーム部品はクリックイベントを発火しないため、「直したのに押せない」方向は実行時の判定では救えません。ブロックは `data-validity` または `data-{event}-if` で行い、`data-attr-disabled` は視覚的な合図としてのみ使うか `data-attr-class` に置き換えます。
 
@@ -5521,7 +5535,7 @@ document.addEventListener('haori:ready', (event) => {
 
 **detail**:
 ```typescript
-{ version: string }  // ライブラリのバージョン（例: '0.62.2'）
+{ version: string }  // ライブラリのバージョン（例: '0.62.3'）
 ```
 
 > **補足**: `data-each` の描画完了を検知したい場合は、専用の完了マーカー
@@ -5934,7 +5948,7 @@ Haori.enhancers.register('choices', {init, refresh, destroy})
 
 ```javascript
 Haori.Core.dumpScope(element)
-Haori.version // '0.62.2'
+Haori.version // '0.62.3'
 ```
 
 `Haori.Haori` と `Haori.default` はグローバル自身への自己参照です
@@ -6159,27 +6173,26 @@ const cacheKey = `${expression}:${bindKeys.sort().join(',')}`
 
 このアルゴリズムにより、最小限のDOM操作で効率的に更新できます。
 
-### フレーム単位の処理制限
+### 1 回あたりの処理時間の制限
 
-`Queue` は1フレームあたり最大8msの処理時間制限を設けています:
+`Queue` は 1 回の処理を最大 8ms で区切り、残りは次のタスクで続けます（「[7. Queue](#7-queue-queuets)」を参照）:
 
 ```typescript
-const startTime = performance.now()
-const MAX_BUDGET = 8  // 1フレームあたりの最大処理時間(ms)
+const start = performance.now()
+const MAX_BUDGET = 8  // 1 回あたりの最大処理時間(ms)
 
 while (queue.length > 0) {
-  if (performance.now() - startTime > MAX_BUDGET) {
-    break  // 次のフレームへ
-  }
-
   // タスク実行...
+
+  if (performance.now() - start > MAX_BUDGET) {
+    break  // 次のタスクへ
+  }
 }
 ```
 
 これにより:
-- 60fpsを維持 (1フレーム = 16.67ms、うち8msをHaori.jsに割り当て)
-- ブラウザの描画をブロックしない
-- ユーザー操作のレスポンス性を維持
+- 区切りの合間にブラウザが描画と入力の処理を行える
+- 長い更新でもユーザー操作のレスポンス性を維持
 
 ---
 
@@ -6324,9 +6337,9 @@ DOMツリーを `Fragment` ツリーとして管理し、DOM操作を最小化:
 
 ### 2. 非同期キュー
 
-`requestAnimationFrame` で描画タイミングに合わせて実行:
+次のタスクで実行し、フレームを待たない:
 
-- フレームあたり8ms制限でUI応答性を維持
+- 1 回あたり 8ms で区切り、UI 応答性を維持
 - タスクの優先度制御 (`prepend` オプション)
 - 複数の変更をバッチ処理
 
