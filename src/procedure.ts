@@ -1233,6 +1233,37 @@ export default class Procedure {
   }
 
   /**
+   * 取得を伴わない要素に書いた認証ガードの宣言を警告します（開発モード）。
+   *
+   * `data-{event}-forbidden-redirect` などは、その要素の取得の応答でだけ読みます
+   * （仕様「取得ごとの切り替え」）。`data-{event}-fetch` が無い要素に
+   * 書いても効かないため、書き間違いとして知らせます。
+   *
+   * @param fragment 宣言を書いた要素
+   * @param event イベント名
+   * @returns 戻り値はありません。
+   */
+  private static warnAuthRedirectWithoutFetch(
+    fragment: ElementFragment,
+    event: string,
+  ): void {
+    if (fragment.hasAttribute(Procedure.attrName(event, 'fetch'))) {
+      return;
+    }
+    for (const suffix of ['unauthorized-redirect', 'forbidden-redirect']) {
+      const name = Procedure.attrName(event, suffix);
+      if (fragment.hasAttribute(name)) {
+        const fetchName = Procedure.attrName(event, 'fetch');
+        Log.warn(
+          'Haori',
+          `${name} has no effect without ${fetchName}.`,
+          fragment.getTarget(),
+        );
+      }
+    }
+  }
+
+  /**
    * セレクタを値に取る属性（`data-{event}-click` / `-close` / `-error-click` など）
    * の対象を解決します。
    *
@@ -1991,6 +2022,9 @@ export default class Procedure {
           // 配下の全入力が意図せず収集されてしまう。
           options.selfValueFragment = fragment;
         }
+      }
+      if (Dev.isEnabled()) {
+        Procedure.warnAuthRedirectWithoutFetch(fragment, event);
       }
       const beforeRunAttrName = `${Env.prefix}${event}-before-run`;
       if (
@@ -4109,7 +4143,13 @@ ${body}
     if (!response.ok) {
       // 認証エラー（401/403）はグローバル属性に従いログイン等へ遷移する。
       // 遷移する場合は以後の処理（エラー表示等）を行わず停止する。
-      if (checkAuthRedirect(response.status)) {
+      // 取得の要素の宣言を先に読む（仕様「取得ごとの切り替え」）。
+      if (
+        checkAuthRedirect(response.status, {
+          element: this.options.targetFragment!.getTarget(),
+          attrPrefix: Procedure.attrName(this.eventType, '', true),
+        })
+      ) {
         return false;
       }
       if (this.options.targetFragment && url) {

@@ -20,6 +20,10 @@
  * 付与値は現在ページの `pathname + search + hash` で、`encodeURIComponent` により
  * パーセントエンコードされます。遷移先 URL に同名クエリが既にある場合は、宣言された
  * 遷移先 URL 側の値を優先し、自動付与は行いません。
+ *
+ * 取得の要素にも同じ宣言（`data-fetch-forbidden-redirect` など）を書けます。書いた
+ * 取得では、`<body>`／`<html>` より取得の要素の宣言を使います（仕様「取得ごとの
+ * 切り替え」）。
  */
 
 import Env from './env';
@@ -33,6 +37,17 @@ const REDIRECT_ATTR_SUFFIX: Readonly<Record<number, string>> = {
   401: 'unauthorized-redirect',
   403: 'forbidden-redirect',
 };
+
+/**
+ * 取得の要素に書いた遷移の宣言の場所です。
+ */
+export interface AuthRedirectDeclaration {
+  /** 取得の要素 */
+  element: HTMLElement;
+
+  /** 属性名の接頭部（`data-fetch-` / `data-click-` / `data-import-` など） */
+  attrPrefix: string;
+}
 
 /**
  * `{{...}}` を含むテンプレート文字列を、指定スコープで評価して文字列化します。
@@ -125,23 +140,68 @@ function applyReturnParam(
 }
 
 /**
- * fetch 応答ステータスが認証エラー（401/403）の場合に、`<body>`／`<html>` に
- * 宣言された遷移先属性へリダイレクトします。`<body>` を優先し、無ければ `<html>` を
- * 参照します。
+ * 解決した遷移先へ遷移します。
  *
  * 戻り先属性（`<遷移属性>-return-param`）が宣言されている場合は、遷移直前に現在の
- * 遷移元 URL を復帰用クエリとして付与します。
+ * 遷移元 URL を復帰用クエリとして付与します。同一 URL（現在ページ自身）への遷移は
+ * 無限リロードを避けるため行いません。判定は戻り先クエリ付与後の最終 URL に対して
+ * 行います。
  *
- * 同一 URL（現在ページ自身）への遷移は無限リロードを避けるため行いません。判定は
- * 戻り先クエリ付与後の最終 URL に対して行います。
+ * @param element 遷移先を宣言した要素
+ * @param attr 遷移属性名
+ * @param url 解決済みの遷移先 URL
+ * @returns 遷移した場合 true
+ */
+function navigate(element: HTMLElement, attr: string, url: string): boolean {
+  const finalUrl = applyReturnParam(element, attr, url);
+  // `javascript:` などへの遷移はコードの実行になるため行わない（仕様
+  // 「認証ガード（`data-unauthorized-redirect` / `data-forbidden-redirect`）」）。
+  if (!Url.isNavigableUrl(finalUrl)) {
+    Log.error(
+      'Haori',
+      '遷移先が http: / https: / 現在ページと同じスキームの URL ではないため' +
+        `遷移しません: ${finalUrl}`,
+    );
+    return false;
+  }
+  // ログインページ自身の通信が再び認証エラーになった場合などの無限ループを防ぐ。
+  try {
+    if (new URL(finalUrl, window.location.href).href === window.location.href) {
+      return false;
+    }
+  } catch {
+    // 解析できない URL は上の判定で除いている。
+  }
+  window.location.href = finalUrl;
+  return true;
+}
+
+/**
+ * fetch 応答ステータスが認証エラー（401/403）の場合に、宣言された遷移先へ
+ * リダイレクトします。
+ *
+ * 取得の要素に宣言（`<接頭部>unauthorized-redirect` / `<接頭部>forbidden-redirect`）が
+ * あれば、それだけに従います。値が空なら遷移しません。取得の要素に宣言が無ければ、
+ * `<body>` を優先し、無ければ `<html>` の宣言に従います（仕様「取得ごとの切り替え」）。
  *
  * @param status HTTP ステータスコード
+ * @param declaration 取得の要素と属性名の接頭部。取得の要素が無い場合は null
  * @returns リダイレクトを実行した場合 true（呼び出し側は以後の処理を停止できる）
  */
-export function checkAuthRedirect(status: number): boolean {
+export function checkAuthRedirect(
+  status: number,
+  declaration: AuthRedirectDeclaration | null = null,
+): boolean {
   const suffix = REDIRECT_ATTR_SUFFIX[status];
   if (suffix === undefined || typeof document === 'undefined') {
     return false;
+  }
+  if (declaration !== null) {
+    const attr = `${declaration.attrPrefix}${suffix}`;
+    if (declaration.element.hasAttribute(attr)) {
+      const url = resolveRedirectUrl(declaration.element, attr);
+      return url !== null && navigate(declaration.element, attr, url);
+    }
   }
   const attr = `${Env.prefix}${suffix}`;
   const candidates: HTMLElement[] = [];
@@ -153,32 +213,9 @@ export function checkAuthRedirect(status: number): boolean {
   }
   for (const element of candidates) {
     const url = resolveRedirectUrl(element, attr);
-    if (url === null) {
-      continue;
+    if (url !== null) {
+      return navigate(element, attr, url);
     }
-    const finalUrl = applyReturnParam(element, attr, url);
-    // `javascript:` などへの遷移はコードの実行になるため行わない（仕様
-    // 「認証ガード（`data-unauthorized-redirect` / `data-forbidden-redirect`）」）。
-    if (!Url.isNavigableUrl(finalUrl)) {
-      Log.error(
-        'Haori',
-        '遷移先が http: / https: / 現在ページと同じスキームの URL ではないため' +
-          `遷移しません: ${finalUrl}`,
-      );
-      return false;
-    }
-    // ログインページ自身の通信が再び認証エラーになった場合などの無限ループを防ぐ。
-    try {
-      if (
-        new URL(finalUrl, window.location.href).href === window.location.href
-      ) {
-        return false;
-      }
-    } catch {
-      // 解析できない URL は上の判定で除いている。
-    }
-    window.location.href = finalUrl;
-    return true;
   }
   return false;
 }

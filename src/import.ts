@@ -6,6 +6,7 @@
  */
 import Log from './log';
 import {checkAuthRedirect} from './auth_guard';
+import type {AuthRedirectDeclaration} from './auth_guard';
 
 /**
  * インポート機能を提供するクラスです。
@@ -21,9 +22,14 @@ export class Import {
    *
    * @param url 取得先の URL
    * @param init fetch のオプション（任意）
+   * @param declaration 認証ガードの宣言を読む取得の要素（任意）
    * @returns body 内の HTML 文字列
    */
-  public static async load(url: string, init?: RequestInit): Promise<string> {
+  public static async load(
+    url: string,
+    init?: RequestInit,
+    declaration: AuthRedirectDeclaration | null = null,
+  ): Promise<string> {
     let response: Response;
     try {
       response = await fetch(url, init);
@@ -34,7 +40,7 @@ export class Import {
 
     if (!response.ok) {
       // 認証エラー（401/403）はグローバル属性に従いログイン等へ遷移する。
-      checkAuthRedirect(response.status);
+      checkAuthRedirect(response.status, declaration);
       // ネットワーク/HTTP エラーは上位で扱いやすいように例外化
       const status = `${response.status} ${response.statusText}`;
       Log.error('[Haori]', 'Import HTTP error:', url, status);

@@ -626,7 +626,10 @@ export default class Core {
     target.setAttribute(`${Env.prefix}importing`, '');
     HaoriEvent.importStart(target, resolvedUrl);
 
-    return Import.load(resolvedUrl)
+    return Import.load(resolvedUrl, undefined, {
+      element: target,
+      attrPrefix: `${Env.prefix}import-`,
+    })
       .then(html => {
         const bytes = new TextEncoder().encode(html).length;
         return Queue.enqueue(() => {

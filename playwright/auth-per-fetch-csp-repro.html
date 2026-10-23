@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>取得ごとの認証ガード（CSP モード）</title>
+  <script src="/dist/haori.iife.js" data-csp></script>
+</head>
+<!-- 開いた時点の確認の取得だけが 403 で遷移し、操作の 403 は遷移しない -->
+<body data-forbidden-redirect="/playwright/auth-denied.html">
+  <div data-bind='{"deniedUrl": "/playwright/auth-denied.html"}'>
+    <div id="check" hidden data-fetch="/api/access-check" data-fetch-arg="access"
+      data-fetch-forbidden-redirect="{{deniedUrl}}"></div>
+  </div>
+  <button id="op" type="button" data-click-fetch="/api/op" data-click-fetch-method="POST"
+    data-click-forbidden-redirect="" data-click-error-no-message>保存</button>
+</body>
+</html>

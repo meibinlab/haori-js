@@ -2904,6 +2904,37 @@ Haori の fetch 応答が認証エラーのとき、指定 URL へ遷移する�
 - 遷移できるスキームは [`data-{event}-redirect`](#data-event-redirect) と同じです。`http:`・`https:`・現在ページと同じスキームのときだけ遷移し、それ以外（`javascript:` など）と解析できない値では `Log.error('Haori', ...)` で報告して遷移しません。遷移しなかった場合は、遷移しなかった応答として扱います（以後の処理を止めません）。
 - アクションは遷移（redirect）のみで、`data-unauthorized-fetch` のような他の手続きはサポートしません（これらはイベントファミリーではなく専用属性です）。
 
+##### 取得ごとの切り替え
+
+**取得の要素にも同じ宣言を書けます。** 書いた取得の 401 / 403 では、`<body>`／`<html>` の宣言ではなく、取得の要素の宣言に従います。画面を開いた時点の確認の取得だけを遷移させ、開いた後の操作の失敗は画面内に出す、といった使い分けを宣言で書けます。
+
+| 取得 | 属性 |
+| ---- | ---- |
+| `data-fetch` | `data-fetch-unauthorized-redirect` / `data-fetch-forbidden-redirect` |
+| イベントの取得（`data-{event}-fetch`。`data-intersect-*`・`data-on-*` も同じ） | `data-{event}-unauthorized-redirect` / `data-{event}-forbidden-redirect` |
+| `data-import` | `data-import-unauthorized-redirect` / `data-import-forbidden-redirect` |
+
+| 取得の要素の宣言 | その取得の 401 / 403 |
+| ---------------- | -------------------- |
+| 無い | 従来どおり `<body>`／`<html>` の宣言に従う |
+| URL がある | その URL へ遷移する（`<body>` に宣言が無くても遷移する） |
+| 空（`""`、または `{{...}}` が空になる） | 遷移せず、[失敗時のアクション](#失敗時のアクション)と応答本文の表示へ進む |
+
+```html
+<body>
+  <!-- 画面を開いた時点の確認: 403 ならアクセス拒否の画面へ移る -->
+  <div hidden data-fetch="/api/access-check" data-fetch-forbidden-redirect="/forbidden.html"></div>
+  <!-- 操作: 403 でも遷移せず、画面内にエラーを出す -->
+  <button data-click-fetch="/api/save" data-click-fetch-method="POST">保存</button>
+</body>
+```
+
+- 読むのは取得の要素だけです（祖先の要素の宣言は読みません）。
+- 値の `{{...}}` は、取得の要素のスコープで評価します。
+- 戻り先クエリ（[`*-return-param`](#戻り先クエリの自動付与-return-param)）も取得の要素に書きます（`data-fetch-forbidden-redirect-return-param` など）。
+- 遷移できるスキームと、現在ページ自身へ遷移しない点は、`<body>` の宣言と同じです。
+- イベントの宣言（`data-click-forbidden-redirect` など）は、その要素の取得（`data-click-fetch`）の応答でだけ読みます。取得の無い要素に書いた場合は、開発モードで `warn` ログを出します。
+
 ##### 戻り先クエリの自動付与（`*-return-param`）
 
 ログイン後に元のページへ復帰させるため、遷移直前に「現在の遷移元 URL」を遷移先へクエリとして自動付与できます。ステータス別のオプトイン属性で、遷移先 URL を宣言したのと同じ要素（`<body>`／`<html>`、`<body>` 優先）から読み取ります。
