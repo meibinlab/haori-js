@@ -566,6 +566,12 @@ export default class Core {
     return procedure
       .runWithResult()
       .then(() => undefined)
+      .catch(() => {
+        // 通信の例外は、手続きが `_fetch` の注入と失敗時のアクションを済ませてから
+        // 投げ直している。呼び出し側（走査・再評価）へ伝えると子孫の構築が止まる
+        // ため、HTTP の失敗と同じく完了として扱う（仕様「`data-fetch`」の「通信の
+        // 例外で終わった場合も、HTTP の失敗と同じく子孫を構築します」）。
+      })
       .finally(() => {
         state.running = false;
         if (state.rerunRequested) {

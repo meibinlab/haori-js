@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>body の data-fetch の通信の失敗</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<!-- 確認の取得が通信の例外で終わっても、子孫の式を評価する -->
+<body data-bind='{"ok": null}' data-fetch="/api/check.json" data-fetch-arg="ok"
+  data-fetch-error-no-message data-fetch-state="#status">
+  <main><span id="v">{{1 + 1}}</span></main>
+  <p id="status">{{_fetch.error}}</p>
+</body>
+</html>
