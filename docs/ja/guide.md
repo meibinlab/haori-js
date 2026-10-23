@@ -307,24 +307,31 @@ Haori.handlers.register('editRule', function (event, index) {
 
 `data-attr-*` は対応する属性を更新します。加えて、入力欄の状態と DOM の食い違いを防ぐため、`value`（テキスト系入力）・`checked`（radio / checkbox）・`selected`（option）は DOM property（`input.value` / `element.checked` / `option.selected`）も同期します。同期するのは式（`{{...}}`）を書いた宣言のときだけで、マークアップに書いた静的な `value` / `checked` / `selected` は既定値として扱い、供給された値を打ち消しません。`checked="{{式}}"`・`data-attr-checked`・`data-attr-selected` でチェック・選択状態を宣言バインドできます。ただし**フォーカス中（編集中）の入力**と、**`change` / `input` で確定した編集を抱えている入力**には再適用しません（別要素起因の再評価で利用者の入力が失われるのを防ぐため）。確定した編集の印は明示的な値の供給（フェッチ応答の反映、`data-{event}-reset`、`data-{event}-copy`、`Core.setBindingData()`）で解除されます。印は**打鍵ごと**（`input`）に付くため、`change` が発火する前に打った文字も保護されます（`data-input-*` の宣言は要りません）。
 
-### グローバル関数を使った値の整形
+### 自前の関数を使った値の整形
 
-`{{ ... }}` 内はJavaScriptの式として評価されるため、グローバルスコープに定義した関数やオブジェクトを式の中で呼び出すことができます。
+式から呼べる関数は、バインドデータに入っている関数と、`Math` や `Intl` のような標準組み込みと、組み込みヘルパー（`haori.date` など。次の節）です。**`window` に定義した関数やオブジェクトは、式から参照できません。** バインドに無い名前はグローバルへ解決せず、未解決参照（表示は空）になります。
 
-たとえば、ISO 8601形式の日時文字列を読みやすい形式に整形したい場合は、次のようなユーティリティオブジェクトをあらかじめ定義しておくと便利です。
+日付や数値の整形なら、まず次の節の組み込みヘルパーで足りるかを確かめてください。自前の関数を使いたい場合は、JavaScript からバインドデータへ入れます。`data-bind` の JSON には関数を書けないため、`Haori.Core.setBindingData()` で渡します。
 
 ```js
-window.Dates = {
+// dates.js
+const Dates = {
   format(iso, locale = 'ja-JP', options) {
     return new Intl.DateTimeFormat(locale, options).format(new Date(iso));
-  }
+  },
 };
+
+Haori.Core.setBindingData(document.getElementById('profile'), {
+  createdAt: '2024-01-15T10:30:00Z',
+  Dates,
+});
 ```
 
 ```html
-<script src="dates.js"></script>
+<script src="haori.iife.js"></script>
+<script src="dates.js" defer></script>
 
-<div data-bind='{"createdAt":"2024-01-15T10:30:00Z"}'>
+<div id="profile">
   <p>作成日時: {{Dates.format(createdAt, 'ja-JP', {dateStyle:'long',timeStyle:'short'})}}</p>
 </div>
 ```
@@ -334,7 +341,9 @@ window.Dates = {
 作成日時: 2024年1月15日 19:30
 ```
 
-同様に、数値のフォーマットや文字列の変換など、用途に合わせたユーティリティを定義して式内で利用できます。
+- `setBindingData()` は、その要素のバインドデータを渡した値で置き換えます。関数と一緒に、表示に使う値も渡してください。
+- バインドデータは配下の要素へ引き継がれます（[データの継承](#データの継承)）。ページの上の方の要素へ入れておくと、配下のどの式からも呼べます。
+- [CSP モード](#csp-を設定したページで使うdata-csp)でも同じように動きます。
 
 ### 組み込みヘルパーで整形する（`haori.date` / `haori.number`）
 
