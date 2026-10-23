@@ -12,8 +12,10 @@ import baseConfig from './vitest.config';
  *
  * - 二つの方式の結果を比べるテスト。従来の方式を同じプロセスで動かすため、
  *   `new Function` を拒否する環境では比べられません（既定の設定で流します）。
- * - `data-{event}-run` など、属性値を JavaScript として実行する属性のテスト。
- *   CSP モードでの扱いを決めるまで除外します。
+ * - `*-run` 系の本文を JavaScript（グローバルの参照・`this`・文）で書いたテスト。
+ *   CSP モードではこの本文を評価しない仕様のため（仕様「CSP モードでの `*-run`」）、
+ *   既定の設定で流します。CSP モードでの `*-run` は
+ *   `tests/csp-run-attribute.test.ts` で確かめます。
  */
 export default mergeConfig(
   baseConfig,
@@ -30,7 +32,7 @@ export default mergeConfig(
         'tests/expression-interpreter-escape.test.ts',
         'tests/expression-interpreter-fuzz.test.ts',
         'tests/expression-interpreter-parity.test.ts',
-        // 属性値を JavaScript として実行する属性のテスト
+        // `*-run` 系の本文を JavaScript で書いたテスト
         'tests/checked_selected_focus_guard.test.ts',
         'tests/click-lock-fetch.test.ts',
         'tests/custom-event-target.test.ts',

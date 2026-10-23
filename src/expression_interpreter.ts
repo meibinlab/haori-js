@@ -148,7 +148,8 @@ function isOwnEnumerable(target: object, key: string): boolean {
  */
 function toGuardedKey(value: unknown): PropertyKey {
   const key = typeof value === 'symbol' ? value : String(value);
-  return typeof key === 'string' && FORBIDDEN_PROPERTY_NAMES.has(key)
+  // シンボルは一覧に無いため、そのまま返る。
+  return (FORBIDDEN_PROPERTY_NAMES as ReadonlySet<PropertyKey>).has(key)
     ? 'undefined'
     : key;
 }
@@ -969,6 +970,9 @@ export default class ExpressionInterpreter {
     const isAsync = node.async;
     return frame => {
       const invoke = (args: unknown[]): unknown => {
+        // 等価な書き換え: 引数の束縛は、どの欄も読まれる前に書き込む（引数が
+        // 足りない場合も undefined を書く）ため、初めの中身は読まれない。
+        // Stryker disable next-line ArrayDeclaration
         const inner: Frame = {slots: [], parent: frame, run: frame.run};
         for (let index = 0; index < parameterCount; index += 1) {
           binders[index](inner, args[index]);

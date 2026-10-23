@@ -156,6 +156,9 @@ export default class Expression {
       'null',
     ]);
 
+  /** `new Function` が CSP に拒否されたことを報告済みか */
+  private static evalBlockedReported = false;
+
   /** キーが関数の引数名として使えるかの判定キャッシュ */
   private static readonly usableBindingKeyCache = new Map<string, boolean>();
 
@@ -1825,6 +1828,9 @@ export default class Expression {
         );
         return this.prepareEvaluator(expression, bindedValues, []);
       }
+      if (error instanceof EvalError) {
+        this.reportEvalBlocked();
+      }
       Log.error('[Haori]', 'Failed to compile expression:', expression, error);
       this.compileFailedExpressions.add(expression);
       return {
@@ -1833,6 +1839,27 @@ export default class Expression {
         compileFailed: true,
       };
     }
+  }
+
+  /**
+   * `new Function` が CSP に拒否されたことを、対処とあわせて一度だけ報告します。
+   *
+   * 拒否されると式ごとに「コンパイル失敗」が出るだけで、原因が CSP だと分からない
+   * ためです（仕様「CSP モード」）。
+   *
+   * @return 戻り値はありません。
+   */
+  private static reportEvalBlocked(): void {
+    if (this.evalBlockedReported) {
+      return;
+    }
+    this.evalBlockedReported = true;
+    Log.error(
+      '[Haori]',
+      'Expressions cannot be compiled because the Content Security Policy' +
+        " does not allow 'unsafe-eval'. Enable the CSP mode with" +
+        ' <script src="haori.js" data-csp> or Haori.setCsp(true).',
+    );
   }
 
   /**

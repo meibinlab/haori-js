@@ -263,6 +263,7 @@ describe('CSP モードの式の評価器', () => {
       '1 /* c */ + 2',
       '1 // c',
       'typeof a',
+      'await a',
       'a in b',
       'new Date()',
       'this',
@@ -348,6 +349,19 @@ describe('CSP モードの式の評価器', () => {
     // 仕様「バインドに無い識別子の扱い」の「短絡評価や三項演算子で**参照されなかった**識別子は、未解決参照になりません」
     it('参照されなかった識別子は ReferenceError にならない', () => {
       expect(run('flag ? missing : 5', {flag: false})).toBe(5);
+    });
+
+    // 仕様「評価メカニズム」の「**再バインド可能な名前**（`location` / `history` / `document` / `navigator` / `localStorage` / `sessionStorage` / `IndexedDB`）」「式中ではバインド値が同名のグローバルを遮蔽します」
+    it.each([
+      'location',
+      'history',
+      'document',
+      'navigator',
+      'localStorage',
+      'sessionStorage',
+      'IndexedDB',
+    ])('再バインド可能な名前 %s はバインド値で解決する', name => {
+      expect(run(name, {[name]: 'bound'})).toBe('bound');
     });
 
     // 仕様「バインドに無い識別子の扱い」の「**式から参照できる標準組み込み**は遮蔽の対象外です。以下は従来どおり利用できます」

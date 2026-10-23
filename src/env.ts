@@ -38,6 +38,19 @@ function resolveRuntimeAttribute(runtime: string | null): HaoriRuntime | null {
 }
 
 /**
+ * 有効・無効を切り替える属性（`data-dev` / `data-csp`）の値が有効を表すかを返します。
+ *
+ * 値を書かない属性は有効です。`false` / `off` / `0` だけを無効とみなします。
+ *
+ * @param value 属性値
+ * @returns 有効なら true
+ */
+function isEnabledAttributeValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized !== 'false' && normalized !== 'off' && normalized !== '0';
+}
+
+/**
  * 実行環境を管理するクラスです。
  */
 export default class Env {
@@ -134,6 +147,11 @@ export default class Env {
         Env._strictBind = currentScript.hasAttribute(
           `${Env._prefix}strict-bind`,
         );
+
+        const csp = currentScript.getAttribute(`${Env._prefix}csp`);
+        if (csp !== null) {
+          Env._csp = isEnabledAttributeValue(csp);
+        }
       }
       if (
         currentScript instanceof HTMLScriptElement &&
@@ -142,10 +160,11 @@ export default class Env {
         // 値で明示的に切れるようにする。開発モードは下のローカルホスト判定で自動的に
         // 有効になるため、これが無いとローカルで動かす本番相当の計測ができない
         // （開発モードの診断は再描画のたびにスコープ全体を解決する）。
-        const value = (currentScript.getAttribute(`${Env._prefix}dev`) ?? '')
-          .trim()
-          .toLowerCase();
-        Dev.set(value !== 'false' && value !== 'off' && value !== '0');
+        Dev.set(
+          isEnabledAttributeValue(
+            currentScript.getAttribute(`${Env._prefix}dev`) ?? '',
+          ),
+        );
         return;
       }
 

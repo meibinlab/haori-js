@@ -2,6 +2,8 @@ import Log from './log';
 import Env from './env';
 import Enhance from './enhance';
 import type {Enhancer} from './enhance';
+import Handlers from './handlers';
+import type {Handler} from './handlers';
 import Queue from './queue';
 import {
   date,
@@ -49,6 +51,61 @@ export default class Haori {
   public static setRuntime(runtime: string): void {
     Env.setRuntime(runtime);
   }
+
+  /**
+   * CSP モードかどうかを取得します。
+   *
+   * @return CSP モードなら true。
+   */
+  public static get csp(): boolean {
+    return Env.csp;
+  }
+
+  /**
+   * CSP モードを設定します。最初の式の評価より前に呼んでください。
+   *
+   * CSP モードでは、式と `*-run` 系の宣言を `new Function` を使わずに評価します
+   * （仕様「CSP モード」）。`<script>` に `data-csp` を書いた場合と同じです。
+   *
+   * @param enabled 有効にする場合は true。
+   * @return 戻り値はありません。
+   */
+  public static setCsp(enabled: boolean): void {
+    Env.setCsp(enabled);
+  }
+
+  /**
+   * 登録した関数（`data-{event}-run-handler` などから呼ぶ関数）の登録窓口です。
+   *
+   * 例:
+   * ```js
+   * Haori.handlers.register('editRule', function (event, id) {
+   *   // this は宣言を書いた要素
+   * });
+   * ```
+   */
+  public static readonly handlers = {
+    /**
+     * 関数を登録します。
+     *
+     * @param name 宣言に書く名前
+     * @param handler 関数
+     * @return 戻り値はありません。
+     */
+    register(name: string, handler: Handler): void {
+      Handlers.register(name, handler);
+    },
+
+    /**
+     * 登録した関数かどうかを返します。
+     *
+     * @param name 名前
+     * @return 登録してあれば true
+     */
+    has(name: string): boolean {
+      return Handlers.has(name);
+    },
+  };
 
   /**
    * 外部ライブラリ連携（`data-enhance`）の登録窓口です。

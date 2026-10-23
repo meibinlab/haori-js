@@ -18,7 +18,7 @@ import * as api from './index';
 const globalApi = api.default as typeof api.default & Record<string, unknown>;
 
 // 名前空間側のエクスポート（Core / Env / version など）をクラスへ付け足す。
-// クラスに同名の静的メンバーがある場合（waitForRenders / enhancers）は付け足さない。
+// クラスに同名の静的メンバーがある場合（waitForRenders / enhancers / handlers）は付け足さない。
 // 名前空間側はクラスの静的メンバーを呼び出すだけの薄い包みであり、上書きすると
 // 自分自身を呼ぶ無限再帰になるためである。
 for (const [name, value] of Object.entries(

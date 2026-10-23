@@ -19,6 +19,7 @@ import './observer';
 export {Core, Enhance, Env, Fragment, Form, Haori, Log, Queue};
 export type {HaoriRuntime} from './env';
 export type {Enhancer} from './enhance';
+export type {Handler} from './handlers';
 
 /**
  * すべてのレンダリングタスク（追従投入分を含む）の完了を待ちます。
@@ -37,6 +38,14 @@ export const waitForRenders = (): Promise<void> => Haori.waitForRenders();
  * `import {enhancers} from 'haori'` で利用できます。
  */
 export const enhancers = Haori.enhancers;
+
+/**
+ * 登録した関数（`data-{event}-run-handler` など）の登録窓口です。
+ *
+ * iife グローバルからは `Haori.handlers.register(名前, 関数)`、ESM では
+ * `import {handlers} from 'haori'` で利用できます。
+ */
+export const handlers = Haori.handlers;
 
 // デフォルトエクスポート（Haoriをメインとして提供）
 export default Haori;
