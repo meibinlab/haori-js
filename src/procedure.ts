@@ -17,6 +17,7 @@ import {checkAuthRedirect} from './auth_guard';
 import Selector from './selector';
 import Store, {StoreKind} from './store';
 import Url from './url';
+import RunAttribute from './run_attribute';
 
 type ProcedureHaoriApi = Pick<
   typeof Haori,
@@ -1991,10 +1992,21 @@ export default class Procedure {
           options.selfValueFragment = fragment;
         }
       }
-      if (fragment.hasAttribute(`${Env.prefix}${event}-before-run`)) {
-        const body = fragment.getRawAttribute(
-          `${Env.prefix}${event}-before-run`,
-        ) as string;
+      const beforeRunAttrName = `${Env.prefix}${event}-before-run`;
+      if (
+        RunAttribute.declared(fragment, beforeRunAttrName) &&
+        RunAttribute.applies(fragment, beforeRunAttrName)
+      ) {
+        const callable = RunAttribute.compile(fragment, beforeRunAttrName, [
+          'fetchUrl',
+          'fetchOptions',
+        ]);
+        if (callable) {
+          options.beforeCallback = (fetchUrl, fetchOptions) =>
+            callable([fetchUrl, fetchOptions]) as BeforeCallbackResult;
+        }
+      } else if (fragment.hasAttribute(beforeRunAttrName)) {
+        const body = fragment.getRawAttribute(beforeRunAttrName) as string;
         try {
           options.beforeCallback = new Function(
             'fetchUrl',
@@ -2014,7 +2026,15 @@ ${body}
       // data-{event}-run: フェッチを伴わない任意 JS をクリック等で実行する。
       // before-run と異なり {{...}} を展開した値（getAttribute）を本体にする。
       const runAttrName = Procedure.attrName(event, 'run');
-      if (fragment.hasAttribute(runAttrName)) {
+      if (
+        RunAttribute.declared(fragment, runAttrName) &&
+        RunAttribute.applies(fragment, runAttrName)
+      ) {
+        const callable = RunAttribute.compile(fragment, runAttrName, ['event']);
+        if (callable) {
+          options.runScript = domEvent => callable([domEvent]);
+        }
+      } else if (fragment.hasAttribute(runAttrName)) {
         const body = String(fragment.getAttribute(runAttrName) ?? '');
         // まず本体を「単一式」として評価できるか試す。式化できる場合は
         // `return (body)` で戻り値を捕捉し、`return` を明示しない素の関数呼び出し
@@ -2325,10 +2345,20 @@ ${body}
       if (fragment.hasAttribute(Procedure.attrName(event, 'row-next'))) {
         options.rowMoveNext = true;
       }
-      if (fragment.hasAttribute(`${Env.prefix}${event}-after-run`)) {
-        const body = fragment.getRawAttribute(
-          `${Env.prefix}${event}-after-run`,
-        ) as string;
+      const afterRunAttrName = `${Env.prefix}${event}-after-run`;
+      if (
+        RunAttribute.declared(fragment, afterRunAttrName) &&
+        RunAttribute.applies(fragment, afterRunAttrName)
+      ) {
+        const callable = RunAttribute.compile(fragment, afterRunAttrName, [
+          'response',
+        ]);
+        if (callable) {
+          options.afterCallback = response =>
+            callable([response]) as AfterCallbackResult;
+        }
+      } else if (fragment.hasAttribute(afterRunAttrName)) {
+        const body = fragment.getRawAttribute(afterRunAttrName) as string;
         try {
           options.afterCallback = new Function(
             'response',

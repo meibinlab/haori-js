@@ -38,12 +38,48 @@ function resolveRuntimeAttribute(runtime: string | null): HaoriRuntime | null {
 }
 
 /**
+ * 有効・無効を切り替える属性（`data-dev` / `data-csp`）の値が有効を表すかを返します。
+ *
+ * 値を書かない属性は有効です。`false` / `off` / `0` だけを無効とみなします。
+ *
+ * @param value 属性値
+ * @returns 有効なら true
+ */
+function isEnabledAttributeValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized !== 'false' && normalized !== 'off' && normalized !== '0';
+}
+
+/**
  * 実行環境を管理するクラスです。
  */
 export default class Env {
   private static _prefix: string = 'data-';
   private static _runtime: HaoriRuntime = DEFAULT_RUNTIME;
   private static _strictBind: boolean = false;
+  private static _csp: boolean = false;
+
+  /**
+   * CSP モードが有効かどうかを取得します。
+   *
+   * 有効な場合、式は `new Function` を使わずに評価します（仕様「CSP モードの
+   * 式評価」）。
+   *
+   * @returns CSP モードなら true。
+   */
+  public static get csp(): boolean {
+    return Env._csp;
+  }
+
+  /**
+   * CSP モードを設定します。
+   *
+   * @param enabled 有効にする場合は true。
+   * @return 戻り値はありません。
+   */
+  public static setCsp(enabled: boolean): void {
+    Env._csp = enabled;
+  }
 
   /**
    * 厳格バインドモードが有効かどうかを取得します。
@@ -111,6 +147,11 @@ export default class Env {
         Env._strictBind = currentScript.hasAttribute(
           `${Env._prefix}strict-bind`,
         );
+
+        const csp = currentScript.getAttribute(`${Env._prefix}csp`);
+        if (csp !== null) {
+          Env._csp = isEnabledAttributeValue(csp);
+        }
       }
       if (
         currentScript instanceof HTMLScriptElement &&
@@ -119,10 +160,11 @@ export default class Env {
         // 値で明示的に切れるようにする。開発モードは下のローカルホスト判定で自動的に
         // 有効になるため、これが無いとローカルで動かす本番相当の計測ができない
         // （開発モードの診断は再描画のたびにスコープ全体を解決する）。
-        const value = (currentScript.getAttribute(`${Env._prefix}dev`) ?? '')
-          .trim()
-          .toLowerCase();
-        Dev.set(value !== 'false' && value !== 'off' && value !== '0');
+        Dev.set(
+          isEnabledAttributeValue(
+            currentScript.getAttribute(`${Env._prefix}dev`) ?? '',
+          ),
+        );
         return;
       }
 

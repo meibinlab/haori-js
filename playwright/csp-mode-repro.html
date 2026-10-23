@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>CSP モード</title>
+  <script src="/dist/haori.iife.js" data-csp></script>
+  <script src="/playwright/csp-mode-handlers.js"></script>
+</head>
+<body>
+  <!-- 'unsafe-eval' の無い CSP の下で、式・一覧・条件・属性・run 系・取得が動くこと -->
+  <div id="app"
+    data-bind='{"title":"一覧","items":[{"id":1,"name":"りんご","stock":3},{"id":2,"name":"みかん","stock":0}]}'>
+    <h1 id="title">{{title}}</h1>
+    <ul id="list" data-each="items" data-each-key="id" data-each-arg="item">
+      <li data-attr-class="{{item.stock > 0 ? 'in' : 'out'}}">
+        <span class="name">{{item.name}}</span>
+        <span class="stock" data-if="item.stock > 0">{{item.stock}}</span>
+        <button class="pick" type="button"
+          data-click-run-handler="pick"
+          data-click-run-args="[item.id, item.name]">選ぶ</button>
+      </li>
+    </ul>
+    <p id="picked"></p>
+    <button id="expression-run" type="button" data-click-run="record(title)">式の run</button>
+    <p id="recorded"></p>
+    <div id="loaded" data-fetch="/playwright/csp-mode-item.json">
+      <span id="loaded-name">{{name}}</span>
+    </div>
+  </div>
+</body>
+</html>

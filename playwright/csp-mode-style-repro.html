@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>CSP モードと style 属性</title>
+  <script src="/dist/haori.iife.js" data-csp></script>
+</head>
+<body>
+  <!-- style-src に 'unsafe-inline' が無いと、data-attr-style が書く style 属性は止まる。
+       data-if の非表示は style 属性ではなく CSSOM で書くため止まらない -->
+  <div data-bind='{"color":"red","shown":false}'>
+    <p id="styled" data-attr-style="color: {{color}}">style</p>
+    <p id="hidden" data-if="shown">hidden</p>
+  </div>
+</body>
+</html>

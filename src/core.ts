@@ -17,6 +17,7 @@ import Store from './store';
 import Url from './url';
 import {Import} from './import';
 import Queue from './queue';
+import RunAttribute from './run_attribute';
 import HaoriEvent from './event';
 
 interface ReactiveFetchState {
@@ -2761,7 +2762,17 @@ export default class Core {
    */
   private static runEachRenderedScript(target: HTMLElement): void {
     const attrName = `${Env.prefix}each-rendered-run`;
-    if (!target.hasAttribute(attrName)) {
+    const fragment = Fragment.get(target) as ElementFragment | null;
+    if (fragment === null || !RunAttribute.declared(fragment, attrName)) {
+      return;
+    }
+    if (RunAttribute.applies(fragment, attrName)) {
+      const callable = RunAttribute.compile(fragment, attrName, []);
+      try {
+        callable?.([]);
+      } catch (e) {
+        Log.error('[Haori]', `each-rendered-run execution error: ${e}`);
+      }
       return;
     }
     const body = String(target.getAttribute(attrName) ?? '');

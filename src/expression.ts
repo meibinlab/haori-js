@@ -11,6 +11,19 @@ import Builtins from './builtins';
 import Dev from './dev';
 import Env from './env';
 import Queue from './queue';
+import ExpressionInterpreter, {
+  CompiledExpression,
+  MissingIdentifierError,
+} from './expression_interpreter';
+import {
+  ALLOWED_GLOBAL_IDENTIFIERS,
+  DISALLOWED_KEYWORDS,
+  FORBIDDEN_NAMES,
+  FORBIDDEN_PROPERTY_NAMES,
+  REBINDABLE_FORBIDDEN_NAMES,
+  STRICT_FORBIDDEN_NAMES,
+  STRICT_RESERVED_WORDS,
+} from './expression_rules';
 
 /**
  * 式評価結果の詳細です。
@@ -38,8 +51,11 @@ interface ExpressionToken {
 
 interface ExpressionEvaluatorSetup {
   bindKeys: string[];
+  /** 従来の方式の評価関数（CSP モードとコンパイルの失敗では null） */
   evaluator: ((...args: unknown[]) => unknown) | null;
   compileFailed: boolean;
+  /** CSP モードで評価器が変換した式（従来の方式では無い） */
+  compiled?: CompiledExpression;
 }
 
 /**
@@ -123,6 +139,26 @@ export default class Expression {
   private static readonly IDENTIFIER_NAME_PATTERN =
     /^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*$/u;
 
+  /**
+   * strict モードの関数で引数名にできない予約語です（CSP モードのキーの判定に使う）。
+   *
+   * ECMAScript の予約語と、strict モードだけの予約語、`eval` / `arguments` です。
+   * `await` は非同期でない関数の引数名にできるため含めません。
+   */
+  private static readonly STRICT_PARAMETER_RESERVED_WORDS: ReadonlySet<string> =
+    new Set([
+      ...[...DISALLOWED_KEYWORDS].filter(keyword => keyword !== 'await'),
+      ...STRICT_RESERVED_WORDS,
+      ...STRICT_FORBIDDEN_NAMES,
+      'extends',
+      'true',
+      'false',
+      'null',
+    ]);
+
+  /** `new Function` が CSP に拒否されたことを報告済みか */
+  private static evalBlockedReported = false;
+
   /** キーが関数の引数名として使えるかの判定キャッシュ */
   private static readonly usableBindingKeyCache = new Map<string, boolean>();
 
@@ -148,42 +184,14 @@ export default class Expression {
   private static loggedForbiddenKeyResetScheduled = false;
 
   /** Haoriで禁止すべき識別子一覧（eval と arguments は strict モードで無効化） */
-  private static readonly FORBIDDEN_NAMES = [
-    // グローバルオブジェクト
-    'window',
-    'self',
-    'globalThis',
-    'frames',
-    'parent',
-    'top',
-    // 危険な関数/オブジェクト
-    'Function',
-    'setTimeout',
-    'setInterval',
-    'requestAnimationFrame',
-    'alert',
-    'confirm',
-    'prompt',
-    'fetch',
-    'XMLHttpRequest',
-    'Reflect',
-    // 脱出経路・プロトタイプ
-    'constructor',
-    '__proto__',
-    'prototype',
-    'Object',
-    // その他
-    'document',
-    'location',
-    'navigator',
-    'localStorage',
-    'sessionStorage',
-    'IndexedDB',
-    'history',
+  private static readonly FORBIDDEN_NAMES: readonly string[] = [
+    ...FORBIDDEN_NAMES,
   ];
 
   /** strict モードで禁止される識別子 */
-  private static readonly STRICT_FORBIDDEN_NAMES = ['eval', 'arguments'];
+  private static readonly STRICT_FORBIDDEN_NAMES: readonly string[] = [
+    ...STRICT_FORBIDDEN_NAMES,
+  ];
 
   /**
    * 明示バインド時のみ利用を許可する衝突名。
@@ -195,15 +203,8 @@ export default class Expression {
    * `window`/`self`/`globalThis`/`Object`/`Function`/`eval`/`constructor` などの
    * 実行系・プロトタイプ脱出名は再バインドを許可しません。
    */
-  private static readonly REBINDABLE_FORBIDDEN_NAMES = new Set([
-    'location',
-    'history',
-    'document',
-    'navigator',
-    'localStorage',
-    'sessionStorage',
-    'IndexedDB',
-  ]);
+  private static readonly REBINDABLE_FORBIDDEN_NAMES =
+    REBINDABLE_FORBIDDEN_NAMES;
 
   /** バインド識別子としては拒否する名前 */
   private static readonly FORBIDDEN_BINDING_NAMES = new Set([
@@ -320,11 +321,7 @@ export default class Expression {
   }
 
   /** プロパティアクセスで拒否する名前 */
-  private static readonly FORBIDDEN_PROPERTY_NAMES = new Set([
-    'constructor',
-    '__proto__',
-    'prototype',
-  ]);
+  private static readonly FORBIDDEN_PROPERTY_NAMES = FORBIDDEN_PROPERTY_NAMES;
 
   /** object literal のプロパティ定義で前置修飾子として扱う識別子 */
   private static readonly OBJECT_PROPERTY_MODIFIERS = new Set([
@@ -334,41 +331,7 @@ export default class Expression {
   ]);
 
   /** 式構文として許可しない予約語 */
-  private static readonly DISALLOWED_KEYWORDS = new Set([
-    'await',
-    'break',
-    'case',
-    'catch',
-    'class',
-    'const',
-    'continue',
-    'debugger',
-    'default',
-    'delete',
-    'do',
-    'else',
-    'export',
-    'finally',
-    'for',
-    'function',
-    'if',
-    'import',
-    'in',
-    'instanceof',
-    'let',
-    'new',
-    'return',
-    'switch',
-    'this',
-    'throw',
-    'try',
-    'typeof',
-    'var',
-    'void',
-    'while',
-    'with',
-    'yield',
-  ]);
+  private static readonly DISALLOWED_KEYWORDS = DISALLOWED_KEYWORDS;
 
   /**
    * 未知の識別子であっても宣言によって遮蔽してはならない名前。
@@ -387,15 +350,7 @@ export default class Expression {
     'NaN',
     'Infinity',
     // strict モードの予約語（`let` 宣言が構文エラーになる）
-    'enum',
-    'implements',
-    'interface',
-    'package',
-    'private',
-    'protected',
-    'public',
-    'static',
-    'super',
+    ...STRICT_RESERVED_WORDS,
   ]);
 
   /**
@@ -406,63 +361,8 @@ export default class Expression {
    * バインドに無い識別子の遮蔽対象からは、この一覧を除外します。ここに漏れがあると
    * その組み込みを使う式が未解決参照になるため、追加時は仕様書の一覧も更新します。
    */
-  private static readonly ALLOWED_GLOBAL_IDENTIFIERS = new Set([
-    // 名前空間オブジェクト
-    'Math',
-    'JSON',
-    'Intl',
-    'Atomics',
-    // 基本コンストラクタ
-    'Array',
-    'String',
-    'Number',
-    'Boolean',
-    'Date',
-    'RegExp',
-    'Symbol',
-    'BigInt',
-    'Map',
-    'Set',
-    'WeakMap',
-    'WeakSet',
-    'WeakRef',
-    'FinalizationRegistry',
-    'Promise',
-    'Proxy',
-    // エラー系
-    'Error',
-    'AggregateError',
-    'EvalError',
-    'RangeError',
-    'ReferenceError',
-    'SyntaxError',
-    'TypeError',
-    'URIError',
-    // バイナリ系
-    'ArrayBuffer',
-    'SharedArrayBuffer',
-    'DataView',
-    'Int8Array',
-    'Uint8Array',
-    'Uint8ClampedArray',
-    'Int16Array',
-    'Uint16Array',
-    'Int32Array',
-    'Uint32Array',
-    'Float32Array',
-    'Float64Array',
-    'BigInt64Array',
-    'BigUint64Array',
-    // 関数
-    'parseInt',
-    'parseFloat',
-    'isNaN',
-    'isFinite',
-    'encodeURI',
-    'encodeURIComponent',
-    'decodeURI',
-    'decodeURIComponent',
-  ]);
+  private static readonly ALLOWED_GLOBAL_IDENTIFIERS =
+    ALLOWED_GLOBAL_IDENTIFIERS;
 
   /**
    * 評価関数の `this` に渡す、標準組み込みの値の置き場。
@@ -651,6 +551,8 @@ export default class Expression {
    * 識別子として不正な文字を弾き、あわせて単一の識別子名かを検査して `a,b`
    * （複数引数になる）や `{a}` / `a=1`（引数パターンになる）を弾きます。正規表現
    * だけでは予約語を通してしまい、`new Function` だけでは構造を持つキーを通します。
+   * CSP モードでは `new Function` を使えないため、2 段目を予約語の一覧
+   * （`STRICT_PARAMETER_RESERVED_WORDS`）との照合に替えます。
    * 結果はキー単位でキャッシュするため、評価ごとのコストは無視できます。
    *
    * @param key 判定するバインドキー
@@ -662,7 +564,11 @@ export default class Expression {
       return cached;
     }
     let usable = this.IDENTIFIER_NAME_PATTERN.test(key);
-    if (usable) {
+    if (usable && Env.csp) {
+      // CSP モードでは `new Function` を使えないため、strict モードで引数名に
+      // できない予約語の一覧で判定する。
+      usable = !this.STRICT_PARAMETER_RESERVED_WORDS.has(key);
+    } else if (usable) {
       try {
         // 評価関数の本体は strict モードなので、strict モードだけの予約語
         // （`public` など）も弾けるよう同じモードで通す。
@@ -1131,6 +1037,10 @@ export default class Expression {
     error: ReferenceError,
     shadowNames: string[],
   ): string[] {
+    if (error instanceof MissingIdentifierError) {
+      // CSP モードの評価器は、参照された名前をエラーに持たせる。
+      return [error.identifier];
+    }
     const message = String(error.message || '');
     const matched = shadowNames.filter(name =>
       ["'", '"', '`'].some(quote =>
@@ -1380,7 +1290,7 @@ export default class Expression {
       fallbackBindings[name] = undefined;
     });
     const setup = this.prepareEvaluator(expression, fallbackBindings);
-    if (setup.compileFailed || setup.evaluator === null) {
+    if (setup.compileFailed) {
       return undefined;
     }
     try {
@@ -1649,7 +1559,7 @@ export default class Expression {
         runtimeBindings,
         shadowNames,
       );
-      if (setup.compileFailed || setup.evaluator === null) {
+      if (setup.compileFailed) {
         return {value: null, unresolvedReference: false};
       }
       try {
@@ -1808,7 +1718,18 @@ export default class Expression {
     const argValues = setup.bindKeys.map(key =>
       this.wrapBoundValue(bindings[key], cache),
     );
-    const run = () => setup.evaluator!.call(this.BUILTIN_HOLDER, ...argValues);
+    let run: () => unknown;
+    const compiled = setup.compiled;
+    if (compiled !== undefined) {
+      // CSP モードの評価器へは、引数にする名前だけを載せたスコープを渡す。
+      const scope: Record<string, unknown> = {};
+      setup.bindKeys.forEach((key, index) => {
+        scope[key] = argValues[index];
+      });
+      run = () => ExpressionInterpreter.run(compiled, scope);
+    } else {
+      run = () => setup.evaluator!.call(this.BUILTIN_HOLDER, ...argValues);
+    }
     return this.getExpressionProfile(expression).needsPropertyBlocking
       ? this.withBlockedPropertyAccess(run)
       : run();
@@ -1844,6 +1765,9 @@ export default class Expression {
       this.reportUnusableBindingKeys(
         Object.keys(bindedValues).filter(key => !this.isUsableBindingKey(key)),
       );
+    }
+    if (Env.csp) {
+      return this.prepareInterpretedEvaluator(expression, bindKeys);
     }
     const bindKeySet = new Set(bindKeys);
     // 引数・`const` 遮蔽と重複する宣言は構文エラーになるため取り除く。
@@ -1904,6 +1828,9 @@ export default class Expression {
         );
         return this.prepareEvaluator(expression, bindedValues, []);
       }
+      if (error instanceof EvalError) {
+        this.reportEvalBlocked();
+      }
       Log.error('[Haori]', 'Failed to compile expression:', expression, error);
       this.compileFailedExpressions.add(expression);
       return {
@@ -1911,6 +1838,54 @@ export default class Expression {
         evaluator: null,
         compileFailed: true,
       };
+    }
+  }
+
+  /**
+   * `new Function` が CSP に拒否されたことを、対処とあわせて一度だけ報告します。
+   *
+   * 拒否されると式ごとに「コンパイル失敗」が出るだけで、原因が CSP だと分からない
+   * ためです（仕様「CSP モード」）。
+   *
+   * @return 戻り値はありません。
+   */
+  private static reportEvalBlocked(): void {
+    if (this.evalBlockedReported) {
+      return;
+    }
+    this.evalBlockedReported = true;
+    Log.error(
+      '[Haori]',
+      'Expressions cannot be compiled because the Content Security Policy' +
+        " does not allow 'unsafe-eval'. Enable the CSP mode with" +
+        ' <script src="haori.js" data-csp> or Haori.setCsp(true).',
+    );
+  }
+
+  /**
+   * CSP モードの評価器で式を変換します（仕様「CSP モードの式評価」）。
+   *
+   * `new Function` を使わないため、従来の方式の式の書き換え（暗黙のオプショナル
+   * チェーン・計算プロパティ名の検査・グローバルの遮蔽）は評価器が受け持ちます。
+   * 変換の結果は評価器が式ごとに控えます。受け付けない式は、従来の方式の
+   * コンパイル失敗と同じく記録してログに出します。変換の成否は式だけで決まる
+   * ため、従来の方式と違い、失敗の記録を取り消す場面はありません。
+   *
+   * @param expression 評価する式
+   * @param bindKeys 評価器のスコープへ載せる名前
+   * @returns evaluator 準備結果
+   */
+  private static prepareInterpretedEvaluator(
+    expression: string,
+    bindKeys: string[],
+  ): ExpressionEvaluatorSetup {
+    try {
+      const compiled = ExpressionInterpreter.compile(expression);
+      return {bindKeys, evaluator: null, compileFailed: false, compiled};
+    } catch (error) {
+      Log.error('[Haori]', 'Failed to compile expression:', expression, error);
+      this.compileFailedExpressions.add(expression);
+      return {bindKeys, evaluator: null, compileFailed: true};
     }
   }
 

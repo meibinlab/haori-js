@@ -88,6 +88,19 @@ Select-String -Path src\*.ts,tests\*.ts,tests\helpers\*.ts,docs\ja\*.md `
 
 実例（2026-08-06、群の範囲の修正）: 足した 4 つの判定を 1 つずつ外し、それぞれ 1 件のテストが落ちることを確認しました。下向きのフォーム境界の刈り取りだけは**外しても結果が変わらない**（範囲の解決が結果を決めていた）ため削り、その理由を関数のコメントに残しています。
 
+### CSP モードの評価器はミューテーションテストで確かめる
+
+CSP モードの評価器（`src/expression_parser.ts`・`src/expression_interpreter.ts`・`src/expression_rules.ts`）と、`*-run` 系の宣言を `new Function` を使わずに呼ぶ部分（`src/handlers.ts`・`src/run_attribute.ts`）は、規則 3 の確認を `npm run test:mutation`（Stryker）で機械的に行います。コードを 1 か所ずつ書き換え、対応するテスト（`tests/expression-interpreter*.test.ts`・`tests/expression-csp-integration.test.ts`・`tests/run-handler.test.ts`・`tests/csp-run-attribute.test.ts`）が落ちるかを調べます。十数分かかり、結果は `reports/mutation/index.html` に出ます。
+
+落ちなかった書き換え（生き残り）は、規則 3 の表に従って対応します。ただし、次の 4 つは仕様の決める結果が変わらないため、コードに理由を書いたうえで `// Stryker disable` で対象から外します。
+
+- 例外の説明文（評価の結果は、構文エラーかどうかだけで決まります）
+- 結果を変えない近道や、後に続く判定が同じ構文エラーにする判定
+- ログの文言（仕様が決めるのは、ログを出すかどうかと重要度だけです）。文言は定数にまとめ、まとめて外します
+- 等価な書き換え（書き換えた値が、読まれる前に必ず上書きされるなど）。読まれない理由をコードに書きます
+
+外せるのはこの 4 つだけです。それ以外の生き残りは、テストを足すか、行を削ってください。
+
 ## 過去の回帰の形
 
 これまでの不具合はほぼすべて「**非同期の段 A が、別の段 B がすでに進めた状態に対して走る**」という形でした。バインドデータの更新は次の段を重ねて進みます（仕様「`data-{event}-reset`」）。
