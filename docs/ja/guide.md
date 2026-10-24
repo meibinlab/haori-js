@@ -3072,6 +3072,31 @@ Haori.handlers.register('dropEmptyRows', (fetchUrl, fetchOptions) => {
 
 `bind-arg` は対象自身の既存 binding を基底に該当キーだけを更新するため、`rules` 以外の状態（`editingRuleIndex` など）は保持されます。レスポンスをそのまま別キーへ入れたいだけなら `data-click-bind-transform` は不要で、`data-click-bind-arg` だけで実現できます。
 
+### 送信データを変換してから送る（`data-click-payload-transform`）
+
+送る前に送信データを**式で変換**したいときは `data-click-payload-transform` を使います。式の中では送信データ全体を `payload` として参照できます（`data-fetch-payload-transform` でも同様）。`data-click-bind-transform` の送信側です。
+
+```html
+<!-- 数量が空の行を送らない（画面の行はそのまま残る） -->
+<button type="button"
+  data-click-fetch="/api/order" data-click-fetch-method="PUT" data-click-form="#order"
+  data-click-payload-transform="({...payload, items: payload.items.filter(r => r.qty != null)})">
+  保存
+</button>
+```
+
+変換するのは送るデータだけです。入力した値は、変換する前のままフォームに残ります。戻り値がオブジェクトにならないときは送りません。
+
+### 値をクリップボードへコピーする（`data-click-clipboard`）
+
+```html
+<button type="button" data-click-clipboard="{{customerId}}" data-click-toast="コピーしました">
+  コピー
+</button>
+```
+
+書き込みが終わってからトーストを出します。値が空のときと、書き込みに失敗したとき（HTTPS ではないページ、権限が無いときなど）は、そこで止まり、トーストも出しません。
+
 ---
 
 ## 画面位置で処理を実行する（`data-intersect-*`）

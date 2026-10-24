@@ -513,7 +513,12 @@ interface PreparedFetchRequest {
    */
   baseUrl: string | null;
   options: RequestInit | null;
+  /** 収集した送信データ（`-payload-transform` を適用する前。フォームへのコミット用） */
   payload: Record<string, unknown>;
+  /** 送る送信データ（`-payload-transform` を適用した後） */
+  sentPayload: Record<string, unknown>;
+  /** `-payload-transform` が送信データを作れなかったかどうか */
+  payloadTransformFailed?: boolean;
   hasUnresolvedReference: boolean;
   requestedMethod: string;
   effectiveMethod: string;
@@ -748,6 +753,12 @@ export interface ProcedureOptions {
    */
   runScript?: ((event: Event | null) => unknown) | null;
 
+  /**
+   * クリップボードへ書く値を宣言した属性名（data-{event}-clipboard）。
+   * 値は手続きの同期段で評価し、書き込みの完了を待ってから後続へ進む。
+   */
+  clipboardAttrName?: string | null;
+
   /** フェッチ前実行スクリプト */
   beforeCallback?: (
     fetchUrl: string | null,
@@ -840,6 +851,13 @@ export interface ProcedureOptions {
    * bind-append より前に適用される。
    */
   bindTransform?: string | null;
+
+  /**
+   * 送信する前に送信データへ適用する変換式。
+   * 式の中では送信データ全体を `payload` として参照できる。本文・クエリへ直す
+   * 前に適用し、フォームへのコミットには適用しない。
+   */
+  payloadTransform?: string | null;
 
   /** フェッチ後実行スクリプト */
   afterCallback?: (
@@ -2101,6 +2119,11 @@ ${body}
           options.runScript = runScript;
         }
       }
+      // data-{event}-clipboard: 値は押した時点で評価するため、属性名だけを控える。
+      const clipboardAttrName = Procedure.attrName(event, 'clipboard');
+      if (fragment.hasAttribute(clipboardAttrName)) {
+        options.clipboardAttrName = clipboardAttrName;
+      }
     }
     // fetch URL（イベントあり/なし）
     const fetchAttrName = Procedure.attrName(event, 'fetch');
@@ -2324,6 +2347,12 @@ ${body}
       options.bindTransform = fragment.getRawAttribute(bindTransformAttr) as
         | string
         | null;
+    }
+    const payloadTransformAttr = event
+      ? Procedure.attrName(event, 'payload-transform')
+      : Procedure.attrName(null, 'payload-transform', true);
+    if (fragment.hasAttribute(payloadTransformAttr)) {
+      options.payloadTransform = fragment.getRawAttribute(payloadTransformAttr);
     }
     const copyParamsAttr = event
       ? Procedure.attrName(event, 'copy-params')
@@ -3088,6 +3117,56 @@ ${body}
   }
 
   /**
+   * `data-{event}-clipboard` の値をクリップボードへ書き始めます。
+   *
+   * 値は呼んだ時点で評価します。評価結果が空（`null` / `undefined` / `false` /
+   * `NaN` / 空文字）の場合と未解決参照を含む場合は書きません。書き込みは同期に始め、
+   * 結果は Promise で返します（仕様「`data-{event}-clipboard`」）。
+   *
+   * @param attributeName 値を宣言した属性名
+   * @returns 書き込みが完了したら true、書かなかった・失敗した場合は false
+   *     で解決する Promise
+   */
+  private startClipboardWrite(attributeName: string): Promise<boolean> {
+    const evaluation =
+      this.options.targetFragment?.getAttributeEvaluation(attributeName);
+    if (evaluation?.hasUnresolvedReference) {
+      return Promise.resolve(false);
+    }
+    // 属性の値と同じく文字列にする（`0` は "0" として写す）。
+    const value = evaluation?.value;
+    const text =
+      value == null || value === false || Number.isNaN(value)
+        ? ''
+        : String(value);
+    if (text === '') {
+      return Promise.resolve(false);
+    }
+    const clipboard =
+      typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+    if (!clipboard || typeof clipboard.writeText !== 'function') {
+      Log.warn(
+        'Haori',
+        `${attributeName}: navigator.clipboard is not available` +
+          ' (it requires a secure context such as HTTPS).',
+      );
+      return Promise.resolve(false);
+    }
+    try {
+      return clipboard.writeText(text).then(
+        () => true,
+        error => {
+          Log.warn('Haori', `${attributeName}: failed to write: ${error}`);
+          return false;
+        },
+      );
+    } catch (error) {
+      Log.warn('Haori', `${attributeName}: failed to write: ${error}`);
+      return Promise.resolve(false);
+    }
+  }
+
+  /**
    * 一連の処理を実行します。成功結果を内部で扱うための実体です。
    *
    * @returns 実行成功時は true、停止や失敗時は false
@@ -3139,27 +3218,39 @@ ${body}
       // （disabled / RUNNING_CLICK_TARGETS）を保持することで、async ハンドラでも
       // 多重実行（2 度押しによる重複送信等）を防ぐ。await 後に後続処理（fetch 等）へ
       // 進むため、run と fetch を併用した場合は run 完了後に fetch が直列実行される。
+      let runResult: unknown = undefined;
       if (this.options.runScript) {
         const sourceElement = this.options.targetFragment?.getTarget() ?? null;
         try {
-          const result = this.options.runScript.call(
-            sourceElement,
-            this.domEvent,
-          );
-          if (result === false && this.domEvent) {
+          runResult = this.options.runScript.call(sourceElement, this.domEvent);
+          if (runResult === false && this.domEvent) {
             this.domEvent.preventDefault();
-          }
-          // 戻り値が thenable の場合のみ完了を待つ。preventDefault は同期段で確定
-          // 済みのため、ここでの await は多重実行防止（ロック保持）のためだけに行う。
-          if (
-            result != null &&
-            typeof (result as {then?: unknown}).then === 'function'
-          ) {
-            await result;
           }
         } catch (e) {
           Log.error('Haori', `Run script execution error: ${e}`);
         }
+      }
+      // data-{event}-clipboard: 書き込みは run の後、await を挟む前に始める。
+      // ブラウザは利用者の操作の直後でないと書き込みを拒むことがある（仕様
+      // 「`data-{event}-clipboard`」）。
+      const clipboardWrite = this.options.clipboardAttrName
+        ? this.startClipboardWrite(this.options.clipboardAttrName)
+        : null;
+      // 戻り値が thenable の場合のみ完了を待つ。preventDefault は同期段で確定
+      // 済みのため、ここでの await は多重実行防止（ロック保持）のためだけに行う。
+      if (
+        runResult != null &&
+        typeof (runResult as {then?: unknown}).then === 'function'
+      ) {
+        try {
+          await runResult;
+        } catch (e) {
+          Log.error('Haori', `Run script execution error: ${e}`);
+        }
+      }
+      if (clipboardWrite && !(await clipboardWrite)) {
+        await this.commitEditOnStop();
+        return false;
       }
       const confirmed = await this.confirm();
       if (!confirmed) {
@@ -3188,12 +3279,20 @@ ${body}
         this.captureHistorySnapshots();
       }
       const preparedRequest = this.prepareFetchRequest();
+      if (preparedRequest.payloadTransformFailed) {
+        await this.commitEditOnStop();
+        return false;
+      }
       // 送信データを確定した時点を記録する。ここから後の編集は応答より新しいので、
       // 応答をフォームへバインドするときに上書きし直す。シグネチャ比較のための
       // 事前組み立て（resolveFetchSignature）では記録せず、実際に送る経路でだけ
       // 記録する。
       this.requestUserEditSequence = ElementFragment.currentSequence();
       const payload = preparedRequest.payload;
+      const sentPayload =
+        Object.keys(preparedRequest.sentPayload).length > 0
+          ? preparedRequest.sentPayload
+          : undefined;
       let fetchUrl = preparedRequest.url;
       let fetchOptions = preparedRequest.options;
       let urlOverridden = false;
@@ -3285,7 +3384,7 @@ ${body}
             effectiveMethod: method,
             transportMode: 'query-get',
             url: fetchUrl,
-            payload: hasPayload ? payload : undefined,
+            payload: sentPayload,
             queryString,
           });
         }
@@ -3305,7 +3404,7 @@ ${body}
             this.options.targetFragment.getTarget(),
             fetchUrl,
             finalOptions,
-            hasPayload ? payload : undefined,
+            sentPayload,
             fetchStartMetadata,
           );
 
@@ -5840,6 +5939,38 @@ ${body}
   }
 
   /**
+   * `data-{event}-payload-transform` の式で送信データを変換します。
+   *
+   * 式の中では送信データを `payload` として参照します。評価できない場合、未解決
+   * 参照を含む場合、結果が配列ではないオブジェクトにならない場合は、送信データを
+   * 作れなかったものとして null を返します（仕様
+   * 「`data-{event}-payload-transform`（非イベント:
+   * `data-fetch-payload-transform`）」）。
+   *
+   * @param expression 変換式
+   * @param payload 収集した送信データ
+   * @returns 変換した送信データ。作れなかった場合は null
+   */
+  private transformPayload(
+    expression: string,
+    payload: Record<string, unknown>,
+  ): Record<string, unknown> | null {
+    const detail = Expression.evaluateDetailed(expression, {payload});
+    if (detail.unresolvedReference) {
+      return null;
+    }
+    const value = detail.value;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      Log.error(
+        'Haori',
+        'payload-transform must return an object: ' + expression,
+      );
+      return null;
+    }
+    return value as Record<string, unknown>;
+  }
+
+  /**
    * 現在のオプションから送信前の fetch リクエストを組み立てます。
    *
    * @returns リクエスト情報。
@@ -5857,12 +5988,41 @@ ${body}
         baseUrl: null,
         options: null,
         payload,
+        sentPayload: payload,
         hasUnresolvedReference,
         requestedMethod: 'GET',
         effectiveMethod: 'GET',
         transportMode: 'http',
         signature: null,
       };
+    }
+
+    // 送信データの変換は送る経路にだけ適用する（仕様
+    // 「`data-{event}-payload-transform`（非イベント:
+    // `data-fetch-payload-transform`）」）。収集した値はフォームへのコミットに
+    // 使うため、`payload` は変換前のまま返す。
+    let sentPayload = payload;
+    if (this.options.payloadTransform) {
+      const transformed = this.transformPayload(
+        this.options.payloadTransform,
+        payload,
+      );
+      if (transformed === null) {
+        return {
+          url: null,
+          baseUrl: null,
+          options: null,
+          payload,
+          sentPayload: payload,
+          payloadTransformFailed: true,
+          hasUnresolvedReference: false,
+          requestedMethod: 'GET',
+          effectiveMethod: 'GET',
+          transportMode: 'http',
+          signature: null,
+        };
+      }
+      sentPayload = transformed;
     }
 
     let fetchUrl = this.options.fetchUrl;
@@ -5880,7 +6040,10 @@ ${body}
     // File / Blob は multipart/form-data 以外では送信できない（JSON では `{}`、
     // クエリや urlencoded では `[object File]` になる）。原因が分かりにくいため、
     // multipart 以外で File を含む送信を検出したら明示的に警告する。
-    if (Object.keys(payload).length > 0 && containsBinaryValue(payload)) {
+    if (
+      Object.keys(sentPayload).length > 0 &&
+      containsBinaryValue(sentPayload)
+    ) {
       const declaredContentType = headers.get('Content-Type') || '';
       // 宣言した方法で判定する。demo ランタイムの正規化（GET への置き換え）は
       // 本番の宣言の誤りではないため（仕様「`input[type=file]` の値収集」）。
@@ -5894,7 +6057,7 @@ ${body}
             ` ${Env.prefix}fetch-content-type="multipart/form-data"` +
             ' and a body method such as POST.',
         );
-      } else if (hasUnsendableNestedBinaryValue(payload)) {
+      } else if (hasUnsendableNestedBinaryValue(sentPayload)) {
         // data-form-object / data-form-list 配下の File は FormData で
         // JSON 文字列化され `{}` になるため送信できない。トップレベルの File と
         // 混在していても取りこぼさないよう、位置ごとに独立して判定する。
@@ -5909,15 +6072,15 @@ ${body}
     }
 
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-      if (Object.keys(payload).length > 0) {
-        fetchUrl = appendPayloadToUrl(fetchUrl, payload);
+      if (Object.keys(sentPayload).length > 0) {
+        fetchUrl = appendPayloadToUrl(fetchUrl, sentPayload);
       }
-    } else if (Object.keys(payload).length > 0) {
+    } else if (Object.keys(sentPayload).length > 0) {
       const contentType = headers.get('Content-Type') || '';
       if (/multipart\/form-data/i.test(contentType)) {
         headers.delete('Content-Type');
         const formData = new FormData();
-        for (const [k, v] of Object.entries(payload)) {
+        for (const [k, v] of Object.entries(sentPayload)) {
           if (v === undefined || v === null) {
             formData.append(k, '');
           } else if (v instanceof Blob) {
@@ -5939,7 +6102,7 @@ ${body}
         finalOptions.body = formData;
       } else if (/application\/x-www-form-urlencoded/i.test(contentType)) {
         const params = new URLSearchParams();
-        for (const [k, v] of Object.entries(payload)) {
+        for (const [k, v] of Object.entries(sentPayload)) {
           if (v === undefined) {
             continue;
           }
@@ -5952,7 +6115,7 @@ ${body}
         finalOptions.body = params;
       } else {
         headers.set('Content-Type', 'application/json');
-        finalOptions.body = JSON.stringify(payload);
+        finalOptions.body = JSON.stringify(sentPayload);
       }
     }
 
@@ -5969,6 +6132,7 @@ ${body}
       baseUrl: this.options.fetchUrl,
       options: finalOptions,
       payload,
+      sentPayload,
       hasUnresolvedReference: false,
       requestedMethod,
       effectiveMethod: method,

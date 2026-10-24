@@ -1346,7 +1346,7 @@ async handleError(response: Response): Promise<void> {
 
 これにより、`data-bind`属性を明示的に記述しなくても、フォーム要素内の入力変更が自動的にバインディングデータとして反映され、リアクティブな更新が実現されます。
 
-**手続きが途中で止まっても、入力欄の値のコミットは行います。** 入力欄に置いた `data-change-*` / `data-input-*` の手続きが、検証の失敗（`data-{event}-validate`）、実行条件が偽（`data-{event}-if`）、確認のキャンセル（`data-{event}-confirm`）で止まった場合、止まるのは手続きのアクション（`-run` / `-click` など）だけで、フォームへのコミットは止まらずに進んだ場合と同じく行います。例外は `data-{event}-fetch` を伴わずに `data-{event}-bind` を宣言した手続きです。この手続きは収集値をフォームではなくバインド先へ写し、その書き込みは手続きのアクションなので、止まった場合はバインド先へもフォームへも写しません。コミットまで止めると、画面には入力した値が出ているのに、バインドデータと送信の元になる値は古いまま残り、その値を読む式（`{{...}}` や `data-if`）も切り替わりません。実行条件は従来どおりコミットの前に収集値で評価するため（[条件の評価スコープ](#条件の評価スコープ)）、入力した値で判定されます。
+**手続きが途中で止まっても、入力欄の値のコミットは行います。** 入力欄に置いた `data-change-*` / `data-input-*` の手続きが、検証の失敗（`data-{event}-validate`）、実行条件が偽（`data-{event}-if`）、クリップボードへ書けなかったこと（`data-{event}-clipboard`）、確認のキャンセル（`data-{event}-confirm`）、送信データを変換できなかったこと（`data-{event}-payload-transform`）で止まった場合、止まるのは手続きのアクション（`-run` / `-click` など）だけで、フォームへのコミットは止まらずに進んだ場合と同じく行います。例外は `data-{event}-fetch` を伴わずに `data-{event}-bind` を宣言した手続きです。この手続きは収集値をフォームではなくバインド先へ写し、その書き込みは手続きのアクションなので、止まった場合はバインド先へもフォームへも写しません。コミットまで止めると、画面には入力した値が出ているのに、バインドデータと送信の元になる値は古いまま残り、その値を読む式（`{{...}}` や `data-if`）も切り替わりません。実行条件は従来どおりコミットの前に収集値で評価するため（[条件の評価スコープ](#条件の評価スコープ)）、入力した値で判定されます。
 
 **取得を伴う手続きでも、フォームへのコミットは行います。** 入力欄に `data-change-fetch` / `data-input-fetch` を置いた場合、応答のバインド（既定は自要素、`data-{event}-bind` があればその先）とは別に、入力した値をフォームへ写します。写すのは取得を始める直前です（`data-{event}-before-run` が止めた場合は、取得を伴わない手続きと同じく写しません）。写さないと、画面には入力した値が出ているのにフォームのバインドデータは古いまま残り、その値を読む式も切り替わりません。ボタンなど入力欄以外の手続き（`data-click-form` と `data-click-fetch` など）は、収集値を送るだけでフォームへは写しません。
 
@@ -2719,6 +2719,7 @@ URL に埋め込んだ `{{ }}` の値は URL エンコードしません。利�
 - `data-fetch-bind-params`: 抽出パラメータ (&区切り)
 - `data-fetch-bind-merge`: バインド先の既存キーを保持して浅くマージ（**バインドキー名を指定した場合は無視**。後述）
 - `data-fetch-bind-append`: 配列を追記するキー（[`data-fetch-bind-append` / `data-{event}-bind-append` / `data-intersect-bind-append`](#data-fetch-bind-append--data-event-bind-append--data-intersect-bind-append)）
+- `data-fetch-payload-transform`: 送信データの変換（[`data-{event}-payload-transform`（非イベント: `data-fetch-payload-transform`）](#data-event-payload-transform非イベント-data-fetch-payload-transform)）
 - `data-fetch-bind-transform`: 応答の変換（[`data-{event}-bind-transform`（非イベント: `data-fetch-bind-transform`）](#data-event-bind-transform非イベント-data-fetch-bind-transform)）
 - `data-fetch-state`: フェッチ状態 `_fetch` の注入先セレクタ（省略時は自要素）
 - `data-fetch-download`: 応答をファイルとして保存する（[`data-fetch-download` / `data-{event}-fetch-download`](#data-fetch-download--data-event-fetch-download)）
@@ -3533,6 +3534,8 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 
 なお `data-{event}-run`（フェッチを伴わない任意 JS 実行）は、`event.preventDefault()` を有効にするため、上記 3（confirm）より前の**同期タイミング**で実行されます。ただし 2（`data-{event}-if`）より後なので、条件が偽のときは `run` も実行されません。`data-{event}-fetch` と併用した場合は run → fetch の順になります。
 
+[`data-{event}-clipboard`](#data-event-clipboard) は `run` の直後に、同じく同期タイミングで書き込みを始め、その完了を待ってから 3（confirm）へ進みます。
+
 また `data-{event}-prevent` は上記の手続き順序とは独立に、イベントの委譲（`EventDispatcher.delegate`）の**最初の同期段**で `event.preventDefault()` を呼びます。手続き本体（fetch 等）の成否や `await` に依存せずネイティブのデフォルト動作を抑止するためで、`data-{event}-defer` で手続きを遅延させても抑止は確実に効きます。
 
 #### バインド後に実行するアクションの評価タイミング
@@ -3966,6 +3969,35 @@ HTTP エラー応答（4xx / 5xx）とネットワーク断のどちらも失敗
 <button data-click-fetch="/api/save" data-click-form="#userForm">送信</button>
 ```
 
+##### `data-{event}-payload-transform`（非イベント: `data-fetch-payload-transform`）
+
+送信する前に、送信データへ**式を適用して変換**します。式の中では送信データ全体を `payload` として参照でき、戻り値を送ります。応答を変換する [`data-{event}-bind-transform`](#data-event-bind-transform非イベント-data-fetch-bind-transform) と対になる属性です。
+
+- **変換する送信データ**: `data-{event}-form` から収集し、`data-{event}-data` を重ねた後のものです。式から参照できるのは `payload` だけです（要素のスコープは参照しません）。
+- **適用する時点**: 送信データを本文（JSON・`application/x-www-form-urlencoded`・`multipart/form-data`）や GET のクエリへ直す前です。`data-{event}-before-run` が受け取る `fetchOptions` は、変換した後の送信データから組み立てたものです。[demo ランタイムの正規化](#demo-ランタイムでの通信の正規化)も、変換した後の送信データをクエリへ移します。
+- **送る経路にだけ適用します。** `data-{event}-fetch` を伴わない手続きでは使いません。入力欄の値をフォームへ写す処理（[双方向バインディングの自動更新](#双方向バインディングの自動更新)）は、変換する前の収集値を写します。変換で行を除いても、画面の行と入力した値はそのまま残ります。
+- **送らない場合**: 式が評価できない場合、[未解決参照](#未解決参照の診断)を含む場合、戻り値が配列ではないオブジェクトにならない場合（`null`・配列・文字列など）は、送信しません。手続きはそこで失敗として終わり、後続のアクション（`data-{event}-toast` など）も実行しません。入力欄の手続きでは、入力した値のフォームへのコミットは行います（[双方向バインディングの自動更新](#双方向バインディングの自動更新)の「手続きが途中で止まっても、入力欄の値のコミットは行います」）。戻り値がオブジェクトにならない場合は `error` ログを出します。未解決参照は[未解決参照の診断](#未解決参照の診断)で知らせ、この `error` ログは出しません。
+- CSP モードでも、従来の方式でも、haori の式として評価します（`data-{event}-bind-transform` と同じです）。
+
+```html
+<!-- 需要電力が空の行を送らない -->
+<form id="demand">
+  <div data-form-list="items" data-each="items" data-each-arg="r" data-each-key="targetMonth">
+    <div>
+      <input type="hidden" name="targetMonth" data-attr-value="{{r.targetMonth}}">
+      <input type="number" name="demandPowerKw">
+    </div>
+  </div>
+</form>
+<button type="button"
+  data-click-fetch="/api/demand" data-click-fetch-method="PUT" data-click-form="#demand"
+  data-click-payload-transform="({...payload, items: payload.items.filter(r => r.demandPowerKw != null)})">
+  保存
+</button>
+```
+
+`type="number"` の空欄は `null` で収集されます（[収集は DOM を真とする](#収集は-dom-を真とする)）。
+
 #### コールバック
 
 **既定の CSP モードでは、`*-run` 系の本文を JavaScript としては実行しません。** 本文は 1 つの式として評価し、参照できるのは引数・要素のスコープ・[登録した関数](#登録した関数haorihandlers)だけです（[CSP モードでの `*-run`](#csp-モードでの--run)）。文や `this`、グローバルの関数を使う処理は、登録した関数を `-handler` で呼びます。この節の本文の例のうち、`console` などのグローバル・`return`・`arguments` を書いたものは、[従来の方式](#csp-モード)（`data-csp="false"`）の書き方です。
@@ -4177,6 +4209,25 @@ Haori.handlers.register('editRule', function (event, index, formSelector) {
 <!-- リンクの既定遷移だけを抑止する（onclick="return false" 相当） -->
 <a href="#" data-click-prevent>何もしないリンク</a>
 ```
+
+##### `data-{event}-clipboard`
+
+値をクリップボードへ書きます（`navigator.clipboard.writeText()`）。値には `{{式}}` を書けます。書き込みが終わってから後続のアクションへ進むため、`data-{event}-toast` で書いたことを知らせられます。
+
+```html
+<button type="button" data-click-clipboard="{{customerId}}" data-click-toast="コピーしました">
+  コピー
+</button>
+```
+
+- **書く値**: 押した時点で評価し、属性の値と同じく文字列にします。`null` / `undefined` / `false` / `NaN` は空文字になり、数値は `0` も含めてそのまま文字列にします（`0` は `"0"` を書きます）。
+- **実行する位置**: [処理順序](#処理順序)の `data-{event}-run` の直後、`data-{event}-confirm` より前です。書き込みは `await` を挟まずに始めます。ブラウザは、利用者の操作の直後でないとクリップボードへの書き込みを拒むことがあるためです。`data-{event}-run` が Promise を返した場合は、その完了と書き込みの完了の両方を待ってから次へ進みます。
+- **止める場合**: 次の場合は書かずに（または書けずに）、手続きを失敗として終えます。後続のアクション（`data-{event}-confirm` / `data-{event}-fetch` / `data-{event}-toast` など）は実行しません。
+  - 評価した値が空文字の場合と、[未解決参照](#未解決参照の診断)を含む場合
+  - `navigator.clipboard` が無い場合（HTTPS や `localhost` のような安全なコンテキストでないページなど）。開発モードで `warn` ログを出します
+  - 書き込みが拒まれた場合（権限が無い、ページにフォーカスが無いなど）。開発モードで `warn` ログを出します
+- **取得の応答の値は書けません。** 取得より前に書くためです。
+- `data-click-defer` と併用すると、書き込みが利用者の操作から離れるため、ブラウザによっては拒まれます。
 
 #### フェッチ
 
@@ -5895,7 +5946,7 @@ element.addEventListener('haori:fetchstart', (event) => {
 }
 ```
 
-`payload` は `data-{event}-data` / `data-{event}-form` から**収集した**送信データです。`data-{event}-before-run` が `fetchOptions` の `body` を上書きした場合、実際に送信される内容は上書き後の `body`（demo ランタイムでは `queryString`）であり、`payload` とは一致しません。実送信内容を見る場合は `options` と `queryString` を参照してください。
+`payload` は `data-{event}-data` / `data-{event}-form` から**収集した**送信データです。[`data-{event}-payload-transform`](#data-event-payload-transform非イベント-data-fetch-payload-transform) を宣言した場合は、変換した後の送信データです。`data-{event}-before-run` が `fetchOptions` の `body` を上書きした場合、実際に送信される内容は上書き後の `body`（demo ランタイムでは `queryString`）であり、`payload` とは一致しません。実送信内容を見る場合は `options` と `queryString` を参照してください。
 
 #### `haori:fetchend`
 
@@ -6516,6 +6567,8 @@ if (type === ExpressionType.EXPRESSION) {
    | `data-click-run="Plans.editRule('#x', {{ruleI}})"`（値の埋め込み） | `data-click-run-handler="editRule"` と `data-click-run-args="['#x', ruleI]"` |
    | `data-each-rendered-run="window.__choicesRefresh(this)"`（`this`） | `data-each-rendered-run-handler="choicesRefresh"`（関数の `this` がコンテナ） |
    | `data-click-before-run="if (!ok) return false"`（文） | 関数を登録し、`data-click-before-run-handler="check"` |
+   | `data-click-run="navigator.clipboard.writeText('{{id}}')"`（クリップボード） | `data-click-clipboard="{{id}}"` |
+   | `data-click-before-run` で `fetchOptions.body` を組み立て直す（送信データの変換） | `data-click-payload-transform="({...payload, items: payload.items.filter(r => r.qty != null)})"` |
 
 4. 利用側のインラインのスクリプトとイベントハンドラ属性を、別のファイルへ移すか nonce を付けます。
 5. 開発環境で `'unsafe-eval'` の無い CSP を付けて動かし、ブラウザのコンソールに CSP の違反と Haori の `warn`（評価しなかった `*-run`）が出ないことを確かめます。
@@ -6696,7 +6749,7 @@ const isDev = devAttribute !== null
 | `Content-Type` | 削除する |
 
 - 対象は `data-runtime="demo"` のときだけです。既定の `embedded` では正規化しません。
-- 正規化を行った場合、開発モードでは `Haori demo fetch normalization` の情報ログを出力します。`haori:fetchstart` の `requestedMethod` / `effectiveMethod` / `transportMode`（`query-get`）/ `queryString` でも確認できます。
+- 正規化を行った場合、開発モードでは `Haori demo fetch normalization` の情報ログを出力します。ログの `payload` は `haori:fetchstart` の `payload` と同じです。`haori:fetchstart` の `requestedMethod` / `effectiveMethod` / `transportMode`（`query-get`）/ `queryString` でも確認できます。
 - **`data-{event}-before-run` が `fetchOptions` を返してメソッドや body を上書きした場合も、送信直前に正規化を再適用します**。上書きが正規化を打ち消すと静的ファイルサーバへ実 POST が飛んで失敗するため、demo ランタイムでは常に正規化が優先されます。実際のメソッドで送る必要がある場合は `embedded` ランタイムを使用してください。
 - 上書きされた body は、クエリ化できる形式であればクエリへ移します。JSON オブジェクト文字列・`application/x-www-form-urlencoded` 形式の文字列・`URLSearchParams`・`FormData`（文字列値のみ）が対象です。`Blob` や `File` などクエリ化できない内容は破棄し、開発モードで警告します。
 - **上書きの body は送信データの「置き換え」です**。`data-{event}-data` / `data-{event}-form` から正規化でクエリへ移した値は引き継がず、上書きした body の内容だけがクエリになります（`embedded` ランタイムで body ごと差し替わるのと同じ扱い）。`data-{event}-fetch` の URL にもともと書いてあるクエリは残ります。ヘッダーだけを差し替えるなど body を伴わない上書きでは、正規化済みのクエリをそのまま保ちます。

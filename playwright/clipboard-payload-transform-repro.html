@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>クリップボードと送信データの変換（従来の方式）</title>
+  <script src="/dist/haori.iife.js" data-csp="false"></script>
+</head>
+<body>
+  <!-- data-click-clipboard: 書き終わってからトーストを出す -->
+  <div data-bind='{"customerId":"C-0001","empty":""}'>
+    <button id="copy" type="button" data-click-clipboard="{{customerId}}"
+      data-click-toast="コピーしました">コピー</button>
+    <button id="copy-empty" type="button" data-click-clipboard="{{empty}}"
+      data-click-toast="空をコピーしました">空</button>
+  </div>
+  <!-- data-click-payload-transform: 需要電力が空の行を送らない -->
+  <form id="demand" data-bind='{"items":[{"m":"2026-01","kw":"10"},{"m":"2026-02","kw":""}]}'>
+    <div data-form-list="items" data-each="items" data-each-arg="r" data-each-key="m">
+      <div>
+        <input type="hidden" name="m" data-attr-value="{{r.m}}">
+        <input type="number" name="kw" data-attr-value="{{r.kw}}">
+      </div>
+    </div>
+  </form>
+  <button id="save" type="button" data-click-fetch="/api/demand" data-click-fetch-method="PUT"
+    data-click-form="#demand"
+    data-click-payload-transform="({...payload, items: payload.items.filter(r => r.kw != null)})">保存</button>
+</body>
+</html>
