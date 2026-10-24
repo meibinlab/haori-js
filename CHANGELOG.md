@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## [0.67.0] - 2026-10-24
+
+**クリップボードへ書けなかったことを、トーストで知らせる宣言を足しました。** CSP モードと従来の方式の両方で使えます。
+
+### Added
+
+- **`data-{event}-clipboard-error-toast` / `data-{event}-clipboard-error-toast-level`**（仕様「`data-{event}-clipboard`」の「書けなかったことを知らせる」）。`data-{event}-clipboard` が書けずに止まったときに、その文言のトーストを表示します。
+  - 表示するのは、値が空の場合、未解決参照を含む場合、`navigator.clipboard` が無い場合、書き込みが拒まれた場合です。
+  - レベルの省略時は `info` です。文言とレベルには式を書けます。どちらも表示直前に評価します。評価結果の扱いは `data-{event}-toast` と同じです。
+  - トーストを表示しても、手続きは失敗のまま終えます。後続のアクションは実行しません。
+  - 取得の失敗時のアクション（`data-{event}-error-toast` など）とは別です。どちらも、相手の失敗では動きません。
+  - 例: `data-click-clipboard="{{userId}}" data-click-toast="コピーしました" data-click-clipboard-error-toast="コピーできませんでした" data-click-clipboard-error-toast-level="error"`。書けたかどうかを知らせるためのインラインの `<script>` が不要になります。
+
+### Internal
+
+- `tests/clipboard.test.ts` と、従来の方式・CSP モードの両方で確かめる E2E（`playwright/clipboard-payload-transform.spec.cjs`）にテストを足した。
+
 ## [0.66.0] - 2026-10-24
 
 **値をクリップボードへ書く宣言と、送信データを式で変換する宣言を足しました。** どちらも CSP モードと従来の方式の両方で使えます。
