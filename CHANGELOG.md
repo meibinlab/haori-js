@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## [0.65.1] - 2026-10-24
+
+**開発モードの未解決参照の診断が、正常な構成に出していた誤った警告を直した版です。表示・送信値・本番の動作は変わりません。**
+
+### Fixed
+
+- **まだ描かれていない入れ子の `data-each` の行テンプレートで、行スコープの名前が「一度も供給されなかった」と警告されていた**（仕様「未解決参照の診断」、`src/form.ts`）。`data-each` ＋ `data-form-list` の行の中で、`data-if` が偽の中にある入れ子の `data-each` の入力欄が `data-attr-value="{{o.id}}"` を宣言していると、画面を開いただけで `o` が報告されていた。行への値の反映が、宣言が解決しているかを確かめる評価を外側の行のスコープで行い、診断に記録していたため。この確認の評価を記録しないようにした。描かれた行の中の打ち間違いは従来どおり報告する。
+- **使用する直前に評価し直す属性が、描画のときと手続きの開始時の評価で警告されていた**（仕様「未解決参照の診断」、仕様「バインド後に実行するアクションの評価タイミング」、`src/fragment.ts`・`src/procedure.ts`）。
+  - 自要素の `data-click-fetch-state` の `_fetch.responseMessage` を `data-click-error-toast` に使うボタンが 2 つ以上あると、片方を押した後に描き直されたもう片方が「別のスコープでは供給されている」と警告されていた。
+  - 仕様の例の `data-click-redirect="{{nextAction === 'pay' ? redirectUrl : '/complete.html'}}"` が、押す前に「一度も供給されなかった」と警告されていた。
+  - 対象は `-dialog` / `-toast` / `-toast-level` / `-error-toast` / `-error-toast-level`（ステータスごとの組を含む）/ `-history` / `-scroll` / `-redirect` / `-redirect-replace` / `-redirect-return-param`。使用する直前の評価は従来どおり診断するため、`fetch-state` の注入先を兄弟要素にした取り違えは、失敗の後の評価で報告する。
+- 上の 2 つの評価では、`data-strict-bind` の `error` も出さないようにした。
+
+### Internal
+
+- 診断に記録せずに評価する `Expression.withoutDiagnosis()` を足し、型の食い違う厳密比較の診断もこれを使うようにした。
+- 単体テスト（`tests/row-template-diagnosis.test.ts`・`tests/late-attribute-diagnosis.test.ts`）と、従来の方式・CSP モードの両方で確かめる E2E（`playwright/diagnosis-false-positive.spec.cjs`）を足した。
+
 ## [0.65.0] - 2026-10-24
 
 **CSP モードを既定にした版です。`data-csp` を書かなくても、式を `new Function` を使わずに評価し、CSP に `'unsafe-eval'` を書かないページでもそのまま動きます。`*-run` 系の本文を JavaScript として実行する従来の方式は、`<script>` に `data-csp="false"` を書いて選びます。**
