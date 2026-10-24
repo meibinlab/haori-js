@@ -1539,7 +1539,12 @@ export default class Procedure {
     key: string,
     attributeName: string,
   ): string | null {
-    const evaluation = fragment.getAttributeEvaluation(attributeName);
+    // 手続きの開始時はまだ応答をバインドしていないため、未解決参照の診断に記録
+    // しない（仕様「未解決参照の診断」）。診断するのは使用する直前の評価
+    // （`resolveLateAttribute()`）だけにする。
+    const evaluation = Expression.withoutDiagnosis(() =>
+      fragment.getAttributeEvaluation(attributeName),
+    );
     if (!options.lateAttributes) {
       options.lateAttributes = new Map();
     }

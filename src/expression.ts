@@ -1254,6 +1254,25 @@ export default class Expression {
   }
 
   /**
+   * 未解決参照の診断に記録せずに評価します。
+   *
+   * 宣言を描くための評価ではないもの（入力欄の値を決めるための確認や、使用する直前に
+   * 評価し直す属性の描画のときの評価）に使います（仕様「未解決参照の診断」）。
+   * 入れ子にはできません（内側の呼び出しが終わると記録を再開します）。
+   *
+   * @param callback 評価を行う関数
+   * @returns `callback` の戻り値
+   */
+  public static withoutDiagnosis<T>(callback: () => T): T {
+    Expression.evaluatingForDiagnosis = true;
+    try {
+      return callback();
+    } finally {
+      Expression.evaluatingForDiagnosis = false;
+    }
+  }
+
+  /**
    * 予約キー（エンジン管理変数）かどうかを判定します。
    *
    * `_fetch` / `_poll` など、Haori が実行時に要素ごとに注入する値です（仕様
@@ -2163,15 +2182,10 @@ export default class Expression {
       return null;
     }
     // 各辺は宣言した式ではないため、未解決参照などの診断に記録しない。
-    Expression.evaluatingForDiagnosis = true;
-    let left: ExpressionEvaluationDetail;
-    let right: ExpressionEvaluationDetail;
-    try {
-      left = Expression.evaluateDetailed(split.left, bindedValues);
-      right = Expression.evaluateDetailed(split.right, bindedValues);
-    } finally {
-      Expression.evaluatingForDiagnosis = false;
-    }
+    const [left, right] = Expression.withoutDiagnosis(() => [
+      Expression.evaluateDetailed(split.left, bindedValues),
+      Expression.evaluateDetailed(split.right, bindedValues),
+    ]);
     if (left.unresolvedReference || right.unresolvedReference) {
       return null;
     }

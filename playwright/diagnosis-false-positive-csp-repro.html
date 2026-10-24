@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>診断の誤検知（CSP モード）</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!-- まだ描かれていない入れ子の data-each の行テンプレート -->
+  <form data-bind='{"rows":[{}]}'>
+    <div data-form-list="rows" data-each="rows" data-each-arg="c">
+      <div>
+        <div data-if="c.agreed">
+          <div data-form-list="options" data-each="cand ?? []" data-each-arg="o">
+            <div><input type="hidden" name="optionId" data-attr-value="{{o.id}}"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+  <!-- 失敗の後に評価する -error-toast -->
+  <button id="b1" type="button" data-click-fetch="/api/diagnosis" data-click-fetch-state
+    data-click-bind="#detail" data-click-bind-arg="detail"
+    data-click-error-toast="{{_fetch.responseMessage ?? '取得できませんでした。'}}">b1</button>
+  <section id="detail" data-bind='{"detail": {}}'>
+    <button id="b2" type="button" data-if="detail.ok" data-click-fetch="/api/diagnosis" data-click-fetch-state
+      data-click-error-toast="{{_fetch.responseMessage ?? '保存できませんでした。'}}">b2</button>
+  </section>
+</body>
+</html>

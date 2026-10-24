@@ -2852,8 +2852,16 @@ export default class Form {
       // 次の収集で行データへ焼き付いて以後ずっと空になる（行の中で候補から選択中の
       // 1 件を引いて hidden へ載せる構成）。評価が未解決のときは従来どおり行データを
       // 反映する（保存済みレコードからの復元で、候補が届くまでの間に値を失わない）。
+      //
+      // この判定の評価は描画ではないため、未解決参照の診断に記録しない（仕様
+      // 「未解決参照の診断」）。まだ描かれていない入れ子の `data-each` の行テンプレート
+      // にも届き、行スコープの名前を外側のスコープで評価するため、記録すると描かれれば
+      // 供給される名前を「一度も供給されなかった」と報告してしまう。
       const declarativeAuthority =
-        clearMissing && Form.hasResolvedDeclarativeState(fragment);
+        clearMissing &&
+        Expression.withoutDiagnosis(() =>
+          Form.hasResolvedDeclarativeState(fragment),
+        );
       const clearAsMissing =
         clearMissing &&
         typeof rawValue === 'undefined' &&

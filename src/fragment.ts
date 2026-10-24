@@ -3630,6 +3630,34 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 使用する直前に評価し直す属性の、イベント名より後ろの部分。
+   *
+   * 仕様「バインド後に実行するアクションの評価タイミング」の表の属性です。
+   * `-error-toast` とステータスごとの組（`-error-404-toast`）は `-toast` /
+   * `-toast-level` で終わるため、ここに含まれます。`Procedure` が読み取る属性と
+   * 揃えてください。
+   */
+  private static readonly LATE_ACTION_ATTRIBUTE_SUFFIX = new RegExp(
+    '^.+-(?:dialog|toast|toast-level|history|scroll|' +
+      'redirect|redirect-replace|redirect-return-param)$',
+  );
+
+  /**
+   * 使用する直前に評価し直す属性（`data-{event}-redirect` など）かどうかを判定します。
+   *
+   * @param name 属性名
+   * @returns 使用する直前に評価し直す属性なら true
+   */
+  private static isLateActionAttribute(name: string): boolean {
+    return (
+      name.startsWith(Env.prefix) &&
+      ElementFragment.LATE_ACTION_ATTRIBUTE_SUFFIX.test(
+        name.slice(Env.prefix.length),
+      )
+    );
+  }
+
+  /**
    * 生の属性値を保持しつつ、必要に応じて別名属性へ評価結果を反映します。
    *
    * @param rawName 生の属性名
@@ -3697,12 +3725,18 @@ export class ElementFragment extends Fragment {
     }
     this.attributeMap.set(rawName, contents);
     const element = this.getTarget();
-    const detail = contents.evaluateDetailed(this.getBindingData(), {
-      kind: 'attribute',
-      element,
-      rawName,
-      template: value,
-    });
+    const evaluate = () =>
+      contents.evaluateDetailed(this.getBindingData(), {
+        kind: 'attribute',
+        element,
+        rawName,
+        template: value,
+      });
+    // 使用する直前に評価し直す属性は、描画のときにはまだ応答をバインドしていない
+    // のが正常なので、未解決参照の診断に記録しない（仕様「未解決参照の診断」）。
+    const detail = ElementFragment.isLateActionAttribute(rawName)
+      ? Expression.withoutDiagnosis(evaluate)
+      : evaluate();
     const hasTemplateExpression = contents.isEvaluate || contents.isRawEvaluate;
     const isBooleanAttribute =
       rawName === targetName &&
