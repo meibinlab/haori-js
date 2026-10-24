@@ -3095,7 +3095,16 @@ Haori.handlers.register('dropEmptyRows', (fetchUrl, fetchOptions) => {
 </button>
 ```
 
-書き込みが終わってからトーストを出します。値が空のときと、書き込みに失敗したとき（HTTPS ではないページ、権限が無いときなど）は、そこで止まり、トーストも出しません。
+書き込みが終わってからトーストを出します。値が空のときと、書き込みに失敗したとき（HTTPS ではないページ、権限が無いときなど）は、そこで止まり、`data-click-toast` のトーストも出しません。
+
+書けなかったことを知らせるには、`data-click-clipboard-error-toast` を書きます。
+
+```html
+<button type="button" data-click-clipboard="{{userId}}"
+  data-click-toast="コピーしました" data-click-toast-level="success"
+  data-click-clipboard-error-toast="コピーできませんでした"
+  data-click-clipboard-error-toast-level="error">コピー</button>
+```
 
 ---
 

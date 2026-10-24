@@ -3548,6 +3548,7 @@ data-store-type="session|local"  <!-- ストレージ種別。既定は session 
 |---|---|---|
 | `data-{event}-dialog` / `data-{event}-toast` / `data-{event}-toast-level` | 17 | 表示直前 |
 | `data-{event}-error-toast` / `data-{event}-error-toast-level`（ステータスごとの組の `-toast` / `-toast-level` を含む） | 取得の失敗の後 | 表示直前 |
+| `data-{event}-clipboard-error-toast` / `data-{event}-clipboard-error-toast-level` | クリップボードへ書けなかった後 | 表示直前 |
 | `data-{event}-history` | 19 | `history.pushState()` 直前 |
 | `data-{event}-scroll` | 19 の後 | スクロール直前 |
 | `data-{event}-redirect` / `data-{event}-redirect-replace` / `data-{event}-redirect-return-param` | 20 | 遷移直前 |
@@ -4226,6 +4227,18 @@ Haori.handlers.register('editRule', function (event, index, formSelector) {
   - 評価した値が空文字の場合と、[未解決参照](#未解決参照の診断)を含む場合
   - `navigator.clipboard` が無い場合（HTTPS や `localhost` のような安全なコンテキストでないページなど）。開発モードで `warn` ログを出します
   - 書き込みが拒まれた場合（権限が無い、ページにフォーカスが無いなど）。開発モードで `warn` ログを出します
+- **書けなかったことを知らせる**: `data-{event}-clipboard-error-toast` を宣言すると、上の「止める場合」のどれかで止まったときに、その文言のトーストを表示します。レベルは `data-{event}-clipboard-error-toast-level`（`info` / `warning` / `error` / `success`）で指定し、省略時は `info` です。
+  - どちらも式を書けます。表示直前に評価します（[バインド後に実行するアクションの評価タイミング](#バインド後に実行するアクションの評価タイミング)）。評価結果の扱いは [`data-{event}-toast`](#data-event-toast) と同じです。
+  - トーストを表示しても、手続きは失敗のまま終えます。後続のアクションは実行しません。
+  - 書けた場合と、`data-{event}-clipboard` より前で止まった場合（`data-{event}-validate` / `data-{event}-if`）は表示しません。
+  - [失敗時のアクション](#失敗時のアクション)（`data-{event}-error-toast` など）は、取得の失敗にだけ使います。書けなかった場合には実行しません。
+
+  ```html
+  <button type="button" data-click-clipboard="{{userId}}"
+    data-click-toast="ユーザーIDをコピーしました" data-click-toast-level="success"
+    data-click-clipboard-error-toast="コピーできませんでした"
+    data-click-clipboard-error-toast-level="error">コピー</button>
+  ```
 - **取得の応答の値は書けません。** 取得より前に書くためです。
 - `data-click-defer` と併用すると、書き込みが利用者の操作から離れるため、ブラウザによっては拒まれます。
 
@@ -6568,6 +6581,7 @@ if (type === ExpressionType.EXPRESSION) {
    | `data-each-rendered-run="window.__choicesRefresh(this)"`（`this`） | `data-each-rendered-run-handler="choicesRefresh"`（関数の `this` がコンテナ） |
    | `data-click-before-run="if (!ok) return false"`（文） | 関数を登録し、`data-click-before-run-handler="check"` |
    | `data-click-run="navigator.clipboard.writeText('{{id}}')"`（クリップボード） | `data-click-clipboard="{{id}}"` |
+   | インラインの `<script>` でクリップボードへ書き、失敗したら `Haori.toast()` で知らせる | `data-click-clipboard="{{id}}"` と `data-click-clipboard-error-toast="コピーできませんでした"` |
    | `data-click-before-run` で `fetchOptions.body` を組み立て直す（送信データの変換） | `data-click-payload-transform="({...payload, items: payload.items.filter(r => r.qty != null)})"` |
 
 4. 利用側のインラインのスクリプトとイベントハンドラ属性を、別のファイルへ移すか nonce を付けます。

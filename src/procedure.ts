@@ -759,6 +759,18 @@ export interface ProcedureOptions {
    */
   clipboardAttrName?: string | null;
 
+  /**
+   * クリップボードへ書けずに止まったときのトーストメッセージ
+   * （`data-{event}-clipboard-error-toast`）。
+   */
+  clipboardErrorToastMessage?: string | null;
+
+  /**
+   * クリップボードへ書けずに止まったときのトーストレベル
+   * （`data-{event}-clipboard-error-toast-level`）。
+   */
+  clipboardErrorToastLevel?: ToastLevel | null;
+
   /** フェッチ前実行スクリプト */
   beforeCallback?: (
     fetchUrl: string | null,
@@ -2123,6 +2135,18 @@ ${body}
       const clipboardAttrName = Procedure.attrName(event, 'clipboard');
       if (fragment.hasAttribute(clipboardAttrName)) {
         options.clipboardAttrName = clipboardAttrName;
+        options.clipboardErrorToastMessage = Procedure.readLateAttribute(
+          fragment,
+          options,
+          'clipboard-error-toast',
+          Procedure.attrName(event, 'clipboard-error-toast'),
+        );
+        options.clipboardErrorToastLevel = Procedure.readToastLevel(
+          fragment,
+          options,
+          'clipboard-error-toast-level',
+          Procedure.attrName(event, 'clipboard-error-toast-level'),
+        );
       }
     }
     // fetch URL（イベントあり/なし）
@@ -3167,6 +3191,33 @@ ${body}
   }
 
   /**
+   * クリップボードへ書けずに止まったことをトーストで知らせます。
+   *
+   * 仕様「`data-{event}-clipboard`」の「書けなかったことを知らせる」です。文言と
+   * レベルは表示直前に評価し直します。
+   *
+   * @returns 表示を終えたら解決する Promise
+   */
+  private async showClipboardErrorToast(): Promise<void> {
+    const message = Procedure.normalizeAttributeText(
+      this.resolveLateAttribute(
+        'clipboard-error-toast',
+        this.options.clipboardErrorToastMessage,
+      ),
+    );
+    if (!message) {
+      return;
+    }
+    const level = Procedure.toToastLevel(
+      this.resolveLateAttribute(
+        'clipboard-error-toast-level',
+        this.options.clipboardErrorToastLevel,
+      ),
+    );
+    await resolveProcedureHaoriApi().toast(message, level ?? 'info');
+  }
+
+  /**
    * 一連の処理を実行します。成功結果を内部で扱うための実体です。
    *
    * @returns 実行成功時は true、停止や失敗時は false
@@ -3250,6 +3301,7 @@ ${body}
       }
       if (clipboardWrite && !(await clipboardWrite)) {
         await this.commitEditOnStop();
+        await this.showClipboardErrorToast();
         return false;
       }
       const confirmed = await this.confirm();

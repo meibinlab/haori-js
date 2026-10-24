@@ -17,6 +17,8 @@ import {waitForCondition, waitForIdle} from './helpers/async';
 describe('data-{event}-clipboard', () => {
   /** 表示したトーストの文言 */
   let toasts: string[] = [];
+  /** 表示したトーストのレベル */
+  let levels: unknown[] = [];
   /** 起きた順の記録 */
   let order: string[] = [];
   let writeText: ReturnType<typeof vi.fn>;
@@ -42,12 +44,14 @@ describe('data-{event}-clipboard', () => {
     Dev.enable();
     Env.setRuntime('embedded');
     toasts = [];
+    levels = [];
     order = [];
     await import('../src/observer');
     warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    vi.spyOn(Haori, 'toast').mockImplementation(async message => {
+    vi.spyOn(Haori, 'toast').mockImplementation(async (message, level) => {
       toasts.push(message);
+      levels.push(level);
     });
     writeText = vi.fn(async (text: string) => {
       order.push(`write:${text}`);
@@ -365,5 +369,198 @@ describe('data-{event}-clipboard', () => {
       {description: '入力した値がフォームへ写る'},
     );
     expect(writeText).not.toHaveBeenCalled();
+  });
+
+  describe('書けなかったことを知らせる（-clipboard-error-toast）', () => {
+    /** 失敗の文言とレベルを宣言した属性 */
+    const errorAttrs =
+      'data-click-toast="コピーしました"' +
+      ' data-click-clipboard-error-toast="コピーできませんでした"' +
+      ' data-click-clipboard-error-toast-level="error"';
+
+    it.each([
+      ['評価した値が空文字の', '{"v":""}', '{{v}}', () => undefined],
+      ['未解決参照を含む', '{"other":1}', '{{missingId}}', () => undefined],
+      [
+        'navigator.clipboard が無い',
+        '{"v":"X"}',
+        '{{v}}',
+        () => setClipboard(undefined),
+      ],
+      [
+        '書き込みが拒まれた',
+        '{"v":"X"}',
+        '{{v}}',
+        () =>
+          writeText.mockImplementation(async () => {
+            throw new Error('denied');
+          }),
+      ],
+    ])(
+      '%s場合は、失敗の文言のトーストを指定したレベルで出す',
+      async (_label, bind, template, arrange) => {
+        // 仕様「`data-{event}-clipboard`」の「`data-{event}-clipboard-error-toast`
+        // を宣言すると、上の「止める場合」のどれかで止まったときに、その文言の
+        // トーストを表示します」「レベルは `data-{event}-clipboard-error-toast-level`
+        // （`info` / `warning` / `error` / `success`）で指定し」「後続のアクションは
+        // 実行しません」
+        arrange();
+        await render(`
+<div data-bind='${bind}'>
+  <button id="m1" type="button" data-click-clipboard="${template}"
+    ${errorAttrs}>コピー</button>
+</div>`);
+        await click('m1');
+        await waitForCondition(() => toasts.length > 0, {
+          description: '失敗のトーストが出る',
+        });
+        await waitForIdle();
+        expect(toasts).toEqual(['コピーできませんでした']);
+        expect(levels).toEqual(['error']);
+      },
+    );
+
+    it('レベルを省略すると info で出す', async () => {
+      // 仕様「`data-{event}-clipboard`」の「省略時は `info` です」
+      await render(`
+<div data-bind='{"v":""}'>
+  <button id="m2" type="button" data-click-clipboard="{{v}}"
+    data-click-clipboard-error-toast="コピーできませんでした">コピー</button>
+</div>`);
+      await click('m2');
+      await waitForCondition(() => toasts.length > 0, {
+        description: '失敗のトーストが出る',
+      });
+      expect(levels).toEqual(['info']);
+    });
+
+    it('レベルが 4 つのどれとも一致しなければ info で出す', async () => {
+      // 仕様「`data-{event}-clipboard`」の「評価結果の扱いは
+      // [`data-{event}-toast`](#data-event-toast) と同じです」、仕様
+      // 「`data-{event}-toast`」の「評価結果がこの 4 つの文字列のどれとも一致しない
+      // 場合は、`info` で表示します」
+      await render(`
+<div data-bind='{"v":""}'>
+  <button id="m8" type="button" data-click-clipboard="{{v}}"
+    data-click-clipboard-error-toast="コピーできませんでした"
+    data-click-clipboard-error-toast-level="danger">コピー</button>
+</div>`);
+      await click('m8');
+      await waitForCondition(() => toasts.length > 0, {
+        description: '失敗のトーストが出る',
+      });
+      expect(levels).toEqual(['info']);
+    });
+
+    it('文言の評価結果が falsy なら出さない', async () => {
+      // 仕様「`data-{event}-clipboard`」の「評価結果の扱いは
+      // [`data-{event}-toast`](#data-event-toast) と同じです」、仕様
+      // 「`data-{event}-toast`」の「評価結果が falsy（`null` / `undefined` /
+      // `false` / 空文字 / `0`）または未解決参照のときは**表示しません**」
+      await render(`
+<div data-bind='{"v":"","msg":0}'>
+  <button id="m9" type="button" data-click-clipboard="{{v}}"
+    data-click-clipboard-error-toast="{{msg}}">コピー</button>
+</div>`);
+      await click('m9');
+      await waitForIdle();
+      expect(toasts).toEqual([]);
+    });
+
+    it('書けた場合は出さない', async () => {
+      // 仕様「`data-{event}-clipboard`」の「書けた場合と、
+      // `data-{event}-clipboard` より前で止まった場合（`data-{event}-validate` /
+      // `data-{event}-if`）は表示しません」
+      await render(`
+<div data-bind='{"v":"OK"}'>
+  <button id="m3" type="button" data-click-clipboard="{{v}}"
+    ${errorAttrs}>コピー</button>
+</div>`);
+      await click('m3');
+      await waitForCondition(() => toasts.length > 0, {
+        description: '成功のトーストが出る',
+      });
+      await waitForIdle();
+      expect(toasts).toEqual(['コピーしました']);
+    });
+
+    it('data-{event}-if が偽で止まった場合は出さない', async () => {
+      // 仕様「`data-{event}-clipboard`」の「`data-{event}-clipboard` より前で
+      // 止まった場合（`data-{event}-validate` / `data-{event}-if`）は表示しません」
+      await render(`
+<div data-bind='{"v":""}'>
+  <button id="m4" type="button" data-click-if="{{false}}"
+    data-click-clipboard="{{v}}" ${errorAttrs}>コピー</button>
+</div>`);
+      await click('m4');
+      await waitForIdle();
+      expect(toasts).toEqual([]);
+    });
+
+    it('文言とレベルは表示直前に評価する', async () => {
+      // 仕様「`data-{event}-clipboard`」の「どちらも式を書けます。表示直前に評価
+      // します」
+      const holder = (): HTMLElement => document.getElementById('m5-holder')!;
+      writeText.mockImplementation(async () => {
+        holder().setAttribute(
+          'data-bind',
+          '{"v":"X","msg":"後の文言","lv":"warning"}',
+        );
+        await waitForIdle();
+        throw new Error('denied');
+      });
+      await render(`
+<div id="m5-holder" data-bind='{"v":"X","msg":"前の文言","lv":"success"}'>
+  <button id="m5" type="button" data-click-clipboard="{{v}}"
+    data-click-clipboard-error-toast="{{msg}}"
+    data-click-clipboard-error-toast-level="{{lv}}">コピー</button>
+</div>`);
+      await click('m5');
+      await waitForCondition(() => toasts.length > 0, {
+        description: '失敗のトーストが出る',
+      });
+      expect(toasts).toEqual(['後の文言']);
+      expect(levels).toEqual(['warning']);
+    });
+
+    it('書けなかった場合に、取得の失敗時のアクション（-error-toast）は実行しない', async () => {
+      // 仕様「`data-{event}-clipboard`」の「[失敗時のアクション](#失敗時のアクション)
+      // （`data-{event}-error-toast` など）は、取得の失敗にだけ使います。書けなかった
+      // 場合には実行しません」
+      await render(`
+<div data-bind='{"v":""}'>
+  <button id="m6" type="button" data-click-clipboard="{{v}}"
+    data-click-fetch="/api/m6" data-click-error-toast="取得できませんでした"
+    data-click-clipboard-error-toast="コピーできませんでした">コピー</button>
+</div>`);
+      await click('m6');
+      await waitForCondition(() => toasts.length > 0, {
+        description: '失敗のトーストが出る',
+      });
+      await waitForIdle();
+      expect(toasts).toEqual(['コピーできませんでした']);
+    });
+
+    it('書けた後で取得が失敗した場合は出さない', async () => {
+      // 仕様「`data-{event}-clipboard`」の「書けた場合と、`data-{event}-clipboard`
+      // より前で止まった場合（`data-{event}-validate` / `data-{event}-if`）は表示
+      // しません」
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async () => new Response('{}', {status: 500}),
+      );
+      await render(`
+<div data-bind='{"v":"OK"}'>
+  <button id="m7" type="button" data-click-clipboard="{{v}}"
+    data-click-fetch="/api/m7" data-click-error-no-message
+    data-click-error-toast="取得できませんでした"
+    data-click-clipboard-error-toast="コピーできませんでした">コピー</button>
+</div>`);
+      await click('m7');
+      await waitForCondition(() => toasts.length > 0, {
+        description: '取得の失敗のトーストが出る',
+      });
+      await waitForIdle();
+      expect(toasts).toEqual(['取得できませんでした']);
+    });
   });
 });

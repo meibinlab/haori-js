@@ -3633,8 +3633,9 @@ export class ElementFragment extends Fragment {
    * 使用する直前に評価し直す属性の、イベント名より後ろの部分。
    *
    * 仕様「バインド後に実行するアクションの評価タイミング」の表の属性です。
-   * `-error-toast` とステータスごとの組（`-error-404-toast`）は `-toast` /
-   * `-toast-level` で終わるため、ここに含まれます。`Procedure` が読み取る属性と
+   * `-error-toast` とステータスごとの組（`-error-404-toast`）、
+   * `-clipboard-error-toast` は `-toast` / `-toast-level` で終わるため、ここに
+   * 含まれます。`Procedure` が読み取る属性と
    * 揃えてください。
    */
   private static readonly LATE_ACTION_ATTRIBUTE_SUFFIX = new RegExp(

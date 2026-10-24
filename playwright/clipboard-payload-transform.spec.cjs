@@ -47,6 +47,37 @@ for (const [label, url] of [
       );
     });
 
+    test('値が空なら、書けなかったことをトーストで知らせる', async ({
+      page,
+      context,
+    }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.goto(url);
+      await page.waitForSelector('body[data-haori-ready]');
+      await page.locator('#copy-empty-error').click();
+      // 仕様「`data-{event}-clipboard`」の「`data-{event}-clipboard-error-toast`
+      // を宣言すると、上の「止める場合」のどれかで止まったときに、その文言の
+      // トーストを表示します」「後続のアクションは実行しません」
+      await expect(page.getByText('コピーできませんでした')).toBeVisible();
+      expect(await page.getByText('空をコピーしました').count()).toBe(0);
+    });
+
+    test('書き込みが拒まれたら、書けなかったことをトーストで知らせる', async ({
+      page,
+    }) => {
+      await page.addInitScript(() => {
+        navigator.clipboard.writeText = () =>
+          Promise.reject(new Error('denied'));
+      });
+      await page.goto(url);
+      await page.waitForSelector('body[data-haori-ready]');
+      await page.locator('#copy-error').click();
+      // 仕様「`data-{event}-clipboard`」の「書き込みが拒まれた場合（権限が無い、
+      // ページにフォーカスが無いなど）」「その文言のトーストを表示します」
+      await expect(page.getByText('書き込みを拒まれました')).toBeVisible();
+      expect(await page.getByText('コピーしました').count()).toBe(0);
+    });
+
     test('変換した送信データを送り、画面の行は残す', async ({page}) => {
       const bodies = [];
       await page.route('**/api/demand', route => {

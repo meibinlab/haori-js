@@ -14,6 +14,14 @@
       data-click-toast="コピーしました">コピー</button>
     <button id="copy-empty" type="button" data-click-clipboard="{{empty}}"
       data-click-toast="空をコピーしました">空</button>
+    <!-- data-click-clipboard-error-toast: 書けなかったことを知らせる -->
+    <button id="copy-empty-error" type="button" data-click-clipboard="{{empty}}"
+      data-click-toast="空をコピーしました"
+      data-click-clipboard-error-toast="コピーできませんでした"
+      data-click-clipboard-error-toast-level="error">空（知らせる）</button>
+    <button id="copy-error" type="button" data-click-clipboard="{{customerId}}"
+      data-click-toast="コピーしました"
+      data-click-clipboard-error-toast="書き込みを拒まれました">コピー（知らせる）</button>
   </div>
   <!-- data-click-payload-transform: 需要電力が空の行を送らない -->
   <form id="demand" data-bind='{"items":[{"m":"2026-01","kw":"10"},{"m":"2026-02","kw":""}]}'>
