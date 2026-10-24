@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## [0.66.0] - 2026-10-24
+
+**値をクリップボードへ書く宣言と、送信データを式で変換する宣言を足しました。** どちらも CSP モードと従来の方式の両方で使えます。
+
+### Added
+
+- **`data-{event}-clipboard`**（仕様「`data-{event}-clipboard`」）。値（`{{式}}` を書けます）を押した時点で評価し、クリップボードへ書きます。書き終わってから後続のアクションへ進むため、`data-click-toast="コピーしました"` は書けたときだけ出ます。
+  - 書き込みは `data-{event}-run` の直後、`await` を挟まずに始めます（ブラウザは利用者の操作の直後でないと書き込みを拒むことがあるため）。確認ダイアログはその後です。
+  - 値が空（`null` / `undefined` / `false` / `NaN` / 空文字）の場合、未解決参照を含む場合、`navigator.clipboard` が無い場合、書き込みが拒まれた場合は、手続きを止めます（後者 2 つは開発モードで `warn` ログ）。`0` は `"0"` を書きます。
+  - 0.65.0 から CSP モードの `*-run` の本文にはグローバル（`navigator`）と `{{...}}` を書けないため、`data-click-run="navigator.clipboard.writeText('{{id}}')"` の移す先になります。
+- **`data-{event}-payload-transform`**（非イベント: `data-fetch-payload-transform`。仕様「`data-{event}-payload-transform`（非イベント: `data-fetch-payload-transform`）」）。送信データを `payload` として式で変換してから送ります。応答を変換する `data-{event}-bind-transform` と対になります。
+  - 例: `data-click-payload-transform="({...payload, items: payload.items.filter(r => r.qty != null)})"` で、値が空の行を送らない。
+  - 本文（JSON・urlencoded・multipart）や GET のクエリへ直す前、`data-{event}-before-run` より前に適用します。`haori:fetchstart` の `payload` も変換した後の値です。
+  - 入力欄の値をフォームへ写す処理には適用しません。変換で行を除いても、画面の行と入力した値は残ります。
+  - 式が評価できない場合、未解決参照を含む場合、戻り値が配列ではないオブジェクトにならない場合は送らず、手続きを止めます。
+
+### Internal
+
+- 単体テスト（`tests/clipboard.test.ts`・`tests/payload-transform.test.ts`）と、従来の方式・CSP モードの両方で確かめる E2E（`playwright/clipboard-payload-transform.spec.cjs`）を足した。
+
 ## [0.65.1] - 2026-10-24
 
 **開発モードの未解決参照の診断が、正常な構成に出していた誤った警告を直した版です。表示・送信値・本番の動作は変わりません。**
