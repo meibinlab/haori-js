@@ -419,6 +419,164 @@ export default class Core {
   }
 
   /**
+   * 取得の応答で値が決まる入力欄から、ユーザー編集の印を解除します。
+   *
+   * 印が抑止するのは宣言バインド（`value` / `checked` / `selected` と `data-attr-*`）
+   * の再適用だけです。`name` で流し込まれる値は、印ではなく通番で適用の可否が
+   * 決まります（`ElementFragment.canApplyValue()`）。そのため、解除するのは宣言
+   * バインドが応答のキーを参照する欄に限ります。応答と関係のない宣言（定数や、
+   * 別のデータを参照する式）の欄の印まで解除すると、その応答の反映で入力した値が
+   * 既定値へ戻ります（仕様「ユーザー編集と宣言バインドの権威」）。
+   *
+   * @param fragment 応答を反映するフラグメント
+   * @param keys 応答が持つキー
+   * @param upTo この通し番号までの編集を解除対象とする
+   * @return 戻り値はありません。
+   */
+  public static clearUserEditMarksSuppliedBy(
+    fragment: ElementFragment,
+    keys: readonly string[],
+    upTo: number,
+  ): void {
+    Core.clearUserEditMarksReferencing(fragment, new Set(keys), upTo);
+  }
+
+  /** 宣言バインドで入力欄の値・チェックを決める属性の名前（接頭辞なし） */
+  private static readonly VALUE_BINDING_ATTRIBUTES = ['value', 'checked'];
+
+  /** 宣言バインドで `option` の選択を決める属性の名前（接頭辞なし） */
+  private static readonly OPTION_BINDING_ATTRIBUTES = ['selected'];
+
+  /**
+   * 指定した名前を参照する宣言バインドを持つ入力欄から、ユーザー編集の印を解除
+   * します。
+   *
+   * `option` の `selected` は所属する `<select>` の印で守られるため、`<select>` の
+   * 印を解除します（`ElementFragment.hasPendingCheckableUserEdit()` と同じ対応）。
+   * `option` の `value` など、選択を決めない宣言では解除しません。選択肢を取り直した
+   * だけで、`<select>` で選んだ値が既定値へ戻らないようにするためです。
+   *
+   * @param fragment 走査中のフラグメント
+   * @param names このフラグメントから見て応答の値に解決される名前
+   * @param upTo この通し番号までの編集を解除対象とする
+   * @return 戻り値はありません。
+   */
+  private static clearUserEditMarksReferencing(
+    fragment: ElementFragment,
+    names: ReadonlySet<string>,
+    upTo: number,
+  ): void {
+    const target = fragment.getTarget();
+    const isOption = target instanceof HTMLOptionElement;
+    if (
+      Core.declaresReferencing(
+        fragment,
+        isOption
+          ? Core.OPTION_BINDING_ATTRIBUTES
+          : Core.VALUE_BINDING_ATTRIBUTES,
+        names,
+      )
+    ) {
+      const owner = isOption
+        ? Fragment.get(target.closest('select'))
+        : fragment;
+      if (owner instanceof ElementFragment) {
+        owner.clearUserEditMark(upTo);
+      }
+    }
+    fragment.getChildren().forEach(child => {
+      if (child instanceof ElementFragment) {
+        Core.clearUserEditMarksReferencing(
+          child,
+          Core.resolveNamesInChild(fragment, child, names),
+          upTo,
+        );
+      }
+    });
+  }
+
+  /**
+   * 子のフラグメントから見て、応答の値に解決される名前を返します。
+   *
+   * 子が自身のバインドデータで同じ名前を持つと、その名前は子の値に解決されます
+   * （遮蔽）。`data-each` の行は例外で、行の名前（`data-each-arg` など）は要素データ
+   * に解決されるため、`data-each` の式が応答の値を参照していれば応答の値に解決
+   * されるとみなします。
+   *
+   * @param parent 親のフラグメント
+   * @param child 子のフラグメント
+   * @param names 親から見て応答の値に解決される名前
+   * @returns 子から見て応答の値に解決される名前
+   */
+  private static resolveNamesInChild(
+    parent: ElementFragment,
+    child: ElementFragment,
+    names: ReadonlySet<string>,
+  ): ReadonlySet<string> {
+    const own = Object.keys(child.getRawBindingData() ?? {});
+    const each = parent.getRawAttribute(`${Env.prefix}each`);
+    const rowCarries =
+      child.getListKey() !== null &&
+      typeof each === 'string' &&
+      Core.referencesAny([each], names);
+    const next = new Set(names);
+    own.forEach(name => {
+      if (rowCarries) {
+        next.add(name);
+      } else {
+        next.delete(name);
+      }
+    });
+    return next;
+  }
+
+  /**
+   * 指定した属性の宣言バインド（素の属性の式と `data-attr-*`）が、指定した名前を
+   * 参照するかを判定します。
+   *
+   * @param fragment 判定対象のフラグメント
+   * @param attributes 属性の名前（接頭辞なし）
+   * @param names 名前の集合
+   * @returns 参照する場合 true
+   */
+  private static declaresReferencing(
+    fragment: ElementFragment,
+    attributes: readonly string[],
+    names: ReadonlySet<string>,
+  ): boolean {
+    return attributes.some(name =>
+      [name, `${Env.prefix}attr-${name}`].some(attribute => {
+        const raw = fragment.getRawAttribute(attribute);
+        return (
+          typeof raw === 'string' &&
+          Core.referencesAny(Core.extractInterpolations(raw), names)
+        );
+      }),
+    );
+  }
+
+  /**
+   * 式のいずれかが、指定した名前のいずれかを参照するかを判定します。
+   *
+   * 参照名を取り出せない式（解析できない式や定数）は、どの名前も参照しないものと
+   * して扱います。
+   *
+   * @param expressions 式の一覧
+   * @param names 名前の集合
+   * @returns 参照する場合 true
+   */
+  private static referencesAny(
+    expressions: readonly string[],
+    names: ReadonlySet<string>,
+  ): boolean {
+    return expressions.some(expression =>
+      Expression.getFreeIdentifiers(expression).some(identifier =>
+        names.has(identifier),
+      ),
+    );
+  }
+
+  /**
    * data-fetch の再評価状態を取得します。
    *
    * @param element 対象要素

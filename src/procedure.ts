@@ -5600,7 +5600,9 @@ ${body}
    * 1. **送信より前の編集の印を解除する**。バインドは明示的な値の供給なので、
    *    リクエストを組み立てた時点までの編集は応答（またはバインド指定）に権威を
    *    譲ります。解除しないと、宣言バインドの再適用が抑止されたままになり
-   *    「再取得したのに古い入力が残る」状態になります。
+   *    「再取得したのに古い入力が残る」状態になります。譲るのは応答で値が決まる欄
+   *    （宣言バインドが応答のキーを参照する欄）だけです
+   *    （`Core.clearUserEditMarksSuppliedBy()`）。
    *    ただしフェッチを伴わない `change` / `input` のバインドは例外で、解除しません
    *    （`twoWayCommitBind`）。供給されるデータが入力欄から収集した編集値そのもの
    *    であり、権威を譲る相手がいないためです。解除すると、参照キーと書込キーが
@@ -5640,8 +5642,9 @@ ${body}
     const isAutomaticPoll = this.eventType === 'poll';
     if (!isAutomaticPoll && !this.twoWayCommitBind) {
       // 送信時点までの編集は応答に権威を譲る。それより後の編集の印は残るため、
-      // 飛行中の通信の応答で新しい編集が消えることはない。
-      Core.clearUserEditMarks(fragment, baseline);
+      // 飛行中の通信の応答で新しい編集が消えることはない。譲るのは応答で値が
+      // 決まる欄だけで、応答と関係のない欄の入力は残す。
+      Core.clearUserEditMarksSuppliedBy(fragment, responseKeys, baseline);
     }
     if (!(fragment.getTarget() instanceof HTMLFormElement)) {
       return this.reconcileAncestorArgFormEdits(

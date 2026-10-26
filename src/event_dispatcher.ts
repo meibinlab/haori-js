@@ -458,7 +458,11 @@ export default class EventDispatcher {
     // 初期化中は手続きの実行だけを保留する。対象要素の解決と preventDefault は
     // イベント発生時に同期で済ませ、フラグメント解決・値同期・手続き実行は
     // 初期化完了後（フラグメントが確実に初期化済みの状態）に行う。
+    // ユーザー編集の印だけはこの時点で付ける（`markUserEditDuringInit()`）。
     if (this.deferred) {
+      if (type === 'change' || type === 'input') {
+        this.markUserEditDuringInit(element, type === 'change');
+      }
       this.deferredProcedures.push(() => {
         // 保留分の再生時のみ、初期化中の再描画などで対象要素が DOM から外れて
         // いれば処理しない（その要素の状態はすでに失われている）。同期経路では
@@ -559,6 +563,9 @@ export default class EventDispatcher {
    * 対象は値を持つ入力要素だけです。`contenteditable` など値収集の対象でない要素で
    * `input` が発火しても、記録すべき編集はありません。
    *
+   * 初期化中も受けた時点で記録します（`markUserEditDuringInit()`）。フラグメントが
+   * まだ無い要素だけは、初期化完了後に記録します。
+   *
    * @param element 編集された要素
    * @returns 戻り値はない。
    */
@@ -571,6 +578,9 @@ export default class EventDispatcher {
       return;
     }
     if (this.deferred) {
+      if (this.markUserEditDuringInit(element, false)) {
+        return;
+      }
       this.deferredProcedures.push(() => {
         if (!element.isConnected) {
           return;
@@ -594,6 +604,78 @@ export default class EventDispatcher {
       return;
     }
     fragment.markUserEdit();
+  }
+
+  /**
+   * 初期化中に受けた `input` / `change` について、ユーザー編集の印だけを付けます。
+   *
+   * 初期化中は手続きの実行を `release()` まで保留しますが、編集の印は手続きでは
+   * ありません。印まで保留すると、初回の取得の応答を反映する再評価が、宣言バインドの
+   * 評価結果で入力した値を上書きします（仕様「初期スキャン中に発火したイベントの
+   * 扱い」）。内部値の同期は、今までどおり再生した手続きで行います。
+   *
+   * `change` の時点の決め方は `syncUserEdit()` と同じです。打鍵が先にあればその時点を
+   * 保ち（`markUserEditOnDeferredChange()`）、ラジオボタンは排他で外れた同名の欄にも
+   * 印を付けます。
+   *
+   * 編集された要素のフラグメントがまだ無い場合は作らず、今までどおり初期化完了後に
+   * 記録します。走査より先にフラグメントを作ると、その要素を既知のノードとして扱って
+   * しまうためです。
+   *
+   * @param element 編集された要素
+   * @param isChange `change` による呼び出しかどうか
+   * @returns 印を付けた場合 true。フラグメントがまだ無い場合 false
+   */
+  private markUserEditDuringInit(
+    element: HTMLElement,
+    isChange: boolean,
+  ): boolean {
+    const fragment = Fragment.peek(element);
+    if (!(fragment instanceof ElementFragment)) {
+      return false;
+    }
+    if (!isChange) {
+      fragment.markUserEdit();
+      return true;
+    }
+    fragment.markUserEditOnDeferredChange();
+    EventDispatcher.radioGroupMembers(element).forEach(member =>
+      member.markUserEdit(),
+    );
+    return true;
+  }
+
+  /**
+   * ラジオボタンについて、同一フォームスコープの同名のラジオボタン（自身を除く）の
+   * フラグメントを返します。ラジオボタンでなければ空です。
+   *
+   * @param element 対象の要素
+   * @returns 同名のラジオボタンのフラグメント
+   */
+  private static radioGroupMembers(element: HTMLElement): ElementFragment[] {
+    if (
+      !(element instanceof HTMLInputElement) ||
+      element.type !== 'radio' ||
+      !element.name
+    ) {
+      return [];
+    }
+    const members: ElementFragment[] = [];
+    for (const member of Array.from(document.getElementsByName(element.name))) {
+      if (
+        member === element ||
+        !(member instanceof HTMLInputElement) ||
+        member.type !== 'radio' ||
+        member.form !== element.form
+      ) {
+        continue;
+      }
+      const memberFragment = Fragment.get(member);
+      if (memberFragment instanceof ElementFragment) {
+        members.push(memberFragment);
+      }
+    }
+    return members;
   }
 
   /**
@@ -628,31 +710,13 @@ export default class EventDispatcher {
     // ラジオボタンは排他制御で他要素が未チェックになるが、その要素では
     // change が発火しないため内部値が古いまま残る。同一フォームスコープの
     // 同名ラジオを併せて同期し、値収集時の不整合（配列累積）を防ぐ。
-    if (
-      element instanceof HTMLInputElement &&
-      element.type === 'radio' &&
-      element.name
-    ) {
-      const group = document.getElementsByName(element.name);
-      for (const member of Array.from(group)) {
-        if (
-          member === element ||
-          !(member instanceof HTMLInputElement) ||
-          member.type !== 'radio' ||
-          member.form !== element.form
-        ) {
-          continue;
-        }
-        const memberFragment = Fragment.get(member);
-        if (memberFragment instanceof ElementFragment) {
-          memberFragment.syncValue();
-          // 排他で未チェックになった同名ラジオもユーザー編集として扱う。
-          // 起点要素だけを記録すると、応答の書き戻しでグループの一部だけが
-          // 巻き戻り、チェック状態が食い違う。
-          memberFragment.markUserEdit();
-        }
-      }
-    }
+    EventDispatcher.radioGroupMembers(element).forEach(memberFragment => {
+      memberFragment.syncValue();
+      // 排他で未チェックになった同名ラジオもユーザー編集として扱う。
+      // 起点要素だけを記録すると、応答の書き戻しでグループの一部だけが
+      // 巻き戻り、チェック状態が食い違う。
+      memberFragment.markUserEdit();
+    });
   }
 
   /**

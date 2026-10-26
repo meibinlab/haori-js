@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>初期化中に入力した値の保護（CSP モード）</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!--
+    入れ子の data-fetch の中に、宣言バインドで既定値を入れる入力欄を置く。
+    初回の取得が終わるまで（data-haori-ready が付くまで）に入力した値が、
+    応答の反映で既定値へ戻らないことを確かめる。応答はテストが止めて返す。
+  -->
+  <div data-fetch="/api/init-a" data-fetch-arg="a">
+    <div data-fetch="/api/init-b" data-fetch-arg="b">
+      <form data-bind='{"other":""}'>
+        <input id="i" name="x" type="date" data-attr-value="{{ '2026-10-06' }}">
+        <input id="j" name="y">
+        <input id="k" name="z" data-attr-value="{{ '既定' }}">
+      </form>
+    </div>
+  </div>
+</body>
+</html>

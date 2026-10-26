@@ -2848,6 +2848,26 @@ export class ElementFragment extends Fragment {
   }
 
   /**
+   * 初期化中に受けた `change` によるユーザー編集を、受けた時点で記録します。
+   *
+   * 初期化中は `change` の手続きを `release()` まで保留しますが、編集の印まで保留
+   * すると、初回の取得の応答を反映する再評価が宣言バインドの評価結果で入力した値を
+   * 上書きします。そこで印だけを先に付けます。
+   *
+   * 時点の決め方は `markUserEditOnChange()` と同じで、直前の `change` より後に打鍵が
+   * あれば何もしません（打鍵の時点が記録済み）。**直前の `change` の記録は進めません。**
+   * 再生した手続きの `markUserEditOnChange()` がここで付けた印を「直前の `change` より
+   * 後の編集」として引き継ぎ、時点を再生の時点へ打ち直さないようにするためです。
+   *
+   * @returns 戻り値はありません。
+   */
+  public markUserEditOnDeferredChange(): void {
+    if (this.userEditSequence <= this.lastChangeSequence) {
+      this.markUserEdit();
+    }
+  }
+
+  /**
    * この入力欄を最後にユーザーが編集したときの通し番号を返します。
    *
    * @returns ユーザー編集の通し番号（未編集なら 0）
@@ -3017,6 +3037,30 @@ export class ElementFragment extends Fragment {
     return () => {
       options.forEach((option, index) => {
         option.selected = selected[index];
+      });
+    };
+  }
+
+  /**
+   * ラジオボタンの群の今の選択を控え、その状態へ戻す関数を返します。
+   *
+   * 控えるのは同名のラジオボタンです。フォームでは絞りません。`checked` 属性の
+   * 書き込みで選択が変わるのは同じ群（同じフォームの同名の欄）だけで、ほかの欄は
+   * 控えた状態のまま戻すことになり、結果が変わらないためです。名前で絞るのは
+   * 走査する欄を減らすためです。
+   *
+   * @param radio 群に属するラジオボタン
+   * @returns 控えた選択へ戻す関数
+   */
+  private static captureRadioGroup(radio: HTMLInputElement): () => void {
+    const root = radio.getRootNode() as Document | ShadowRoot;
+    const members = Array.from(
+      root.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+    ).filter(member => member.name === radio.name);
+    const checked = members.map(member => member.checked);
+    return () => {
+      members.forEach((member, index) => {
+        member.checked = checked[index];
       });
     };
   }
@@ -3946,15 +3990,22 @@ export class ElementFragment extends Fragment {
         // （仕様「ユーザー編集と宣言バインドの権威」の「印がある間も属性の反映は
         // 行われますが、DOM の値・チェック状態と内部値（収集値）は編集値のまま
         // 保たれます」）。
-        const keptSelection =
-          isSelectedTarget && (skipCheckableReapply || checkableSuperseded)
+        // ラジオボタンの `checked` 属性も同じで、利用者が直接操作していない欄（排他で
+        // 外れた欄）へ付けると、その欄が選ばれて利用者の選んだ欄が外れる。初期化中は
+        // 初回の評価が取得の応答の後に走るため、操作の後に初めて属性を書くことがある。
+        const keepsCheckable = skipCheckableReapply || checkableSuperseded;
+        const keptSelection = !keepsCheckable
+          ? null
+          : isSelectedTarget
             ? ElementFragment.captureSelection(
                 // 守るべき選択があるのは所属する `<select>` があるときだけ。
                 (element as HTMLOptionElement).closest(
                   'select',
                 ) as HTMLSelectElement,
               )
-            : null;
+            : isCheckedTarget && (element as HTMLInputElement).type === 'radio'
+              ? ElementFragment.captureRadioGroup(element as HTMLInputElement)
+              : null;
         if (requiresRawAttributeWrite) {
           element.setAttribute(rawName, value);
         }
