@@ -3376,6 +3376,30 @@ Haori.handlers.register('dropEmptyRows', (fetchUrl, fetchOptions) => {
 
 6 の通信が失敗した場合は 7 以降へ進まず、エラーを表示したうえで（`data-click-error-no-message` で表示を止められます）、`data-click-error-click` → `data-click-error-close` → `data-click-error-toast` を宣言していれば実行します（[取り直しが失敗したらダイアログを閉じる](#取り直しが失敗したらダイアログを閉じるdata-click-error-)）。
 
+### 別々のボタンで実行中のロックを共有する（`data-click-lock`）
+
+クリックの手続きが実行中の間、押したボタンには `disabled` が付き、同じボタンの 2 度押しは実行されません。ただしこのロックはボタンごとです。**同じものを書き換える別々のボタン**（打刻の「休憩開始」と「退勤」など）は、応答を待つ間に続けて押すと両方の手続きが走ります。
+
+同じ値の `data-click-lock` を付けると、それらのボタンで 1 つのロックを共有します。どれかの手続きが実行中の間は、ほかのボタンにも `disabled` が付き、押しても実行されません。手続きが終わると、各ボタンの `disabled` はそれぞれの `data-attr-disabled` の評価結果へ揃います。
+
+```html
+<div id="state" data-bind='{"status": "勤務中"}'>
+  <button data-click-fetch="/api/break-start" data-click-fetch-method="POST"
+    data-click-bind="#state" data-click-lock="punch"
+    data-attr-disabled="{{status !== '勤務中'}}">休憩開始</button>
+  <button data-click-fetch="/api/break-end" data-click-fetch-method="POST"
+    data-click-bind="#state" data-click-lock="punch"
+    data-attr-disabled="{{status !== '休憩中'}}">休憩終了</button>
+  <button data-click-fetch="/api/off-work" data-click-fetch-method="POST"
+    data-click-bind="#state" data-click-lock="punch"
+    data-attr-disabled="{{status !== '勤務中'}}">退勤</button>
+</div>
+```
+
+- 名前は文書全体で共有します。名前の違うボタンや、`data-click-lock` を付けないボタンは、互いにロックしません。一覧の行ごとに分けたい場合は、`data-click-lock="punch-{{id}}"` のように式で名前を作ります。
+- `data-click-no-disabled` を付けたボタンには `disabled` を付けません（押しても実行されないことは同じです）。
+- 細かい挙動は仕様書の「`data-click-lock`」を参照してください。
+
 ### 他ライブラリとの共存（`data-click-no-disabled`）
 
 Haori は `data-click-*` のクリック手続き実行中、多重クリックを防ぐためにボタンへ一時的に native の `disabled` 属性を付与します（手続きが終わると、その時点の `data-attr-disabled` の評価結果へ揃えます。宣言が無ければ活性へ戻ります）。Haori はクリックイベントの伝播を止めません（`stopPropagation` / `preventDefault` は呼びません）が、Bootstrap などの他ライブラリや CSS は `disabled` 要素のクリックを無視するため、**同じボタンに `data-bs-toggle="collapse"` のような他ライブラリのハンドラを併用すると、それらの動作が阻害される**ことがあります。

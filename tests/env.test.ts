@@ -148,3 +148,63 @@ describe('環境から開発モードを検出します', () => {
     expect(Dev.isEnabled()).toBe(false);
   });
 });
+
+describe('接頭辞の規則', () => {
+  /**
+   * `data-prefix` を持つ script を置いて環境を検出します。
+   *
+   * @param prefix `data-prefix` の値
+   */
+  function detectWithPrefix(prefix: string): void {
+    document.querySelectorAll('script').forEach(script => script.remove());
+    const script = document.createElement('script');
+    script.setAttribute('data-prefix', prefix);
+    script.src = 'haori.js';
+    document.body.appendChild(script);
+    Env.detect();
+  }
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'location', {
+      value: new URL('http://test.com'),
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    detectWithPrefix('data');
+    document.querySelectorAll('script').forEach(script => script.remove());
+    vi.restoreAllMocks();
+  });
+
+  it('ハイフンを含まない値は、末尾にハイフンを補って使う', () => {
+    // 仕様「接頭辞の規則」の「末尾のハイフンは省略でき、省略した場合は補います」
+    detectWithPrefix('hx');
+    expect(Env.prefix).toBe('hx-');
+  });
+
+  it('末尾だけにハイフンを含む値は、そのまま使う', () => {
+    // 仕様「接頭辞の規則」の「`hx`・`haori-` は使えます」
+    detectWithPrefix('haori-');
+    expect(Env.prefix).toBe('haori-');
+  });
+
+  it('途中にハイフンを含む値は、開発モードでなくてもエラーを記録して data- で動く', () => {
+    // 仕様「接頭辞の規則」の「使えない値を書いた場合は、開発モードに限らず
+    // `error` ログを出し、既定の `data-` で動きます」
+    detectWithPrefix('hor');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    detectWithPrefix('data-haori');
+    expect(Dev.isEnabled()).toBe(false);
+    expect(Env.prefix).toBe('data-');
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+
+  it('途中と末尾にハイフンを含む値も使えない', () => {
+    // 仕様「接頭辞の規則」の「末尾を除いてハイフンを含められません」
+    detectWithPrefix('hor');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    detectWithPrefix('data-x-');
+    expect(Env.prefix).toBe('data-');
+  });
+});

@@ -5,6 +5,7 @@
  */
 
 import Dev from './dev';
+import Log from './log';
 
 /**
  * Haori.js の実行モードを表します。
@@ -12,6 +13,9 @@ import Dev from './dev';
 export type HaoriRuntime = 'embedded' | 'demo';
 
 const DEFAULT_RUNTIME: HaoriRuntime = 'embedded';
+
+/** 既定の接頭辞（仕様「環境検出」） */
+const DEFAULT_PREFIX = 'data-';
 
 /**
  * 指定文字列が有効な実行モードかどうかを判定します。
@@ -54,7 +58,7 @@ function isEnabledAttributeValue(value: string): boolean {
  * 実行環境を管理するクラスです。
  */
 export default class Env {
-  private static _prefix: string = 'data-';
+  private static _prefix: string = DEFAULT_PREFIX;
   private static _runtime: HaoriRuntime = DEFAULT_RUNTIME;
   private static _strictBind: boolean = false;
   private static _csp: boolean = true;
@@ -136,7 +140,7 @@ export default class Env {
         document.querySelector('script[src*="haori"]');
       if (currentScript instanceof HTMLScriptElement) {
         const prefix = currentScript.getAttribute('data-prefix') || Env._prefix;
-        Env._prefix = prefix.endsWith('-') ? prefix : prefix + '-';
+        Env._prefix = Env.normalizePrefix(prefix);
 
         const runtime = resolveRuntimeAttribute(
           currentScript.getAttribute('data-runtime'),
@@ -187,6 +191,29 @@ export default class Env {
     } catch {
       // SSRや非ブラウザ環境では無視
     }
+  }
+
+  /**
+   * `data-prefix` の値を接頭辞へ正規化します。
+   *
+   * 仕様「接頭辞の規則」の「末尾を除いてハイフンを含められません」。使えない値は
+   * エラーを記録し、既定の `data-` を返します。エンジンが付ける属性
+   * （`data-haori-*`）と、利用者の宣言が同じ名前にならないようにするためです。
+   *
+   * @param prefix `data-prefix` の値
+   * @returns 末尾にハイフンを付けた接頭辞
+   */
+  private static normalizePrefix(prefix: string): string {
+    const body = prefix.endsWith('-') ? prefix.slice(0, -1) : prefix;
+    if (body.includes('-')) {
+      Log.error(
+        'Haori',
+        `data-prefix の値「${prefix}」は使えません。末尾を除いてハイフンを` +
+          '含められません。既定の data- で動きます。',
+      );
+      return DEFAULT_PREFIX;
+    }
+    return `${body}-`;
   }
 
   /**

@@ -5551,6 +5551,33 @@ data-{event}-history-form="#selector"        <!-- オプション: フォーム�
 </button>
 ```
 
+##### `data-click-lock`
+
+**同じ名前を持つ要素で、`click` 手続きの実行中のロックを 1 つ共有します。** 同じ処理の対象を書き換える別々のボタン（打刻の「休憩開始」と「退勤」など）を素早く続けて押したときに、両方の手続きが走るのを防ぎます。
+
+- **共有する範囲**: 値の名前が同じ要素どうしです。名前は文書全体で共有します。値にはほかの属性と同じく `{{式}}` を書け、その評価結果が名前です（`data-each` の行ごとに分ける場合など）。値が空の場合は名前が無いものとして扱います。
+- **実行しない**: 同じ名前のどれかの手続きが実行中の間は、同じ名前のほかの要素を押しても手続きを実行しません。「実行中」の範囲は起点要素のロックと同じです（[`data-click-no-disabled`](#data-click-no-disabled) の「「実行中」は手続きが終わるまでです」）。`data-click-run` が返す Promise を待つ間も含みます。
+- **ロックを取る時機**: 起点要素のロックと同じく、クリックと同じ処理の流れの中で `await` を挟まずに取ります。
+- **`disabled` を付ける**: ロックを持つ間、同じ名前のすべての要素に `disabled` を付けます。ただし次の要素には付けません。
+  - [`data-click-no-disabled`](#data-click-no-disabled) を付けた要素
+  - ロックを取った時点ですでに `disabled` の要素（宣言の評価結果が真の要素や、静的な `disabled` を持つ要素）。手続きが終わっても、エンジンはこの要素の `disabled` に触りません
+  - ロックの間に増えた要素（描き直された要素や、`data-each` で増えた行）。`disabled` は付きませんが、押しても手続きを実行しません
+- **ロックの間に宣言が評価し直された場合**: `disabled` はその評価結果になります（起点要素と同じです）。評価結果が偽で `disabled` が外れても、ロックの間は押しても手続きを実行しません。
+- **終わったとき**: エンジンが付けた `disabled` は、起点要素と同じく各要素の宣言の評価結果へ揃えます（[`data-{event}-fetch`](#data-event-fetch) の「手続きが終わると、エンジンが付けた `disabled` はその時点の宣言の評価結果へ揃えます」）。
+- **`data-click-click` で同じ名前の要素を押した場合**: 押された要素はロックの間なので、手続きを実行しません。[`data-{event}-click-await`](#data-event-click-await) を併用した場合の扱いは同節のとおりです（`disabled` でクリックが発火しなければ待てない対象、発火すれば「すでに実行中」の失敗）。
+- **名前を付けない要素**は、起点要素だけのロックのまま変わりません。名前の違う要素どうしは、互いにロックしません。
+- **この属性だけを持つ要素は、クリックの起点になりません。** [`data-click-passive`](#data-click-passive) と同じく、祖先探索ではこの属性を `data-click-*` として数えません。この属性しか持たない要素の内側を押すと、外側の `data-click-*` の手続きが起動します。
+- 対象は `click` 手続きだけです。`submit`・`change` などの手続きには働きません。
+
+```html
+<button data-click-run="startBreak()" data-click-lock="punch"
+  data-attr-disabled="{{status !== '勤務中'}}">休憩開始</button>
+<button data-click-run="endBreak()" data-click-lock="punch"
+  data-attr-disabled="{{status !== '休憩中'}}">休憩終了</button>
+<button data-click-run="goOffWork()" data-click-lock="punch"
+  data-attr-disabled="{{status !== '勤務中'}}">退勤</button>
+```
+
 ##### `data-click-defer`
 
 `click` 手続きを、クリックイベントの同期実行中ではなく**次フレーム（`requestAnimationFrame`、無ければ `setTimeout(0)`）へ遅延**して実行します。Bootstrap の `data-bs-toggle="collapse"` のように、同一クリックイベント中に同期実行される他ライブラリのハンドラを先に完了させたい場合に使います。
@@ -6739,6 +6766,13 @@ const isDev = devAttribute !== null
   : ['localhost', '127.0.0.1', '::1'].includes(location.hostname) ||
     location.hostname.endsWith('.local')
 ```
+
+#### 接頭辞の規則
+
+`data-prefix` の値は、**末尾を除いてハイフンを含められません**（`hx`・`haori-` は使えます。`data-x`・`data-haori` は使えません）。末尾のハイフンは省略でき、省略した場合は補います。
+
+- エンジンが自分で付ける属性はすべて `data-haori-` で始まります（`data-haori-ready`・`data-haori-if-disabled` など）。途中にハイフンを含む接頭辞を許すと、利用者の宣言がこれらと同じ名前になることがあるためです。
+- 使えない値を書いた場合は、開発モードに限らず `error` ログを出し、既定の `data-` で動きます。
 
 **使用例**:
 

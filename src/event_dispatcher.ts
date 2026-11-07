@@ -767,12 +767,19 @@ export default class EventDispatcher {
   private findClickableElement(element: HTMLElement): HTMLElement | null {
     const clickPrefix = `${Env.prefix}click-`;
     const passiveAttr = `${Env.prefix}click-passive`;
+    const lockAttr = `${Env.prefix}click-lock`;
     let current: HTMLElement | null = element;
     while (current) {
-      // data-click-passive 自体はトリガーではないため除外して判定する。
+      // data-click-passive と data-click-lock 自体はトリガーではないため除外して
+      // 判定する（仕様「`data-click-lock`」の「この属性だけを持つ要素は」）。
       const hasClickTrigger = current
         .getAttributeNames()
-        .some(name => name.startsWith(clickPrefix) && name !== passiveAttr);
+        .some(
+          name =>
+            name.startsWith(clickPrefix) &&
+            name !== passiveAttr &&
+            name !== lockAttr,
+        );
       if (hasClickTrigger) {
         return current;
       }

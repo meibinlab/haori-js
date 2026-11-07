@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>別々のボタンで共有するクリックのロック（従来の方式）</title>
+  <script src="/dist/haori.iife.js" data-csp="false"></script>
+</head>
+<body>
+  <!--
+    打刻のボタンを data-click-lock で 1 つのロックにまとめる。打刻の応答を
+    テストが止めている間に、別のボタンを押しても打刻を送らないことを確かめる。
+  -->
+  <div id="state" data-bind='{"status":"勤務中"}'>
+    <button id="break-start" type="button" data-click-fetch="/api/punch-break-start"
+      data-click-fetch-method="POST" data-click-bind="#state" data-click-lock="punch"
+      data-attr-disabled="{{status !== '勤務中'}}">休憩開始</button>
+    <button id="break-end" type="button" data-click-fetch="/api/punch-break-end"
+      data-click-fetch-method="POST" data-click-bind="#state" data-click-lock="punch"
+      data-attr-disabled="{{status !== '休憩中'}}">休憩終了</button>
+    <button id="off-work" type="button" data-click-fetch="/api/punch-off-work"
+      data-click-fetch-method="POST" data-click-bind="#state" data-click-lock="punch"
+      data-attr-disabled="{{status !== '勤務中'}}">退勤</button>
+  </div>
+</body>
+</html>

@@ -1084,15 +1084,29 @@ interface LateAttributeRecord {
   hasUnresolvedReference: boolean;
 }
 
-interface ExecutionLockState {
-  /** 実行中として扱う対象要素 */
+interface LockedElement {
+  /** 実行中として扱う要素 */
   target: HTMLElement;
 
-  /** 対象要素のフラグメント（解除時に宣言を読むために保持する） */
+  /** 要素のフラグメント（解除時に宣言を読むために保持する） */
   fragment: ElementFragment;
 
   /** 今回の処理で disabled 属性を付与したかどうか */
   appliedDisabledAttribute: boolean;
+}
+
+/**
+ * click 手続きの実行ロック。
+ *
+ * 起点要素に加えて、`data-click-lock` で同じ名前を持つ要素も実行中として扱います
+ * （仕様「`data-click-lock`」）。
+ */
+interface ExecutionLockState extends LockedElement {
+  /** 共有するロックの名前。名前が無ければ null */
+  lockName: string | null;
+
+  /** 同じ名前を持つ要素の記録（起点要素が重なることがある） */
+  members: LockedElement[];
 }
 
 /**
@@ -1175,6 +1189,9 @@ export default class Procedure {
 
   /** click 手続きの再入を防ぐ対象要素の集合 */
   private static readonly RUNNING_CLICK_TARGETS = new WeakSet<HTMLElement>();
+
+  /** 実行中の `data-click-lock` の名前（仕様「`data-click-lock`」） */
+  private static readonly RUNNING_LOCK_NAMES = new Set<string>();
 
   /**
    * クリックで起動した手続きの結果（要素 → 結果の Promise）。
@@ -3695,30 +3712,70 @@ ${body}
 
     const targetFragment = this.options.targetFragment;
     const target = targetFragment.getTarget();
+    const lockName = Procedure.readLockName(target);
     if (
       Procedure.RUNNING_CLICK_TARGETS.has(target) ||
       target.matches(':disabled') ||
       target.hasAttribute('disabled') ||
-      target.hasAttribute(PROCEDURE_CLICK_LOCK_MARKER)
+      target.hasAttribute(PROCEDURE_CLICK_LOCK_MARKER) ||
+      (lockName !== null && Procedure.RUNNING_LOCK_NAMES.has(lockName))
     ) {
       return false;
     }
 
+    Procedure.RUNNING_CLICK_TARGETS.add(target);
+    target.setAttribute(PROCEDURE_CLICK_LOCK_MARKER, '');
+    const locked = Procedure.lockElement(target, targetFragment);
+    const members: LockedElement[] = [];
+    if (lockName !== null) {
+      // 同じ名前の要素へも `disabled` を付ける（仕様「`data-click-lock`」）。実行を
+      // 止めるのは名前の判定なので、ロックの間に増えた要素も止まる。
+      // 起点要素は除かない。`disabled` を付けた起点要素はここで外れ、付けない
+      // 起点要素（`data-click-no-disabled`）は記録が重なるだけで結果は変わらない。
+      Procedure.RUNNING_LOCK_NAMES.add(lockName);
+      target.ownerDocument
+        .querySelectorAll<HTMLElement>(`[${Env.prefix}click-lock]`)
+        .forEach(member => {
+          if (
+            Procedure.readLockName(member) === lockName &&
+            !member.hasAttribute('disabled')
+          ) {
+            members.push(Procedure.lockElement(member, Fragment.get(member)));
+          }
+        });
+    }
+    return {...locked, lockName, members};
+  }
+
+  /**
+   * 要素の `data-click-lock` の名前を読みます。
+   *
+   * @param element 対象要素
+   * @returns 名前。属性が無いか値が空なら null
+   */
+  private static readLockName(element: HTMLElement): string | null {
+    return element.getAttribute(`${Env.prefix}click-lock`) || null;
+  }
+
+  /**
+   * 要素へ `disabled` を付けます。
+   *
+   * @param target 対象要素
+   * @param fragment 対象要素のフラグメント
+   * @returns 付けたものの記録
+   */
+  private static lockElement(
+    target: HTMLElement,
+    fragment: ElementFragment,
+  ): LockedElement {
     // data-click-no-disabled が指定されている場合は native disabled を付与しない。
     // Bootstrap など他ライブラリの click ハンドラや CSS が disabled 要素を無視する
     // 問題を避けつつ、内部マーカーと RUNNING_CLICK_TARGETS で多重実行は防止する。
     const skipDisabled = target.hasAttribute(`${Env.prefix}click-no-disabled`);
-
-    Procedure.RUNNING_CLICK_TARGETS.add(target);
-    target.setAttribute(PROCEDURE_CLICK_LOCK_MARKER, '');
     if (!skipDisabled) {
       target.setAttribute('disabled', '');
     }
-    return {
-      target,
-      fragment: targetFragment,
-      appliedDisabledAttribute: !skipDisabled,
-    };
+    return {target, fragment, appliedDisabledAttribute: !skipDisabled};
   }
 
   /**
@@ -3768,16 +3825,28 @@ ${body}
       return;
     }
 
-    const target = executionLock.target;
-    Procedure.RUNNING_CLICK_TARGETS.delete(target);
+    Procedure.RUNNING_CLICK_TARGETS.delete(executionLock.target);
     // マーカーは常に解除する（解除し損ねると再クリックできなくなるため）。
-    target.removeAttribute(PROCEDURE_CLICK_LOCK_MARKER);
-    if (!executionLock.appliedDisabledAttribute) {
+    executionLock.target.removeAttribute(PROCEDURE_CLICK_LOCK_MARKER);
+    if (executionLock.lockName !== null) {
+      Procedure.RUNNING_LOCK_NAMES.delete(executionLock.lockName);
+    }
+    Procedure.unlockElement(executionLock);
+    executionLock.members.forEach(member => Procedure.unlockElement(member));
+  }
+
+  /**
+   * 付けた `disabled` を宣言の評価結果へ揃えます。
+   *
+   * @param locked 付けたものの記録
+   * @returns 戻り値はありません。
+   */
+  private static unlockElement(locked: LockedElement): void {
+    const target = locked.target;
+    if (!locked.appliedDisabledAttribute) {
       return;
     }
-    const declaration = Procedure.findDisabledDeclaration(
-      executionLock.fragment,
-    );
+    const declaration = Procedure.findDisabledDeclaration(locked.fragment);
     if (declaration === null) {
       target.removeAttribute('disabled');
       return;
