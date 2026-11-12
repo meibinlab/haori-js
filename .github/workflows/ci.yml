@@ -15,7 +15,10 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    # Playwright 1.57 は Ubuntu 26.04 のブラウザを導入できない（ubuntu-latest が
+    # 26.04 に変わり、Install Playwright browsers で失敗した）。対応する版へ
+    # 上げるまで 24.04 に固定する。
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout source code
