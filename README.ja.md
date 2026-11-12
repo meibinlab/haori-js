@@ -167,7 +167,7 @@ JS からバインドデータを読むには `Haori.Core.getBindingData(element
 
 開発モードは `<script src="haori.js" data-dev>` で強制でき、**ローカルホストでは既定で有効**です。開発モードの診断は再描画のコストに乗るため、ローカルで本番相当の性能を測る場合は `data-dev="false"` を指定して無効化してください。
 
-`data-fetch` と `data-import` は、バインディング更新時に評価結果が変化した場合のみ自動で再評価されます。`data-fetch` は評価後の URL、HTTP メソッド、ヘッダー、body を含む実行シグネチャで比較し、`data-import` は評価後 URL で比較します。これらの属性値に未解決参照が 1 つでも含まれる場合、その時点では実行されず、後続のバインディング更新で参照が解決したときに初めて実行対象になります。
+`data-fetch` と `data-import` は、バインディング更新時に評価結果が変化した場合のみ自動で再評価されます。`data-fetch` は評価後の URL、HTTP メソッド、ヘッダー、body を含む実行シグネチャで比較し、`data-import` は評価後 URL で比較します。これらの属性値に未解決参照が 1 つでも含まれる場合、その時点では実行されず、後続のバインディング更新で参照が解決したときに初めて実行対象になります。`data-{event}-refetch` は、手続きのバインドの後に対象の要素で同じ条件の自動の取得が走った場合は取り直しません（条件を変えて押しても取得は 1 回です）。
 
 `src` や `type="number"` の `value` のように、ブラウザが HTML 解析時に先に解釈する属性へテンプレート式を直接書くと、初期表示時に警告や不要なアクセスが発生することがあります。こうした属性は `data-attr-*` を使ってください。`data-attr-xxx` は対応する `xxx` 属性を更新します。加えて、入力欄の状態と DOM の食い違いを防ぐため、`value`（テキスト系入力）と `checked`（radio / checkbox）・`selected`（option）は DOM property（`input.value` / `element.checked` / `option.selected`）も同期します。ただし**フォーカス中（編集中）の入力**と、**`change` / `input` で確定した編集を抱えている入力**には再適用しません（利用者の入力を守るため）。確定した編集の印は、フェッチ応答の反映・`data-{event}-reset`・`Core.setBindingData()` などの明示的な値の供給で解除されます。
 

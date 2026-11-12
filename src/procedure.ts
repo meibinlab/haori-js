@@ -3110,6 +3110,45 @@ ${body}
   }
 
   /**
+   * `data-{event}-refetch` の対象の `data-fetch` を取り直します。
+   *
+   * 仕様「`data-{event}-refetch`」の「手続きがバインド（処理順序の 9）へ進んだ後に、
+   * 対象の要素で、今の実行シグネチャの自動の取得が始まった場合は、取り直しません」。
+   * 待つ必要が無い場合は、呼んだ時点で取り直しを始めます（後続の
+   * `data-{event}-click` より先に始める順序を保つ）。
+   *
+   * @param fragment 取り直す対象の要素
+   * @returns 取り直し（または省いた判断）の完了
+   */
+  private refetch(fragment: ElementFragment): Promise<void> {
+    const covered = Core.coveredByManagedFetch(
+      fragment,
+      this.bindStartSequence,
+    );
+    if (covered === true) {
+      return Promise.resolve();
+    }
+    if (covered === false) {
+      return Procedure.startRefetch(fragment);
+    }
+    return covered.then(skip =>
+      skip ? undefined : Procedure.startRefetch(fragment),
+    );
+  }
+
+  /**
+   * 対象の `data-fetch` を取り直します。取り直す実行シグネチャは、自動の取得の
+   * 比較用に記録します（`Core.recordRefetchSignature()`）。
+   *
+   * @param fragment 取り直す対象の要素
+   * @returns 取り直しの完了
+   */
+  private static startRefetch(fragment: ElementFragment): Promise<void> {
+    Core.recordRefetchSignature(fragment);
+    return new Procedure(fragment, null).run();
+  }
+
+  /**
    * 一連の処理を実行します。オプションが空の場合は即座にresolveされます。
    *
    * @returns 実行結果のPromise
@@ -3119,15 +3158,21 @@ ${body}
   }
 
   /**
-   * bind 結果の反映を reentrant（即時実行）で行うよう指定します。マネージド
-   * `data-fetch` の自動再評価から生成した Procedure に対して使います。
-   */
-  /**
    * 実行しなかった（失敗ではない）で終わったかどうか。
    * `runWithOutcome()` が失敗とスキップを見分けるために使います。
    */
   private skipped = false;
 
+  /**
+   * バインド（処理順序の 9）へ進んだ時点の自動の取得の番号
+   * （`Core.getManagedFetchSequence()`）。`data-{event}-refetch` の判定に使います。
+   */
+  private bindStartSequence = 0;
+
+  /**
+   * bind 結果の反映を reentrant（即時実行）で行うよう指定します。マネージド
+   * `data-fetch` の自動再評価から生成した Procedure に対して使います。
+   */
   public markReentrantBind(): void {
     this.reentrantBind = true;
   }
@@ -4473,6 +4518,10 @@ ${body}
       // 消す。範囲は失敗の表示と同じで、入力欄の値には触れない。
       await activeHaori.clearMessages(this.resolveMessageScope());
     }
+    // バインドより後に始まった自動の取得を `data-{event}-refetch` で見分けるため、
+    // ここで番号を控える（仕様「`data-{event}-refetch`」の「バインドより前に始まった
+    // 取得は数えません」）。
+    this.bindStartSequence = Core.getManagedFetchSequence();
     const promises: Promise<unknown>[] = [];
     promises.push(this.bindResult(response));
     promises.push(this.adjust());
@@ -4502,7 +4551,7 @@ ${body}
       this.options.refetchFragments.length > 0
     ) {
       this.options.refetchFragments.forEach(fragment => {
-        deferredPromises.push(new Procedure(fragment, null).run());
+        deferredPromises.push(this.refetch(fragment));
       });
     }
     // `data-{event}-click-await` の待ち合わせで失敗を受け取ったかどうか。

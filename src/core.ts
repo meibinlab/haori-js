@@ -24,6 +24,10 @@ interface ReactiveFetchState {
   lastSignature: string | null;
   running: boolean;
   rerunRequested: boolean;
+  /** 最後に始めた自動の取得の番号（`Core.managedFetchSequence`）。0 は未実行 */
+  startedSequence: number;
+  /** 最後に始めた自動の取得（続けて走る再実行を含む）の完了。未実行なら null */
+  settled: Promise<void> | null;
 }
 
 interface ReactiveImportState {
@@ -227,6 +231,13 @@ export default class Core {
    */
   private static readonly ROW_LOCAL_ROW_OPERATIONS: ReadonlySet<string> =
     new Set(['row-add', 'row-remove', 'row-prev', 'row-next']);
+
+  /**
+   * 自動の取得を始めた回数。始めるたびに 1 増やし、その取得の番号にする。
+   * `data-{event}-refetch` が「手続きのバインドより後に始まった取得か」を見分けるために
+   * 使う（仕様「`data-{event}-refetch`」）。
+   */
+  private static managedFetchSequence = 0;
 
   /** data-fetch の自動再評価状態 */
   private static readonly REACTIVE_FETCH_STATES = new WeakMap<
@@ -593,6 +604,8 @@ export default class Core {
       lastSignature: null,
       running: false,
       rerunRequested: false,
+      startedSequence: 0,
+      settled: null,
     };
     Core.REACTIVE_FETCH_STATES.set(element, state);
     return state;
@@ -715,13 +728,15 @@ export default class Core {
 
     state.lastSignature = resolved.signature;
     state.running = true;
+    Core.managedFetchSequence += 1;
+    state.startedSequence = Core.managedFetchSequence;
     // マネージド fetch はバインドワーク（reevaluateReactiveSpecialAttributes）の
     // 内部から起動・await される。その bind が同一フラグメントを指すと FIFO へ
     // 積んだ場合に実行中ワークと相互に待ち合って自己デッドロックするため、bind を
     // reentrant（即時実行）で行う。
     const procedure = new Procedure(fragment, null);
     procedure.markReentrantBind();
-    return procedure
+    const settled = procedure
       .runWithResult()
       .then(() => undefined)
       .catch(() => {
@@ -738,6 +753,70 @@ export default class Core {
         }
         return undefined;
       });
+    state.settled = settled;
+    return settled;
+  }
+
+  /**
+   * `data-{event}-refetch` で取り直す実行シグネチャを、自動の取得の比較用に記録します。
+   *
+   * 仕様「`data-{event}-refetch`」の「取り直した実行シグネチャは、自動の取得の比較にも
+   * 使います」。記録しないと、取り直しの結果をバインドした後の再評価で、同じ条件の
+   * 取得をもう 1 回行います（前回の自動の取得の条件と比べるため）。
+   *
+   * @param fragment 取り直す対象の要素
+   * @returns 戻り値はありません。
+   */
+  public static recordRefetchSignature(fragment: ElementFragment): void {
+    Core.getReactiveFetchState(fragment.getTarget()).lastSignature =
+      Procedure.resolveAutoFetchSignature(fragment).signature;
+  }
+
+  /**
+   * 自動の取得を始めた回数を返します。
+   *
+   * 手続きはバインドの直前にこの値を控え、`data-{event}-refetch` の判定
+   * （`coveredByManagedFetch()`）へ渡します。
+   *
+   * @returns これまでに始めた自動の取得の数
+   */
+  public static getManagedFetchSequence(): number {
+    return Core.managedFetchSequence;
+  }
+
+  /**
+   * 指定の番号より後に、対象の要素で今の実行シグネチャの自動の取得が始まったかを
+   * 返します。
+   *
+   * 仕様「`data-{event}-refetch`」の「手続きがバインド（処理順序の 9）へ進んだ後に、
+   * 対象の要素で、今の実行シグネチャの自動の取得が始まった場合は、取り直しません。
+   * 自動の取得が実行中なら、その完了を待ってから判断します」。
+   *
+   * @param fragment 取り直す対象の要素
+   * @param since 手続きがバインドの直前に控えた番号（`getManagedFetchSequence()`）
+   * @returns 取り直しを省けるなら true。実行中の取得を待つ場合は、その完了後に
+   *     判断した結果の Promise
+   */
+  public static coveredByManagedFetch(
+    fragment: ElementFragment,
+    since: number,
+  ): boolean | Promise<boolean> {
+    const state = Core.REACTIVE_FETCH_STATES.get(fragment.getTarget());
+    if (state?.running && state.settled) {
+      // 待つ間に別の取得が始まることもあるため、終わった時点で判断し直す。
+      return state.settled.then(() =>
+        Core.coveredByManagedFetch(fragment, since),
+      );
+    }
+    if (!state || state.startedSequence <= since) {
+      return false;
+    }
+    // 取得が始まった後に、条件だけが自動の取得を伴わずに変わることがある（取得に
+    // 収集するフォームをリセットした場合など）。その取得は今の条件のものではない。
+    return (
+      Procedure.resolveAutoFetchSignature(fragment).signature ===
+      state.lastSignature
+    );
   }
 
   /**

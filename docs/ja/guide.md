@@ -3955,6 +3955,8 @@ Haori.handlers.register('logDone', response => {
 </button>
 ```
 
+同じ手続きのバインドで条件が変わり、対象の要素の自動の取得が走った場合は、取り直しません。条件を変えて押しても、変えずに押しても、取得は 1 回です。
+
 #### `data-click-click`: 別要素をクリック
 
 ```html

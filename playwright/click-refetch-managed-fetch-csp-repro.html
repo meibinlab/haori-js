@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>取り直しと自動の取得（CSP モード）</title>
+  <script src="/dist/haori.iife.js"></script>
+</head>
+<body>
+  <!--
+    条件のフォームから #state へバインドし、同じ要素を取り直す「表示」のボタン。
+    条件を変えて押しても、変えずに押しても、集計の取得が 1 回だけ走ることを確かめる。
+  -->
+  <form id="filter-form">
+    <input id="from" name="from" type="text">
+    <button id="show" type="submit"
+      data-click-prevent data-click-form
+      data-click-data='{"summary":{"rows":[]}}'
+      data-click-bind="#state" data-click-bind-merge
+      data-click-refetch="#state">表示</button>
+  </form>
+  <div id="state"
+    data-bind='{"summary":{"rows":[]},"from":""}'
+    data-fetch="/api/summary?from={{from}}"
+    data-fetch-arg="summary"
+    data-fetch-if="from">
+    <ul id="rows" data-each="summary.rows" data-each-arg="row">
+      <li>{{row}}</li>
+    </ul>
+  </div>
+</body>
+</html>
