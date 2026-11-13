@@ -99,7 +99,7 @@ describe('CSP モードでの *-run', () => {
    * @returns あれば true
    */
   const warned = (warn: ReturnType<typeof vi.spyOn>, text: string): boolean =>
-    warn.mock.calls.some(call =>
+    warn.mock.calls.some((call: unknown[]) =>
       call.some((part: unknown) => String(part).includes(text)),
     );
 

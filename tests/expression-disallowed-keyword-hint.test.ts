@@ -25,7 +25,7 @@ describe('使用できないキーワードの警告ヒント', () => {
 
   /** すべての warn 呼び出しの引数を連結した文字列を返す。 */
   const warnText = (): string =>
-    warnSpy.mock.calls.map(args => args.join(' ')).join('\n');
+    warnSpy.mock.calls.map((args: unknown[]) => args.join(' ')).join('\n');
 
   it('function/return を含む式は null を返し、アロー関数を促す警告を出す', () => {
     const result = Expression.evaluate(
