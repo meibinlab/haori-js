@@ -18,7 +18,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: '20.19.0'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
@@ -31,7 +31,7 @@ jobs:
         run: zip -r dist.zip dist
 
       - name: Upload dist.zip to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist.zip
         env:
