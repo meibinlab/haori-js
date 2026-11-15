@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "test:legacy": "vitest run --config vitest.legacy.config.ts",
     "test:mutation": "stryker run",
-    "bench": "vitest bench --run",
+    "bench": "vitest bench --run --config vitest.legacy.config.ts",
     "bench:browser": "node bench/run.mjs",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",

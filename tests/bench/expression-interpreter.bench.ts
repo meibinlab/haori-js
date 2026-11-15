@@ -2,23 +2,21 @@
 /**
  * @fileoverview CSP モードの評価器と従来の方式の速さの比較
  *
- * `npx vitest bench --run tests/bench/expression-interpreter.bench.ts` で実行します
- * （`vitest run` の対象ではありません）。
+ * `npm run bench` で実行します（`vitest run` の対象ではありません）。従来の方式の
+ * 設定（`vitest.legacy.config.ts`）で流します。CSP モードの設定は `new Function` を
+ * 拒否するため、従来の方式の式が組み立てられません。
  *
  * 比べるのは次の 3 段です。
  *
  * - **評価関数**: 方式によらない層を通さず、組み立て済みの評価関数（従来の方式は
  *   `new Function` で作った関数、CSP モードは変換済みの構文木）を呼ぶ時間
- * - **入口**: 方式によらない層を含めた `evaluateDetailed()` の時間（CSP モードは
- *   `tests/helpers/csp-evaluate.ts` の形）
+ * - **入口**: 方式によらない層を含めた `evaluateDetailed()` の時間
  * - **一覧**: 300 行の一覧を描く・状態を 1 つ変える・行を 1 件足す時間（jsdom）
  *
  * 式は、管理画面の一覧でよく書く形（値の表示・数値の整形・条件・クラスの切り替え・
  * 行の外の値の参照）にしています。
  *
- * 一覧の計測は jsdom で 6 分ほどかかります（開く 1 回が 40 秒前後）。入口と一覧の
- * CSP モードは、未解決参照の集約やブロック識別子の警告など、方式によらない層の
- * 一部を通らない形（`csp-evaluate.ts`）なので、組み合わせた後の値の目安です。開発
+ * 方式は `Env.setCsp()` で切り替えます（この設定での既定は従来の方式）。開発
  * モードは外して比べます。
  */
 
@@ -26,10 +24,10 @@ import {bench, describe} from 'vitest';
 
 import Core from '../../src/core';
 import Dev from '../../src/dev';
-import Expression, {ExpressionEvaluationDetail} from '../../src/expression';
+import Env from '../../src/env';
+import Expression from '../../src/expression';
 import ExpressionInterpreter from '../../src/expression_interpreter';
 import {waitForIdle} from '../helpers/async';
-import {cspEvaluateDetailed} from '../helpers/csp-evaluate';
 
 /** 一覧の行の数 */
 const ROW_COUNT = 300;
@@ -81,8 +79,17 @@ const LIST =
   '<td data-if="r.stock > 0">{{r.stock}}</td><td>{{r.tags.join(\'、\')}}</td><td>{{title}}</td>' +
   '</tr></tbody></table></div>';
 
-// 開発モードの診断（警告の組み立て）は従来の方式の入口だけが行うため、外して比べる。
+// 開発モードの診断（警告の組み立て）は計測の対象にしないため、外して比べる。
 Dev.disable();
+
+/**
+ * 式の評価の方式を切り替えます。
+ *
+ * @param mode 方式
+ */
+function useMode(mode: 'legacy' | 'csp'): void {
+  Env.setCsp(mode === 'csp');
+}
 
 const rows = makeRows(ROW_COUNT);
 const scopes = rows.map(r => ({r, rows, title: '一覧'}));
@@ -135,33 +142,14 @@ describe('入口（300 行 × 8 式、方式によらない層を含む）', () 
   });
 
   bench('CSP モード', () => {
+    useMode('csp');
     for (const scope of scopes) {
       for (const expression of ROW_EXPRESSIONS) {
-        cspEvaluateDetailed(expression, scope);
+        Expression.evaluateDetailed(expression, scope);
       }
     }
   });
 });
-
-/** 従来の方式の入口 */
-const legacyEvaluateDetailed = Expression.evaluateDetailed.bind(Expression);
-
-/**
- * 式の評価の方式を切り替えます。
- *
- * @param mode 方式
- */
-function useMode(mode: 'legacy' | 'csp'): void {
-  (
-    Expression as unknown as {
-      evaluateDetailed: (
-        e: string,
-        b?: Record<string, unknown>,
-      ) => ExpressionEvaluationDetail;
-    }
-  ).evaluateDetailed =
-    mode === 'legacy' ? legacyEvaluateDetailed : cspEvaluateDetailed;
-}
 
 /**
  * 一覧を描く準備をします（テンプレートの走査まで）。
@@ -256,7 +244,7 @@ describe(`一覧（${ROW_COUNT} 行）`, () => {
               await waitForIdle();
             }),
           );
-          // 開くのは jsdom で 1 回 20 秒を超えるため、同じ一覧へ続けて足す。
+          // 開き直すと時間がかかるため、同じ一覧へ続けて足す。
           record(
             'add',
             await measure(async () => {
